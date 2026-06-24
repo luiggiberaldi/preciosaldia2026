@@ -28,7 +28,7 @@ function StatCard({ icon: Icon, label, value, sub, color }) {
                 <Icon size={16} />
             </div>
             <p className="text-[10px] font-bold text-slate-400 uppercase">{label}</p>
-            <p className="text-lg md:text-xl font-black text-slate-800 dark:text-white mt-0.5">{value}</p>
+            <p className="text-xl md:text-2xl font-display font-semibold text-slate-800 dark:text-white mt-0.5">{value}</p>
             {sub && <p className="text-xs font-bold text-slate-400 mt-0.5">{sub}</p>}
         </div>
     );

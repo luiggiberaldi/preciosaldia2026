@@ -287,7 +287,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             <div className="flex md:grid md:grid-cols-3 items-center justify-between mb-4 pt-2">
                 {/* Reloj y fecha en PC */}
                 <div className="hidden md:flex flex-col items-start gap-1">
-                    <span className="text-lg font-black text-slate-800 dark:text-white leading-none">
+                    <span className="text-xl font-display font-bold italic text-slate-800 dark:text-white leading-none">
                         {timeString}
                     </span>
                     <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider leading-none">
@@ -326,7 +326,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                         <div className="w-9 h-9 bg-brand-light dark:bg-surface-800/30 rounded-xl flex items-center justify-center mb-2">
                             <ShoppingCart size={18} className="text-brand" />
                         </div>
-                        <p className="font-display text-3xl text-surface-700 dark:text-surface-100 leading-none">{todaySales.length}</p>
+                        <p className="font-display text-4xl font-semibold text-surface-700 dark:text-surface-100 leading-none">{todaySales.length}</p>
                         <p className="text-[11px] text-surface-400 mt-1">{todaySales.length === 1 ? 'venta hoy' : 'ventas hoy'}</p>
                     </div>
                     <div className="reveal card !p-4 !rounded-2xl relative overflow-hidden">
@@ -334,7 +334,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                         <div className="w-9 h-9 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl flex items-center justify-center mb-2">
                             <Package size={18} className="text-emerald-500" />
                         </div>
-                        <p className="font-display text-3xl text-surface-700 dark:text-surface-100 leading-none">{todayItemsSold}</p>
+                        <p className="font-display text-4xl font-semibold text-surface-700 dark:text-surface-100 leading-none">{todayItemsSold}</p>
                         <p className="text-[11px] text-surface-400 mt-1">{todayItemsSold === 1 ? 'artículo vendido' : 'artículos vendidos'}</p>
                     </div>
                 </div>
