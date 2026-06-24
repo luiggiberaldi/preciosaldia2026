@@ -132,7 +132,7 @@ export default function DashboardStats({
                     {copEnabled && copPrimary && tasaCop > 0 ? (
                         <>
                             <div className="flex items-baseline gap-1">
-                                <span className={`text-2xl font-black tracking-tight ${todayProfit >= 0 ? 'text-amber-600 dark:text-amber-400' : 'text-red-500'}`}>
+                                <span className={`text-3xl font-display font-semibold tracking-tight ${todayProfit >= 0 ? 'text-amber-600 dark:text-amber-400' : 'text-red-500'}`}>
                                     {todayProfit >= 0 ? '+' : ''}{formatCop((bcvRate > 0 ? todayProfit / bcvRate : 0) * tasaCop)} <span className="text-base">COP</span>
                                 </span>
                             </div>
@@ -141,7 +141,7 @@ export default function DashboardStats({
                     ) : (
                         <>
                             <div className="flex items-baseline gap-1">
-                                <span className={`text-2xl font-black tracking-tight ${todayProfit >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500'}`}>
+                                <span className={`text-3xl font-display font-semibold tracking-tight ${todayProfit >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500'}`}>
                                     {todayProfit >= 0 ? '+' : ''}${bcvRate > 0 ? (todayProfit / bcvRate).toFixed(2) : '0.00'}
                                 </span>
                             </div>
@@ -164,12 +164,12 @@ export default function DashboardStats({
                         <ArrowUpRight size={18} className="text-brand" />
                     </div>
                 </div>
-                <p className="text-xl font-black text-slate-800 dark:text-white leading-none">{formatBs(bcvRate)} <span className="text-xs font-bold text-slate-400">Bs/$</span></p>
+                <p className="text-2xl font-display font-semibold text-slate-800 dark:text-white leading-none">{formatBs(bcvRate)} <span className="text-xs font-bold text-slate-400">Bs/$</span></p>
                 <p className="text-[11px] text-slate-400 mt-0.5">Tasa BCV</p>
                 {copEnabled && tasaCop > 0 && (
                     <>
                         <div className="border-t border-slate-100 dark:border-slate-800 my-2"></div>
-                        <p className="text-lg font-black text-amber-600 dark:text-amber-400 leading-none">
+                        <p className="text-xl font-display font-semibold text-amber-600 dark:text-amber-400 leading-none">
                             {tasaCop.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-xs font-bold text-amber-500/60">COP/$</span>
                         </p>
                         <p className="text-[11px] text-slate-400 mt-0.5">Tasa COP</p>
@@ -231,14 +231,14 @@ export default function DashboardStats({
                                 <p className="text-[10px] font-bold text-red-400 uppercase">Deudas por cobrar</p>
                                 {copEnabled && copPrimary && tasaCop > 0 ? (
                                     <>
-                                        <p className="text-xl font-black text-red-500">
+                                        <p className="text-2xl font-display font-semibold text-red-500">
                                             {formatCop(totalDeudas.totalUsd * tasaCop)} COP
                                         </p>
                                         <p className="text-[10px] text-red-400">${totalDeudas.totalUsd.toFixed(2)} · {formatBs(totalDeudas.totalUsd * bcvRate)} Bs</p>
                                     </>
                                 ) : (
                                     <>
-                                        <p className="text-xl font-black text-red-500">
+                                        <p className="text-2xl font-display font-semibold text-red-500">
                                             ${totalDeudas.totalUsd.toFixed(2)}
                                         </p>
                                         {copEnabled && tasaCop > 0 && (
