@@ -45,58 +45,88 @@ export default async function handler(req, res) {
         }
 
         const groqKeysStr = process.env.GROQ_KEYS || "";
-        const keys = groqKeysStr.split(",").map(k => k.trim()).filter(Boolean);
+        const allKeys = groqKeysStr.split(",").map(k => k.trim()).filter(Boolean);
 
-        if (keys.length === 0) {
+        if (allKeys.length === 0) {
             return res.status(500).json({ error: "No se encontraron claves de API configuradas en el servidor (GROQ_KEYS)." });
         }
-
-        // Selección aleatoria resistente a la naturaleza stateless de Serverless
-        const apiKey = keys[Math.floor(Math.random() * keys.length)];
 
         // Aseguramos que el prompt del sistema especializado sea el primer mensaje
         const formattedMessages = [...messages];
         if (formattedMessages[0]?.role !== 'system') {
             formattedMessages.unshift({ role: 'system', content: CHAT_SYSTEM });
         } else {
-            // Reemplazamos/Combinamos con el CHAT_SYSTEM especializado
             formattedMessages[0].content = CHAT_SYSTEM + "\n\n" + formattedMessages[0].content;
         }
 
-        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${apiKey}`,
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                model: "llama-3.3-70b-versatile",
-                messages: formattedMessages,
-                temperature: 0.7,
-                max_tokens: 2048,
-                stream: true,
-            }),
+        const requestBody = JSON.stringify({
+            model: "llama-3.3-70b-versatile",
+            messages: formattedMessages,
+            temperature: 0.7,
+            max_tokens: 2048,
+            stream: true,
         });
 
-        if (!response.ok) {
-            const errText = await response.text();
-            return res.status(response.status).send(`Error de la API de Groq: ${errText}`);
+        // Rotación secuencial con retry: si una key da 429 o error 5xx,
+        // se pasa automáticamente a la siguiente hasta agotar todas.
+        // Empezamos por una key aleatoria para distribuir la carga entre invocaciones.
+        const startIndex = Math.floor(Math.random() * allKeys.length);
+        let lastError = null;
+
+        for (let attempt = 0; attempt < allKeys.length; attempt++) {
+            const keyIndex = (startIndex + attempt) % allKeys.length;
+            const apiKey = allKeys[keyIndex];
+
+            let response;
+            try {
+                response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${apiKey}`,
+                        "Content-Type": "application/json",
+                    },
+                    body: requestBody,
+                });
+            } catch (fetchErr) {
+                // Error de red — intentar con la siguiente key
+                lastError = fetchErr.message;
+                continue;
+            }
+
+            // Si es rate limit (429) o error de servidor (5xx), rotar a la siguiente key
+            if (response.status === 429 || response.status >= 500) {
+                const errBody = await response.text();
+                lastError = `Key[${keyIndex}] HTTP ${response.status}: ${errBody}`;
+                continue; // <-- aquí está la magia: siguiente key
+            }
+
+            // Cualquier otro error no recuperable (ej. 400, 401) — falla inmediatamente
+            if (!response.ok) {
+                const errText = await response.text();
+                return res.status(response.status).json({ error: `Error de la API de Groq: ${errText}` });
+            }
+
+            // ✅ Key funcionó — configurar streaming y devolver respuesta
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+
+            const reader = response.body.getReader();
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                res.write(value);
+            }
+            res.end();
+            return; // salir del handler
         }
 
-        // Configurar cabeceras de streaming
-        res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Cache-Control', 'no-cache');
-        res.setHeader('Connection', 'keep-alive');
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            res.write(value);
-        }
-        res.end();
+        // Si llegamos aquí, todas las keys fallaron
+        console.error("[Chat API] Todas las keys de Groq fallaron:", lastError);
+        return res.status(503).json({
+            error: "El servicio de IA está temporalmente saturado. Por favor intenta en unos segundos.",
+            detail: lastError,
+        });
     } catch (error) {
         return res.status(500).json({ error: error.message });
     }
