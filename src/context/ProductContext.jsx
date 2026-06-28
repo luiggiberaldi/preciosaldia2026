@@ -37,7 +37,13 @@ export function ProductProvider({ children, rates }) {
     });
     // Alias de compatibilidad: useAutoRate=true cuando no es manual
     const useAutoRate = rateMode !== 'manual';
-    const setUseAutoRate = (val) => setRateMode(val ? 'bcv' : 'manual');
+    const setUseAutoRate = (val) => {
+        if (val) {
+            setRateMode(prev => ['bcv', 'euro', 'usdt'].includes(prev) ? prev : 'bcv');
+        } else {
+            setRateMode('manual');
+        }
+    };
 
     // AUTO COP LOGIC
     const [copEnabled, setCopEnabled] = useState(() => {
