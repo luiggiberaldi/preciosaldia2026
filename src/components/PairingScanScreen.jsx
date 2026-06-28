@@ -73,14 +73,46 @@ export default function PairingScanScreen({ onCancel, triggerHaptic }) {
                 aspectRatio: 1.0
             };
 
-            await html5QrCode.start(
-                { facingMode: "environment" },
-                config,
-                onScanSuccess,
-                () => {
-                    // Silencioso
+            // Intentar detectar todas las cámaras físicas para forzar la trasera
+            let cameraId = null;
+            try {
+                const devices = await Html5Qrcode.getCameras();
+                if (devices && devices.length > 0) {
+                    // 1. Buscar cámaras con etiquetas de trasera comunes en inglés y español
+                    const backCamera = devices.find(device => {
+                        const label = device.label.toLowerCase();
+                        return label.includes('back') || 
+                               label.includes('rear') || 
+                               label.includes('trasera') || 
+                               label.includes('environment') || 
+                               label.includes('entorno') ||
+                               label.includes('principal') ||
+                               label.includes('main');
+                    });
+
+                    // 2. Si se encuentra se usa, si no, se usa la última de la lista (suele ser la trasera en móviles)
+                    cameraId = backCamera ? backCamera.id : devices[devices.length - 1].id;
                 }
-            );
+            } catch (e) {
+                console.warn('[PairingScanScreen] No se pudieron listar las cámaras:', e);
+            }
+
+            if (cameraId) {
+                await html5QrCode.start(
+                    cameraId,
+                    config,
+                    onScanSuccess,
+                    () => {}
+                );
+            } else {
+                // Fallback por defecto si falló la detección de dispositivos
+                await html5QrCode.start(
+                    { facingMode: "environment" },
+                    config,
+                    onScanSuccess,
+                    () => {}
+                );
+            }
 
             setCameraState('active');
         } catch (err) {
