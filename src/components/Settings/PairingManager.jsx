@@ -198,23 +198,23 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
                         </div>
                     </div>
 
-                    <div className="bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800 p-4 rounded-2xl flex items-center justify-between">
+                    <div className="bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800 p-4 rounded-2xl flex flex-col gap-4">
                         <div className="flex items-center gap-3">
-                            <Smartphone className="text-slate-400" size={24} />
+                            <Smartphone className="text-emerald-500" size={24} />
                             <div>
                                 <span className="text-[9px] uppercase tracking-wider font-bold text-slate-400 block">Celular Conectado</span>
-                                <span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate max-w-[180px] block">
-                                    Dispositivo vinculado
+                                <span className="text-xs font-bold text-slate-700 dark:text-slate-200 block">
+                                    Dispositivo en vivo (Modo Supervisor Activo)
                                 </span>
                             </div>
                         </div>
                         
                         <button
                             onClick={handleUnpair}
-                            className="p-2.5 bg-rose-50 dark:bg-rose-950/10 text-rose-500 hover:text-rose-600 hover:bg-rose-100/50 rounded-xl transition-all"
-                            title="Desvincular Dispositivo"
+                            className="w-full py-2.5 bg-rose-500 hover:bg-rose-600 text-white font-black text-xs rounded-xl flex items-center justify-center gap-2 shadow-md shadow-rose-500/15 active:scale-[0.97] transition-all"
                         >
-                            <Trash2 size={16} />
+                            <Trash2 size={14} />
+                            <span>Desactivar Modo Supervisor (Desvincular)</span>
                         </button>
                     </div>
                 </div>
