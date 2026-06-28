@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { showToast } from './Toast';
-import { ArrowLeft, Camera, ShieldAlert, KeyRound, Loader2, ArrowRight } from 'lucide-react';
+import { ArrowLeft, Camera, ShieldAlert, KeyRound, Loader2, ArrowRight, SwitchCamera } from 'lucide-react';
 
 export default function PairingScanScreen({ onCancel, triggerHaptic }) {
     const [scanMethod, setScanMethod] = useState('camera'); // 'camera' o 'manual'
@@ -10,11 +10,51 @@ export default function PairingScanScreen({ onCancel, triggerHaptic }) {
     const [loading, setLoading] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
     const [cameraState, setCameraState] = useState('idle'); // 'idle', 'requesting', 'active', 'permission_denied', 'error'
+    const [cameras, setCameras] = useState([]);
+    const [currentCameraIndex, setCurrentCameraIndex] = useState(null);
     const scannerRef = useRef(null);
 
-    // Detección de cámara y render de html5-qrcode
+    // 1. Cargar cámaras disponibles e inicializar la cámara trasera por defecto
     useEffect(() => {
         if (scanMethod !== 'camera') {
+            setCameras([]);
+            setCurrentCameraIndex(null);
+            return;
+        }
+
+        const loadCameras = async () => {
+            try {
+                const devices = await Html5Qrcode.getCameras();
+                setCameras(devices || []);
+                if (devices && devices.length > 0) {
+                    const backIndex = devices.findIndex(device => {
+                        const label = device.label.toLowerCase();
+                        return label.includes('back') || 
+                               label.includes('rear') || 
+                               label.includes('trasera') || 
+                               label.includes('environment') || 
+                               label.includes('entorno') ||
+                               label.includes('principal') ||
+                               label.includes('main');
+                    });
+                    // Si se encuentra, usar ese índice. Si no, usar la última cámara (suele ser trasera en móviles)
+                    const defaultIndex = backIndex !== -1 ? backIndex : devices.length - 1;
+                    setCurrentCameraIndex(defaultIndex);
+                } else {
+                    setCurrentCameraIndex(-1); // No se detectaron cámaras
+                }
+            } catch (e) {
+                console.warn('[PairingScanScreen] Error al listar cámaras:', e);
+                setCurrentCameraIndex(-1);
+            }
+        };
+
+        loadCameras();
+    }, [scanMethod]);
+
+    // 2. Iniciar/Detener scanner según método e índice de cámara activa
+    useEffect(() => {
+        if (scanMethod !== 'camera' || currentCameraIndex === null) {
             stopScanning();
             return;
         }
@@ -24,7 +64,7 @@ export default function PairingScanScreen({ onCancel, triggerHaptic }) {
         return () => {
             stopScanning();
         };
-    }, [scanMethod]);
+    }, [scanMethod, currentCameraIndex]);
 
     const startScanning = async () => {
         setCameraState('requesting');
@@ -73,39 +113,16 @@ export default function PairingScanScreen({ onCancel, triggerHaptic }) {
                 aspectRatio: 1.0
             };
 
-            // Intentar detectar todas las cámaras físicas para forzar la trasera
-            let cameraId = null;
-            try {
-                const devices = await Html5Qrcode.getCameras();
-                if (devices && devices.length > 0) {
-                    // 1. Buscar cámaras con etiquetas de trasera comunes en inglés y español
-                    const backCamera = devices.find(device => {
-                        const label = device.label.toLowerCase();
-                        return label.includes('back') || 
-                               label.includes('rear') || 
-                               label.includes('trasera') || 
-                               label.includes('environment') || 
-                               label.includes('entorno') ||
-                               label.includes('principal') ||
-                               label.includes('main');
-                    });
-
-                    // 2. Si se encuentra se usa, si no, se usa la última de la lista (suele ser la trasera en móviles)
-                    cameraId = backCamera ? backCamera.id : devices[devices.length - 1].id;
-                }
-            } catch (e) {
-                console.warn('[PairingScanScreen] No se pudieron listar las cámaras:', e);
-            }
-
-            if (cameraId) {
+            const activeDevice = cameras[currentCameraIndex];
+            if (activeDevice && currentCameraIndex >= 0) {
                 await html5QrCode.start(
-                    cameraId,
+                    activeDevice.id,
                     config,
                     onScanSuccess,
                     () => {}
                 );
             } else {
-                // Fallback por defecto si falló la detección de dispositivos
+                // Fallback por defecto si falló la detección de dispositivos específicos
                 await html5QrCode.start(
                     { facingMode: "environment" },
                     config,
@@ -141,6 +158,12 @@ export default function PairingScanScreen({ onCancel, triggerHaptic }) {
             }
             scannerRef.current = null;
         }
+    };
+
+    const handleSwitchCamera = () => {
+        if (cameras.length <= 1) return;
+        triggerHaptic?.();
+        setCurrentCameraIndex(prev => (prev + 1) % cameras.length);
     };
 
     // Ejecutar el emparejamiento con el token
@@ -299,6 +322,18 @@ export default function PairingScanScreen({ onCancel, triggerHaptic }) {
 
                         {/* Contenedor del Feed de Cámara */}
                         <div id="qr-reader-container" className="w-full h-full [&_video]:object-cover [&_video]:w-full [&_video]:h-full [&_video]:rounded-3xl"></div>
+
+                        {/* Botón flotante para cambiar de cámara (si hay más de 1 cámara) */}
+                        {cameras.length > 1 && cameraState === 'active' && (
+                            <button
+                                type="button"
+                                onClick={handleSwitchCamera}
+                                className="absolute bottom-4 right-4 z-20 p-3 bg-white/90 hover:bg-white dark:bg-slate-800/90 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-full border border-slate-200/50 dark:border-slate-700/50 active:scale-90 transition-all flex items-center justify-center shadow-lg backdrop-blur-md"
+                                title="Cambiar Cámara"
+                            >
+                                <SwitchCamera size={20} />
+                            </button>
+                        )}
                     </div>
                 )}
 
