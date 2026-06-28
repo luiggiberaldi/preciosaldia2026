@@ -123,7 +123,7 @@ export default function PairingScanScreen({ onCancel, triggerHaptic }) {
     };
 
     return (
-        <div className="fixed inset-0 z-[100] bg-slate-50 dark:bg-slate-950 flex flex-col justify-between p-6 overflow-y-auto">
+        <div className="fixed inset-0 z-[300] bg-slate-50 dark:bg-slate-950 flex flex-col justify-between p-6 overflow-y-auto">
             {/* Header */}
             <div className="flex items-center justify-between w-full max-w-md mx-auto">
                 <button 
@@ -193,7 +193,11 @@ export default function PairingScanScreen({ onCancel, triggerHaptic }) {
                                 value={manualCode}
                                 onChange={(e) => setManualCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
                                 placeholder="Escribe el código de 6 letras"
-                                className="w-full py-3 px-4 border border-slate-200 dark:border-slate-700/60 dark:bg-slate-800 rounded-2xl text-center text-xl font-black uppercase tracking-widest text-slate-800 dark:text-white focus:outline-none focus:border-emerald-500 transition-colors"
+                                className={`w-full py-3.5 px-4 border border-slate-200 dark:border-slate-700/60 dark:bg-slate-800 rounded-2xl text-center focus:outline-none focus:border-emerald-500 transition-all ${
+                                    manualCode 
+                                        ? 'text-xl font-black uppercase tracking-widest text-slate-800 dark:text-white' 
+                                        : 'text-xs font-bold text-slate-400 placeholder-slate-400'
+                                }`}
                                 disabled={loading}
                             />
                         </div>

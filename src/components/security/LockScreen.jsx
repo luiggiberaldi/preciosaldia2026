@@ -71,9 +71,10 @@ export default function LockScreen({ onOpenPairing }) {
 
         <button
           onClick={onOpenPairing}
-          className="mt-2.5 px-4.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-100 rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
+          className="mt-3 px-5 py-2.5 bg-slate-100 hover:bg-slate-200/80 active:scale-95 text-slate-600 hover:text-slate-800 border border-slate-200/60 rounded-2xl text-[10px] font-bold uppercase tracking-wider transition-all shadow-sm flex items-center gap-2"
         >
-          📱 Entrar en Modo Supervisor
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+          Entrar en Modo Supervisor
         </button>
       </div>
 
