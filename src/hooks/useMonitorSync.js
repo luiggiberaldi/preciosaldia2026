@@ -47,20 +47,28 @@ export function useMonitorSync(pairedDeviceId) {
         };
 
         const initMonitor = async () => {
+            console.log(`[MonitorSync] Iniciando monitor para pairedDeviceId: ${pairedDeviceId}`);
             try {
                 setLoading(true);
 
                 // 1. Pull inicial de todos los datos desde sync_documents del equipo vinculado
+                console.log(`[MonitorSync] Haciendo pull inicial de sync_documents para: ${pairedDeviceId}`);
                 const { data: docs, error } = await supabaseCloud
                     .from('sync_documents')
                     .select('collection, doc_id, data')
                     .eq('device_id', pairedDeviceId)
                     .in('collection', ['store', 'local']);
 
-                if (error) throw error;
+                if (error) {
+                    console.error('[MonitorSync] Error haciendo el pull inicial:', error);
+                    throw error;
+                }
+
+                console.log(`[MonitorSync] Documentos recibidos en pull inicial:`, docs);
 
                 if (docs && docs.length > 0) {
                     for (const doc of docs) {
+                        console.log(`[MonitorSync] Aplicando documento inicial localmente: ${doc.doc_id}`);
                         await applyDocToLocal(doc.doc_id, doc.collection, doc.data.payload);
                     }
                     const now = new Date();
@@ -72,6 +80,7 @@ export function useMonitorSync(pairedDeviceId) {
 
                 // 2. Suscripción en Tiempo Real vía WebSocket
                 if (!monitorSubscription) {
+                    console.log(`[MonitorSync] Creando canal de realtime: monitor:${pairedDeviceId}`);
                     monitorSubscription = supabaseCloud
                         .channel(`monitor:${pairedDeviceId}`)
                         .on('postgres_changes', {
@@ -80,14 +89,17 @@ export function useMonitorSync(pairedDeviceId) {
                             table: 'sync_documents',
                             filter: `device_id=eq.${pairedDeviceId}`
                         }, async (payload) => {
+                            console.log(`[MonitorSync] Evento realtime detectado en sync_documents:`, payload);
                             const doc = payload.new;
                             if (!doc || !['store', 'local'].includes(doc.collection)) return;
+                            console.log(`[MonitorSync] Aplicando documento realtime localmente: ${doc.doc_id}`);
                             await applyDocToLocal(doc.doc_id, doc.collection, doc.data.payload);
                             const now = new Date();
                             setLastSync(now);
                             localStorage.setItem('monitor_last_sync', now.toISOString());
                         })
                         .subscribe((status) => {
+                            console.log(`[MonitorSync] Cambio de estado de suscripción realtime: ${status}`);
                             if (status === 'SUBSCRIBED') {
                                 setIsConnected(true);
                             } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {

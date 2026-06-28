@@ -71,6 +71,13 @@ function _debouncePush(key, value) {
  * Llamado desde storageService (colección 'store') y desde `pushLocalSync` (colección 'local').
  */
 export const pushCloudSync = async (key, value) => {
+    console.log(`[CloudSync] pushCloudSync llamado para key: ${key}`, { 
+        hasSupabase: !!supabaseCloud, 
+        isSyncingFromCloud, 
+        isIncluded: SYNC_KEYS.includes(key), 
+        currentDeviceId: _currentDeviceId 
+    });
+
     if (!supabaseCloud) return;
     if (isSyncingFromCloud) return;          // Nunca re-emitir lo que llegó de la nube
     if (!SYNC_KEYS.includes(key)) return;
@@ -81,17 +88,24 @@ export const pushCloudSync = async (key, value) => {
 
     try {
         const collectionType = LOCAL_KEYS.includes(key) ? 'local' : 'store';
+        console.log(`[CloudSync] Iniciando upsert para key: ${key}, device_id: ${_currentDeviceId}`);
 
-        await supabaseCloud.from('sync_documents').upsert({
+        const { data, error } = await supabaseCloud.from('sync_documents').upsert({
             device_id: _currentDeviceId,
             collection: collectionType,
             doc_id: key,
             data: { payload: value },
             updated_at: new Date().toISOString()
-        }, { onConflict: 'device_id,collection,doc_id' });
+        }, { onConflict: 'device_id,collection,doc_id' }).select();
+
+        if (error) {
+            console.error(`[CloudSync] Error de base de datos al enviar a la nube para key ${key}:`, error);
+        } else {
+            console.log(`[CloudSync] Upsert completado con éxito para key: ${key}`, data);
+        }
 
     } catch (e) {
-        console.warn('[CloudSync] Error al enviar a la nube:', e.message ?? e);
+        console.error('[CloudSync] Excepción al enviar a la nube:', e);
     }
 };
 
@@ -164,6 +178,7 @@ export function useCloudSync(deviceId) {
         _currentDeviceId = deviceId;
 
         const initSync = async () => {
+            console.log(`[CloudSync] initSync iniciado para deviceId: ${deviceId}`);
             try {
                 let hasAuth = false;
                 try {
@@ -171,13 +186,22 @@ export function useCloudSync(deviceId) {
                     hasAuth = session && !(session.expires_at && session.expires_at * 1000 < Date.now());
                 } catch (e) {}
 
+                console.log(`[CloudSync] Estado auth de la caja: ${hasAuth}`);
+
                 if (!hasAuth) {
+                    console.log(`[CloudSync] Dispositivo sin sesión auth activa. Buscando vinculación en device_pairings para: ${deviceId}`);
                     // Si no hay sesión, verificamos si está emparejado para permitir sync sin login
                     const { data: pairing, error: pairingErr } = await supabaseCloud
                         .from('device_pairings')
                         .select('id')
                         .eq('primary_device_id', deviceId)
                         .maybeSingle();
+
+                    if (pairingErr) {
+                        console.error('[CloudSync] Error al verificar device_pairings:', pairingErr);
+                    } else {
+                        console.log('[CloudSync] Resultado consulta device_pairings:', pairing);
+                    }
 
                     if (pairingErr || !pairing) {
                         console.log('[CloudSync] Omitiendo sincronización: sin sesión cloud ni emparejamiento activo.');
@@ -186,6 +210,7 @@ export function useCloudSync(deviceId) {
                 }
 
                 isInitialized.current = true;
+                console.log('[CloudSync] Inicializando canales y haciendo pull inicial...');
 
                 // ── Pull Inicial ───────────────────────────────────────────
                 const { data: docs } = await supabaseCloud
