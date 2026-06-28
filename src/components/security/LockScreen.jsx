@@ -6,6 +6,9 @@ import LoginPinModal from './LoginPinModal';
 export default function LockScreen() {
   const { usuarios, login } = useAuthStore();
   const [selectedUser, setSelectedUser] = useState(null);
+  const [showWelcome, setShowWelcome] = useState(() => {
+    return localStorage.getItem('pda_welcome_dismissed') !== 'true';
+  });
 
   const handlePinSubmit = async (pin, userId) => {
     const result = await login(pin, userId);
@@ -13,6 +16,11 @@ export default function LockScreen() {
       setSelectedUser(null);
     }
     return result;
+  };
+
+  const handleDismissWelcome = () => {
+    localStorage.setItem('pda_welcome_dismissed', 'true');
+    setShowWelcome(false);
   };
 
   return (
@@ -69,6 +77,78 @@ export default function LockScreen() {
         user={selectedUser}
         onSubmit={handlePinSubmit}
       />
+
+      {/* Welcome Modal */}
+      <WelcomeModal
+        isOpen={showWelcome}
+        onClose={handleDismissWelcome}
+      />
+    </div>
+  );
+}
+
+function WelcomeModal({ isOpen, onClose }) {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-[300] bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-slate-900 rounded-[2rem] p-6 sm:p-8 max-w-md w-full shadow-2xl border border-slate-100 dark:border-slate-800 text-center animate-in zoom-in-95 duration-300">
+        <div className="w-16 h-16 bg-cyan-50 dark:bg-cyan-950/30 rounded-2xl flex items-center justify-center mx-auto mb-4 animate-bounce">
+          <span className="text-3xl">👋</span>
+        </div>
+        
+        <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-2 leading-tight">
+          ¡Te damos la bienvenida!
+        </h2>
+        
+        <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
+          Precios al Día está listo para usar. Sigue estos sencillos pasos para empezar:
+        </p>
+
+        <div className="text-left space-y-4 mb-6">
+          <div className="flex gap-3 items-start">
+            <div className="w-6 h-6 rounded-full bg-brand text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5 shadow-md">
+              1
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">Ingresa con el PIN inicial</h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Selecciona <strong>Administrador</strong> o <strong>Cajero</strong> e ingresa el código de fábrica: <code className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded font-mono text-brand font-bold text-sm">000000</code> (seis ceros).
+              </p>
+            </div>
+          </div>
+
+          <div className="flex gap-3 items-start">
+            <div className="w-6 h-6 rounded-full bg-brand text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5 shadow-md">
+              2
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">Configura tus accesos</h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Ve a <strong>Ajustes → Usuarios</strong> (dentro del panel de Admin) para cambiar tu PIN por uno seguro y agregar a tu personal.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex gap-3 items-start">
+            <div className="w-6 h-6 rounded-full bg-brand text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5 shadow-md">
+              3
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">Carga inventario y vende</h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Agrega tus productos en la pestaña <strong>Inventario</strong> y empieza a facturar desde la pestaña <strong>Vender</strong>.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={onClose}
+          className="w-full py-3 bg-brand hover:bg-brand-dark text-white font-bold rounded-xl shadow-lg active:scale-95 transition-transform text-sm"
+        >
+          ¡Entendido, comenzar!
+        </button>
+      </div>
     </div>
   );
 }
