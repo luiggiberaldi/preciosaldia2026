@@ -55,14 +55,14 @@ export function ProductProvider({ children, rates }) {
 
     // effectiveRate según el modo seleccionado
     const effectiveRate = (() => {
-        if (rateMode === 'euro') return rates.euro?.price || rates.bcv?.price || 1;
-        if (rateMode === 'usdt') return rates.usdt?.price || rates.bcv?.price || 1;
-        if (rateMode === 'manual') return parseFloat(customRate) > 0 ? parseFloat(customRate) : (rates.bcv?.price || 1);
-        return rates.bcv?.price || 1; // 'bcv' (default)
+        if (rateMode === 'euro') return rates?.euro?.price || rates?.bcv?.price || 1;
+        if (rateMode === 'usdt') return rates?.usdt?.price || rates?.bcv?.price || 1;
+        if (rateMode === 'manual') return parseFloat(customRate) > 0 ? parseFloat(customRate) : (rates?.bcv?.price || 1);
+        return rates?.bcv?.price || 1; // 'bcv' (default)
     })();
     
     // Calcula el COP efectivo. rates.autoCopRate es calculado en useRates basado en TRM y la Brecha USDT/BCV.
-    const tasaCop = autoCopEnabled && rates.autoCopRate?.price 
+    const tasaCop = autoCopEnabled && rates?.autoCopRate?.price 
         ? rates.autoCopRate.price 
         : (parseFloat(tasaCopManual) > 0 ? parseFloat(tasaCopManual) : 4150);
 

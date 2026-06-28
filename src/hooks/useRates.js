@@ -157,6 +157,7 @@ export function useRates() {
                 const newRates = {
                     bcv: apiData.bcv,
                     euro: apiData.euro,
+                    usdt: apiData.usdt,
                     ...(apiData.autoCopRate ? { autoCopRate: apiData.autoCopRate } : {}),
                     lastUpdate: apiData.lastUpdate || new Date(),
                 };

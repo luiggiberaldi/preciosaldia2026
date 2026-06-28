@@ -89,7 +89,7 @@ export default function SalesHeader({
                         <span className="text-xs font-bold">Atajos (PC)</span>
                     </button>
 
-                    <Tooltip text={isCopMode ? `Tasa COP/USD: ${Math.round(tasaCop).toLocaleString('es-CO')}` : (useAutoRate ? "Tasa oficial sincronizada (BCV)" : "Usando tasa manual fijada por ti")} position="bottom">
+                    <Tooltip text={isCopMode ? `Tasa COP/USD: ${Math.round(tasaCop).toLocaleString('es-CO')}` : (rateMode === 'bcv' ? "Tasa oficial (BCV)" : rateMode === 'euro' ? "Tasa oficial (Euro BCV)" : rateMode === 'usdt' ? "Tasa oficial (Dólar USDT)" : "Usando tasa manual fijada por ti")} position="bottom">
                         <button
                             onClick={handleRateToggle}
                             className="flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all group bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-emerald-500 hover:shadow-sm"
@@ -106,7 +106,10 @@ export default function SalesHeader({
                                 <>
                                     <span className="text-xs text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1.5">
                                         <RefreshCw size={12} className={showRateConfig ? "text-emerald-500" : "group-hover:text-emerald-500"} />
-                                        BCV:
+                                        {(() => {
+                                            const labels = { bcv: 'BCV:', euro: 'EUR:', usdt: 'USDT:', manual: 'TASA:' };
+                                            return labels[rateMode] || 'BCV:';
+                                        })()}
                                     </span>
                                     <strong className="text-sm text-emerald-600 dark:text-emerald-400">{formatBs(effectiveRate)} Bs</strong>
                                 </>
@@ -142,19 +145,18 @@ export default function SalesHeader({
                             )}
                         </div>
                     ) : (
-                        /* Premium visual rate selector for BS mode */
-                        <div className="space-y-4">
-                            <div className="space-y-1">
-                                <span className="text-xs font-black text-slate-500 block">Seleccionar Tasa de Referencia</span>
-                                <p className="text-[10px] font-semibold text-slate-400">Elige la tasa que utilizará el punto de venta para calcular los totales en Bolívares.</p>
+                        /* Premium compact visual rate selector for BS mode */
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Tasa de Referencia</span>
                             </div>
                             
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="bg-slate-100 dark:bg-slate-900 p-1 rounded-xl flex gap-1 w-full border border-slate-200/50 dark:border-slate-800/50">
                                 {[
-                                    { id: 'bcv', label: 'Dólar BCV', val: rates?.bcv?.price ? `${formatBs(rates.bcv.price)} Bs` : 'Cargando...' },
-                                    { id: 'euro', label: 'Euro BCV', val: rates?.euro?.price ? `${formatBs(rates.euro.price)} Bs` : 'No disp.' },
-                                    { id: 'usdt', label: 'Dólar USDT', val: rates?.usdt?.price ? `${formatBs(rates.usdt.price)} Bs` : 'No disp.' },
-                                    { id: 'manual', label: 'Tasa Manual', val: customRate && parseFloat(customRate) > 0 ? `${formatBs(parseFloat(customRate))} Bs` : 'Personalizar' },
+                                    { id: 'bcv', label: 'BCV', val: rates?.bcv?.price ? `${formatBs(rates.bcv.price)}` : '...' },
+                                    { id: 'euro', label: 'Euro', val: rates?.euro?.price ? `${formatBs(rates.euro.price)}` : 'No disp.' },
+                                    { id: 'usdt', label: 'USDT', val: rates?.usdt?.price ? `${formatBs(rates.usdt.price)}` : 'No disp.' },
+                                    { id: 'manual', label: 'Manual', val: customRate && parseFloat(customRate) > 0 ? `${formatBs(parseFloat(customRate))}` : 'Manual' },
                                 ].map((opt) => {
                                     const isActive = rateMode === opt.id;
                                     return (
@@ -164,23 +166,18 @@ export default function SalesHeader({
                                             onClick={() => {
                                                 triggerHaptic && triggerHaptic();
                                                 setRateMode(opt.id);
-                                                if (opt.id !== 'manual') {
-                                                    setUseAutoRate(true);
-                                                } else {
-                                                    setUseAutoRate(false);
-                                                }
                                             }}
-                                            className={`p-3 rounded-2xl border text-left transition-all active:scale-[0.98] ${
+                                            className={`flex-1 py-1.5 px-0.5 rounded-lg text-center transition-all duration-200 active:scale-[0.97] ${
                                                 isActive
-                                                    ? 'border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-sm shadow-emerald-500/5'
-                                                    : 'border-slate-200 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900 dark:border-slate-800'
+                                                    ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-sm font-bold border border-slate-200/50 dark:border-slate-700/50'
+                                                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-semibold'
                                             }`}
                                         >
-                                            <span className={`block text-[9px] font-black uppercase tracking-wider ${isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}>
+                                            <span className={`block text-[8px] font-black uppercase tracking-wider ${isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}>
                                                 {opt.label}
                                             </span>
-                                            <span className="block text-xs sm:text-sm font-black text-slate-800 dark:text-white mt-1 tabular-nums">
-                                                {opt.val}
+                                            <span className="block text-[10px] sm:text-[11px] font-black mt-0.5 tabular-nums leading-tight">
+                                                {opt.val} {opt.val !== '...' && opt.val !== 'No disp.' && opt.val !== 'Manual' && 'Bs'}
                                             </span>
                                         </button>
                                     );
@@ -188,13 +185,13 @@ export default function SalesHeader({
                             </div>
 
                             {rateMode === 'manual' && (
-                                <div className="space-y-1.5 animate-in fade-in duration-200">
-                                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Fijar Tasa Personalizada (Bs)</span>
+                                <div className="space-y-1.5 animate-in fade-in duration-200 pt-1">
+                                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">Fijar Tasa Personalizada (Bs)</span>
                                     <input
                                         type="number"
                                         value={customRate}
                                         onChange={(e) => setCustomRate(e.target.value)}
-                                        className="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm font-bold outline-none focus:ring-2 focus:border-emerald-500 focus:ring-emerald-500/20 text-slate-800 dark:text-white"
+                                        className="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold outline-none focus:ring-2 focus:border-emerald-500 focus:ring-emerald-500/20 text-slate-800 dark:text-white"
                                         placeholder="Ingresa la tasa manual (ej: 42.50)"
                                         autoFocus
                                     />
@@ -204,7 +201,7 @@ export default function SalesHeader({
                     )}
                     <button
                         onClick={() => { triggerHaptic && triggerHaptic(); setShowRateConfig(false); }}
-                        className={`w-full py-3 text-white font-black text-xs rounded-xl shadow-sm active:scale-95 transition-all ${isCopMode ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20' : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20'}`}
+                        className={`w-full py-2.5 text-white font-black text-xs rounded-xl shadow-sm active:scale-95 transition-all ${isCopMode ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20' : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20'}`}
                     >
                         Aceptar
                     </button>
