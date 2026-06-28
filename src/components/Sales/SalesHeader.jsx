@@ -1,5 +1,7 @@
+import React, { useState, useEffect } from 'react';
 import { RefreshCw, ShoppingCart, Keyboard } from 'lucide-react';
 import Tooltip from '../Tooltip';
+import { pushLocalSync } from '../../hooks/useCloudSync';
 
 const formatBs = (n) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
@@ -26,6 +28,18 @@ export default function SalesHeader({
 }) {
     const isCopMode = copEnabled && copPrimary && tasaCop > 0;
 
+    // Local states to prevent realtime cloud loopbacks from clearing/deleting input values on keystroke
+    const [localCustomRate, setLocalCustomRate] = useState(customRate || '');
+    const [localTasaCop, setLocalTasaCop] = useState(tasaCopManual || '');
+
+    // Reset local states to context values when modal is toggled
+    useEffect(() => {
+        if (showRateConfig) {
+            setLocalCustomRate(customRate || '');
+            setLocalTasaCop(tasaCopManual || '');
+        }
+    }, [showRateConfig, customRate, tasaCopManual]);
+
     const handleRateToggle = () => {
         setShowRateConfig(!showRateConfig);
     };
@@ -43,14 +57,20 @@ export default function SalesHeader({
         }
     };
 
-    const manualValue = isCopMode ? tasaCopManual : customRate;
-    const handleManualChange = (e) => {
+    const handleConfirmRate = () => {
+        triggerHaptic && triggerHaptic();
         if (isCopMode) {
-            setTasaCopManual(e.target.value);
-            localStorage.setItem('tasa_cop', e.target.value);
+            if (!isAuto && localTasaCop) {
+                setTasaCopManual(localTasaCop);
+                localStorage.setItem('tasa_cop', localTasaCop);
+                pushLocalSync('tasa_cop', parseFloat(localTasaCop));
+            }
         } else {
-            setCustomRate(e.target.value);
+            if (rateMode === 'manual' && localCustomRate) {
+                setCustomRate(localCustomRate);
+            }
         }
+        setShowRateConfig(false);
     };
 
     return (
@@ -140,10 +160,18 @@ export default function SalesHeader({
                                     </div>
                                 </div>
                                 {!isAuto && (
-                                    <input type="number" value={manualValue} onChange={handleManualChange}
+                                    <input 
+                                        type="number" 
+                                        value={localTasaCop} 
+                                        onChange={(e) => setLocalTasaCop(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') handleConfirmRate();
+                                        }}
                                         className="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm font-bold outline-none focus:ring-2 text-amber-600 dark:text-amber-400 focus:border-amber-500 focus:ring-amber-500/20"
-                                        placeholder="Tasa COP por 1 USD (ej: 4150)" autoFocus />
-                                    )}
+                                        placeholder="Tasa COP por 1 USD (ej: 4150)" 
+                                        autoFocus 
+                                    />
+                                )}
                             </div>
                         ) : (
                             /* Premium compact visual rate selector for BS mode */
@@ -190,8 +218,11 @@ export default function SalesHeader({
                                         <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">Fijar Tasa Personalizada (Bs)</span>
                                         <input
                                             type="number"
-                                            value={customRate}
-                                            onChange={(e) => setCustomRate(e.target.value)}
+                                            value={localCustomRate}
+                                            onChange={(e) => setLocalCustomRate(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') handleConfirmRate();
+                                            }}
                                             className="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold outline-none focus:ring-2 focus:border-emerald-500 focus:ring-emerald-500/20 text-slate-800 dark:text-white"
                                             placeholder="Ingresa la tasa manual (ej: 42.50)"
                                             autoFocus
@@ -201,7 +232,7 @@ export default function SalesHeader({
                             </div>
                         )}
                         <button
-                            onClick={() => { triggerHaptic && triggerHaptic(); setShowRateConfig(false); }}
+                            onClick={handleConfirmRate}
                             className={`w-full py-2.5 text-white font-black text-xs rounded-xl shadow-sm active:scale-95 transition-all ${isCopMode ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20' : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20'}`}
                         >
                             Aceptar
