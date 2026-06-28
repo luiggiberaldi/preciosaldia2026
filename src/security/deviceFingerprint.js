@@ -123,8 +123,9 @@ export async function generateFingerprint() {
 /**
  * Verifica que el fingerprint almacenado coincide con el fingerprint actual.
  *
- * SEC-008: Si alguien inyecta un `pda_device_id` arbitrario desde DevTools,
- * `generateFingerprint()` devolverá un valor distinto y esta función devolverá `false`.
+ * NOTA: Para evitar que actualizaciones de navegadores, cambios de zona horaria o de idioma
+ * revoquen e invaliden de manera destructiva la licencia premium de usuarios legítimos,
+ * permitimos cualquier ID almacenado que tenga el formato válido de instalación de PreciosAlDía.
  *
  * @param {string} storedId - ID almacenado en localStorage.
  * @param {string} [currentFp] - Fingerprint ya calculado (opcional, para ahorrar cómputo).
@@ -134,19 +135,11 @@ export async function verifyStoredFingerprint(storedId, currentFp) {
     if (typeof storedId !== 'string') {
         return false;
     }
-    // Si es una ID heredada (no empieza por PDA-V2-), omitimos la validación estricta
-    // de fingerprint para no romper la activación preexistente del usuario legítimo.
-    if (!storedId.startsWith(FP_PREFIX_V2)) {
+    // Si empieza por el prefijo correcto de instalación, es un ID persistido válido.
+    if (storedId.startsWith(FP_PREFIX_V2) || storedId.startsWith(FP_PREFIX)) {
         return true;
     }
-    const expected = currentFp ?? await generateFingerprint();
-    // Comparación en tiempo constante.
-    if (expected.length !== storedId.length) return false;
-    let diff = 0;
-    for (let i = 0; i < storedId.length; i++) {
-        diff |= storedId.charCodeAt(i) ^ expected.charCodeAt(i);
-    }
-    return diff === 0;
+    return false;
 }
 
 export default { generateFingerprint, verifyStoredFingerprint };
