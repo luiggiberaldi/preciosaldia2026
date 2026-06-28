@@ -127,15 +127,19 @@
         {
             "id": "section_6",
             "title": "👁️ Sección 6: Modo Supervisor (Monitoreo en Vivo)",
-            "description": "Visualiza ventas y el estado de la caja de tu negocio en tiempo real desde cualquier dispositivo móvil o PC.",
+            "description": "Visualiza ventas y el estado de la caja de tu negocio en tiempo real desde cualquier dispositivo móvil o PC (requiere internet).",
             "features": [
                 {
                     "name": "Monitoreo Remoto en Vivo",
-                    "details": "Permite ver el total vendido en dólares (USD), bolívares (Bs) y ganancias del turno activo, además del cajero de turno."
+                    "details": "Permite ver el total vendido en dólares (USD), bolívares (Bs) y ganancias del turno activo, además del cajero de turno. NOTA: Este monitoreo remoto requiere conexión a internet tanto en la Caja como en el celular del supervisor."
+                },
+                {
+                    "name": "Requerimiento de Internet",
+                    "details": "A diferencia del Punto de Venta (Caja) que funciona 100% sin conexión (offline-first), la sincronización en vivo del Modo Supervisor requiere que ambos dispositivos tengan conexión a internet (WiFi o Datos Móviles) para transmitir y recibir las actualizaciones en tiempo real."
                 },
                 {
                     "name": "Arqueo y Cierre de Caja en Vivo",
-                    "details": "Al realizar un cierre de caja en la Caja principal, se actualizará y mostrará automáticamente una zona de resumen de cierre en la pantalla del Supervisor con los totales definitivos conciliados."
+                    "details": "Al realizar un cierre de caja en la Caja principal, se actualizará y mostrará automáticamente una zona de resumen de cierre en la pantalla del Supervisor con los totales definitivos conciliados (requiere internet)."
                 },
                 {
                     "name": "Cómo Vincular Dispositivo (Paso a Paso)",

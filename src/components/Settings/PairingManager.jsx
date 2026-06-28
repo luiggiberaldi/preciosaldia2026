@@ -273,7 +273,7 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
                         <div>
                             <h4 className="text-xs font-black text-slate-700 dark:text-slate-200">Monitoreo Remoto por QR</h4>
                             <p className="text-[10px] text-slate-400 leading-normal mt-1">
-                                Vincula el teléfono personal del supervisor para ver las ventas y productos en vivo desde cualquier lugar, sin contraseñas.
+                                Vincula el teléfono del supervisor para ver las ventas y productos en vivo. <strong>Nota: Requiere conexión a internet activa en ambos dispositivos.</strong>
                             </p>
                         </div>
                     </div>

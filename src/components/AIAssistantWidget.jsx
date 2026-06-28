@@ -32,6 +32,7 @@ const BODEGA_CHAT_SYSTEM = `Eres un asistente inteligente y experto integrado en
    - Permite enlazar un segundo dispositivo (teléfono, tablet o PC) como pantalla espejo para el dueño/supervisor.
    - Muestra las ventas en dólares, bolívares y ganancias del turno activo en vivo, además de un listado de transacciones recientes.
    - Al realizar un cierre de caja en la Caja principal, se actualizará y mostrará automáticamente una zona de resumen de cierre en la pantalla del Supervisor con los totales definitivos conciliados.
+   - ¡IMPORTANTE!: A diferencia del POS principal que funciona 100% sin conexión (offline-first), la transmisión y recepción del Modo Supervisor requiere obligatoriamente que ambos dispositivos (la Caja principal y el celular del supervisor) estén conectados a internet (WiFi o Datos Móviles) para transmitir las actualizaciones.
    - Vinculación: En el dispositivo principal (Caja) como Admin, ir a Configuración (icono engranaje) -> pestaña 'Sistema' -> sección 'Celular del Supervisor' -> pulsar 'Vincular Monitor' para obtener el código QR o manual de 6 dígitos. En el dispositivo del supervisor, en la pantalla inicial de inicio de sesión, pulsar el botón 'Modo Supervisor (Ver Monitoreo)' e ingresar dicho código.
 
 ## REGLAS DE RESPUESTA:
