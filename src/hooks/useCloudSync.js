@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
 import { supabaseCloud } from '../config/supabaseCloud';
-import { storageService } from '../utils/storageService';
 import { useAuthStore } from './store/useAuthStore';
 
 const SYNC_KEYS = [
@@ -68,10 +67,6 @@ function _debouncePush(key, value) {
     }, delay);
 }
 
-/**
- * Empuja una llave al sincronizador de Supabase.
- * Llamado desde storageService (colección 'store') y desde `pushLocalSync` (colección 'local').
- */
 export const pushCloudSync = async (key, value) => {
     if (!supabaseCloud) return;
     if (isSyncingFromCloud) return;          // Nunca re-emitir lo que llegó de la nube
@@ -93,7 +88,7 @@ export const pushCloudSync = async (key, value) => {
         }, { onConflict: 'device_id,collection,doc_id' });
 
     } catch (e) {
-        console.warn('[CloudSync] Error al enviar a la nube:', e.message ?? e);
+        // Silencioso en producción
     }
 };
 
