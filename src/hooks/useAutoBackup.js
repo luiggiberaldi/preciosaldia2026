@@ -70,7 +70,7 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                 await storageService.setItem(BACKUP_KEY, fullBackup);
 
                 // Subir a la nube (usar configRef, no props directas — HOOK-043)
-                if ((premium || !demo) && devId && supabaseCloud) {
+                if (devId && supabaseCloud) {
                     const todayStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
                     const lastDailyBackup = localStorage.getItem('bodega_last_daily_backup_date');
 
@@ -82,11 +82,6 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
 
                     // forceUpload=true omite la verificación de hash (solicitud manual)
                     if (!forceUpload && currentHash === lastHash) return;
-
-                    const { data: { session } } = await supabaseCloud.auth.getSession().catch(() => ({ data: {} }));
-                    if (!session) return; // Evitar peticiones si no hay sesión activa (401)
-                    // Evitar peticiones con token ya expirado
-                    if (session.expires_at && session.expires_at * 1000 < Date.now()) return;
 
                     let payloadToUpload = fullBackup;
                     if (isCompressionSupported()) {
@@ -142,29 +137,26 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
 
         let channel = null;
 
-        supabaseCloud.auth.getSession().then(({ data: { session } }) => {
-            if (!session) return;
-
-            channel = supabaseCloud
-                .channel(`backup_request_${deviceId}`)
-                .on('postgres_changes', {
-                    event: '*',
-                    schema: 'public',
-                    table: 'backup_requests',
-                    filter: `device_id=eq.${deviceId}`
-                }, async (payload) => {
-                    if (payload.new?.status === 'pending') {
-                        console.log('[AutoBackup] Solicitud de backup recibida. Ejecutando...');
-                        await performBackupRef.current?.(true); // forzar subida
-                        await supabaseCloud.from('backup_requests').update({
-                            status: 'completed',
-                            completed_at: new Date().toISOString()
-                        }).eq('device_id', deviceId);
-                        console.log('[AutoBackup] Backup en tiempo real completado.');
-                    }
-                })
-                .subscribe();
-        }).catch(() => {});
+        // Suscribirse al canal en tiempo real de forma anónima
+        channel = supabaseCloud
+            .channel(`backup_request_${deviceId}`)
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'backup_requests',
+                filter: `device_id=eq.${deviceId}`
+            }, async (payload) => {
+                if (payload.new?.status === 'pending') {
+                    console.log('[AutoBackup] Solicitud de backup recibida. Ejecutando...');
+                    await performBackupRef.current?.(true); // forzar subida
+                    await supabaseCloud.from('backup_requests').update({
+                        status: 'completed',
+                        completed_at: new Date().toISOString()
+                    }).eq('device_id', deviceId);
+                    console.log('[AutoBackup] Backup en tiempo real completado.');
+                }
+            })
+            .subscribe();
 
         return () => {
             if (channel) {

@@ -44,7 +44,7 @@ export default function App() {
     setMountedViews(prev => ({...prev, [activeTab]: true}));
   }, [activeTab]);
 
-  const { isPremium, isDemo, demoTimeLeft, demoExpiredMsg, dismissExpiredMsg, deviceId, isMonthlyGracePeriod, monthlyGraceDaysLeft } = useSecurity();
+  const { isPremium, isDemo, demoTimeLeft, demoExpiredMsg, dismissExpiredMsg, deviceId, isMonthlyGracePeriod, monthlyGraceDaysLeft, forceHeartbeat } = useSecurity();
   const { isOnline, cacheRates } = useOfflineQueue();
   useAutoBackup(isPremium, isDemo, deviceId);
 
@@ -213,7 +213,8 @@ export default function App() {
     <div className="font-sans antialiased bg-slate-50 dark:bg-black h-[100dvh] flex flex-col overflow-clip transition-colors duration-300">
 
       {/* Terms and Conditions Overlay (First Use) */}
-      <TermsOverlay />
+      <TermsOverlay onAccept={forceHeartbeat} />
+
 
       {/* Lock Screen — solo si login está activado y no hay sesión activa */}
       {requireLogin && !usuarioActivo && <LockScreen onOpenPairing={() => setShowPairingScan(true)} />}

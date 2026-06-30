@@ -58,9 +58,6 @@ export function useRemoteBackupListener(deviceId) {
 
         const handleRequest = async () => {
             try {
-                const { data: { session } } = await supabaseCloud.auth.getSession().catch(() => ({ data: {} }));
-                if (!session) return;
-
                 await collectAndUpload(deviceId);
                 await supabaseCloud
                     .from('backup_requests')
@@ -69,46 +66,37 @@ export function useRemoteBackupListener(deviceId) {
                 console.log('[RemoteBackup] Backup enviado al admin.');
             } catch (err) {
                 console.error('[RemoteBackup] Error al responder solicitud:', err);
-                const { data: { session } } = await supabaseCloud.auth.getSession().catch(() => ({ data: {} }));
-                if (session) {
-                    await supabaseCloud
-                        .from('backup_requests')
-                        .update({ status: 'error' })
-                        .eq('device_id', deviceId)
-                        .catch(() => {});
-                }
+                await supabaseCloud
+                    .from('backup_requests')
+                    .update({ status: 'error' })
+                    .eq('device_id', deviceId)
+                    .catch(() => {});
             }
         };
 
         let channel = null;
 
-        supabaseCloud.auth.getSession().then(({ data: { session } }) => {
-            if (!session) return;
-            // Evitar subscripción con token ya expirado
-            if (session.expires_at && session.expires_at * 1000 < Date.now()) return;
+        // Verificar si hay una solicitud pendiente al conectar
+        supabaseCloud
+            .from('backup_requests')
+            .select('status')
+            .eq('device_id', deviceId)
+            .single()
+            .then(({ data }) => { if (data?.status === 'pending') handleRequest(); })
+            .catch(() => {});
 
-            // Verificar si hay una solicitud pendiente al conectar
-            supabaseCloud
-                .from('backup_requests')
-                .select('status')
-                .eq('device_id', deviceId)
-                .single()
-                .then(({ data }) => { if (data?.status === 'pending') handleRequest(); })
-                .catch(() => {});
-
-            // Suscribirse a nuevas solicitudes en tiempo real
-            channel = supabaseCloud
-                .channel(`remote_backup:${deviceId}`)
-                .on('postgres_changes', {
-                    event: '*',
-                    schema: 'public',
-                    table: 'backup_requests',
-                    filter: `device_id=eq.${deviceId}`,
-                }, async (payload) => {
-                    if (payload.new?.status === 'pending') await handleRequest();
-                })
-                .subscribe();
-        }).catch(() => {});
+        // Suscribirse a nuevas solicitudes en tiempo real de forma anónima
+        channel = supabaseCloud
+            .channel(`remote_backup:${deviceId}`)
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'backup_requests',
+                filter: `device_id=eq.${deviceId}`,
+            }, async (payload) => {
+                if (payload.new?.status === 'pending') await handleRequest();
+            })
+            .subscribe();
 
         return () => {
             if (channel) {

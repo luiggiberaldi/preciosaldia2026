@@ -303,7 +303,9 @@ export function useSecurity() {
         if (isPremiumConfirmed) {
             const migrateToSupabase = async () => {
                 try {
-                    const clientName = localStorage.getItem('business_name') || localStorage.getItem('restaurant_name') || '';
+                    const bName = localStorage.getItem('business_name') || localStorage.getItem('restaurant_name') || '';
+                    const mEmail = localStorage.getItem('marketing_email') || '';
+                    const clientName = mEmail ? `${bName} | ${mEmail}` : bName;
                     await supabase.rpc('auto_register_device', {
                         p_device_id: currentDeviceId,
                         p_product_id: PRODUCT_ID,
@@ -354,7 +356,9 @@ export function useSecurity() {
             // Auto-registro: registrar dispositivo si no existe (sin importar licencia)
             try {
                 if (import.meta.env.VITE_SUPABASE_URL) {
-                    const clientName = localStorage.getItem('business_name') || localStorage.getItem('restaurant_name') || '';
+                    const bName = localStorage.getItem('business_name') || localStorage.getItem('restaurant_name') || '';
+                    const mEmail = localStorage.getItem('marketing_email') || '';
+                    const clientName = mEmail ? `${bName} | ${mEmail}` : bName;
                     await supabase.rpc('auto_register_device', { p_device_id: storedId, p_product_id: PRODUCT_ID, p_client_name: clientName });
                 }
             } catch (e) {
@@ -686,7 +690,9 @@ export function useSecurity() {
      * Fuerza un heartbeat manual para sincronizar cambios como el nombre del negocio de inmediato.
      */
     const forceHeartbeat = async () => {
-        const clientName = localStorage.getItem('business_name') || localStorage.getItem('restaurant_name') || '';
+        const bName = localStorage.getItem('business_name') || localStorage.getItem('restaurant_name') || '';
+        const mEmail = localStorage.getItem('marketing_email') || '';
+        const clientName = mEmail ? `${bName} | ${mEmail}` : bName;
         try {
             await supabase.rpc('heartbeat_device', {
                 p_device_id: deviceId || localStorage.getItem('pda_device_id'),
