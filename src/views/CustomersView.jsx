@@ -589,21 +589,24 @@ function CustomerCard({ customer, bcvRate, tasaCop, copEnabled, copPrimary, onCl
                     </span>
                 </div>
                 <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-slate-800 dark:text-white text-sm truncate">
-                        {customer.code && <span className="font-mono text-[10px] text-slate-400 mr-1.5">{customer.code}</span>}
+                    <h3 className="font-bold text-slate-800 dark:text-white text-sm truncate capitalize">
                         {customer.name}
                     </h3>
-                    <div className="flex items-center gap-2 mt-0.5">
+                    <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                        {customer.code && (
+                            <span className="font-mono text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800/40 border border-slate-200/55 dark:border-slate-800/50 px-1.5 py-0.5 rounded-md leading-none shrink-0">
+                                {customer.code}
+                            </span>
+                        )}
                         {customer.documentId && (
-                            // v1.2.0: .badge class (design system) en vez de clases Tailwind ad-hoc.
-                            <p className="badge !text-[10px] !py-0.5 !px-1.5">
-                                {customer.documentId}
-                            </p>
+                            <span className="font-mono text-[9px] font-black text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/20 border border-cyan-100 dark:border-cyan-900/30 px-1.5 py-0.5 rounded-md leading-none shrink-0">
+                                C.I: {customer.documentId}
+                            </span>
                         )}
                         {customer.phone && (
-                            <p className="text-[10px] text-slate-500 dark:text-slate-300 flex items-center gap-1 font-medium">
-                                <Phone size={10} aria-hidden="true" /> {customer.phone}
-                            </p>
+                            <span className="text-[9px] font-bold text-slate-500 dark:text-slate-300 flex items-center gap-0.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-200/55 dark:border-slate-800/50 px-1.5 py-0.5 rounded-md leading-none shrink-0">
+                                <Phone size={9} aria-hidden="true" /> {customer.phone}
+                            </span>
                         )}
                     </div>
                 </div>
@@ -677,15 +680,15 @@ function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, on
         // v1.2.0: surface tokens + shadow-tone-lg en el bottom sheet.
         <div className="fixed inset-0 z-50 bg-surface-900/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
             <div
-                className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-surface dark:bg-surface-900 rounded-t-3xl max-h-[85vh] overflow-y-auto animate-in slide-in-from-bottom duration-300 shadow-tone-lg"
+                className="fixed bottom-0 sm:bottom-auto sm:top-1/2 left-0 sm:left-1/2 right-0 sm:right-auto sm:-translate-x-1/2 sm:-translate-y-1/2 max-w-md w-full mx-auto bg-surface dark:bg-surface-900 rounded-t-3xl sm:rounded-3xl max-h-[85vh] sm:max-h-[90vh] overflow-y-auto animate-in slide-in-from-bottom sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-250 shadow-tone-lg"
                 onClick={e => e.stopPropagation()}
             >
                 {/* Close + Drag Handle */}
                 <div className="flex items-center justify-between px-4 pt-3 pb-2">
-                    <div className="w-8" />
-                    <div className="w-8 h-1 bg-surface-300 dark:bg-surface-700 rounded-full" />
+                    <div className="w-8 sm:hidden" />
+                    <div className="w-8 h-1 bg-surface-300 dark:bg-surface-700 rounded-full sm:hidden" />
                     {/* v1.2.0: touch target ≥ 48px + aria-label */}
-                    <button onClick={onClose} aria-label="Cerrar" className="p-2 min-h-[48px] min-w-[48px] flex items-center justify-center text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 hover:bg-surface-100 dark:hover:bg-surface-800 rounded-full transition-colors">
+                    <button onClick={onClose} aria-label="Cerrar" className="p-2 min-h-[48px] min-w-[48px] flex items-center justify-center text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 hover:bg-surface-100 dark:hover:bg-surface-800 rounded-full transition-colors ml-auto">
                         <X size={18} aria-hidden="true" />
                     </button>
                 </div>
@@ -693,35 +696,32 @@ function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, on
                 <div className="px-5 pb-6 space-y-5">
                     {/* Header */}
                     <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 rounded-full bg-brand-light dark:bg-surface-800/30 flex items-center justify-center shrink-0">
+                        <div className="w-14 h-14 rounded-full bg-brand-light dark:bg-surface-800/30 flex items-center justify-center shrink-0 border border-emerald-100 dark:border-slate-700 shadow-sm">
                             <span className="text-2xl font-black text-brand-dark dark:text-brand">
                                 {customer.name.charAt(0).toUpperCase()}
                             </span>
                         </div>
                         <div>
-                            {/* v1.2.0: text-surface-700 en vez de slate-700 */}
-                            <h3 className="text-lg font-black text-surface-700 dark:text-white">{customer.name}</h3>
-                            <div className="flex items-center gap-2 mt-0.5">
+                            <h3 className="text-lg font-black text-surface-700 dark:text-white capitalize leading-tight">{customer.name}</h3>
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                                 {customer.documentId && (
-                                    // v1.2.0: .badge class (design system).
-                                    <p className="badge !text-xs !px-2 !py-0.5">
-                                        {customer.documentId}
-                                    </p>
+                                    <span className="font-mono text-[9px] font-black text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/20 border border-cyan-100/60 dark:border-cyan-900/30 px-2 py-0.5 rounded-md leading-none shrink-0">
+                                        C.I: {customer.documentId}
+                                    </span>
                                 )}
                                 {customer.phone && (
-                                    <p className="text-xs text-surface-500 dark:text-surface-400 flex items-center gap-1">
-                                        <Phone size={12} aria-hidden="true" /> {customer.phone}
-                                    </p>
+                                    <span className="text-[9px] font-bold text-slate-500 dark:text-slate-350 flex items-center gap-0.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-200/50 dark:border-slate-800/50 px-1.5 py-0.5 rounded-md leading-none shrink-0">
+                                        <Phone size={9} aria-hidden="true" /> {customer.phone}
+                                    </span>
                                 )}
                             </div>
                             {createdDate && (
-                                <p className="text-[10px] text-surface-500 dark:text-surface-400 mt-1">Cliente desde {createdDate}</p>
+                                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1.5">Cliente desde {createdDate}</p>
                             )}
                         </div>
                     </div>
 
                     {/* Saldo */}
-                    {/* v1.2.0: .badge-warning/.badge-success/.badge-danger opcional (mantenemos cards visuales para saldo compuesto). */}
                     <div className="flex flex-col gap-2 w-full">
                         <div className="flex gap-2">
                             {customer.deuda > 0 || customer.casheaDeuda > 0 ? (
@@ -762,10 +762,10 @@ function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, on
                                     {copEnabled && !copPrimary && tasaCop > 0 && <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">+{formatCop(customer.favor * tasaCop)} COP</p>}
                                 </div>
                             ) : (
-                                <div className="flex-1 bg-surface-100 dark:bg-surface-800/50 border border-surface-200 dark:border-surface-700 rounded-xl px-3 py-2.5 text-center">
-                                    {/* v1.2.0: badge-success para estado "Al día" */}
-                                    <p className="text-sm font-black text-surface-400 flex items-center justify-center gap-1">
-                                        <CheckCircle2 size={14} className="text-emerald-400" aria-hidden="true" /> Al día
+                                <div className="flex-1 bg-emerald-50/50 dark:bg-emerald-950/10 border border-emerald-100/70 dark:border-emerald-900/30 rounded-xl px-3 py-2.5 text-center shadow-sm">
+                                    <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-0.5">Estado Financiero</p>
+                                    <p className="text-sm font-black text-emerald-600 dark:text-emerald-400 flex items-center justify-center gap-1 mt-0.5">
+                                        <CheckCircle2 size={14} className="text-emerald-500" aria-hidden="true" /> Al día
                                     </p>
                                 </div>
                             )}
@@ -773,34 +773,38 @@ function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, on
                     </div>
 
                     {/* Acciones */}
-                    {/* v1.2.0: touch targets ≥ 48px + surface tokens */}
-                    <div className="grid grid-cols-2 gap-2">
-                        <button
-                            onClick={onAjustar}
-                            className="flex flex-col items-center gap-1.5 py-3 min-h-[80px] bg-brand dark:bg-brand-dark text-white rounded-xl text-xs font-bold hover:opacity-90 transition-colors active:scale-95 col-span-1"
-                        >
-                            <CreditCard size={18} aria-hidden="true" />
-                            <span>Ajustar Cuenta</span>
-                        </button>
-                        {(customer.deuda !== 0 || customer.favor !== 0) && isAdmin && (
-                            <button
-                                onClick={onReset}
-                                className="flex flex-col items-center gap-1.5 py-3 min-h-[80px] bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors active:scale-95"
-                            >
-                                <RefreshCw size={18} aria-hidden="true" />
-                                <span>Poner en 0</span>
-                            </button>
-                        )}
-                        {customer.casheaDeuda > 0 && isAdmin && (
-                            <button
-                                onClick={() => onSaldarCashea(customer)}
-                                className="flex flex-col items-center gap-1.5 py-3 min-h-[80px] bg-purple-100 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 rounded-xl text-xs font-bold hover:bg-purple-200 dark:hover:bg-purple-900/40 transition-colors active:scale-95 col-span-2"
-                            >
-                                <CheckCircle2 size={18} aria-hidden="true" />
-                                <span>Saldar Deuda Cashea</span>
-                            </button>
-                        )}
-                    </div>
+                    {(() => {
+                        const showReset = (customer.deuda !== 0 || customer.favor !== 0) && isAdmin;
+                        return (
+                            <div className="grid grid-cols-2 gap-2">
+                                <button
+                                    onClick={onAjustar}
+                                    className={`flex flex-col items-center justify-center gap-1.5 py-3.5 min-h-[80px] bg-brand dark:bg-brand-dark text-white rounded-xl text-xs font-bold hover:opacity-95 transition-all active:scale-95 shadow-sm ${showReset ? 'col-span-1' : 'col-span-2'}`}
+                                >
+                                    <CreditCard size={18} aria-hidden="true" />
+                                    <span>Ajustar Cuenta</span>
+                                </button>
+                                {showReset && (
+                                    <button
+                                        onClick={onReset}
+                                        className="flex flex-col items-center justify-center gap-1.5 py-3.5 min-h-[80px] bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors active:scale-95 border border-slate-200/40 dark:border-slate-700/50"
+                                    >
+                                        <RefreshCw size={18} aria-hidden="true" />
+                                        <span>Poner en 0</span>
+                                    </button>
+                                )}
+                                {customer.casheaDeuda > 0 && isAdmin && (
+                                    <button
+                                        onClick={() => onSaldarCashea(customer)}
+                                        className="flex flex-col items-center justify-center gap-1.5 py-3 min-h-[80px] bg-purple-100 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 rounded-xl text-xs font-bold hover:bg-purple-200 dark:hover:bg-purple-900/40 transition-colors active:scale-95 col-span-2"
+                                    >
+                                        <CheckCircle2 size={18} aria-hidden="true" />
+                                        <span>Saldar Deuda Cashea</span>
+                                    </button>
+                                )}
+                            </div>
+                        );
+                    })()}
 
                     {/* Historial */}
                     <div>
@@ -808,7 +812,11 @@ function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, on
                             <Clock size={12} /> Historial
                         </h4>
                         {(!sales || sales.length === 0) ? (
-                            <p className="text-xs text-slate-500 dark:text-slate-400 text-center py-6">Sin registros aún</p>
+                            <div className="flex flex-col items-center justify-center py-8 px-4 border border-dashed border-slate-200/80 dark:border-slate-800/80 rounded-2xl bg-slate-50/50 dark:bg-slate-900/20 text-center animate-in fade-in duration-200">
+                                <Clock size={20} className="text-slate-300 dark:text-slate-655 mb-2" />
+                                <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Sin movimientos registrados</p>
+                                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 max-w-[200px] leading-relaxed">Las compras, abonos y deudas de este cliente se listarán en esta sección.</p>
+                            </div>
                         ) : (
                             <div className="space-y-2">
                                 {sales.slice(0, 10).map(sale => {

@@ -121,17 +121,33 @@ export default function CheckoutCustomerPicker({
                         </div>
                     )}
                     <div className="min-w-0 text-left">
-                        <p className={`text-sm font-bold truncate leading-tight ${selectedCustomer ? 'text-slate-800 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}>
-                            {selectedCustomer && selectedCustomer.code && <span className="font-mono text-[10px] text-slate-400 mr-1.5">{selectedCustomer.code}</span>}
+                        <p className={`text-sm font-bold truncate leading-tight capitalize ${selectedCustomer ? 'text-slate-800 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}>
                             {selectedCustomer ? selectedCustomer.name : 'Consumidor Final'}
                         </p>
-                        {selectedCustomer && selectedCustomer.deuda !== 0 && (
-                            <p className={`text-[10px] font-bold leading-tight ${selectedCustomer.deuda > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
-                                {selectedCustomer.deuda > 0
-                                    ? `Debe $${selectedCustomer.deuda.toFixed(2)}`
-                                    : `Favor $${Math.abs(selectedCustomer.deuda).toFixed(2)}`}
-                                {effectiveRate > 0 && ` · ${formatBs(Math.abs(selectedCustomer.deuda) * effectiveRate)} Bs`}
-                            </p>
+                        {selectedCustomer && (
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                {selectedCustomer.code && (
+                                    <span className="font-mono text-[8px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800/40 border border-slate-200/50 dark:border-slate-800/50 px-1.5 py-0.5 rounded leading-none shrink-0">
+                                        {selectedCustomer.code}
+                                    </span>
+                                )}
+                                {selectedCustomer.documentId && (
+                                    <span className="font-mono text-[8px] font-black text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/20 border border-cyan-100 dark:border-cyan-900/30 px-1.5 py-0.5 rounded leading-none shrink-0">
+                                        C.I: {selectedCustomer.documentId}
+                                    </span>
+                                )}
+                                {selectedCustomer.deuda !== 0 && (
+                                    <span className={`text-[8px] font-black px-1.5 py-0.5 rounded leading-none border shrink-0 ${
+                                        selectedCustomer.deuda > 0
+                                            ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 border-red-100 dark:border-red-900/30'
+                                            : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 border-emerald-100 dark:border-emerald-900/30'
+                                    }`}>
+                                        {selectedCustomer.deuda > 0
+                                            ? `Debe $${selectedCustomer.deuda.toFixed(2)}`
+                                            : `Favor $${Math.abs(selectedCustomer.deuda).toFixed(2)}`}
+                                    </span>
+                                )}
+                            </div>
                         )}
                     </div>
                 </div>
@@ -287,16 +303,30 @@ export default function CheckoutCustomerPicker({
                                             >
                                                 <CustomerAvatar name={c.name} />
                                                 <div className="flex-1 min-w-0 text-left">
-                                                    <p className={`text-sm font-bold truncate leading-tight ${selectedCustomerId === c.id ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-700 dark:text-slate-200'}`}>
-                                                        {c.code && <span className="font-mono text-[10px] text-slate-400 mr-1.5">{c.code}</span>}
+                                                    <p className={`text-sm font-bold truncate leading-tight capitalize ${selectedCustomerId === c.id ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-700 dark:text-slate-200'}`}>
                                                         {c.name}
                                                     </p>
-                                                    {c.deuda !== 0 && (
-                                                        <p className={`text-[10px] font-bold leading-tight ${c.deuda > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
-                                                            {c.deuda > 0 ? `Debe $${c.deuda.toFixed(2)}` : `Favor $${Math.abs(c.deuda).toFixed(2)}`}
-                                                            {effectiveRate > 0 && ` · ${formatBs(Math.abs(c.deuda) * effectiveRate)} Bs`}
-                                                        </p>
-                                                    )}
+                                                    <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                                        {c.code && (
+                                                            <span className="font-mono text-[8px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800/40 border border-slate-200/50 dark:border-slate-800/50 px-1.5 py-0.5 rounded leading-none shrink-0">
+                                                                {c.code}
+                                                            </span>
+                                                        )}
+                                                        {c.documentId && (
+                                                            <span className="font-mono text-[8px] font-black text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/20 border border-cyan-100 dark:border-cyan-900/30 px-1.5 py-0.5 rounded leading-none shrink-0">
+                                                                C.I: {c.documentId}
+                                                            </span>
+                                                        )}
+                                                        {c.deuda !== 0 && (
+                                                            <span className={`text-[8px] font-black px-1.5 py-0.5 rounded leading-none border shrink-0 ${
+                                                                c.deuda > 0
+                                                                    ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 border-red-100 dark:border-red-900/30'
+                                                                    : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 border-emerald-100 dark:border-emerald-900/30'
+                                                            }`}>
+                                                                {c.deuda > 0 ? `Debe $${c.deuda.toFixed(2)}` : `Favor $${Math.abs(c.deuda).toFixed(2)}`}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                                 {selectedCustomerId === c.id && <Check size={14} className="text-emerald-500 shrink-0" />}
                                             </button>
