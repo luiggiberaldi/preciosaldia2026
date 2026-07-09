@@ -66,7 +66,7 @@ export default function ProductCard({
                 {/* Units per package info */}
                 {p.unit === 'paquete' && p.unitsPerPackage && (
                     <div className="flex items-center gap-1 text-[10px] font-bold text-brand dark:text-brand mb-2 mt-[-4px]">
-                        <Package size={11} /> Lote · {p.unitsPerPackage} uds
+                        <Package size={11} /> Bulto · {p.unitsPerPackage} uds
                     </div>
                 )}
 
@@ -135,7 +135,7 @@ export default function ProductCard({
                             </span>
                             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-none">{(p.unit === 'kg' || p.unit === 'litro') ? unitInfo?.short : 'UND'}</span>
                             {p.unit === 'paquete' && p.unitsPerPackage > 0 && Math.floor((p.stock ?? 0) / p.unitsPerPackage) > 0 && (
-                                <span className="text-[8px] text-slate-400 leading-none">= {Math.floor((p.stock ?? 0) / p.unitsPerPackage)} lotes</span>
+                                <span className="text-[8px] text-slate-400 leading-none">= {Math.floor((p.stock ?? 0) / p.unitsPerPackage)} bultos</span>
                             )}
                         </div>
                         {!readOnly && (

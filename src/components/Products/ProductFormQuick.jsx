@@ -5,7 +5,7 @@ import CustomSelect from '../CustomSelect';
 
 const PACKAGING_TYPES = [
     { id: 'suelto', label: 'Suelto', Icon: Tag, desc: 'Unidad individual', color: 'emerald' },
-    { id: 'lote', label: 'Lote', Icon: Package, desc: 'Caja, bulto o paquete', color: 'indigo' },
+    { id: 'lote', label: 'Bulto', Icon: Package, desc: 'Caja, bulto o paquete', color: 'indigo' },
     { id: 'granel', label: 'Granel', Icon: Scale, desc: 'Por Kg o Litro', color: 'amber' },
 ];
 
@@ -99,7 +99,7 @@ export default function ProductFormQuick({
     // Unit label for granel
     const granelLabel = granelUnit === 'kg' ? 'Kilo' : 'Litro';
 
-    const priceSuffix = isLote ? ' / Lote' : isGranel ? ` / ${granelLabel}` : '';
+    const priceSuffix = isLote ? ' / Bulto' : isGranel ? ` / ${granelLabel}` : '';
 
     return (
         <div className="space-y-4">
@@ -300,7 +300,7 @@ export default function ProductFormQuick({
                 {isLote && (
                     <div className="bg-brand-light dark:bg-surface-800/10 p-4 rounded-xl border border-surface-200 dark:border-surface-800/30 space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
                         <div>
-                            <label className="text-xs font-bold text-brand-dark dark:text-brand ml-1 mb-1 block uppercase">¿Cuántas unidades trae el lote?</label>
+                            <label className="text-xs font-bold text-brand-dark dark:text-brand ml-1 mb-1 block uppercase">¿Cuántas unidades trae el bulto?</label>
                             <input type="number" inputMode="numeric" value={unitsPerPackage} onChange={e => setUnitsPerPackage(e.target.value)} placeholder="Ej: 24"
                                 className="w-full bg-white dark:bg-slate-800 p-3.5 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-brand/50 text-sm" />
                         </div>
@@ -314,7 +314,7 @@ export default function ProductFormQuick({
                                 </div>
                                 <div onClick={() => setSellByUnit(!sellByUnit)}>
                                     <span className="text-xs font-bold text-brand-dark dark:text-brand">¿También vender por unidad suelta?</span>
-                                    <p className="text-[10px] text-brand/70 dark:text-brand/50 mt-0.5">Permite vender unidades individuales del lote</p>
+                                    <p className="text-[10px] text-brand/70 dark:text-brand/50 mt-0.5">Permite vender unidades individuales del bulto</p>
                                 </div>
                             </label>
                         )}
@@ -322,25 +322,28 @@ export default function ProductFormQuick({
                 )}
 
                 {/* ─── COST SECTION (first) ─── */}
-                <div className="grid grid-cols-2 gap-3">
-                    <div>
-                        <label className="text-[10px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 ml-1 mb-1 block uppercase tracking-wider">
-                            Costo ({copEnabled && copPrimary && tasaCop > 0 ? 'COP' : copEnabled ? 'USD' : '$'}){priceSuffix}
-                        </label>
-                        {copEnabled && copPrimary && tasaCop > 0 ? (
-                            <input type="number" inputMode="decimal" value={costCop} onChange={e => handleCostCopChange(e.target.value)} placeholder="4100"
-                                className="w-full bg-slate-50 dark:bg-slate-800 p-3.5 sm:p-4 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-slate-500/50 transition-all text-sm sm:text-base" />
-                        ) : (
-                            <input type="number" inputMode="decimal" value={costUsd} onChange={e => handleCostUsdChange(e.target.value)} placeholder="1.00"
-                                className="w-full bg-slate-50 dark:bg-slate-800 p-3.5 sm:p-4 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-slate-500/50 transition-all text-sm sm:text-base" />
-                        )}
-                    </div>
-                    <div>
-                        <label className="text-[10px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 ml-1 mb-1 block uppercase tracking-wider">
-                            Costo (Bs){priceSuffix}
-                        </label>
-                        <input type="number" inputMode="decimal" value={costBs} onChange={e => handleCostBsChange(e.target.value)} placeholder="0.00"
-                            className="w-full bg-slate-50 dark:bg-slate-800 p-3.5 sm:p-4 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-slate-500/50 transition-all text-sm sm:text-base" />
+                <div className="bg-slate-50 dark:bg-slate-800/20 p-3 rounded-xl border border-slate-200/60 dark:border-slate-800/40">
+                    <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-2 ml-1">
+                        Costo de Adquisición ({priceSuffix ? priceSuffix.replace(' / ', '') : 'Unidad'})
+                    </span>
+                    <div className="grid grid-cols-2 gap-3 items-center">
+                        <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400">
+                                {copEnabled && copPrimary && tasaCop > 0 ? 'COP' : '$'}
+                            </span>
+                            {copEnabled && copPrimary && tasaCop > 0 ? (
+                                <input type="number" inputMode="decimal" value={costCop} onChange={e => handleCostCopChange(e.target.value)} placeholder="4100"
+                                    className="w-full bg-white dark:bg-slate-900 p-2.5 pl-11 rounded-xl font-bold text-slate-700 dark:text-white outline-none border border-slate-200/60 dark:border-slate-800/40 focus:ring-2 focus:ring-slate-500/40 transition-all text-xs" />
+                            ) : (
+                                <input type="number" inputMode="decimal" value={costUsd} onChange={e => handleCostUsdChange(e.target.value)} placeholder="1.00"
+                                    className="w-full bg-white dark:bg-slate-900 p-2.5 pl-7 rounded-xl font-bold text-slate-700 dark:text-white outline-none border border-slate-200/60 dark:border-slate-800/40 focus:ring-2 focus:ring-slate-500/40 transition-all text-xs" />
+                            )}
+                        </div>
+                        <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400">Bs</span>
+                            <input type="number" inputMode="decimal" value={costBs} onChange={e => handleCostBsChange(e.target.value)} placeholder="0.00"
+                                className="w-full bg-white dark:bg-slate-900 p-2.5 pl-8 rounded-xl font-bold text-slate-700 dark:text-white outline-none border border-slate-200/60 dark:border-slate-800/40 focus:ring-2 focus:ring-slate-500/40 transition-all text-xs" />
+                        </div>
                     </div>
                 </div>
 
@@ -377,26 +380,29 @@ export default function ProductFormQuick({
                 )}
 
                 {/* ─── PRICE SECTION ─── */}
-                <div className="grid grid-cols-2 gap-3">
-                    <div className="relative">
-                        <label className="text-[10px] sm:text-xs font-bold text-emerald-600 dark:text-emerald-400 ml-1 mb-1 block uppercase tracking-wider">
-                            Precio de Venta ({copEnabled ? 'USD' : '$'}){priceSuffix}
-                        </label>
-                        <input type="number" inputMode="decimal" value={priceUsd} onChange={e => handlePriceUsdChange(e.target.value)} placeholder="1.50"
-                            className="w-full bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/30 p-3.5 pr-10 sm:p-4 sm:pr-10 rounded-xl font-black text-emerald-800 dark:text-emerald-400 outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all text-sm sm:text-base" />
-                        {parseFloat(priceUsd) > 0 && (
-                            <CheckCircle size={18} className="absolute right-3 top-[38px] sm:top-[42px] text-emerald-500 transition-all duration-300" />
-                        )}
-                    </div>
-                    <div className="relative">
-                        <label className="text-[10px] sm:text-xs font-bold text-brand-dark dark:text-brand ml-1 mb-1 block uppercase tracking-wider">
-                            Precio de Venta (Bs){priceSuffix}
-                        </label>
-                        <input type="number" inputMode="decimal" value={priceBs} onChange={e => handlePriceBsChange(e.target.value)} placeholder="0.00"
-                            className="w-full bg-brand-light dark:bg-surface-800/20 border border-surface-200 dark:border-surface-800/30 p-3.5 pr-10 sm:p-4 sm:pr-10 rounded-xl font-black text-surface-800 dark:text-brand outline-none focus:ring-2 focus:ring-brand/50 transition-all text-sm sm:text-base" />
-                        {parseFloat(priceBs) > 0 && (
-                            <CheckCircle size={18} className="absolute right-3 top-[38px] sm:top-[42px] text-brand transition-all duration-300" />
-                        )}
+                <div className="bg-emerald-500/5 dark:bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/15">
+                    <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest block mb-2 ml-1">
+                        Precio de Venta ({priceSuffix ? priceSuffix.replace(' / ', '') : 'Unidad'})
+                    </span>
+                    <div className="grid grid-cols-2 gap-3 items-center">
+                        <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-emerald-500">
+                                {copEnabled ? 'USD' : '$'}
+                            </span>
+                            <input type="number" inputMode="decimal" value={priceUsd} onChange={e => handlePriceUsdChange(e.target.value)} placeholder="1.50"
+                                className="w-full bg-white dark:bg-slate-900 p-2.5 pl-11 pr-10 rounded-xl font-black text-emerald-800 dark:text-emerald-400 outline-none border border-emerald-100 dark:border-emerald-800/30 focus:ring-2 focus:ring-emerald-500/40 transition-all text-xs" />
+                            {parseFloat(priceUsd) > 0 && (
+                                <CheckCircle size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500 transition-all duration-300" />
+                            )}
+                        </div>
+                        <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-brand-dark dark:text-brand">Bs</span>
+                            <input type="number" inputMode="decimal" value={priceBs} onChange={e => handlePriceBsChange(e.target.value)} placeholder="0.00"
+                                className="w-full bg-white dark:bg-slate-900 p-2.5 pl-8 pr-10 rounded-xl font-black text-surface-800 dark:text-brand outline-none border border-surface-200 dark:border-surface-800/30 focus:ring-2 focus:ring-brand/40 transition-all text-xs" />
+                            {parseFloat(priceBs) > 0 && (
+                                <CheckCircle size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-brand transition-all duration-300" />
+                            )}
+                        </div>
                     </div>
                 </div>
 
@@ -516,7 +522,7 @@ export default function ProductFormQuick({
                         <div className="space-y-1.5">
                             {/* Main margin */}
                             <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500 font-medium">{isLote ? 'Margen Lote:' : isGranel ? `Margen / ${granelLabel}:` : 'Margen / Unidad:'}</span>
+                                <span className="text-slate-500 font-medium">{isLote ? 'Margen Bulto:' : isGranel ? `Margen / ${granelLabel}:` : 'Margen / Unidad:'}</span>
                                 <span className={`font-black ${mainMarginPct >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
                                     {mainMarginPct.toFixed(1)}%
                                     <span className="text-xs ml-1.5 opacity-80 font-bold">(${mainMarginUsd.toFixed(2)})</span>
@@ -563,7 +569,7 @@ export default function ProductFormQuick({
                     <div>
                         {isLote ? (
                             <>
-                                <label className="text-xs font-bold text-slate-400 ml-1 mb-1 block uppercase">¿Cuántos lotes?</label>
+                                <label className="text-xs font-bold text-slate-400 ml-1 mb-1 block uppercase">¿Cuántos bultos?</label>
                                 <input type="number" inputMode="numeric" value={stockInLotes} onChange={e => setStockInLotes(e.target.value)} placeholder="0"
                                     className="w-full bg-slate-50 dark:bg-slate-800 p-3.5 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 text-sm" />
                                 {parsedStockLotes > 0 && parsedUnits > 0 && (
@@ -585,7 +591,7 @@ export default function ProductFormQuick({
                         <input type="number" inputMode="numeric" value={lowStockAlert} onChange={e => setLowStockAlert(e.target.value)} placeholder="5"
                             className="w-full bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800/30 p-3.5 rounded-xl font-bold text-amber-700 dark:text-amber-400 outline-none focus:ring-2 focus:ring-amber-500/50 text-sm" />
                         {isLote && parsedAlert > 0 && parsedUnits > 0 && (
-                            <p className="text-[10px] text-amber-500 font-bold mt-1 ml-1">= {alertLotesCalc.toFixed(1)} lotes</p>
+                            <p className="text-[10px] text-amber-500 font-bold mt-1 ml-1">= {alertLotesCalc.toFixed(1)} bultos</p>
                         )}
                     </div>
                 </div>
@@ -608,9 +614,9 @@ export default function ProductFormQuick({
                                 {copEnabled && tasaCop > 0 && <div className="flex justify-between"><span className="text-amber-500/80">Precio COP:</span><span className="font-bold text-amber-600">{(priceCop && parseFloat(priceCop) > 0 ? Math.round(parseFloat(priceCop)) : Math.round(parsedPrice * tasaCop)).toLocaleString('es-CO')} COP{priceSuffix}</span></div>}
                                 {parsedCost > 0 && <div className="flex justify-between"><span className="text-slate-400">Costo:</span><span className="font-bold text-slate-600">${parsedCost.toFixed(2)}{priceSuffix}</span></div>}
                                 {mainMarginPct !== null && <div className="flex justify-between"><span className="text-slate-400">Margen:</span><span className={`font-black ${mainMarginPct >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{mainMarginPct.toFixed(1)}%</span></div>}
-                                {isLote && <div className="flex justify-between"><span className="text-slate-400">Uds/Lote:</span><span className="font-bold text-brand">{parsedUnits}</span></div>}
+                                {isLote && <div className="flex justify-between"><span className="text-slate-400">Uds/Bulto:</span><span className="font-bold text-brand">{parsedUnits}</span></div>}
                                 {isLote && sellByUnit && <div className="flex justify-between"><span className="text-slate-400">Venta suelta:</span><span className="font-bold text-brand">Sí — ${effectiveUnitPrice.toFixed(2)}/ud</span></div>}
-                                <div className="flex justify-between"><span className="text-slate-400">Stock:</span><span className="font-bold text-slate-700 dark:text-white">{isLote ? `${parsedStockLotes} lotes (${stockUnitsCalc} uds)` : `${stock || 0}`}</span></div>
+                                <div className="flex justify-between"><span className="text-slate-400">Stock:</span><span className="font-bold text-slate-700 dark:text-white">{isLote ? `${parsedStockLotes} bultos (${stockUnitsCalc} uds)` : `${stock || 0}`}</span></div>
                                 {barcode && <div className="flex justify-between"><span className="text-slate-400">Código:</span><span className="font-bold text-slate-700 dark:text-white">{barcode}</span></div>}
                             </div>
                         )}
