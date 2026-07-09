@@ -32,11 +32,13 @@ export default async function handler(req, res) {
         if (!oficial?.promedio) throw new Error('Sin tasa oficial');
 
         const bcvPrice  = parseFloat(oficial.promedio);
-        const euroPrice = parseFloat(paralelo?.promedio || oficial.promedio * 1.09);
+        const euroPrice = parseFloat((bcvPrice * 1.09).toFixed(2));
+        const usdtPrice = parseFloat(paralelo?.promedio || (bcvPrice * 1.02).toFixed(2));
 
         cache = {
             bcv:  { price: bcvPrice,  source: 'BCV Oficial', change: 0 },
             euro: { price: euroPrice, source: 'Euro BCV',    change: 0 },
+            usdt: { price: usdtPrice, source: 'USDT Binance', change: 0 },
             lastUpdate: new Date().toISOString(),
         };
         cacheTime = Date.now();
