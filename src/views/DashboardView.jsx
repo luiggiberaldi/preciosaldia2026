@@ -344,7 +344,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                     </span>
                 </div>
                 <div className="flex flex-col items-start md:items-center justify-center gap-0.5">
-                    <img src={theme === 'dark' ? '/logodark.png' : '/logo.png'} alt="PreciosAlDía" className="h-14 md:h-[85px] w-auto object-contain drop-shadow-sm" />
+                    <img src={theme === 'dark' ? './logodark.png' : './logo.png'} alt="PreciosAlDía" className="h-14 md:h-[85px] w-auto object-contain drop-shadow-sm" />
                 </div>
                 <div className="flex items-center justify-end gap-2">
                     <SyncStatus />

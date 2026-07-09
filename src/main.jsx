@@ -6,6 +6,18 @@ import { ToastProvider } from './components/Toast.jsx'
 import { supabaseCloud } from './config/supabaseCloud.js'
 import './index.css'
 
+// ── Interceptor global de Fetch para Electron (protocolo file://) ──
+if (window.location.protocol === 'file:') {
+  const originalFetch = window.fetch;
+  window.fetch = function (input, init) {
+    if (typeof input === 'string' && input.startsWith('/api/')) {
+      const baseUrl = import.meta.env.VITE_API_URL || 'https://preciosaldiaoficial.vercel.app';
+      input = `${baseUrl}${input}`;
+    }
+    return originalFetch(input, init);
+  };
+}
+
 // ── Forzar actualización del Service Worker al cargar ──
 if ('serviceWorker' in navigator) {
   // Forzar chequeo de nueva versión en cada carga

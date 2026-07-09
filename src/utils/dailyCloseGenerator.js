@@ -101,7 +101,7 @@ export async function generateDailyClosePDF({
     // ════════════════════════════════════
     try {
         const img = new Image();
-        img.src = '/logo.png';
+        img.src = './logo.png';
         await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
         const logoW = 46;
         const logoH = 11;

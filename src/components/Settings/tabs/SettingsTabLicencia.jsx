@@ -201,15 +201,15 @@ export default function SettingsTabLicencia({ deviceId, triggerHaptic }) {
                             <div className="p-3.5 bg-brand-light/20 dark:bg-surface-800/5 border border-brand/10 rounded-2xl flex flex-col gap-2">
                                 <div className="flex justify-between items-center">
                                     <h4 className="text-xs font-black text-slate-800 dark:text-white">Adquirir Licencia Premium</h4>
-                                    <span className="text-[10px] bg-emerald-500 text-white font-black px-2 py-0.5 rounded-lg">$25 / Pago Único</span>
+                                    <span className="text-[10px] bg-emerald-500 text-white font-black px-2 py-0.5 rounded-lg">$50 / Pago Único</span>
                                 </div>
                                 <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                                    Obtén tu licencia permanente por <strong>$25</strong>. Válido para <strong>solo 1 equipo (Caja)</strong> con el <strong>Modo Supervisor (Monitoreo en Vivo)</strong> incluido para tu celular.
+                                    Obtén tu licencia permanente por <strong>$50</strong>. Válido para <strong>solo 1 equipo (Caja)</strong> con el <strong>Modo Supervisor (Monitoreo en Vivo)</strong> incluido para tu celular.
                                 </p>
                                 <button 
                                     onClick={() => {
                                         triggerHaptic?.();
-                                        window.open(`https://wa.me/584124051793?text=Hola! Quiero adquirir la licencia de $25 (1 equipo + modo supervisor). Mi ID es: ${deviceId || 'N/A'}`.replace(/\s+/g, '%20'), '_blank');
+                                        window.open(`https://wa.me/584124051793?text=Hola! Quiero adquirir la licencia de $50 (1 equipo + modo supervisor). Mi ID es: ${deviceId || 'N/A'}`.replace(/\s+/g, '%20'), '_blank');
                                     }}
                                     className="w-full mt-1 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-black rounded-xl transition-all shadow-sm shadow-emerald-500/20 active:scale-[0.97] text-center"
                                 >

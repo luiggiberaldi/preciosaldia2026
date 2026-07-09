@@ -123,7 +123,7 @@ export default function OnboardingOverlay({ isPremium = false }) {
                             {/* Logo */}
                             <div className="relative mx-auto mb-5 animate-slide-up">
                                 <img
-                                    src="/logo.png"
+                                    src="./logo.png"
                                     alt="PreciosAlDía Bodega"
                                     className="w-44 h-auto mx-auto drop-shadow-lg"
                                 />

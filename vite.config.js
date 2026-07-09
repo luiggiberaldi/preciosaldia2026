@@ -11,8 +11,9 @@ export default defineConfig(({ mode }) => {
   // Cargar TODAS las variables del .env (incluyendo las sin prefijo VITE_)
   const env = loadEnv(mode, process.cwd(), '');
   return {
-  plugins: [
-    react(),
+    base: process.env.ELECTRON_BUILD === 'true' ? './' : '/',
+    plugins: [
+      react(),
     VitePWA({
       registerType: 'prompt', // INFRA-007: 'autoUpdate' causaba recargas abruptas; ahora avisa.
       includeAssets: ['favicon.ico', 'apple-touch-icon-180x180.png', 'pwa-192x192.png', 'pwa-512x512.png', 'logo.png', 'logodark.png'],
@@ -58,7 +59,8 @@ export default defineConfig(({ mode }) => {
         icons: [
           { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
           { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
-          { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+          { src: 'pwa-maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+          { src: 'pwa-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
         shortcuts: [
           { name: 'Vender Rápido', short_name: 'Vender', description: 'Abrir directamente el Punto de Venta', url: '/?view=ventas', icons: [{ src: 'pwa-192x192.png', sizes: '192x192' }] },

@@ -15,7 +15,9 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit --allowJs --checkJs --skipLibCheck || true",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "desktop:start": "cross-env ELECTRON_BUILD=true npm run build && cd desktop && npx electron .",
+    "desktop:build": "cross-env ELECTRON_BUILD=true npm run build && cd desktop && npx electron-builder"
   },
   "dependencies": {
     "@capacitor/android": "^8.2.0",
@@ -41,6 +43,7 @@
     "@vitejs/plugin-react": "^5.1.1",
     "@vitest/coverage-v8": "^4.1.9",
     "autoprefixer": "^10.4.24",
+    "cross-env": "^10.1.0",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",

@@ -35,7 +35,7 @@ export default function LockScreen({ onOpenPairing }) {
         {/* Header */}
         <div className="text-center mb-14">
           <div className="flex justify-center mb-6">
-            <img src="/logo.png" alt="Logo" className="h-24 sm:h-32 w-auto object-contain drop-shadow-md" />
+            <img src="./logo.png" alt="Logo" className="h-24 sm:h-32 w-auto object-contain drop-shadow-md" />
           </div>
           <h1 className="text-2xl sm:text-3xl font-light tracking-[0.15em] text-slate-600">
             Quien esta{' '}

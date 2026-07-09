@@ -466,7 +466,7 @@ ${lastSalesDetail}
                     <div className="px-5 py-4 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
                         <div className="flex items-center gap-2.5">
                             <div className="w-8 h-8 rounded-2xl bg-white dark:bg-slate-800 border border-slate-150 dark:border-slate-700 overflow-hidden shrink-0 flex items-center justify-center p-0.5">
-                                <img src="/bot-avatar.png" alt="Bot Avatar" className="w-full h-full object-contain rounded-xl" />
+                                <img src="./bot-avatar.png" alt="Bot Avatar" className="w-full h-full object-contain rounded-xl" />
                             </div>
                             <div>
                                 <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200">Asistente Virtual</h3>
@@ -502,7 +502,7 @@ ${lastSalesDetail}
                                         ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300' 
                                         : 'bg-white dark:bg-slate-800 border border-slate-150 dark:border-slate-700 p-0.5'
                                 }`}>
-                                    {m.role === 'user' ? <User size={13} /> : <img src="/bot-avatar.png" alt="Bot" className="w-full h-full object-contain rounded-lg" />}
+                                    {m.role === 'user' ? <User size={13} /> : <img src="./bot-avatar.png" alt="Bot" className="w-full h-full object-contain rounded-lg" />}
                                 </div>
                                 <div className={`max-w-[78%] rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed ${
                                     m.role === 'user'
@@ -516,7 +516,7 @@ ${lastSalesDetail}
                         {isTyping && messages[messages.length - 1].content === "" && (
                             <div className="flex items-start gap-2.5">
                                 <div className="w-7 h-7 rounded-xl bg-white dark:bg-slate-800 border border-slate-150 dark:border-slate-700 p-0.5 flex items-center justify-center shrink-0 overflow-hidden">
-                                    <img src="/bot-avatar.png" alt="Bot" className="w-full h-full object-contain rounded-lg" />
+                                    <img src="./bot-avatar.png" alt="Bot" className="w-full h-full object-contain rounded-lg" />
                                 </div>
                                 <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl rounded-tl-none px-3.5 py-2.5 flex gap-1 items-center border border-slate-100 dark:border-slate-800">
                                     <span className="w-1.5 h-1.5 bg-slate-400 dark:bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
@@ -619,7 +619,7 @@ ${lastSalesDetail}
             >
                 {isOpen ? <X size={20} /> : (
                     <div className="w-11 h-11 rounded-full bg-white flex items-center justify-center p-1">
-                        <img src="/bot-avatar.png" alt="Bot" className="w-full h-full object-contain rounded-full" />
+                        <img src="./bot-avatar.png" alt="Bot" className="w-full h-full object-contain rounded-full" />
                     </div>
                 )}
             </button>
