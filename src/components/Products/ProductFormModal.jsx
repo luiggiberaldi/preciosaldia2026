@@ -223,6 +223,7 @@ export default function ProductFormModal({
             isOpen={isOpen} 
             onClose={onClose} 
             title={isEditing ? "Editar Producto" : "Nuevo Producto"}
+            size="max-w-sm md:max-w-3xl"
             className={isFormShaking ? 'animate-shake border-red-500 shadow-xl shadow-red-500/20' : ''}
         >
             <div className="space-y-4">

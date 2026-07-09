@@ -177,9 +177,9 @@ export default function SettingsTabLicencia({ deviceId, triggerHaptic }) {
     };
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
             {/* Estado de Licencia */}
-            <div className="md:col-span-2">
+            <div className="md:col-span-2 xl:col-span-3">
                 <SectionCard icon={KeyRound} title="Licencia de Software" subtitle="Detalles de activación de la app" iconColor="text-brand">
                     <div className="space-y-4">
                         <div className="flex justify-between items-center">
@@ -224,7 +224,7 @@ export default function SettingsTabLicencia({ deviceId, triggerHaptic }) {
             </div>
 
             {/* Datos Técnicos de Licencia */}
-            <div className="md:col-span-2">
+            <div className="md:col-span-2 xl:col-span-3">
                 <SectionCard icon={Hash} title="Identificación del Equipo" subtitle="ID asociado para licenciamiento" iconColor="text-slate-500">
                     <div className="flex items-center justify-between gap-2 bg-slate-50 dark:bg-slate-800/20 border border-slate-100 dark:border-slate-800 p-3 rounded-xl">
                         <div className="min-w-0">

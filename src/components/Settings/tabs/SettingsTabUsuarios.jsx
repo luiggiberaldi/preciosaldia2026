@@ -10,14 +10,14 @@ export default function SettingsTabUsuarios({
     showToast, triggerHaptic,
 }) {
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
-            <div className="md:col-span-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
+            <div className="md:col-span-2 xl:col-span-3">
                 <SectionCard icon={Users} title="Usuarios y Roles" subtitle="Gestiona quien opera la app" iconColor="text-brand">
                     <UsersManager triggerHaptic={triggerHaptic} />
                 </SectionCard>
             </div>
 
-            <div className="md:col-span-2">
+            <div className="md:col-span-2 xl:col-span-3">
                 <SectionCard icon={Lock} title="Seguridad" subtitle="Control de acceso por PIN" iconColor="text-rose-500">
                     {/* Toggle login requerido */}
                     <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-800 pb-4">

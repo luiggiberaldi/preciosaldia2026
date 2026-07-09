@@ -122,6 +122,7 @@ export default function CheckoutCustomerPicker({
                     )}
                     <div className="min-w-0 text-left">
                         <p className={`text-sm font-bold truncate leading-tight ${selectedCustomer ? 'text-slate-800 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}>
+                            {selectedCustomer && selectedCustomer.code && <span className="font-mono text-[10px] text-slate-400 mr-1.5">{selectedCustomer.code}</span>}
                             {selectedCustomer ? selectedCustomer.name : 'Consumidor Final'}
                         </p>
                         {selectedCustomer && selectedCustomer.deuda !== 0 && (
@@ -287,6 +288,7 @@ export default function CheckoutCustomerPicker({
                                                 <CustomerAvatar name={c.name} />
                                                 <div className="flex-1 min-w-0 text-left">
                                                     <p className={`text-sm font-bold truncate leading-tight ${selectedCustomerId === c.id ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-700 dark:text-slate-200'}`}>
+                                                        {c.code && <span className="font-mono text-[10px] text-slate-400 mr-1.5">{c.code}</span>}
                                                         {c.name}
                                                     </p>
                                                     {c.deuda !== 0 && (

@@ -2,6 +2,17 @@ import { formatBs, formatCop, formatUsd } from './calculatorUtils';
 // FIN-024: reemplazar `* rate` raw y `.toFixed(2)` con mulR + formatUsd (sin Math.round/toFixed).
 import { mulR } from './dinero';
 
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    const s = String(str);
+    return s
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 /**
  * Genera el HTML completo para impresión térmica de un ticket de venta.
  */
@@ -29,7 +40,7 @@ export function buildTicketHtml(sale, bcvRate, paperConfig, settings) {
         // FIN-024: mulR en vez de multiplicación raw.
         const sub = mulR(item.priceUsd, item.qty);
         const subBs = mulR(sub, rate);
-        const name = item.name;
+        const name = escapeHtml(item.name);
         const importeStr = fmtUsd(sub);
         const detailStr = isCop
             ? 'USD ' + formatUsd(item.priceUsd) + ' c/u - ' + formatCop(item.priceCop ? mulR(item.priceCop, item.qty) : mulR(sub, sale.tasaCop)) + ' COP - Bs ' + formatBs(subBs)
@@ -58,7 +69,7 @@ export function buildTicketHtml(sale, bcvRate, paperConfig, settings) {
             : fmtUsd(p.amountUsd || 0);
         return `
             <tr>
-                <td style="font-size:11px;padding:2px 0;">${p.methodLabel || 'Pago'}</td>
+                <td style="font-size:11px;padding:2px 0;">${escapeHtml(p.methodLabel || 'Pago')}</td>
                 <td style="font-size:11px;font-weight:bold;text-align:right;padding:2px 0;">${val}</td>
             </tr>`;
     }).join('');
@@ -146,11 +157,11 @@ export function buildTicketHtml(sale, bcvRate, paperConfig, settings) {
 
     <!-- Info del Negocio -->
     <div class="center" style="margin-bottom:6px;line-height:1.2;">
-        ${settings.name ? `<div class="bold" style="font-size:${fTitle};text-transform:uppercase;">${settings.name}</div>` : ''}
-        ${settings.rif ? `<div style="font-size:${fTiny};">RIF: ${settings.rif}</div>` : ''}
-        ${settings.address ? `<div style="font-size:${fTiny};">${settings.address}</div>` : ''}
-        ${settings.phone ? `<div style="font-size:${fTiny};">Tel: ${settings.phone}</div>` : ''}
-        ${settings.instagram ? `<div style="font-size:${fTiny};">Ig: ${settings.instagram}</div>` : ''}
+        ${settings.name ? `<div class="bold" style="font-size:${fTitle};text-transform:uppercase;">${escapeHtml(settings.name)}</div>` : ''}
+        ${settings.rif ? `<div style="font-size:${fTiny};">RIF: ${escapeHtml(settings.rif)}</div>` : ''}
+        ${settings.address ? `<div style="font-size:${fTiny};">${escapeHtml(settings.address)}</div>` : ''}
+        ${settings.phone ? `<div style="font-size:${fTiny};">Tel: ${escapeHtml(settings.phone)}</div>` : ''}
+        ${settings.instagram ? `<div style="font-size:${fTiny};">Ig: ${escapeHtml(settings.instagram)}</div>` : ''}
     </div>
 
     <hr class="dash">
@@ -159,9 +170,9 @@ export function buildTicketHtml(sale, bcvRate, paperConfig, settings) {
     <div style="font-size:${fSmall};font-weight:bold;margin-bottom:2px;text-align:left;">N: #${saleNum}</div>
     <div style="font-size:${fTiny};color:#000;margin-bottom:4px;text-align:left;">Fecha: ${fecha} ${hora}</div>
     <div style="font-size:${fSmall};margin:3px 0 2px;">
-        <span style="font-weight:bold;">Cliente:</span> ${sale.customerName || 'Consumidor Final'}
+        <span style="font-weight:bold;">Cliente:</span> ${escapeHtml(sale.customerName || 'Consumidor Final')}
     </div>
-    ${sale.customerDocument ? `<div style="font-size:${fTiny};color:#000;">C.I/RIF: ${sale.customerDocument}</div>` : ''}
+    ${sale.customerDocument ? `<div style="font-size:${fTiny};color:#000;">C.I/RIF: ${escapeHtml(sale.customerDocument)}</div>` : ''}
 
     <hr class="dash">
 
@@ -177,13 +188,7 @@ export function buildTicketHtml(sale, bcvRate, paperConfig, settings) {
     <!-- Productos -->
     <table style="width:100%;">${itemsHtml}</table>
 
-    <hr class="dash">
 
-    <!-- Tasa -->
-    <div class="center" style="font-size:${fTiny};color:#000;margin:4px 0;">
-        <div style="margin-bottom:2px;">Tasa BCV: Bs ${formatBs(rate)} por ${isCop ? 'USD 1' : '$1'}</div>
-        ${sale.tasaCop > 0 ? `<div>Tasa COP: ${sale.tasaCop.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} por USD 1</div>` : ''}
-    </div>
 
     <!-- Total -->
     <div style="margin:8px 0;">

@@ -124,10 +124,10 @@ const PaymentLeftColumn = ({
 
                     {/* Falta por pagar */}
                     {isPending && (
-                        <div className="flex flex-col justify-center items-center text-center p-4 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
-                            <p className="text-[9px] font-bold uppercase opacity-60 tracking-widest text-slate-600 dark:text-slate-300">Falta por Pagar</p>
-                            <p className="text-3xl font-black text-slate-800 dark:text-white my-1.5">${faltaPorPagar.toFixed(2)}</p>
-                            <div className="text-sm font-bold text-slate-500">
+                        <div className="flex flex-col justify-center items-center text-center p-5 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm transition-all">
+                            <p className="text-[10px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400">Falta por Pagar</p>
+                            <p className="text-4xl lg:text-5xl font-black text-slate-800 dark:text-white my-2">${faltaPorPagar.toFixed(2)}</p>
+                            <div className="text-lg font-black text-[#01696f] dark:text-[#1ce2ee]">
                                 Bs {round2(faltaPorPagar * tasaSegura).toLocaleString('es-VE', { minimumFractionDigits: 2 })}
                             </div>
                         </div>
@@ -135,10 +135,10 @@ const PaymentLeftColumn = ({
 
                     {/* Vuelto */}
                     {isPaid && cambioUSD > 0.009 && (
-                        <div className="flex flex-col justify-center items-center text-center p-4 rounded-xl border-2 border-emerald-200 dark:border-emerald-800/40 bg-emerald-50 dark:bg-emerald-950/20 shadow-sm">
-                            <p className="text-[9px] font-bold uppercase opacity-70 tracking-widest text-emerald-700 dark:text-emerald-400">Vuelto</p>
-                            <p className="text-3xl font-black text-emerald-700 dark:text-emerald-400 my-1.5">${cambioUSD.toFixed(2)}</p>
-                            <div className="text-sm font-bold text-emerald-600/70">
+                        <div className="flex flex-col justify-center items-center text-center p-5 rounded-xl border-2 border-emerald-200 dark:border-emerald-800/40 bg-emerald-50 dark:bg-emerald-950/20 shadow-sm transition-all">
+                            <p className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-700 dark:text-emerald-400">Vuelto</p>
+                            <p className="text-4xl lg:text-5xl font-black text-emerald-700 dark:text-emerald-400 my-2">${cambioUSD.toFixed(2)}</p>
+                            <div className="text-lg font-black text-emerald-600 dark:text-emerald-300">
                                 Bs {round2(cambioUSD * tasaSegura).toLocaleString('es-VE', { minimumFractionDigits: 2 })}
                             </div>
                             {/* Distribución de vuelto */}
@@ -199,7 +199,7 @@ const PaymentLeftColumn = ({
 
                     {/* Pagado exacto */}
                     {isPaid && cambioUSD <= 0.009 && (
-                        <div className="flex flex-col justify-center items-center text-center p-4 rounded-xl border-2 border-emerald-300 dark:border-emerald-700/40 bg-emerald-50 dark:bg-emerald-950/20 shadow-sm">
+                        <div className="flex flex-col justify-center items-center text-center p-5 rounded-xl border-2 border-emerald-300 dark:border-emerald-700/40 bg-emerald-50 dark:bg-emerald-950/20 shadow-sm transition-all">
                             <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400">✓ Pago Completo</p>
                             <p className="text-xs text-emerald-600/70 mt-1">Sin vuelto</p>
                         </div>
@@ -207,10 +207,10 @@ const PaymentLeftColumn = ({
 
                     {/* Queda Debiendo (Crédito) */}
                     {isCredit && (
-                        <div className="flex flex-col justify-center items-center text-center p-4 rounded-xl border-2 border-amber-200 dark:border-amber-800/30 bg-amber-50 dark:bg-amber-950/10 shadow-sm">
-                            <p className="text-[9px] font-bold uppercase opacity-70 tracking-widest text-amber-700">Queda Debiendo</p>
-                            <p className="text-3xl font-extrabold text-amber-700 dark:text-amber-400 my-1.5">${deudaCliente.toFixed(2)}</p>
-                            <div className="text-sm font-bold text-amber-700/70">
+                        <div className="flex flex-col justify-center items-center text-center p-5 rounded-xl border-2 border-amber-200 dark:border-amber-800/30 bg-amber-50 dark:bg-amber-950/10 shadow-sm transition-all">
+                            <p className="text-[10px] font-extrabold uppercase tracking-widest text-amber-700 dark:text-amber-500">Queda Debiendo</p>
+                            <p className="text-4xl lg:text-5xl font-black text-amber-700 dark:text-amber-400 my-2">${deudaCliente.toFixed(2)}</p>
+                            <div className="text-lg font-black text-amber-600 dark:text-amber-300">
                                 Bs {round2(deudaCliente * tasaSegura).toLocaleString('es-VE', { minimumFractionDigits: 2 })}
                             </div>
                         </div>

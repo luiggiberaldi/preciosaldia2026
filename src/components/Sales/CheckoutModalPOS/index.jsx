@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { showToast } from '../../Toast';
 import { useProductContext } from '../../../context/ProductContext';
-import { round2 } from '../../../utils/dinero';
+import { round2, subR, mulR, divR } from '../../../utils/dinero';
 
 // Hooks portados
 import { usePaymentState } from './hooks/usePaymentState';

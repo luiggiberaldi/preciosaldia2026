@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useAuthStore } from '../../hooks/store/useAuthStore';
 import { showToast } from '../Toast';
+import { verifyPin } from '../../utils/crypto';
+import { PIN_POLICY } from '../../utils/securityConstants';
 import {
     UserPlus, Trash2, KeyRound, Shield, ShoppingCart,
     Crown, X, Check, Eye, EyeOff, AlertTriangle, Edit2
@@ -25,8 +27,7 @@ const ROLE_CONFIG = {
     }
 };
 
-// ─── PIN Input (longitud dinámica) ────────────────
-function PinInput({ value, onChange, label, length = 4 }) {
+function PinInput({ value, onChange, label, length = 6, showDigits = false }) {
     const digits = (value || '').padEnd(length, '').slice(0, length).split('');
 
     const handleChange = (index, digit) => {
@@ -54,7 +55,7 @@ function PinInput({ value, onChange, label, length = 4 }) {
                 <input
                     key={i}
                     id={`pin-${label}-${i}`}
-                    type="text"
+                    type={showDigits ? "text" : "password"}
                     inputMode="numeric"
                     maxLength={1}
                     value={digits[i]?.trim() || ''}
@@ -143,7 +144,10 @@ export default function UsersManager({ triggerHaptic }) {
     const [newPin, setNewPin] = useState('');
 
     const [changePinUser, setChangePinUser] = useState(null);
+    const [changePinStep, setChangePinStep] = useState(1); // 1 = actual, 2 = nuevo, 3 = confirmar
+    const [currentPinValue, setCurrentPinValue] = useState('');
     const [pinValue, setPinValue] = useState('');
+    const [confirmPinValue, setConfirmPinValue] = useState('');
     const [showPin, setShowPin] = useState(false);
 
     const [deleteUser, setDeleteUser] = useState(null);
@@ -153,7 +157,7 @@ export default function UsersManager({ triggerHaptic }) {
 
     // ─── Handlers ────────────────────────────────────
     const handleAdd = () => {
-        const requiredLen = newRole === 'ADMIN' ? 6 : 4;
+        const requiredLen = PIN_POLICY.MIN_LENGTH;
         if (!newName.trim()) return showToast('Ingresa un nombre', 'error');
         if (newPin.length !== requiredLen) return showToast(`El PIN debe tener ${requiredLen} dígitos`, 'error');
         if (usuarios.some(u => u.pin === newPin)) return showToast('Ese PIN ya esta en uso', 'error');
@@ -167,16 +171,69 @@ export default function UsersManager({ triggerHaptic }) {
         setShowAddForm(false);
     };
 
-    const handleChangePin = () => {
-        const requiredLen = changePinUser?.rol === 'ADMIN' ? 6 : 4;
-        if (pinValue.length !== requiredLen) return showToast(`El PIN debe tener ${requiredLen} dígitos`, 'error');
-        if (usuarios.some(u => u.id !== changePinUser.id && u.pin === pinValue)) return showToast('Ese PIN ya esta en uso', 'error');
+    const handleNextStep1 = async () => {
+        const requiredLen = PIN_POLICY.MIN_LENGTH;
+        if (currentPinValue.length !== requiredLen) {
+            return showToast(`El PIN debe tener ${requiredLen} dígitos`, 'error');
+        }
 
-        cambiarPin(changePinUser.id, pinValue);
+        const userInDb = usuarios.find(u => u.id === changePinUser.id);
+        if (!userInDb) return showToast('Usuario no encontrado', 'error');
+
+        try {
+            const check = await verifyPin(currentPinValue, userInDb.pin);
+            if (!check.valid) {
+                return showToast('El PIN actual es incorrecto', 'error');
+            }
+            setChangePinStep(2);
+            setShowPin(false);
+            triggerHaptic?.();
+        } catch (e) {
+            showToast('Error al verificar el PIN', 'error');
+        }
+    };
+
+    const handleNextStep2 = () => {
+        const requiredLen = PIN_POLICY.MIN_LENGTH;
+        if (pinValue.length !== requiredLen) {
+            return showToast(`El PIN debe tener ${requiredLen} dígitos`, 'error');
+        }
+        
+        if (pinValue === currentPinValue) {
+            return showToast('El nuevo PIN no puede ser igual al actual', 'warning');
+        }
+
+        setChangePinStep(3);
+        setShowPin(false);
+        triggerHaptic?.();
+    };
+
+    const handleChangePin = () => {
+        const requiredLen = PIN_POLICY.MIN_LENGTH;
+        
+        if (pinValue !== confirmPinValue) {
+            return showToast('Los PINs no coinciden', 'error');
+        }
+
+        if (usuarios.some(u => u.id !== changePinUser.id && u.pin === pinValue)) {
+            return showToast('Ese PIN ya está en uso', 'error');
+        }
+
+        const res = cambiarPin(changePinUser.id, pinValue);
+        if (res && res.error) {
+            return showToast(res.error, 'error');
+        }
+
         showToast(`PIN de ${changePinUser.nombre} actualizado`, 'success');
         triggerHaptic?.();
+        
+        // Reset
         setChangePinUser(null);
+        setChangePinStep(1);
+        setCurrentPinValue('');
         setPinValue('');
+        setConfirmPinValue('');
+        setShowPin(false);
     };
 
     const handleDelete = () => {
@@ -272,14 +329,14 @@ export default function UsersManager({ triggerHaptic }) {
 
                     {/* PIN */}
                     <div>
-                        <label className="text-[10px] uppercase font-bold text-slate-400 block mb-2">PIN de {newRole === 'ADMIN' ? 6 : 4} dígitos</label>
-                        <PinInput value={newPin} onChange={setNewPin} label="new" length={newRole === 'ADMIN' ? 6 : 4} />
+                        <label className="text-[10px] uppercase font-bold text-slate-400 block mb-2">PIN de {PIN_POLICY.MIN_LENGTH} dígitos</label>
+                        <PinInput value={newPin} onChange={setNewPin} label="new" length={PIN_POLICY.MIN_LENGTH} />
                     </div>
 
                     {/* Submit */}
                     <button
                         onClick={handleAdd}
-                        disabled={!newName.trim() || newPin.length !== (newRole === 'ADMIN' ? 6 : 4)}
+                        disabled={!newName.trim() || newPin.length !== PIN_POLICY.MIN_LENGTH}
                         className="w-full flex items-center justify-center gap-2 py-3 bg-brand hover:bg-brand-dark disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all active:scale-[0.98] shadow-md shadow-primary/20 disabled:shadow-none"
                     >
                         <Check size={16} /> Crear Usuario
@@ -289,44 +346,164 @@ export default function UsersManager({ triggerHaptic }) {
 
             {/* ─── Change PIN Modal ────────────────────── */}
             {changePinUser && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setChangePinUser(null)}>
-                    <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 w-full max-w-xs shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-                        <div className="text-center mb-6">
-                            <div className={`w-14 h-14 mx-auto rounded-xl bg-gradient-to-br ${ROLE_CONFIG[changePinUser.rol]?.gradient || 'from-slate-500 to-slate-600'} flex items-center justify-center mb-3`}>
-                                <span className="text-white font-black text-2xl">{(changePinUser.nombre || 'U')[0].toUpperCase()}</span>
+                <div 
+                    className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" 
+                    onClick={() => { 
+                        setChangePinUser(null); 
+                        setChangePinStep(1);
+                        setCurrentPinValue(''); 
+                        setPinValue(''); 
+                        setConfirmPinValue(''); 
+                        setShowPin(false);
+                    }}
+                >
+                    <div 
+                        className="bg-white dark:bg-slate-900 rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200 transition-all border border-slate-105 dark:border-slate-800" 
+                        onClick={e => e.stopPropagation()}
+                    >
+                        {/* Cabecera */}
+                        <div className="text-center mb-5">
+                            <div className={`w-12 h-12 mx-auto rounded-xl bg-gradient-to-br ${ROLE_CONFIG[changePinUser.rol]?.gradient || 'from-slate-500 to-slate-600'} flex items-center justify-center mb-2 shadow-md`}>
+                                <span className="text-white font-black text-xl">{(changePinUser.nombre || 'U')[0].toUpperCase()}</span>
                             </div>
-                            <h3 className="text-lg font-black text-slate-800 dark:text-white">Cambiar PIN</h3>
-                            <p className="text-xs text-slate-400 mt-1">{changePinUser.nombre}</p>
+                            <h3 className="text-base font-black text-slate-800 dark:text-white">Cambiar PIN</h3>
+                            <p className="text-xs text-slate-405 mt-0.5">{changePinUser.nombre} · {ROLE_CONFIG[changePinUser.rol]?.label}</p>
+                            
+                            {/* Indicador de pasos visual */}
+                            <div className="flex justify-center gap-1.5 mt-3.5">
+                                {[1, 2, 3].map(step => (
+                                    <div 
+                                        key={step} 
+                                        className={`h-1.5 rounded-full transition-all duration-300 ${
+                                            changePinStep === step 
+                                                ? 'w-6 bg-brand' 
+                                                : changePinStep > step 
+                                                    ? 'w-2 bg-emerald-500' 
+                                                    : 'w-2 bg-slate-200 dark:bg-slate-700'
+                                        }`}
+                                    />
+                                ))}
+                            </div>
                         </div>
 
-                        <div className="mb-4">
-                            <PinInput value={pinValue} onChange={setPinValue} label="change" length={changePinUser?.rol === 'ADMIN' ? 6 : 4} />
+                        {/* Contenido según el paso */}
+                        <div className="min-h-[92px] flex flex-col justify-center animate-in fade-in slide-in-from-right-2 duration-200">
+                            {changePinStep === 1 && (
+                                <div className="space-y-2">
+                                    <label className="text-[10px] uppercase font-black text-slate-400 block text-center tracking-wider">PIN Actual</label>
+                                    <PinInput 
+                                        value={currentPinValue} 
+                                        onChange={setCurrentPinValue} 
+                                        label="current" 
+                                        length={PIN_POLICY.MIN_LENGTH}
+                                        showDigits={showPin}
+                                    />
+                                    <p className="text-[9px] text-slate-400 text-center">Para verificar tu identidad</p>
+                                </div>
+                            )}
+
+                            {changePinStep === 2 && (
+                                <div className="space-y-2">
+                                    <label className="text-[10px] uppercase font-black text-slate-400 block text-center tracking-wider">Nuevo PIN</label>
+                                    <PinInput 
+                                        value={pinValue} 
+                                        onChange={setPinValue} 
+                                        label="change" 
+                                        length={PIN_POLICY.MIN_LENGTH}
+                                        showDigits={showPin}
+                                    />
+                                    <p className="text-[9px] text-slate-400 text-center">Debe tener {PIN_POLICY.MIN_LENGTH} dígitos no secuenciales</p>
+                                </div>
+                            )}
+
+                            {changePinStep === 3 && (
+                                <div className="space-y-2">
+                                    <label className="text-[10px] uppercase font-black text-slate-400 block text-center tracking-wider">Confirmar Nuevo PIN</label>
+                                    <PinInput 
+                                        value={confirmPinValue} 
+                                        onChange={setConfirmPinValue} 
+                                        label="confirm" 
+                                        length={PIN_POLICY.MIN_LENGTH}
+                                        showDigits={showPin}
+                                    />
+                                    <p className="text-[9px] text-slate-400 text-center">Introduce el PIN de nuevo</p>
+                                </div>
+                            )}
                         </div>
 
-                        <div className="flex items-center justify-center gap-2 mb-5">
+                        {/* Control de visibilidad */}
+                        <div className="flex items-center justify-center gap-2 my-4">
                             <button
                                 onClick={() => setShowPin(!showPin)}
-                                className="text-[10px] text-slate-400 flex items-center gap-1 hover:text-slate-600 transition-colors"
+                                className="text-[9px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1 hover:text-slate-650 transition-colors bg-slate-50 dark:bg-slate-800/40 px-2.5 py-1 rounded-full border border-slate-100 dark:border-slate-850"
                             >
-                                {showPin ? <EyeOff size={12} /> : <Eye size={12} />}
-                                {showPin ? `PIN: ${pinValue || (changePinUser?.rol === 'ADMIN' ? '------' : '----')}` : 'Mostrar PIN'}
+                                {showPin ? <EyeOff size={11} className="text-slate-500" /> : <Eye size={11} className="text-slate-500" />}
+                                {showPin ? 'Ocultar PIN' : 'Mostrar PIN'}
                             </button>
                         </div>
 
-                        <div className="flex gap-3">
-                            <button
-                                onClick={() => setChangePinUser(null)}
-                                className="flex-1 py-3 text-sm font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all"
-                            >
-                                Cancelar
-                            </button>
-                            <button
-                                onClick={handleChangePin}
-                                disabled={pinValue.length !== (changePinUser?.rol === 'ADMIN' ? 6 : 4)}
-                                className="flex-1 py-3 text-sm font-bold text-white bg-brand rounded-xl hover:bg-brand-dark active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                Guardar
-                            </button>
+                        {/* Botones de acción */}
+                        <div className="flex gap-2.5">
+                            {changePinStep === 1 && (
+                                <>
+                                    <button
+                                        onClick={() => { 
+                                            setChangePinUser(null); 
+                                            setChangePinStep(1);
+                                            setCurrentPinValue(''); 
+                                            setPinValue(''); 
+                                            setConfirmPinValue(''); 
+                                            setShowPin(false);
+                                        }}
+                                        className="flex-1 py-2.5 text-xs font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        onClick={handleNextStep1}
+                                        disabled={currentPinValue.length !== PIN_POLICY.MIN_LENGTH}
+                                        className="flex-1 py-2.5 text-xs font-bold text-white bg-brand rounded-xl hover:bg-brand-dark active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none shadow-md shadow-primary/10"
+                                    >
+                                        Continuar
+                                    </button>
+                                </>
+                            )}
+
+                            {changePinStep === 2 && (
+                                <>
+                                    <button
+                                        onClick={() => { setChangePinStep(1); setShowPin(false); }}
+                                        className="flex-1 py-2.5 text-xs font-bold text-slate-500 bg-slate-150 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all"
+                                    >
+                                        Atrás
+                                    </button>
+                                    <button
+                                        onClick={handleNextStep2}
+                                        disabled={pinValue.length !== PIN_POLICY.MIN_LENGTH}
+                                        className="flex-1 py-2.5 text-xs font-bold text-white bg-brand rounded-xl hover:bg-brand-dark active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none shadow-md shadow-primary/10"
+                                    >
+                                        Continuar
+                                    </button>
+                                </>
+                            )}
+
+                            {changePinStep === 3 && (
+                                <>
+                                    <button
+                                        onClick={() => { setChangePinStep(2); setShowPin(false); }}
+                                        className="flex-1 py-2.5 text-xs font-bold text-slate-500 bg-slate-150 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all"
+                                    >
+                                        Atrás
+                                    </button>
+                                    <button
+                                        onClick={handleChangePin}
+                                        disabled={confirmPinValue.length !== PIN_POLICY.MIN_LENGTH}
+                                        className="flex-1 py-2.5 text-xs font-bold text-white bg-brand rounded-xl hover:bg-brand-dark active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none shadow-md shadow-primary/10"
+                                    >
+                                        Guardar
+                                    </button>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>

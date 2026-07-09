@@ -21,14 +21,15 @@ DROP POLICY IF EXISTS "Allow public read access to pairings" ON public.device_pa
 CREATE POLICY "Allow public read access to pairings"
     ON public.device_pairings FOR SELECT
     TO anon, authenticated
-    USING (true);
+    USING (
+        -- Solo permite consultar si el token está activo o si el registro ya está emparejado
+        (pairing_token IS NOT NULL AND token_expires_at > now())
+        OR (monitor_device_id IS NOT NULL)
+    );
 
+-- SEC-010: El rol anon no tiene permiso para escribir directamente en la tabla.
+-- Toda la escritura se delega en las funciones RPC con SECURITY DEFINER.
 DROP POLICY IF EXISTS "Allow write access to own pairing" ON public.device_pairings;
-CREATE POLICY "Allow write access to own pairing"
-    ON public.device_pairings FOR ALL
-    TO anon, authenticated
-    USING (true)
-    WITH CHECK (true);
 
 -- 2. Función RPC para generar token de emparejamiento (Caja)
 CREATE OR REPLACE FUNCTION public.generate_pairing_token(p_device_id TEXT)
@@ -109,8 +110,11 @@ $$;
 
 -- 5. Otorgar permisos explícitos a los roles 'anon' y 'authenticated'
 -- Esto soluciona el error 401 / permission denied al conectar dispositivos sin login.
+-- SEC-010: Revocar permisos CRUD de escritura directos para anon y authenticated en device_pairings.
+GRANT SELECT ON public.device_pairings TO anon, authenticated;
+REVOKE INSERT, UPDATE, DELETE ON public.device_pairings FROM anon, authenticated;
+
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.sync_documents TO anon, authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.device_pairings TO anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION public.generate_pairing_token(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.pair_monitor_device(TEXT, TEXT) TO anon, authenticated;

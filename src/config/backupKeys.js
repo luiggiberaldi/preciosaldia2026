@@ -35,12 +35,9 @@ export const IDB_KEYS = Object.freeze([
 /**
  * Claves persistentes en localStorage que componen un backup completo.
  * NO incluye `sb-*` (sesión de Supabase) ni flags de migración ni claves
- * efímeras. SÍ incluye `abasto-auth-storage` (sesión Zustand persistida —
- * el Agente B debe revisar la implicancia de seguridad, pero el backup la
- * contempla por compatibilidad con versiones anteriores).
+ * efímeras, ni abasto-auth-storage (datos locales de sesión/PIN hasheado).
  */
 export const LS_KEYS = Object.freeze([
-  'abasto-auth-storage',
   'allow_negative_stock',
   'auto_cop_enabled',
   'bodega_custom_rate',

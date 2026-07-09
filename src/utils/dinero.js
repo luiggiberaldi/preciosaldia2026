@@ -18,7 +18,8 @@
 export const round2 = (n) => {
     if (!Number.isFinite(n)) return 0;
     const sign = n < 0 ? -1 : 1;
-    return sign * Math.round((Math.abs(n) + Number.EPSILON) * 100) / 100;
+    const abs = Math.abs(n);
+    return sign * Math.round(parseFloat(abs.toFixed(12)) * 100) / 100;
 };
 
 /**
@@ -29,7 +30,8 @@ export const round2 = (n) => {
 export const round4 = (n) => {
     if (!Number.isFinite(n)) return 0;
     const sign = n < 0 ? -1 : 1;
-    return sign * Math.round((Math.abs(n) + Number.EPSILON) * 10000) / 10000;
+    const abs = Math.abs(n);
+    return sign * Math.round(parseFloat(abs.toFixed(12)) * 10000) / 10000;
 };
 
 /**
@@ -40,7 +42,8 @@ export const round4 = (n) => {
 export const round3 = (n) => {
     if (!Number.isFinite(n)) return 0;
     const sign = n < 0 ? -1 : 1;
-    return sign * Math.round((Math.abs(n) + Number.EPSILON) * 1000) / 1000;
+    const abs = Math.abs(n);
+    return sign * Math.round(parseFloat(abs.toFixed(12)) * 1000) / 1000;
 };
 
 /**
@@ -52,7 +55,8 @@ export const round3 = (n) => {
 export const round0 = (n) => {
     if (!Number.isFinite(n)) return 0;
     const sign = n < 0 ? -1 : 1;
-    return sign * Math.round(Math.abs(n) + Number.EPSILON);
+    const abs = Math.abs(n);
+    return sign * Math.round(parseFloat(abs.toFixed(12)));
 };
 
 /**

@@ -135,11 +135,8 @@ export async function verifyStoredFingerprint(storedId, currentFp) {
     if (typeof storedId !== 'string') {
         return false;
     }
-    // Si empieza por el prefijo correcto de instalación, es un ID persistido válido.
-    if (storedId.startsWith(FP_PREFIX_V2) || storedId.startsWith(FP_PREFIX)) {
-        return true;
-    }
-    return false;
+    // SEC-008: Verificar que el ID almacenado coincida exactamente con el fingerprint calculado
+    return storedId === currentFp;
 }
 
 export default { generateFingerprint, verifyStoredFingerprint };

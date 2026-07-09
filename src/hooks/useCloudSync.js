@@ -36,6 +36,7 @@ let globalSubscription = null;
 let isSyncingFromCloud = false; // true mientras aplicamos cambios de la nube → evita eco
 let pendingPush = {};           // Debounce: { [key]: timeoutId }
 let _currentDeviceId = '';      // Device ID activo para pushCloudSync
+let isCloudSyncActive = false;   // Evita empujar a la nube si el dispositivo no está autenticado/emparejado
 
 // SEC-009 / HOOK-011: ELIMINADO el monkeypatch global de `localStorage.setItem`.
 // Antes se reemplazaba `localStorage.setItem` a nivel módulo, interceptando TODAS
@@ -70,6 +71,7 @@ function _debouncePush(key, value) {
 export const pushCloudSync = async (key, value) => {
     if (!supabaseCloud) return;
     if (isSyncingFromCloud) return;          // Nunca re-emitir lo que llegó de la nube
+    if (!isCloudSyncActive) return;          // Omitir si la sesión cloud no está activa
     if (!SYNC_KEYS.includes(key)) return;
     if (!_currentDeviceId) return;
 
@@ -148,13 +150,23 @@ export function useCloudSync(deviceId) {
 
     useEffect(() => {
         if (!supabaseCloud || !deviceId) {
+            isCloudSyncActive = false;
             if (globalSubscription) {
-                globalSubscription.unsubscribe();
+                try { supabaseCloud.removeChannel(globalSubscription).catch(() => {}); } catch { }
                 globalSubscription = null;
                 isInitialized.current = false;
                 _currentDeviceId = '';
             }
             return;
+        }
+
+        // Si el deviceId cambió con respecto al inicializado, forzar reinicio y cleanup de suscripción
+        if (isInitialized.current && _currentDeviceId !== deviceId) {
+            if (globalSubscription) {
+                try { supabaseCloud.removeChannel(globalSubscription).catch(() => {}); } catch { }
+                globalSubscription = null;
+            }
+            isInitialized.current = false;
         }
 
         if (isInitialized.current) return;
@@ -178,11 +190,13 @@ export function useCloudSync(deviceId) {
                         .maybeSingle();
 
                     if (pairingErr || !pairing) {
+                        isCloudSyncActive = false;
                         console.log('[CloudSync] Omitiendo sincronización: sin sesión cloud ni emparejamiento activo.');
                         return;
                     }
                 }
 
+                isCloudSyncActive = true;
                 isInitialized.current = true;
 
                 // ── Pull Inicial ───────────────────────────────────────────
@@ -299,12 +313,13 @@ export function useCloudSync(deviceId) {
         const intervalId = setInterval(forcePushLocalData, 20000);
 
         return () => {
+            isCloudSyncActive = false;
             window.removeEventListener('app_storage_update', handleAppStorageUpdate);
             window.removeEventListener('online', forcePushLocalData);
             clearInterval(intervalId);
 
             // HOOK-012: limpiar suscripción en cleanup para evitar leaks.
-            if (globalSubscription && !deviceId) {
+            if (globalSubscription) {
                 try { supabaseCloud.removeChannel(globalSubscription).catch(() => {}); } catch { }
                 globalSubscription = null;
                 isInitialized.current = false;

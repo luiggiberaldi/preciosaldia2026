@@ -164,6 +164,21 @@ const ProductsToolbar = ({
                     className="flex gap-1 overflow-x-auto py-1 pl-1 pr-10 scrollbar-hide scroll-smooth"
                     onScroll={handleScroll}
                 >
+                    {/* Pestaña estática para la categoría 'Todos' */}
+                    <button
+                        onClick={() => { handleSetActiveCategory('todos'); triggerHaptic && triggerHaptic(); }}
+                        className={`shrink-0 px-2 py-1 rounded-md text-[10px] font-bold transition-all border ${
+                            activeCategory === 'todos'
+                                ? 'bg-brand text-white border-brand shadow-sm border-transparent font-black'
+                                : 'bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 active:scale-95'
+                        }`}
+                    >
+                        Todos
+                        <span className={`ml-1 text-[9px] ${activeCategory === 'todos' ? 'opacity-90' : 'text-slate-400 dark:text-slate-500'}`}>
+                            · {getCategoryProductCount('todos')}
+                        </span>
+                    </button>
+
                     {categories.map(cat => {
                         const count = getCategoryProductCount(cat.id);
                         const isActive = activeCategory === cat.id;
@@ -175,7 +190,7 @@ const ProductsToolbar = ({
                                 onClick={() => { handleSetActiveCategory(cat.id); triggerHaptic && triggerHaptic(); }}
                                 className={`shrink-0 px-2 py-1 rounded-md text-[10px] font-bold transition-all border ${
                                     isActive
-                                        ? `${catColorClass} shadow-sm border-transparent`
+                                        ? `${catColorClass} shadow-sm border-transparent font-black`
                                         : 'bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 active:scale-95'
                                 }`}
                             >

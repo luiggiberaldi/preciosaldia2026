@@ -12,6 +12,27 @@ const PRODUCT_ID = 'bodega';
 
 const DEMO_DURATION_MS = 72 * 60 * 60 * 1000; // 72 horas (3 dias)
 
+// Helper seguro para obtener el estado de la licencia respetando RLS o haciendo fallback
+async function _fetchRemoteLicense(currentDeviceId) {
+    try {
+        const { data, error } = await supabase.rpc('get_license_status', { p_device_id: currentDeviceId });
+        if (!error && data) {
+            const record = Array.isArray(data) ? data[0] : data;
+            if (record) {
+                return { data: record, error: null };
+            }
+        }
+    } catch (e) {
+        // Silencioso
+    }
+    return supabase
+        .from('licenses')
+        .select('type, is_active, expires_at, created_at')
+        .eq('device_id', currentDeviceId)
+        .eq('product_id', PRODUCT_ID)
+        .maybeSingle();
+}
+
 // SEC-022 / INFRA-011: Security headers (CSP, X-Frame-Options, X-Content-Type-Options,
 // Referrer-Policy) deben configurarse en el servidor que sirve el build (Cloudflare
 // Worker, Vercel o index.html <meta http-equiv>). No se pueden aplicar correctamente
@@ -153,13 +174,7 @@ export function useSecurity() {
             let remoteLicense = null;
             let netError = false;
             try {
-                const { data, error } = await supabase
-                    .from('licenses')
-                    .select('type, is_active, expires_at, code, created_at')
-                    .eq('device_id', currentDeviceId)
-                    .eq('product_id', PRODUCT_ID)
-                    .maybeSingle();
-
+                const { data, error } = await _fetchRemoteLicense(currentDeviceId);
                 if (error) {
                     netError = true;
                 } else {
@@ -235,13 +250,8 @@ export function useSecurity() {
                 // Verificar estado remoto antes de confiar en el token local.
                 let revokedRemotely = false;
                 try {
-                    const { data: remoteLicense } = await supabase
-                        .from('licenses')
-                        .select('is_active, expires_at')
-                        .eq('device_id', currentDeviceId)
-                        .eq('product_id', PRODUCT_ID)
-                        .maybeSingle();
-
+                    const { data: remoteLicense } = await _fetchRemoteLicense(currentDeviceId);
+ 
                     if (remoteLicense && remoteLicense.is_active === false) {
                         revokedRemotely = true;
                     }
@@ -412,13 +422,7 @@ export function useSecurity() {
                 let remoteLicense = null;
                 let netError = false;
                 try {
-                    const { data, error } = await supabase
-                        .from('licenses')
-                        .select('type, is_active, expires_at, created_at')
-                        .eq('device_id', deviceId)
-                        .eq('product_id', PRODUCT_ID)
-                        .maybeSingle();
-
+                    const { data, error } = await _fetchRemoteLicense(deviceId);
                     if (error) netError = true;
                     else remoteLicense = data;
                 } catch (e) {
@@ -539,13 +543,8 @@ export function useSecurity() {
         const currentDeviceId = deviceId || localStorage.getItem('pda_device_id');
 
         try {
-            const { data: existingDemo } = await supabase
-                .from('licenses')
-                .select('id, type')
-                .eq('device_id', currentDeviceId)
-                .eq('product_id', PRODUCT_ID)
-                .neq('type', 'registered')
-                .maybeSingle();
+            const { data: remoteLicense } = await _fetchRemoteLicense(currentDeviceId);
+            const existingDemo = remoteLicense && remoteLicense.type !== 'registered' ? remoteLicense : null;
 
             if (existingDemo) {
                 await storageService.setItem('pda_demo_flag_v1', {
@@ -610,20 +609,40 @@ export function useSecurity() {
     const unlockApp = async (inputCode) => {
         try {
             const cleanCode = (inputCode || "").replace(/-/g, "").trim().toUpperCase().replace(/O/g, '0');
-            const { data: license, error } = await supabase
-                .from('licenses')
-                .select('type, is_active, expires_at, code, created_at')
-                .eq('device_id', deviceId)
-                .eq('product_id', PRODUCT_ID)
-                .maybeSingle();
+            let isValid = false;
+            let activeLicense = null;
 
-            const cleanDbCode = (license?.code || "").replace(/-/g, "").trim().toUpperCase().replace(/O/g, '0');
-
-            if (error || !license || cleanDbCode !== cleanCode) {
-                return { success: false, status: 'INVALID_CODE' };
+            try {
+                const { data, error } = await supabase.rpc('verify_activation_code', {
+                    p_device_id: deviceId,
+                    p_code: cleanCode
+                });
+                if (!error && data === true) {
+                    isValid = true;
+                    const { data: remoteLicense } = await _fetchRemoteLicense(deviceId);
+                    activeLicense = remoteLicense;
+                }
+            } catch (e) {
+                // Silencioso
             }
 
-            const { type, is_active, expires_at } = license;
+            // Fallback por compatibilidad si la RPC no existe o falla
+            if (!isValid) {
+                const { data: license, error } = await supabase
+                    .from('licenses')
+                    .select('type, is_active, expires_at, code, created_at')
+                    .eq('device_id', deviceId)
+                    .eq('product_id', PRODUCT_ID)
+                    .maybeSingle();
+
+                const cleanDbCode = (license?.code || "").replace(/-/g, "").trim().toUpperCase().replace(/O/g, '0');
+                if (error || !license || cleanDbCode !== cleanCode) {
+                    return { success: false, status: 'INVALID_CODE' };
+                }
+                activeLicense = license;
+            }
+
+            const { type, is_active, expires_at } = activeLicense;
 
             if (!is_active) {
                 return { success: false, status: 'LICENSE_REVOKED' };
@@ -654,7 +673,7 @@ export function useSecurity() {
                     type,
                     isActive: true,
                     expiresAt,
-                    createdAt: license.created_at || new Date().toISOString(),
+                    createdAt: activeLicense.created_at || new Date().toISOString(),
                     deviceId,
                     updatedAt: Date.now()
                 }));
@@ -671,7 +690,7 @@ export function useSecurity() {
                 type,
                 isActive: true,
                 expiresAt: null,
-                createdAt: license.created_at || new Date().toISOString(),
+                createdAt: activeLicense.created_at || new Date().toISOString(),
                 deviceId,
                 updatedAt: Date.now()
             }));

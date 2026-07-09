@@ -1,6 +1,6 @@
 import React from 'react';
 import { ShoppingCart, Plus, Minus, X, CheckCircle, Package, Trash2, DollarSign, Percent } from 'lucide-react';
-import { formatBs, formatCop, getCop } from '../../utils/calculatorUtils';
+import { formatBs, formatCop, getCop, formatUsd } from '../../utils/calculatorUtils';
 import { mulR } from '../../utils/dinero';
 
 export default function CartPanel({
@@ -101,20 +101,20 @@ export default function CartPanel({
                                                 {copEnabled && tasaCop > 0 ? (
                                                     copPrimary ? (
                                                         <>
-                                                            <p className="text-[10px] sm:text-[11px] font-black text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-1 sm:px-1.5 rounded">{formatCop(item.priceCop || Math.round(item.priceUsd * tasaCop))} COP</p>
-                                                            <p className="text-[10px] sm:text-[11px] font-bold text-emerald-600">${item.priceUsd.toFixed(2)}</p>
+                                                            <p className="text-[10px] sm:text-[11px] font-black text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-1 sm:px-1.5 rounded">{formatCop(getCop(item, tasaCop))} COP</p>
+                                                            <p className="text-[10px] sm:text-[11px] font-bold text-emerald-600">${formatUsd(item.priceUsd)}</p>
                                                             <p className="text-[10px] sm:text-[11px] font-bold text-brand dark:text-brand">{item.exactBs != null ? formatBs(item.exactBs) : formatBs(mulR(item.priceUsd, effectiveRate))} Bs</p>
                                                         </>
                                                     ) : (
                                                         <>
-                                                            <p className="text-[10px] sm:text-[11px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 px-1 sm:px-1.5 rounded">${item.priceUsd.toFixed(2)}</p>
-                                                            <p className="text-[10px] sm:text-[11px] font-bold text-amber-600 dark:text-amber-400">{formatCop(item.priceCop || Math.round(item.priceUsd * tasaCop))} COP</p>
+                                                            <p className="text-[10px] sm:text-[11px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 px-1 sm:px-1.5 rounded">${formatUsd(item.priceUsd)}</p>
+                                                            <p className="text-[10px] sm:text-[11px] font-bold text-amber-600 dark:text-amber-400">{formatCop(getCop(item, tasaCop))} COP</p>
                                                             <p className="text-[10px] sm:text-[11px] font-bold text-brand dark:text-brand">{item.exactBs != null ? formatBs(item.exactBs) : formatBs(mulR(item.priceUsd, effectiveRate))} Bs</p>
                                                         </>
                                                     )
                                                 ) : (
                                                     <>
-                                                        <p className="text-[10px] sm:text-[11px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 px-1 sm:px-1.5 rounded">${item.priceUsd.toFixed(2)}</p>
+                                                        <p className="text-[10px] sm:text-[11px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 px-1 sm:px-1.5 rounded">${formatUsd(item.priceUsd)}</p>
                                                         <p className="text-[10px] sm:text-[11px] font-medium text-slate-400">
                                                             {item.exactBs != null ? formatBs(item.exactBs) : formatBs(mulR(item.priceUsd, effectiveRate))} Bs
                                                         </p>
@@ -127,24 +127,24 @@ export default function CartPanel({
                                         {copEnabled && tasaCop > 0 && copPrimary ? (
                                             <>
                                                 <p className="text-sm sm:text-base font-black text-amber-600 dark:text-amber-400">
-                                                    {formatCop((item.priceCop || Math.round(item.priceUsd * tasaCop)) * item.qty)} COP
+                                                    {formatCop(mulR(getCop(item, tasaCop), item.qty))} COP
                                                 </p>
                                                 <p className="text-[10px] font-medium text-right leading-tight">
-                                                    <span className="text-emerald-600 dark:text-emerald-400 font-bold">${mulR(item.priceUsd, item.qty).toFixed(2)}</span>
+                                                    <span className="text-emerald-600 dark:text-emerald-400 font-bold">${formatUsd(mulR(item.priceUsd, item.qty))}</span>
                                                     <span className="text-slate-300 mx-0.5">|</span>
-                                                    <span className="text-brand dark:text-brand font-bold">{formatBs(mulR(item.priceUsd, item.qty) * effectiveRate)} Bs</span>
+                                                    <span className="text-brand dark:text-brand font-bold">{formatBs(mulR(mulR(item.priceUsd, item.qty), effectiveRate))} Bs</span>
                                                 </p>
                                             </>
                                         ) : (
                                             <>
                                                 <p className="text-sm sm:text-base font-black text-slate-800 dark:text-white">
-                                                    ${mulR(item.priceUsd, item.qty).toFixed(2)}
+                                                    ${formatUsd(mulR(item.priceUsd, item.qty))}
                                                 </p>
                                                 {copEnabled && tasaCop > 0 && (
                                                     <p className="text-[10px] font-medium text-right leading-tight">
-                                                        <span className="text-amber-600 dark:text-amber-400 font-bold">{formatCop((item.priceCop || Math.round(item.priceUsd * tasaCop)) * item.qty)} COP</span>
+                                                        <span className="text-amber-600 dark:text-amber-400 font-bold">{formatCop(mulR(getCop(item, tasaCop), item.qty))} COP</span>
                                                         <span className="text-slate-300 mx-0.5">|</span>
-                                                        <span className="text-brand dark:text-brand font-bold">{formatBs(mulR(item.priceUsd, item.qty) * effectiveRate)} Bs</span>
+                                                        <span className="text-brand dark:text-brand font-bold">{formatBs(mulR(mulR(item.priceUsd, item.qty), effectiveRate))} Bs</span>
                                                     </p>
                                                 )}
                                             </>

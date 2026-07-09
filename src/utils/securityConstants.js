@@ -111,6 +111,8 @@ export function validatePin(pin) {
   if (pin.length > PIN_POLICY.MAX_LENGTH) {
     return `El PIN no puede exceder ${PIN_POLICY.MAX_LENGTH} caracteres`;
   }
+  // Validación de lista negra desactivada a petición del usuario
+  /*
   if (PIN_POLICY.BLACKLIST.includes(pin)) {
     return 'PIN demasiado predecible (elige otro)';
   }
@@ -118,6 +120,7 @@ export function validatePin(pin) {
   if (/^(\d)\1{5,}$/.test(pin)) {
     return 'PIN no puede ser todos los mismos dígitos';
   }
+  */
   return null;
 }
 

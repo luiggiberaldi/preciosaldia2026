@@ -1,7 +1,7 @@
 import React from 'react';
 import { X } from 'lucide-react';
 
-export const Modal = ({ isOpen, onClose, title, children, className = '' }) => {
+export const Modal = ({ isOpen, onClose, title, children, className = '', size = 'max-w-sm' }) => {
   if (!isOpen) return null;
 
   return (
@@ -15,7 +15,7 @@ export const Modal = ({ isOpen, onClose, title, children, className = '' }) => {
       />
       
       {/* Contenido del Modal */}
-      <div className={`relative bg-white dark:bg-slate-900 w-full max-w-sm rounded-[2rem] shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-200 transition-all ${className}`}>
+      <div className={`relative bg-white dark:bg-slate-900 w-full ${size} rounded-[2rem] shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-200 transition-all ${className}`}>
         
         {/* Cabecera */}
         <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/50">

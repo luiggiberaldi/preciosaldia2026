@@ -15,7 +15,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
-      webSecurity: false,
+      webSecurity: true,
     },
   });
 

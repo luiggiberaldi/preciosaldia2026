@@ -258,7 +258,7 @@ export default function SalesHistory({
                                                     <span>💵 Inicial: ${((s.totalUsd || 0) - (s.casheaUsd || 0)).toFixed(2)}</span>
                                                 </div>
                                                 <div className="flex items-center gap-1 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 font-bold px-1.5 py-0.5 rounded-md border border-purple-200 dark:border-purple-800/40 text-[10px]">
-                                                    <span>⚡ Financia Cashea: ${s.casheaUsd.toFixed(2)}</span>
+                                                    <span className="flex items-center gap-1"><CasheaIcon size={10} /> Financia Cashea: ${s.casheaUsd.toFixed(2)}</span>
                                                 </div>
                                             </div>
                                         )}

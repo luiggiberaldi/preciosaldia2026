@@ -2,6 +2,7 @@ import React from 'react';
 import { TrendingUp, Package, ShoppingBag, ArrowUpRight, Users, ChevronDown, ChevronUp, Key, LockIcon, CheckCircle2 } from 'lucide-react';
 import { formatBs, formatCop } from '../../utils/calculatorUtils';
 import AnimatedCounter from '../AnimatedCounter';
+import CasheaIcon from '../CasheaIcon';
 
 export default function DashboardStats({
     isDemo, demoTimeLeft, deviceId,
@@ -279,8 +280,8 @@ export default function DashboardStats({
                                             <div className="min-w-0">
                                                 <p className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{c.name}</p>
                                                 {debtCashea > 0 && (
-                                                    <span className="text-[9px] font-black text-purple-600 dark:text-purple-400 flex items-center gap-0.5 mt-0.5">
-                                                        ⚡ Incluye Cashea (${debtCashea.toFixed(2)})
+                                                    <span className="text-[9px] font-black text-purple-600 dark:text-purple-400 flex items-center gap-1 mt-0.5">
+                                                        <CasheaIcon size={10} /> Incluye Cashea (${debtCashea.toFixed(2)})
                                                     </span>
                                                 )}
                                             </div>

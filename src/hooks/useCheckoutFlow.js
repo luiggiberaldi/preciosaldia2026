@@ -58,7 +58,12 @@ export function useCheckoutFlow({
     };
 
     const handleCreateCustomer = async (name, documentId, phone) => {
-        const newCustomer = { id: crypto.randomUUID(), name, documentId: documentId || '', phone: phone || '', deuda: 0, favor: 0, createdAt: new Date().toISOString() };
+        const nextCodeNum = customers.reduce((mx, c) => {
+            const numPart = parseInt(c.code?.replace('CLI-', ''), 10);
+            return isNaN(numPart) ? mx : Math.max(mx, numPart);
+        }, 0) + 1;
+        const code = `CLI-${String(nextCodeNum).padStart(5, '0')}`;
+        const newCustomer = { id: crypto.randomUUID(), code, name, documentId: documentId || '', phone: phone || '', deuda: 0, favor: 0, createdAt: new Date().toISOString() };
         const updated = [...customers, newCustomer];
         try {
             await storageService.setItem('bodega_customers_v1', updated);

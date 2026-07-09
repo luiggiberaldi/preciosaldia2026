@@ -58,13 +58,13 @@ function _generateRandomPin() {
 }
 
 /**
- * Crea los usuarios iniciales con PINs de fábrica (solo ceros) hasheados con PBKDF2.
+ * Crea los usuarios iniciales con PINs seguros aleatorios hasheados con PBKDF2.
  * Devuelve `{ usuarios, initialPins }` para que el caller pueda mostrar los PINs una vez.
  * @returns {Promise<{ usuarios: Array, initialPins: Array<{id,nombre,rol,pin}> }>}
  */
 async function _createDefaultUsersWithRandomPins() {
-    const adminPin = '0'.repeat(PIN_POLICY.MIN_LENGTH);
-    const cajeroPin = '0'.repeat(PIN_POLICY.MIN_LENGTH);
+    const adminPin = _generateRandomPin();
+    const cajeroPin = _generateRandomPin();
     const adminHash = await hashPin(adminPin);
     const cajeroHash = await hashPin(cajeroPin);
     const usuarios = [
@@ -81,7 +81,7 @@ async function _createDefaultUsersWithRandomPins() {
 /**
  * Inicializa usuarios por defecto la primera vez (async, post-rehydrate).
  * Si ya hay usuarios persistidos, no hace nada. Si no, crea los defaults con PINs
- * de fábrica (solo ceros) y los deja accesibles en `window.__INITIAL_PINS__` para que la UI los muestre.
+ * aleatorios seguros y los deja accesibles en `window.__INITIAL_PINS__` para que la UI los muestre.
  *
  * @param {object} state - estado actual del store
  * @param {function} set - setter de zustand

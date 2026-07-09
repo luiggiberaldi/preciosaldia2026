@@ -36,7 +36,7 @@ export default function CierreHistoryCard({ cierre, correlativo, bcvRate, produc
         hour: '2-digit', minute: '2-digit' 
     });
 
-    const handlePrintPDF = (e) => {
+    const handleAction = (e, actionType) => {
         e.stopPropagation();
         
         const todayProductMap = {};
@@ -65,7 +65,10 @@ export default function CierreHistoryCard({ cierre, correlativo, bcvRate, produc
             todayItemsSold: cierre.totalItems,
             reconData: null,
             apertura: cierre.apertura,
-            isReprint: true
+            isReprint: true,
+            copEnabled,
+            tasaCop,
+            action: actionType
         });
     };
 
@@ -83,9 +86,9 @@ export default function CierreHistoryCard({ cierre, correlativo, bcvRate, produc
                     <div>
                         <p className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
                             Cierre de Caja
-                            {correlativo != null && (
+                            {(cierre.cierreNumber != null || correlativo != null) && (
                                 <span className="text-[9px] bg-brand-light dark:bg-brand/20 text-brand-dark dark:text-brand px-1.5 py-0.5 rounded font-black">
-                                    #{correlativo}
+                                    #{cierre.cierreNumber || correlativo}
                                 </span>
                             )}
                             <span className="text-[9px] bg-slate-100 dark:bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded uppercase font-black">{cierre.salesCount} ops</span>
@@ -141,32 +144,27 @@ export default function CierreHistoryCard({ cierre, correlativo, bcvRate, produc
                             }
                             return (
                                 <div key={method} className="flex justify-between items-center text-xs">
-                                    <span className="text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
-                                        <PayIcon size={12} className="text-slate-400" /> {label}
-                                    </span>
-                                    <span className="font-bold text-slate-700 dark:text-slate-200">{displayAmount}</span>
-                                </div>
+                                     <span className="text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+                                         <PayIcon size={12} className="text-slate-400" /> {label}
+                                     </span>
+                                     <span className="font-bold text-slate-700 dark:text-slate-200">{displayAmount}</span>
+                                 </div>
                             );
                         })}
                     </div>
 
                     <div className="pt-3 mt-1 flex gap-2">
                         <button
-                            onClick={handlePrintPDF}
+                            onClick={(e) => handleAction(e, 'print')}
                             className="flex-1 py-2.5 bg-brand-light dark:bg-surface-800/20 text-brand-dark dark:text-brand hover:bg-brand-light font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors active:scale-95"
                         >
-                            <Printer size={16} /> Re-imprimir PDF
+                            <Printer size={16} /> Imprimir
                         </button>
                         <button
-                            onClick={handleThermalPrint}
-                            disabled={isPrinting}
-                            className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                            title="Imprimir en impresora térmica (Chrome/Edge)"
+                            onClick={(e) => handleAction(e, 'download')}
+                            className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors active:scale-95"
                         >
-                            {isPrinting
-                                ? <><Loader2 size={14} className="animate-spin" /> Imprimiendo…</>
-                                : <><Printer size={14} /> Impresora Térmica</>
-                            }
+                            <Printer size={14} /> Descargar PDF
                         </button>
                     </div>
                 </div>

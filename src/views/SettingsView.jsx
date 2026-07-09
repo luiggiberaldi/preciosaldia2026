@@ -186,7 +186,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
 
                 {/* Scrollable Content Pane */}
                 <div className="flex-1 overflow-y-auto pb-[calc(3rem+env(safe-area-inset-bottom))] md:pb-6 md:p-6">
-                    <div className="max-w-md md:max-w-4xl lg:max-w-5xl mx-auto space-y-4 md:mt-2">
+                    <div className="w-full space-y-4 md:mt-2">
                         {/* ═══ TAB: NEGOCIO ═══ */}
                         {activeTab === 'negocio' && (
                             <SettingsTabNegocio

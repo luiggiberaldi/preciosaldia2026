@@ -410,7 +410,7 @@ export default function CierreCajaWizard({
                                         <div className="grid grid-cols-3 gap-0 px-4 py-3 border-b border-slate-100 dark:border-slate-700/50">
                                             <span className="text-sm font-bold text-slate-700 dark:text-slate-200">USD</span>
                                             <span className="text-sm font-mono font-bold text-slate-500 text-center">${expectedUsd.toFixed(2)}</span>
-                                            <span className={`text-sm font-mono font-black text-center ${diffUsd >= -0.50 && diffUsd <= 0.50 ? 'text-emerald-600' : diffUsd < -5 || diffUsd > 5 ? 'text-red-500' : 'text-amber-600'}`}>
+                                            <span className={`text-sm font-mono font-black text-center ${absDiffUsd <= FINANCIAL_EPSILON.CASH_RECONCILE_TOLERANCE_USD ? 'text-emerald-600' : absDiffUsd > FINANCIAL_EPSILON.CASH_RECONCILE_TOLERANCE_USD * 5 ? 'text-red-500' : 'text-amber-600'}`}>
                                                 ${declaredUsd.toFixed(2)}
                                             </span>
                                         </div>
@@ -418,7 +418,7 @@ export default function CierreCajaWizard({
                                         <div className={`grid grid-cols-3 gap-0 px-4 py-3 ${hasCopTransactions ? 'border-b border-slate-100 dark:border-slate-700/50' : 'border-b border-slate-100 dark:border-slate-700/50'}`}>
                                             <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Bs</span>
                                             <span className="text-sm font-mono font-bold text-slate-500 text-center">{formatBs(expectedBs)}</span>
-                                            <span className={`text-sm font-mono font-black text-center ${Math.abs(diffBs) <= expectedBs * 0.02 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                                            <span className={`text-sm font-mono font-black text-center ${absDiffBs <= FINANCIAL_EPSILON.CASH_RECONCILE_TOLERANCE_BS ? 'text-emerald-600' : absDiffBs > FINANCIAL_EPSILON.CASH_RECONCILE_TOLERANCE_BS * 5 ? 'text-red-500' : 'text-amber-600'}`}>
                                                 {formatBs(declaredBs)}
                                             </span>
                                         </div>
@@ -427,7 +427,7 @@ export default function CierreCajaWizard({
                                             <div className="grid grid-cols-3 gap-0 px-4 py-3 border-b border-slate-100 dark:border-slate-700/50">
                                                 <span className="text-sm font-bold text-amber-600 dark:text-amber-400">COP</span>
                                                 <span className="text-sm font-mono font-bold text-slate-500 text-center">{fmtCop(expectedCop)}</span>
-                                                <span className={`text-sm font-mono font-black text-center ${Math.abs(diffCop) <= expectedCop * 0.02 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                                                <span className={`text-sm font-mono font-black text-center ${absDiffCop <= FINANCIAL_EPSILON.CASH_RECONCILE_TOLERANCE_COP ? 'text-emerald-600' : absDiffCop > FINANCIAL_EPSILON.CASH_RECONCILE_TOLERANCE_COP * 5 ? 'text-red-500' : 'text-amber-600'}`}>
                                                     {fmtCop(declaredCop)}
                                                 </span>
                                             </div>

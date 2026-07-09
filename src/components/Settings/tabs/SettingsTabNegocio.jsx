@@ -17,9 +17,9 @@ export default function SettingsTabNegocio({
     triggerHaptic,
 }) {
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
             {/* Mi Negocio */}
-            <div className="md:col-span-2">
+            <div className="md:col-span-2 xl:col-span-3">
                 <SectionCard icon={Store} title="Mi Negocio" subtitle="Datos que aparecen en tickets" iconColor="text-brand">
                     <div className="space-y-4">
                         <div>

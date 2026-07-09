@@ -306,17 +306,9 @@ export async function generateTicketPDF(sale, bcvRate) {
     y += 3.5;
     doc.text('interno sin validez tributaria.', CX, y, { align: 'center' });
 
-    // ── DESCARGAR / COMPARTIR ──
+    // ── DESCARGAR DIRECTO ──
     const filename = 'ticket_' + saleNum + '.pdf';
-    const blob = doc.output('blob');
-    const file = new File([blob], filename, { type: 'application/pdf' });
-
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        navigator.share({ title: 'Ticket #' + saleNum, files: [file] })
-            .catch(() => doc.save(filename));
-    } else {
-        doc.save(filename);
-    }
+    doc.save(filename);
 }
 
 /**

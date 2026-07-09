@@ -775,7 +775,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                                                 >
                                                     <div className="min-w-0 flex-1">
                                                         <span className="text-xs font-black block truncate">
-                                                            Cierre #{String(c.cierreId).slice(-4)}
+                                                            Cierre #{c.cierreNumber || String(c.cierreId).slice(-4)}
                                                         </span>
                                                         <span className="text-[9px] text-slate-400 font-bold block mt-0.5">
                                                             {dateObj.toLocaleDateString()} • {dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

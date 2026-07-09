@@ -36,7 +36,7 @@ export default function SettingsTabSistema({
     };
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
             {/* Datos y Respaldo */}
             <SectionCard icon={Database} title="Datos y Respaldo" subtitle="Exportar, importar y compartir" iconColor="text-cyan-500">
                 <div className="p-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/30 rounded-xl flex gap-2.5">
@@ -164,7 +164,7 @@ export default function SettingsTabSistema({
 
             {/* Celular del Supervisor (QR Monitoreo) */}
             {isAdmin && (
-                <div className="md:col-span-2">
+                <div className="md:col-span-2 xl:col-span-3">
                     <SectionCard icon={QrCode} title="Celular del Supervisor" subtitle="Monitoreo remoto en tiempo real" iconColor="text-emerald-500">
                         <PairingManager deviceId={deviceId} triggerHaptic={triggerHaptic} />
                     </SectionCard>
@@ -173,7 +173,7 @@ export default function SettingsTabSistema({
 
             {/* Zona de Peligro — Habilitado para Administradores */}
             {isAdmin && (
-                <div className="md:col-span-2">
+                <div className="md:col-span-2 xl:col-span-3">
                     <SectionCard icon={AlertTriangle} title="Zona de Peligro" subtitle="Acciones irreversibles" iconColor="text-red-500">
                         <div className="p-2.5 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/30 rounded-xl mb-3">
                             <p className="text-xs text-red-750 dark:text-red-400 leading-relaxed font-bold">

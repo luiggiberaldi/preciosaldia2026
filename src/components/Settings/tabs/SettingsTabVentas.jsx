@@ -12,7 +12,7 @@ export default function SettingsTabVentas({
     const [casheaMinAmount, setCasheaMinAmount] = useState(localStorage.getItem('cashea_min_amount') || '0');
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
             <SectionCard icon={Package} title="Inventario" subtitle="Reglas de ventas" iconColor="text-emerald-500">
                 <div className="flex items-center justify-between">
                     <div>
@@ -76,7 +76,7 @@ export default function SettingsTabVentas({
                 </div>
             </SectionCard>
 
-            <div className="md:col-span-2">
+            <div className="md:col-span-2 xl:col-span-3">
                 <SectionCard icon={CreditCard} title="Metodos de Pago" subtitle="Configura como te pagan" iconColor="text-brand">
                     <PaymentMethodsManager triggerHaptic={triggerHaptic} />
                 </SectionCard>

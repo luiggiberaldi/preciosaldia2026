@@ -444,9 +444,15 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                     <AddCustomerModal
                         onClose={() => setIsAddModalOpen(false)}
                         onSave={async (newC) => {
-                            const updated = [...customers, newC];
+                            const nextCodeNum = customers.reduce((mx, c) => {
+                                const numPart = parseInt(c.code?.replace('CLI-', ''), 10);
+                                return isNaN(numPart) ? mx : Math.max(mx, numPart);
+                            }, 0) + 1;
+                            const code = `CLI-${String(nextCodeNum).padStart(5, '0')}`;
+                            const clientWithCode = { ...newC, code };
+                            const updated = [...customers, clientWithCode];
                             await saveCustomers(updated);
-                            auditLog('CLIENTE', 'CLIENTE_CREADO', `Cliente "${newC.name}" creado`);
+                            auditLog('CLIENTE', 'CLIENTE_CREADO', `Cliente "${newC.name}" creado con código ${code}`);
                             setIsAddModalOpen(false);
                         }}
                     />
@@ -583,7 +589,10 @@ function CustomerCard({ customer, bcvRate, tasaCop, copEnabled, copPrimary, onCl
                     </span>
                 </div>
                 <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-slate-800 dark:text-white text-sm truncate">{customer.name}</h3>
+                    <h3 className="font-bold text-slate-800 dark:text-white text-sm truncate">
+                        {customer.code && <span className="font-mono text-[10px] text-slate-400 mr-1.5">{customer.code}</span>}
+                        {customer.name}
+                    </h3>
                     <div className="flex items-center gap-2 mt-0.5">
                         {customer.documentId && (
                             // v1.2.0: .badge class (design system) en vez de clases Tailwind ad-hoc.
