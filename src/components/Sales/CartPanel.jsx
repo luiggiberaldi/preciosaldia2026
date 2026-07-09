@@ -26,12 +26,7 @@ export default function CartPanel({
 }) {
     const [editingQtyId, setEditingQtyId] = React.useState(null);
     const [tempQty, setTempQty] = React.useState('');
-    const [cartSearch, setCartSearch] = React.useState('');
     const inputRef = React.useRef(null);
-
-    const filteredCart = cartSearch.trim()
-        ? cart.filter(i => i.name.toLowerCase().includes(cartSearch.toLowerCase()))
-        : cart;
 
     const handleQtyClick = (item) => {
         setEditingQtyId(item.id);
@@ -53,23 +48,12 @@ export default function CartPanel({
         <div className="lg:flex-1 lg:min-h-0 flex flex-col bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm">
 
             {/* Header */}
-            <div className="shrink-0 px-4 pb-2 pt-3 border-b border-slate-100 dark:border-slate-800 bg-brand dark:bg-brand rounded-t-2xl sm:rounded-t-3xl">
-                <div className="flex items-center justify-between mb-2">
+            <div className="shrink-0 px-4 py-4 border-b border-slate-100 dark:border-slate-800 bg-brand dark:bg-brand rounded-t-2xl sm:rounded-t-3xl">
+                <div className="flex items-center justify-between">
                     <span className="text-sm font-black text-white flex items-center gap-2">
                         <ShoppingCart size={16} className="opacity-80" />
                         Cesta ({cartItemCount})
                     </span>
-                </div>
-                {/* Buscador interno */}
-                <div className="relative">
-                    <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/50" />
-                    <input
-                        type="text"
-                        value={cartSearch}
-                        onChange={e => setCartSearch(e.target.value)}
-                        placeholder="Buscar en la cesta..."
-                        className="w-full bg-white/15 text-white placeholder-white/50 text-[11px] font-medium rounded-xl py-2 pl-8 pr-3 outline-none focus:bg-white/25 border border-white/20 transition-all"
-                    />
                 </div>
             </div>
 
@@ -85,7 +69,7 @@ export default function CartPanel({
                     </div>
                 ) : (
                     <div className="space-y-2">
-                        {filteredCart.map((item, idx) => {
+                        {cart.map((item, idx) => {
                             const qtyDisplay = item.isWeight ? `${item.qty.toFixed(3)} Kg` : item.qty;
                             const isCustomProduct = item.id.toString().startsWith('custom_') || item.name === 'Venta Libre';
                             const isEditing = editingQtyId === item.id;
