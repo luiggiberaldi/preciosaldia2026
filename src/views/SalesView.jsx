@@ -74,6 +74,9 @@ export default function SalesView({ triggerHaptic, isActive }) {
 
     const [isCartSheetOpen, setIsCartSheetOpen] = useState(false);
 
+    // Ventas en Espera (Listo POS: "ESPERA")
+    const [pendingCarts, setPendingCarts] = useState([]);
+
     // Cart Navigation State
     const [cartSelectedIndex, setCartSelectedIndex] = useState(-1);
 
@@ -96,6 +99,40 @@ export default function SalesView({ triggerHaptic, isActive }) {
             setCartSelectedIndex(-1);
         }
     }, [cart.length]);
+
+    // Cargar ventas en espera desde IndexedDB al iniciar
+    useEffect(() => {
+        storageService.getItem('bodega_pending_holds_v1', []).then(data => {
+            if (Array.isArray(data)) setPendingCarts(data);
+        });
+    }, []);
+
+    // Función para guardar el carrito activo como "en espera" (Listo POS: ESPERA)
+    const handleHoldCart = async () => {
+        if (cart.length === 0) return;
+        triggerHaptic && triggerHaptic();
+        const newHolds = [...pendingCarts, { id: Date.now(), items: cart, discount }];
+        setPendingCarts(newHolds);
+        await storageService.setItem('bodega_pending_holds_v1', newHolds);
+        setCart([]);
+        setDiscount({ type: 'percentage', value: 0 });
+        showToast(`Venta guardada en espera (${newHolds.length} en cola)`, 'info');
+    };
+
+    // Función para restaurar una venta en espera
+    const handleRestoreHold = async (holdId) => {
+        const hold = pendingCarts.find(h => h.id === holdId);
+        if (!hold) return;
+        if (cart.length > 0) {
+            showToast('Vacía la cesta actual antes de restaurar una venta en espera.', 'warning');
+            return;
+        }
+        setCart(hold.items);
+        setDiscount(hold.discount);
+        const newHolds = pendingCarts.filter(h => h.id !== holdId);
+        setPendingCarts(newHolds);
+        await storageService.setItem('bodega_pending_holds_v1', newHolds);
+    };
 
     // Voice
     const handleSetSearchTerm = (text) => { setSearchTerm(text); setSelectedIndex(0); };
@@ -580,23 +617,42 @@ export default function SalesView({ triggerHaptic, isActive }) {
 
                         {/* ── Left Column: Search + Categories ── */}
                         <div className="flex-1 min-h-0 flex flex-col lg:min-w-0 overflow-y-auto lg:overflow-hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
-                            {/* Search + Popups */}
-                            <div className="shrink-0 mb-3 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-3 sm:p-4 shadow-sm border border-slate-100 dark:border-slate-800">
-                                <SearchBar
-                                    ref={searchInputRef}
-                                    searchTerm={searchTerm}
-                                    onSearchChange={handleSetSearchTerm}
-                                    onKeyDown={handleSearchKeyDown}
-                                    onPasteBarcode={handlePasteBarcode}
-                                    searchResults={searchResults}
-                                    selectedIndex={selectedIndex} setSelectedIndex={setSelectedIndex}
-                                    effectiveRate={effectiveRate}
-                                    addToCart={addToCart}
-                                    isRecording={isRecording} isProcessingAudio={isProcessingAudio} startRecording={startRecording} stopRecording={stopRecording}
-                                    hierarchyPending={hierarchyPending} setHierarchyPending={setHierarchyPending}
-                                    weightPending={weightPending} setWeightPending={setWeightPending}
-                                    copEnabled={copEnabled} copPrimary={copPrimary} tasaCop={tasaCop}
-                                />
+                            {/* ── ZONA SUPERIOR: Buscador + Tasa (fila horizontal en desktop) ── */}
+                            <div className="shrink-0 mb-3 flex items-stretch gap-3">
+                                {/* Buscador: ocupa todo el espacio */}
+                                <div className="flex-1 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-3 sm:p-4 shadow-sm border border-slate-100 dark:border-slate-800 relative">
+                                    <SearchBar
+                                        ref={searchInputRef}
+                                        searchTerm={searchTerm}
+                                        onSearchChange={handleSetSearchTerm}
+                                        onKeyDown={handleSearchKeyDown}
+                                        onPasteBarcode={handlePasteBarcode}
+                                        searchResults={searchResults}
+                                        selectedIndex={selectedIndex} setSelectedIndex={setSelectedIndex}
+                                        effectiveRate={effectiveRate}
+                                        addToCart={addToCart}
+                                        isRecording={isRecording} isProcessingAudio={isProcessingAudio} startRecording={startRecording} stopRecording={stopRecording}
+                                        hierarchyPending={hierarchyPending} setHierarchyPending={setHierarchyPending}
+                                        weightPending={weightPending} setWeightPending={setWeightPending}
+                                        copEnabled={copEnabled} copPrimary={copPrimary} tasaCop={tasaCop}
+                                    />
+                                </div>
+
+                                {/* Tasa de Referencia Flotante (estilo Listo POS 2026) — solo visible en desktop (lg:flex) */}
+                                <button
+                                    onClick={() => setShowRateConfig(v => !v)}
+                                    className="hidden lg:flex shrink-0 flex-col items-center justify-center bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl px-5 border border-slate-100 dark:border-slate-800 shadow-sm hover:border-brand/40 transition-all min-w-[100px] gap-0.5"
+                                >
+                                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                                        {copEnabled && copPrimary ? 'TASA COP' : 'TASA BCV'}
+                                    </span>
+                                    <span className="text-base font-black text-brand leading-none tabular-nums">
+                                        {copEnabled && copPrimary
+                                            ? Math.round(tasaCop).toLocaleString('es-CO')
+                                            : formatBs(effectiveRate).replace('.', ',')}
+                                    </span>
+                                    {!useAutoRate && <span className="text-[8px] bg-brand-light dark:bg-surface-800/30 text-brand-dark dark:text-brand px-1 rounded font-bold">MAN</span>}
+                                </button>
                             </div>
 
                             {/* Category Chips + Product Grid */}
@@ -614,6 +670,11 @@ export default function SalesView({ triggerHaptic, isActive }) {
                                     effectiveRate={effectiveRate}
                                     products={products}
                                     categories={categories}
+                                    onClearCart={() => { triggerHaptic && triggerHaptic(); setShowClearCartConfirm(true); }}
+                                    onHoldCart={handleHoldCart}
+                                    pendingCartsCount={pendingCarts.length}
+                                    onRestoreHold={handleRestoreHold}
+                                    pendingCarts={pendingCarts}
                                 />
                     )}
                 </div>

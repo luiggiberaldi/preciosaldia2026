@@ -79,9 +79,9 @@ export default function SalesHeader({
     };
 
     return (
-        <div className="shrink-0 mb-3 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-3 sm:p-4 shadow-sm border border-slate-100 dark:border-slate-800">
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-3">
-                <div className="flex justify-between items-center">
+        <div className={`shrink-0 ${showRateConfig ? 'mb-3 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-3 sm:p-4 shadow-sm border border-slate-100 dark:border-slate-800' : 'bg-transparent border-transparent shadow-none p-0'}`}>
+            <div className="lg:hidden flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-3">
+                <div className="flex justify-between items-center w-full">
                     <h2 className="text-xl sm:text-2xl font-black text-slate-800 dark:text-white tracking-tight flex items-center gap-2">
                         <div className="bg-emerald-500 text-white p-1.5 sm:p-2 rounded-xl shadow-lg shadow-emerald-500/30">
                             <ShoppingCart size={20} className="sm:w-[22px] sm:h-[22px]" />
@@ -89,7 +89,7 @@ export default function SalesHeader({
                         Punto de Venta
                     </h2>
                     {/* Tasa Móvil (visible solo en sm) */}
-                    <div className="sm:hidden">
+                    <div>
                         <button
                             onClick={handleRateToggle}
                             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition-all bg-slate-50 border-slate-200 hover:border-emerald-500 hover:bg-emerald-50 active:scale-95 dark:bg-slate-800 dark:border-slate-700"
@@ -102,46 +102,6 @@ export default function SalesHeader({
                             {!isAuto && <span className="text-[8px] bg-brand-light dark:bg-surface-800/30 text-brand-dark dark:text-brand px-1 rounded font-bold">MAN</span>}
                         </button>
                     </div>
-                </div>
-
-                {/* Tasa Desktop y Botones (oculto en sm) */}
-                <div className="hidden sm:flex items-center gap-2">
-                    <button
-                        onClick={() => setShowKeyboardHelp(true)}
-                        className="hidden md:flex items-center gap-1.5 bg-brand-light dark:bg-surface-800/20 text-brand-dark dark:text-brand px-3 py-1.5 rounded-xl transition-colors hover:bg-brand-light dark:hover:bg-surface-800/40"
-                    >
-                        <Keyboard size={14} />
-                        <span className="text-xs font-bold">Atajos (PC)</span>
-                    </button>
-
-                    <Tooltip text={isCopMode ? `Tasa COP/USD: ${Math.round(tasaCop).toLocaleString('es-CO')}` : (rateMode === 'bcv' ? "Tasa oficial (BCV)" : rateMode === 'euro' ? "Tasa oficial (Euro BCV)" : rateMode === 'usdt' ? "Tasa oficial (Dólar USDT)" : "Usando tasa manual fijada por ti")} position="bottom">
-                        <button
-                            onClick={handleRateToggle}
-                            className="flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all group bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-emerald-500 hover:shadow-sm"
-                        >
-                            {isCopMode ? (
-                                <>
-                                    <span className="text-xs text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1.5">
-                                        <RefreshCw size={12} className={showRateConfig ? "text-amber-500" : "group-hover:text-amber-500"} />
-                                        COP:
-                                    </span>
-                                    <strong className="text-sm text-amber-600 dark:text-amber-400">{Math.round(tasaCop).toLocaleString('es-CO')} $/USD</strong>
-                                </>
-                            ) : (
-                                <>
-                                    <span className="text-xs text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1.5">
-                                        <RefreshCw size={12} className={showRateConfig ? "text-emerald-500" : "group-hover:text-emerald-500"} />
-                                        {(() => {
-                                            const labels = { bcv: 'BCV:', euro: 'EUR:', usdt: 'USDT:', manual: 'TASA:' };
-                                            return labels[rateMode] || 'BCV:';
-                                        })()}
-                                    </span>
-                                    <strong className="text-sm text-emerald-600 dark:text-emerald-400">{formatBs(effectiveRate)} Bs</strong>
-                                </>
-                            )}
-                            {!isAuto && <span className="text-[10px] bg-brand-light dark:bg-surface-800/30 text-brand-dark dark:text-brand px-1 rounded-md font-bold">MAN</span>}
-                        </button>
-                    </Tooltip>
                 </div>
             </div>
 

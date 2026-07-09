@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShoppingCart, Plus, Minus, X, CheckCircle, Package, Trash2, DollarSign, Percent } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, X, CheckCircle, Package, Trash2, DollarSign, Percent, Search, Pause } from 'lucide-react';
 import { formatBs, formatCop, getCop, formatUsd } from '../../utils/calculatorUtils';
 import { mulR } from '../../utils/dinero';
 
@@ -26,7 +26,12 @@ export default function CartPanel({
 }) {
     const [editingQtyId, setEditingQtyId] = React.useState(null);
     const [tempQty, setTempQty] = React.useState('');
+    const [cartSearch, setCartSearch] = React.useState('');
     const inputRef = React.useRef(null);
+
+    const filteredCart = cartSearch.trim()
+        ? cart.filter(i => i.name.toLowerCase().includes(cartSearch.toLowerCase()))
+        : cart;
 
     const handleQtyClick = (item) => {
         setEditingQtyId(item.id);
@@ -48,15 +53,23 @@ export default function CartPanel({
         <div className="lg:flex-1 lg:min-h-0 flex flex-col bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm">
 
             {/* Header */}
-            <div className="shrink-0 px-4 pb-2 pt-3 sm:py-3 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950/50 rounded-t-2xl sm:rounded-t-3xl">
-                <span className="text-[10px] sm:text-xs font-black text-slate-400 uppercase tracking-wider">Cesta de Compra</span>
-                <div className="flex items-center gap-3">
-                    {cart.length > 0 && (
-                        <button onClick={onClearCart} className="text-[10px] sm:text-xs font-bold text-red-500 hover:text-red-700 flex items-center gap-1 transition-colors bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded-lg">
-                            <Trash2 size={12} /> Vaciar
-                        </button>
-                    )}
-                    <span className="text-xs font-bold text-slate-500 bg-slate-200 dark:bg-slate-800 px-2 py-0.5 rounded-full">{cartItemCount} items</span>
+            <div className="shrink-0 px-4 pb-2 pt-3 border-b border-slate-100 dark:border-slate-800 bg-brand dark:bg-brand rounded-t-2xl sm:rounded-t-3xl">
+                <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-black text-white flex items-center gap-2">
+                        <ShoppingCart size={16} className="opacity-80" />
+                        Cesta ({cartItemCount})
+                    </span>
+                </div>
+                {/* Buscador interno */}
+                <div className="relative">
+                    <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/50" />
+                    <input
+                        type="text"
+                        value={cartSearch}
+                        onChange={e => setCartSearch(e.target.value)}
+                        placeholder="Buscar en la cesta..."
+                        className="w-full bg-white/15 text-white placeholder-white/50 text-[11px] font-medium rounded-xl py-2 pl-8 pr-3 outline-none focus:bg-white/25 border border-white/20 transition-all"
+                    />
                 </div>
             </div>
 
@@ -66,14 +79,13 @@ export default function CartPanel({
                 style={{ WebkitOverflowScrolling: 'touch' }}
             >
                 {cart.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center text-slate-300 dark:text-slate-700 p-6 text-center h-full">
-                        <ShoppingCart size={48} className="mb-4 opacity-50 sm:w-[72px] sm:h-[72px]" strokeWidth={1} />
-                        <p className="text-sm sm:text-base font-bold text-slate-400">Cesta vacía</p>
-                        <p className="text-xs text-slate-500 mt-1">Busca un producto para empezar a vender.</p>
+                    <div className="flex flex-col items-center justify-center text-slate-300 dark:text-slate-700 p-8 text-center h-full gap-2">
+                        <ShoppingCart size={44} strokeWidth={1} className="opacity-30" />
+                        <p className="text-sm font-bold text-slate-400">Tu cesta está vacía</p>
                     </div>
                 ) : (
                     <div className="space-y-2">
-                        {cart.map((item, idx) => {
+                        {filteredCart.map((item, idx) => {
                             const qtyDisplay = item.isWeight ? `${item.qty.toFixed(3)} Kg` : item.qty;
                             const isCustomProduct = item.id.toString().startsWith('custom_') || item.name === 'Venta Libre';
                             const isEditing = editingQtyId === item.id;
@@ -186,17 +198,17 @@ export default function CartPanel({
             </div>
 
             {/* Footer — shrink-0, always visible at bottom of flex container */}
-            <div className="shrink-0 p-3 sm:p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 rounded-b-2xl sm:rounded-b-3xl space-y-2 sm:space-y-3">
+            <div className="shrink-0 p-3 sm:p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 rounded-b-2xl sm:rounded-b-3xl space-y-2.5">
                 
                 {/* Botón de Descuento */}
                 <button
                     onClick={() => { triggerHaptic && triggerHaptic(); onOpenDiscount(); }}
                     disabled={cart.length === 0}
-                    className={`w-full py-2 sm:py-2.5 px-3 sm:px-4 rounded-xl flex items-center justify-between transition-all outline-none focus:ring-2 focus:ring-emerald-500/50 ${discountData?.active ? 'bg-amber-100/80 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/60' : 'bg-slate-50 dark:bg-slate-800/50 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 border border-slate-200 dark:border-slate-700 disabled:opacity-50 disabled:cursor-not-allowed'}`}
+                    className={`w-full py-2 sm:py-2.5 px-3 sm:px-4 rounded-xl flex items-center justify-between transition-all outline-none focus:ring-2 focus:ring-brand/50 ${discountData?.active ? 'bg-amber-100/80 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/60' : 'bg-slate-50 dark:bg-slate-800/50 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 border border-slate-200 dark:border-slate-700 disabled:opacity-50 disabled:cursor-not-allowed'}`}
                 >
                     <div className="flex items-center gap-2">
-                        <Percent size={16} className={discountData?.active ? 'text-amber-600 dark:text-amber-500' : ''} />
-                        <span className="text-[13px] sm:text-sm font-bold">
+                        <Percent size={15} className={discountData?.active ? 'text-amber-600 dark:text-amber-500' : ''} />
+                        <span className="text-xs font-bold">
                             {discountData?.active ? 'Descuento Aplicado' : 'Añadir Descuento'}
                         </span>
                     </div>
@@ -212,7 +224,7 @@ export default function CartPanel({
                                 </>
                             ) : (
                                 <>
-                                    <span className="font-black">{`-$${discountData.amountUsd.toFixed(2)}`}</span>
+                                    <span className="font-black text-xs">{`-$${discountData.amountUsd.toFixed(2)}`}</span>
                                     {copEnabled && tasaCop > 0 && (
                                         <span className="text-[9px] font-medium text-amber-600/70 dark:text-amber-400/70 ml-1">-{formatCop(discountData.amountUsd * tasaCop)} COP</span>
                                     )}
@@ -222,76 +234,60 @@ export default function CartPanel({
                     )}
                 </button>
 
-                <div className="flex justify-between items-end px-1 sm:px-0 pt-1">
-                    <div className="flex flex-col">
-                        <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-widest hidden sm:inline">Total Venta</span>
-                        {discountData?.active && (
-                            <div className="flex flex-col mt-0.5 fade-in slide-in-from-left-2 animate-in duration-300">
-                                <span className="text-[11px] sm:text-xs font-bold text-slate-400 line-through decoration-red-400/70">
-                                    Subtotal: {copEnabled && tasaCop > 0
-                                        ? (copPrimary
-                                            ? `${formatCop(cartSubtotalUsd * tasaCop)} COP · $${cartSubtotalUsd.toFixed(2)} · ${formatBs(cartSubtotalBs)} Bs`
-                                            : `$${cartSubtotalUsd.toFixed(2)} · ${formatCop(cartSubtotalUsd * tasaCop)} COP · ${formatBs(cartSubtotalBs)} Bs`)
-                                        : `$${cartSubtotalUsd.toFixed(2)}`}
-                                </span>
-                            </div>
-                        )}
+                {/* Subtotal simple */}
+                <div className="flex justify-between items-center text-xs font-bold text-slate-500 px-1 pt-1">
+                    <span>Subtotal</span>
+                    <span>
+                        {copEnabled && tasaCop > 0
+                            ? (copPrimary
+                                ? `${formatCop(cartSubtotalUsd * tasaCop)} COP · $${cartSubtotalUsd.toFixed(2)}`
+                                : `$${cartSubtotalUsd.toFixed(2)} · ${formatCop(cartSubtotalUsd * tasaCop)} COP`)
+                            : `$${cartSubtotalUsd.toFixed(2)}`}
+                    </span>
+                </div>
+
+                {/* Caja de totales doble columna */}
+                <div className="flex rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-slate-50/50 dark:bg-slate-950/20">
+                    <div className="flex-1 p-3 flex flex-col items-start">
+                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 mb-0.5">TOTAL $</span>
+                        <span className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white leading-none">
+                            ${cartTotalUsd.toFixed(2)}
+                        </span>
                     </div>
-                    <div className="text-right flex items-center gap-3 sm:block w-full sm:w-auto justify-between">
-                        <div className="flex flex-col items-start sm:items-end">
-                            <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-500 tracking-widest uppercase sm:hidden">Total (Ref)</span>
-                            <span className="text-[11px] font-bold text-slate-500 sm:hidden">{formatBs(cartTotalBs)} Bs</span>
-                        </div>
-                        {copEnabled && tasaCop > 0 && copPrimary ? (
-                            <>
-                                <p className={`text-2xl sm:text-3xl font-black leading-none tracking-tight transition-colors text-amber-600 dark:text-amber-400`}>
-                                    {formatCop(cartTotalCop || Math.round(cartTotalUsd * tasaCop))} COP
-                                </p>
-                                <p className="text-[11px] font-bold text-right sm:text-right">
-                                    <span className="text-emerald-600 dark:text-emerald-400">${cartTotalUsd.toFixed(2)}</span>
-                                    <span className="text-slate-300 mx-1">|</span>
-                                    <span className="text-brand dark:text-brand">{formatBs(cartTotalBs)} Bs</span>
-                                </p>
-                            </>
-                        ) : (
-                            <>
-                                <p className={`text-2xl sm:text-3xl font-black leading-none tracking-tight transition-colors ${discountData?.active ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-800 dark:text-white'}`}>
-                                    ${cartTotalUsd.toFixed(2)}
-                                </p>
-                                {copEnabled && tasaCop > 0 && (
-                                    <p className="text-[11px] font-bold text-right sm:text-right">
-                                        <span className="text-amber-600 dark:text-amber-400">{formatCop(cartTotalCop || Math.round(cartTotalUsd * tasaCop))} COP</span>
-                                        <span className="text-slate-300 mx-1">|</span>
-                                        <span className="text-brand dark:text-brand">{formatBs(cartTotalBs)} Bs</span>
-                                    </p>
-                                )}
-                            </>
-                        )}
+                    <div className="w-px bg-slate-200 dark:bg-slate-850" />
+                    <div className="flex-1 p-3 flex flex-col items-end">
+                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 mb-0.5">BOLÍVARES</span>
+                        <span className="text-xl sm:text-2xl font-black text-brand dark:text-brand leading-none">
+                            {formatBs(cartTotalBs)}
+                        </span>
                     </div>
                 </div>
 
-                <div className="hidden sm:flex justify-between items-center px-4 py-2 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/50 rounded-xl">
-                    <span className="text-[11px] font-black text-emerald-600 dark:text-emerald-500 tracking-widest uppercase">Bolívares</span>
-                    <span className="text-xl font-black text-emerald-600 dark:text-emerald-400">{formatBs(cartTotalBs)} Bs</span>
+                {/* Botones de acción */}
+                <div className="flex gap-2">
+                    <button
+                        onClick={onClearCart}
+                        disabled={cart.length === 0}
+                        title="Pausar venta / Vaciar cesta (F4)"
+                        className="w-11 h-11 shrink-0 flex items-center justify-center rounded-xl bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-900/50 text-orange-500 hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <Pause size={16} />
+                    </button>
+                    <button
+                        disabled={cart.length === 0}
+                        onClick={onCheckout}
+                        className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black text-sm rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-[0.98] transition-all"
+                    >
+                        <CheckCircle size={18} className="opacity-80" />
+                        COBRAR
+                        <kbd className="bg-white/20 px-1.5 py-0.5 rounded text-[9px] font-mono leading-none">F9</kbd>
+                    </button>
                 </div>
 
-                {copEnabled && tasaCop > 0 && (
-                    <div className="hidden sm:flex justify-between items-center px-4 py-2 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/50 rounded-xl">
-                        <span className="text-[11px] font-black text-emerald-600 dark:text-emerald-500 tracking-widest uppercase">Dólares (USD)</span>
-                        <span className="text-xl font-black text-emerald-600 dark:text-emerald-400">USD {cartTotalUsd.toFixed(2)}</span>
-                    </div>
-                )}
-
-                <button
-                    disabled={cart.length === 0}
-                    onClick={onCheckout}
-                    className="w-full relative group disabled:opacity-50 disabled:cursor-not-allowed">
-                    <div className="absolute inset-0 bg-emerald-500 rounded-xl sm:rounded-2xl shadow-emerald-500/30 shadow-lg blur-[2px] opacity-70 group-active:opacity-100 group-hover:blur-[4px] transition-all"></div>
-                    <div className="relative w-full py-3 sm:py-4 bg-emerald-500 text-white font-black text-sm sm:text-lg rounded-xl sm:rounded-2xl active:scale-[0.98] transition-all flex items-center justify-center gap-2 tracking-wide">
-                        <CheckCircle size={18} className="sm:w-[22px] sm:h-[22px] opacity-80" />
-                        PROCESAR COBRO
-                    </div>
-                </button>
+                {/* Disclaimer legal */}
+                <p className="text-[9px] text-slate-400 text-center leading-tight mt-1 px-1">
+                    ⚠️ PreciosAlDía es una herramienta de gestión interna. No sustituye la facturación fiscal SENIAT.
+                </p>
             </div>
         </div>
     );
