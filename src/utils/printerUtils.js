@@ -61,11 +61,15 @@ export function openPrintWindow(html) {
     printWindow.document.write(html);
     printWindow.document.close();
 
+    // Escuchar el evento afterprint para cerrar la ventana tan pronto termine
+    printWindow.addEventListener('afterprint', () => {
+        try { printWindow.close(); } catch(_) {}
+    });
+
     // Esperar a que cargue la imagen del logo antes de imprimir
     printWindow.onload = () => {
         setTimeout(() => {
             printWindow.print();
-            // No cerramos automaticamente para que el usuario pueda re-imprimir
         }, 400);
     };
 
