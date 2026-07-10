@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     Database, Palette, Fingerprint, Upload, Download, Share2,
     Check, ChevronRight, Trash2, AlertTriangle, FileText, ZoomIn, ZoomOut, RotateCcw, QrCode
@@ -6,6 +6,7 @@ import {
 import { SectionCard } from '../../SettingsShared';
 import AuditLogViewer from '../AuditLogViewer';
 import PairingManager from '../PairingManager';
+import QRCode from 'qrcode';
 
 export default function SettingsTabSistema({
     theme, toggleTheme,
@@ -21,6 +22,28 @@ export default function SettingsTabSistema({
         const saved = parseInt(localStorage.getItem('ui_scale'));
         return saved >= 60 && saved <= 140 ? saved : 100;
     });
+    
+    const qrCanvasRef = useRef(null);
+
+    useEffect(() => {
+        if (deviceId && qrCanvasRef.current) {
+            QRCode.toCanvas(
+                qrCanvasRef.current,
+                deviceId,
+                {
+                    width: 140,
+                    margin: 1.5,
+                    color: {
+                        dark: '#1e293b', // slate-800
+                        light: '#ffffff'
+                    }
+                },
+                (err) => {
+                    if (err) console.error('[SettingsTabSistema] Error dibujando QR de instalacion:', err);
+                }
+            );
+        }
+    }, [deviceId]);
 
     useEffect(() => {
         document.documentElement.style.zoom = `${uiScale}%`;
@@ -142,6 +165,9 @@ export default function SettingsTabSistema({
 
             {/* Dispositivo */}
             <SectionCard icon={Fingerprint} title="Dispositivo" subtitle="Informacion tecnica" iconColor="text-slate-500">
+                <div className="flex flex-col items-center justify-center p-3 bg-white dark:bg-slate-950 rounded-2xl border border-slate-200/50 dark:border-slate-800/80 shadow-inner w-fit mx-auto mb-4">
+                    <canvas ref={qrCanvasRef} className="w-[140px] h-[140px] rounded-lg" />
+                </div>
                 <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
                         <p className="text-[11px] uppercase tracking-wider font-extrabold text-slate-500 dark:text-slate-400 mb-1">ID de Instalacion</p>
@@ -159,7 +185,7 @@ export default function SettingsTabSistema({
                         {idCopied ? <Check size={14} className="text-emerald-500" /> : <Fingerprint size={14} />}
                     </button>
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Comparte este ID si necesitas soporte tecnico.</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">Comparte este ID o escanea su código QR si necesitas soporte técnico o activación de licencia.</p>
             </SectionCard>
 
             {/* Celular del Supervisor (QR Monitoreo) */}
