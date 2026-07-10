@@ -32,6 +32,18 @@ const LOCAL_KEYS = [
     'auto_cop_enabled'
 ];
 
+/** Hash ligero para detectar cambios sin comparar objetos enteros (mismo patrón que useAutoBackup.js) */
+function quickHash(value) {
+    const str = typeof value === 'string' ? value : (JSON.stringify(value) ?? '');
+    let h = 0;
+    for (let i = 0; i < Math.min(str.length, 5000); i++) {
+        h = Math.imul(31, h) + str.charCodeAt(i) | 0;
+    }
+    return `${str.length}_${h >>> 0}`;
+}
+
+const LAST_PUSH_HASH_PREFIX = 'bodega_last_periodic_push_hash_';
+
 // ─── Estado Global del Motor ───────────────────────────────────────────────
 let globalSubscription = null;
 let isSyncingFromCloud = false; // true mientras aplicamos cambios de la nube → evita eco
@@ -221,15 +233,22 @@ export function useCloudSync(deviceId) {
                 }
 
                 // ── Auto-recuperación: Purgar/subir datos locales que no llegaron a enviarse debido al bug anterior ──
+                // Solo si cambiaron desde el último push (mismo hash-guard que forcePushLocalData,
+                // para no re-subir todo en cada arranque/reconexión sin necesidad).
                 try {
                     const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
                     const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_accounts_v2'];
                     for (const key of criticalKeys) {
                         const localValue = await lf.getItem(key);
-                        if (localValue) {
-                            // Subimos los datos locales a la base de datos para sincronizar el historial
-                            await pushCloudSync(key, localValue);
-                        }
+                        if (!localValue) continue;
+
+                        const hashKey = LAST_PUSH_HASH_PREFIX + key;
+                        const currentHash = quickHash(localValue);
+                        if (localStorage.getItem(hashKey) === currentHash) continue;
+
+                        // Subimos los datos locales a la base de datos para sincronizar el historial
+                        await pushCloudSync(key, localValue);
+                        localStorage.setItem(hashKey, currentHash);
                     }
                 } catch (e) {
                     // Silencioso
@@ -287,6 +306,8 @@ export function useCloudSync(deviceId) {
         };
 
         // 2. Escuchar evento 'online' y temporizador periódico para sincronizar datos locales pendientes
+        // HOOK: solo re-sube una key si cambió desde el último push (evita gastar cuota de
+        // Supabase/Realtime subiendo el mismo dato sin cambios cada 20s — ver quickHash arriba).
         const forcePushLocalData = async () => {
             if (isSyncingFromCloud || !deviceId) return;
             try {
@@ -294,9 +315,14 @@ export function useCloudSync(deviceId) {
                 const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_accounts_v2'];
                 for (const key of criticalKeys) {
                     const localValue = await lf.getItem(key);
-                    if (localValue) {
-                        await pushCloudSync(key, localValue);
-                    }
+                    if (!localValue) continue;
+
+                    const hashKey = LAST_PUSH_HASH_PREFIX + key;
+                    const currentHash = quickHash(localValue);
+                    if (localStorage.getItem(hashKey) === currentHash) continue;
+
+                    await pushCloudSync(key, localValue);
+                    localStorage.setItem(hashKey, currentHash);
                 }
             } catch (e) {
                 // Silencioso

@@ -110,9 +110,20 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                         }
                     }
 
+                    // Resumen calculado una sola vez aquí para que Estación Maestra pueda
+                    // listar backups sin tener que descargar/descomprimir `backup_data`.
+                    const productCount = Array.isArray(idbData.bodega_products_v1) ? idbData.bodega_products_v1.length : 0;
+                    const salesCount = Array.isArray(idbData.bodega_sales_v1) ? idbData.bodega_sales_v1.length : 0;
+                    const customerCount = Array.isArray(idbData.bodega_customers_v1) ? idbData.bodega_customers_v1.length : 0;
+                    const sizeBytes = JSON.stringify(payloadToUpload).length;
+
                     await supabaseCloud.from('cloud_backups').upsert({
                         device_id: devId,
                         backup_data: payloadToUpload,
+                        size_bytes: sizeBytes,
+                        product_count: productCount,
+                        sales_count: salesCount,
+                        customer_count: customerCount,
                         updated_at: new Date().toISOString()
                     }, { onConflict: 'device_id' });
 
