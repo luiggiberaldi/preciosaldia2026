@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import QRCode from 'qrcode';
 import { Lock, Copy, Check, Star, Sparkles, Send, Store, CreditCard, Gift, BarChart3, Bell, Volume2, Search, Cloud, Package, FileText, Share2, Users } from 'lucide-react';
 import { useSecurity } from '../../hooks/useSecurity';
 import { Modal } from '../Modal';
@@ -10,6 +11,27 @@ export default function PremiumGuard({ children, featureName = "Esta función", 
     const [success, setSuccess] = useState(false);
     const [copied, setCopied] = useState(false);
     const [demoLoading, setDemoLoading] = useState(false);
+    const qrCanvasRef = useRef(null);
+
+    useEffect(() => {
+        if (deviceId && qrCanvasRef.current) {
+            QRCode.toCanvas(
+                qrCanvasRef.current,
+                deviceId,
+                {
+                    width: 140,
+                    margin: 1.5,
+                    color: {
+                        dark: '#1e293b', // slate-800
+                        light: '#ffffff'
+                    }
+                },
+                (err) => {
+                    if (err) console.error('[PremiumGuard] QR canvas error:', err);
+                }
+            );
+        }
+    }, [deviceId, isPremium, loading]);
 
     // Estado para Modales
     const [messageModal, setMessageModal] = useState({ open: false, isSuccess: false, title: '', content: '' });
@@ -189,27 +211,18 @@ export default function PremiumGuard({ children, featureName = "Esta función", 
                     </div>
                 </div>
 
-                {/* Activation Form */}
-                <form onSubmit={handleUnlock} className="border-t border-slate-200 dark:border-slate-800/80 pt-2">
-                    <p className="text-[10px] text-slate-400 dark:text-slate-500 mb-1.5 font-bold uppercase tracking-wide leading-tight">Código de Activación</p>
-                    <div className="flex gap-2">
-                        <input
-                            type="text"
-                            value={inputCode}
-                            onChange={(e) => setInputCode(e.target.value.toUpperCase())}
-                            placeholder="ACTIV-XXXX-XXXX"
-                            className={`flex-1 bg-white dark:bg-slate-950 border ${error ? 'border-red-500' : 'border-slate-200 dark:border-slate-800'} rounded-xl px-2 py-2 text-center font-mono text-xs font-bold tracking-wider text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand/50 transition-all uppercase placeholder:text-slate-300 dark:placeholder:text-slate-700 shadow-sm`}
-                        />
-                        <button
-                            type="submit"
-                            className="bg-brand hover:bg-brand-dark text-white dark:text-slate-950 font-bold px-4 rounded-xl text-xs hover:scale-105 active:scale-95 transition-all shadow-md shadow-brand/20"
-                        >
-                            <Check size={16} strokeWidth={3} />
-                        </button>
+                {/* QR de Activación */}
+                <div className="border-t border-slate-200 dark:border-slate-800/80 pt-3 flex flex-col items-center">
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 mb-1.5 font-bold uppercase tracking-wider leading-tight">
+                        Escanear para Activar o Verificar
+                    </p>
+                    <div className="p-2 bg-white border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm mb-1.5">
+                        <canvas ref={qrCanvasRef} />
                     </div>
-                    {error && <p className="text-[10px] text-red-500 mt-1 font-bold animate-pulse">Código inválido.</p>}
-                    {success && <p className="text-[10px] text-green-500 mt-1 font-bold">¡Activado!</p>}
-                </form>
+                    <p className="text-[9px] text-slate-400 leading-normal max-w-[240px]">
+                        Escanea este código QR desde la estación maestra para activar la licencia de este dispositivo.
+                    </p>
+                </div>
 
                 {/* Modal de Mensajes */}
                 <Modal

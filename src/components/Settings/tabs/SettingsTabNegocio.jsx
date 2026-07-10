@@ -1,21 +1,168 @@
-import React from 'react';
-import { Store, Printer, Coins, Check } from 'lucide-react';
+// v1.2.1: Calibrador y preview de ticket ocultados hasta nuevo aviso
+import React, { useState, useRef, useEffect } from 'react';
+import { Store, Printer, Coins, Check, Tag } from 'lucide-react';
 import { SectionCard, Toggle } from '../../SettingsShared';
+import { generarPreviewLabel } from '../../../utils/labelGenerator';
+
+
+const CalibratorSlider = ({ label, value, setValue, baseKey, mode, min, max, step = 0.5, unit = 'mm', triggerHaptic }) => {
+    const valFloat = parseFloat(value || '0');
+    const suffix = mode === 'mixto' ? '_mixto' : '_unico';
+    const storageKey = `${baseKey}${suffix}`;
+    
+    const handleIncrement = () => {
+        const newVal = Math.min(max, valFloat + 1);
+        const formatted = Number(newVal.toFixed(1)).toString();
+        setValue(formatted);
+        localStorage.setItem(storageKey, formatted);
+        triggerHaptic?.();
+    };
+
+    const handleDecrement = () => {
+        const newVal = Math.max(min, valFloat - 1);
+        const formatted = Number(newVal.toFixed(1)).toString();
+        setValue(formatted);
+        localStorage.setItem(storageKey, formatted);
+        triggerHaptic?.();
+    };
+
+    return (
+        <div className="space-y-1">
+            <div className="flex justify-between items-center text-[8px] text-slate-400 font-bold">
+                <span>{label}</span>
+                <span className="text-[9px] font-extrabold text-brand bg-brand/5 px-1.5 py-0.5 rounded">
+                    {valFloat > 0 ? `+${value}` : value} {unit}
+                </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+                <button
+                    type="button"
+                    onClick={handleDecrement}
+                    className="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-650 dark:text-slate-350 hover:bg-slate-200 dark:hover:bg-slate-800 text-xs font-black transition-all active:scale-[0.85] select-none"
+                >
+                    -
+                </button>
+                <input
+                    type="range"
+                    min={min}
+                    max={max}
+                    step={step}
+                    value={value}
+                    onChange={e => {
+                        setValue(e.target.value);
+                        localStorage.setItem(storageKey, e.target.value);
+                        triggerHaptic?.();
+                    }}
+                    className="flex-1 h-1 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-brand"
+                />
+                <button
+                    type="button"
+                    onClick={handleIncrement}
+                    className="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-650 dark:text-slate-350 hover:bg-slate-200 dark:hover:bg-slate-800 text-xs font-black transition-all active:scale-[0.85] select-none"
+                >
+                    +
+                </button>
+            </div>
+        </div>
+    );
+};
 
 export default function SettingsTabNegocio({
     businessName, setBusinessName,
     businessRif, setBusinessRif,
     paperWidth, setPaperWidth,
+    labelCurrencyMode, setLabelCurrencyMode,
+    labelOffsetNameX, setLabelOffsetNameX,
+    labelOffsetNameY, setLabelOffsetNameY,
+    labelOffsetPriceX, setLabelOffsetPriceX,
+    labelOffsetPriceY, setLabelOffsetPriceY,
+    labelOffsetSecPriceX, setLabelOffsetSecPriceX,
+    labelOffsetSecPriceY, setLabelOffsetSecPriceY,
+    labelOffsetFooterX, setLabelOffsetFooterX,
+    labelOffsetFooterY, setLabelOffsetFooterY,
+    labelOffsetFontName, setLabelOffsetFontName,
+    labelOffsetFontPrice, setLabelOffsetFontPrice,
+    labelOffsetFontSecPrice, setLabelOffsetFontSecPrice,
+    labelOffsetFontFooter, setLabelOffsetFontFooter,
     copEnabled, setCopEnabled,
     autoCopEnabled, setAutoCopEnabled,
     tasaCopManual, setTasaCopManual,
     copPrimary, setCopPrimary,
     calculatedTasaCop,
+    effectiveRate,
     handleSaveBusinessData,
     forceHeartbeat,
     showToast,
     triggerHaptic,
 }) {
+    const [showCalibrator, setShowCalibrator] = useState(false);
+
+    // ─── PdfPreview: 100% pixel-perfect usando jsPDF real embebido en iframe ──
+    // generarPreviewLabel usa exactamente el mismo código que generarEtiquetas,
+    // devuelve un blobURL del PDF que mostramos directamente — cero simulación.
+    const PdfPreview = () => {
+        const [pdfUrl, setPdfUrl] = useState(null);
+        const [loading, setLoading] = useState(true);
+        const prevUrlRef = useRef(null);
+
+        const isMixto = labelCurrencyMode === 'mixto';
+        const PX_MM   = 3.78;
+        const W_PX    = 58  * PX_MM;   // ≈ 219px
+        const H_PX    = (isMixto ? 60 : 44) * PX_MM;
+
+        useEffect(() => {
+            let cancelled = false;
+            setLoading(true);
+            generarPreviewLabel(effectiveRate, copEnabled, calculatedTasaCop).then(url => {
+                if (cancelled) return;
+                if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current);
+                prevUrlRef.current = url;
+                setPdfUrl(url);
+                setLoading(false);
+            }).catch(() => {
+                if (!cancelled) setLoading(false);
+            });
+            return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, [
+            labelCurrencyMode,
+            labelOffsetNameX, labelOffsetNameY,
+            labelOffsetPriceX, labelOffsetPriceY,
+            labelOffsetSecPriceX, labelOffsetSecPriceY,
+            labelOffsetFooterX, labelOffsetFooterY,
+            labelOffsetFontName, labelOffsetFontPrice,
+            labelOffsetFontSecPrice, labelOffsetFontFooter,
+            effectiveRate, copEnabled, calculatedTasaCop,
+        ]);
+
+        return (
+            <div
+                className="relative border border-slate-200 dark:border-slate-700 shadow-md rounded bg-white overflow-hidden"
+                style={{ width: `${W_PX}px`, height: `${H_PX}px` }}
+            >
+                {loading && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-white/80 text-slate-400 text-xs">
+                        Generando…
+                    </div>
+                )}
+                {pdfUrl && (
+                    <iframe
+                        key={pdfUrl}
+                        src={`${pdfUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
+                        title="Vista previa del ticket"
+                        style={{
+                            width: `${W_PX}px`,
+                            height: `${H_PX}px`,
+                            border: 'none',
+                            display: 'block',
+                        }}
+                    />
+                )}
+            </div>
+        );
+    };
+
+
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
             {/* Mi Negocio */}
@@ -68,6 +215,38 @@ export default function SettingsTabNegocio({
                             {opt.label}
                         </button>
                     ))}
+                </div>
+            </SectionCard>
+
+            {/* Etiquetas de Precios */}
+            <SectionCard icon={Tag} title="Etiquetas de Productos" subtitle="Moneda a mostrar en la etiqueta" iconColor="text-brand">
+                <div className="space-y-4">
+                    <div>
+                        <label className="text-[11px] uppercase tracking-wider font-extrabold text-slate-500 dark:text-slate-400 block mb-1.5">Moneda del Precio</label>
+                        <div className="grid grid-cols-3 gap-1.5">
+                            {[
+                                { val: 'bs', label: 'Bs' },
+                                { val: 'usd', label: '$' },
+                                { val: 'mixto', label: 'Mixto' }
+                            ].map(opt => (
+                                <button
+                                    key={opt.val}
+                                    onClick={() => {
+                                        setLabelCurrencyMode(opt.val);
+                                        localStorage.setItem('label_currency_mode', opt.val);
+                                        triggerHaptic?.();
+                                        showToast(`Moneda de etiqueta cambiada a ${opt.label}`, 'success');
+                                    }}
+                                    className={`py-2.5 px-2 text-xs font-bold rounded-xl transition-all border text-center ${labelCurrencyMode === opt.val
+                                        ? 'bg-brand-light dark:bg-brand/10 border-brand text-brand-dark dark:text-brand shadow-sm'
+                                        : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                    }`}
+                                >
+                                    {opt.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                 </div>
             </SectionCard>
 

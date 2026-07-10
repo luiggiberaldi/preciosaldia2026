@@ -1,4 +1,5 @@
 import React from 'react';
+import localforage from 'localforage';
 
 /**
  * HOOK-026: ErrorBoundary con recuperación efectiva.
@@ -47,8 +48,7 @@ class ErrorBoundary extends React.Component {
 
     this.setState({ clearing: true, clearMsg: 'Borrando datos críticos...' });
     try {
-      // localforage dinámico para no acoplar el boundary al servicio (que podría estar roto).
-      const { default: localforage } = await import('localforage');
+      // Usar localforage estático
       localforage.config({ name: 'BodegaApp', storeName: 'bodega_app_data' });
       await localforage.removeItem('bodega_products_v1');
       await localforage.removeItem('bodega_sales_v1');

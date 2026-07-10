@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 // v1.2.0: useReveal hook para animaciones reveal-on-scroll (design system "Precios al Día")
 import { useReveal } from '../hooks/useReveal';
 import {
@@ -34,7 +34,6 @@ const TABS = [
     { id: 'sistema', label: 'Sistema', icon: Database },
 ];
 
-// ═══════════════════════════════════════════════════════ MAIN
 export default function SettingsView({ onClose, theme, toggleTheme, triggerHaptic, isTab = false, rates }) {
     // v1.2.0: reveal-on-scroll para header y tabs.
     const revealRef = useReveal();
@@ -44,7 +43,8 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
         autoCopEnabled, setAutoCopEnabled,
         tasaCopManual, setTasaCopManual,
         copPrimary, setCopPrimary,
-        tasaCop: calculatedTasaCop
+        tasaCop: calculatedTasaCop,
+        effectiveRate
     } = useProductContext();
 
     const { requireLogin, setRequireLogin, usuarioActivo } = useAuthStore();
@@ -63,7 +63,63 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
     const [businessName, setBusinessName] = useState(() => localStorage.getItem('business_name') || '');
     const [businessRif, setBusinessRif] = useState(() => localStorage.getItem('business_rif') || '');
     const [paperWidth, setPaperWidth] = useState(() => localStorage.getItem('printer_paper_width') || '58');
+    const [labelCurrencyMode, setLabelCurrencyMode] = useState(() => localStorage.getItem('label_currency_mode') || 'mixto');
+
+    // Helper para inicializar offsets según el modo de moneda guardado
+    const getInitialOffset = (key, defaultMixto, defaultUnico) => {
+        const initialMode = localStorage.getItem('label_currency_mode') || 'mixto';
+        const suffix = initialMode === 'mixto' ? '_mixto' : '_unico';
+        const fallback = initialMode === 'mixto' ? defaultMixto : defaultUnico;
+        return localStorage.getItem(`${key}${suffix}`) || fallback;
+    };
+
+    const [labelOffsetNameX, setLabelOffsetNameX] = useState(() => getInitialOffset('label_offset_name_x', '-1.5', '1'));
+    const [labelOffsetNameY, setLabelOffsetNameY] = useState(() => getInitialOffset('label_offset_name_y', '2', '0'));
+    const [labelOffsetPriceX, setLabelOffsetPriceX] = useState(() => getInitialOffset('label_offset_price_x', '-1.5', '1'));
+    const [labelOffsetPriceY, setLabelOffsetPriceY] = useState(() => getInitialOffset('label_offset_price_y', '-7.5', '-3'));
+    const [labelOffsetSecPriceX, setLabelOffsetSecPriceX] = useState(() => getInitialOffset('label_offset_sec_price_x', '-1.5', '1'));
+    const [labelOffsetSecPriceY, setLabelOffsetSecPriceY] = useState(() => getInitialOffset('label_offset_sec_price_y', '-3', '2'));
+    const [labelOffsetFooterX, setLabelOffsetFooterX] = useState(() => getInitialOffset('label_offset_footer_x', '-1.5', '1'));
+    const [labelOffsetFooterY, setLabelOffsetFooterY] = useState(() => getInitialOffset('label_offset_footer_y', '-1', '1'));
+    const [labelOffsetFontName, setLabelOffsetFontName] = useState(() => getInitialOffset('label_offset_font_name', '5', '1'));
+    const [labelOffsetFontPrice, setLabelOffsetFontPrice] = useState(() => getInitialOffset('label_offset_font_price', '10', '6'));
+    const [labelOffsetFontSecPrice, setLabelOffsetFontSecPrice] = useState(() => getInitialOffset('label_offset_font_sec_price', '12.5', '0'));
+    const [labelOffsetFontFooter, setLabelOffsetFontFooter] = useState(() => getInitialOffset('label_offset_font_footer', '4', '2'));
     const [allowNegativeStock, setAllowNegativeStock] = useState(() => localStorage.getItem('allow_negative_stock') === 'true');
+
+    // Sincronizar offsets en React cuando cambia el modo de moneda
+    useEffect(() => {
+        const isMixto = labelCurrencyMode === 'mixto';
+        const suffix = isMixto ? '_mixto' : '_unico';
+        
+        const defNameX = isMixto ? '-1.5' : '1';
+        const defNameY = isMixto ? '2' : '0';
+        const defPriceX = isMixto ? '-1.5' : '1';
+        const defPriceY = isMixto ? '-7.5' : '-3';
+        const defSecPriceX = isMixto ? '-1.5' : '1';
+        const defSecPriceY = isMixto ? '-3' : '2';
+        const defFooterX = isMixto ? '-1.5' : '1';
+        const defFooterY = isMixto ? '-1' : '1';
+
+        const defFontName = isMixto ? '5' : '1';
+        const defFontPrice = isMixto ? '10' : '6';
+        const defFontSecPrice = isMixto ? '12.5' : '0';
+        const defFontFooter = isMixto ? '4' : '2';
+
+        setLabelOffsetNameX(localStorage.getItem(`label_offset_name_x${suffix}`) || defNameX);
+        setLabelOffsetNameY(localStorage.getItem(`label_offset_name_y${suffix}`) || defNameY);
+        setLabelOffsetPriceX(localStorage.getItem(`label_offset_price_x${suffix}`) || defPriceX);
+        setLabelOffsetPriceY(localStorage.getItem(`label_offset_price_y${suffix}`) || defPriceY);
+        setLabelOffsetSecPriceX(localStorage.getItem(`label_offset_sec_price_x${suffix}`) || defSecPriceX);
+        setLabelOffsetSecPriceY(localStorage.getItem(`label_offset_sec_price_y${suffix}`) || defSecPriceY);
+        setLabelOffsetFooterX(localStorage.getItem(`label_offset_footer_x${suffix}`) || defFooterX);
+        setLabelOffsetFooterY(localStorage.getItem(`label_offset_footer_y${suffix}`) || defFooterY);
+        
+        setLabelOffsetFontName(localStorage.getItem(`label_offset_font_name${suffix}`) || defFontName);
+        setLabelOffsetFontPrice(localStorage.getItem(`label_offset_font_price${suffix}`) || defFontPrice);
+        setLabelOffsetFontSecPrice(localStorage.getItem(`label_offset_font_sec_price${suffix}`) || defFontSecPrice);
+        setLabelOffsetFontFooter(localStorage.getItem(`label_offset_font_footer${suffix}`) || defFontFooter);
+    }, [labelCurrencyMode]);
 
     const visibleTabs = TABS;
 
@@ -193,11 +249,25 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                                 businessName={businessName} setBusinessName={setBusinessName}
                                 businessRif={businessRif} setBusinessRif={setBusinessRif}
                                 paperWidth={paperWidth} setPaperWidth={setPaperWidth}
+                                labelCurrencyMode={labelCurrencyMode} setLabelCurrencyMode={setLabelCurrencyMode}
+                                labelOffsetNameX={labelOffsetNameX} setLabelOffsetNameX={setLabelOffsetNameX}
+                                labelOffsetNameY={labelOffsetNameY} setLabelOffsetNameY={setLabelOffsetNameY}
+                                labelOffsetPriceX={labelOffsetPriceX} setLabelOffsetPriceX={setLabelOffsetPriceX}
+                                labelOffsetPriceY={labelOffsetPriceY} setLabelOffsetPriceY={setLabelOffsetPriceY}
+                                labelOffsetSecPriceX={labelOffsetSecPriceX} setLabelOffsetSecPriceX={setLabelOffsetSecPriceX}
+                                labelOffsetSecPriceY={labelOffsetSecPriceY} setLabelOffsetSecPriceY={setLabelOffsetSecPriceY}
+                                labelOffsetFooterX={labelOffsetFooterX} setLabelOffsetFooterX={setLabelOffsetFooterX}
+                                labelOffsetFooterY={labelOffsetFooterY} setLabelOffsetFooterY={setLabelOffsetFooterY}
+                                labelOffsetFontName={labelOffsetFontName} setLabelOffsetFontName={setLabelOffsetFontName}
+                                labelOffsetFontPrice={labelOffsetFontPrice} setLabelOffsetFontPrice={setLabelOffsetFontPrice}
+                                labelOffsetFontSecPrice={labelOffsetFontSecPrice} setLabelOffsetFontSecPrice={setLabelOffsetFontSecPrice}
+                                labelOffsetFontFooter={labelOffsetFontFooter} setLabelOffsetFontFooter={setLabelOffsetFontFooter}
                                 copEnabled={copEnabled} setCopEnabled={setCopEnabled}
                                 autoCopEnabled={autoCopEnabled} setAutoCopEnabled={setAutoCopEnabled}
                                 tasaCopManual={tasaCopManual} setTasaCopManual={setTasaCopManual}
                                 copPrimary={copPrimary} setCopPrimary={setCopPrimary}
                                 calculatedTasaCop={calculatedTasaCop}
+                                effectiveRate={effectiveRate}
                                 handleSaveBusinessData={handleSaveBusinessData}
                                 forceHeartbeat={forceHeartbeat}
                                 showToast={showToast}

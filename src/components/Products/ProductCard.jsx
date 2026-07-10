@@ -1,7 +1,8 @@
 import React from 'react';
-import { Tag, Banknote, AlertTriangle, Box, Minus, Plus, Pencil, Trash2, Package, Layers, Clock, Printer } from 'lucide-react';
+import { Tag, Banknote, AlertTriangle, Box, Minus, Plus, Pencil, Trash2, Package, Layers, Clock, Printer, FileText } from 'lucide-react';
 import { CATEGORY_COLORS, CATEGORY_ICONS, UNITS } from '../../config/categories';
 import { formatUsd, formatBs, formatCop, smartCashRounding, getCop, getUsd } from '../../utils/calculatorUtils';
+import { showToast } from '../Toast';
 
 export default function ProductCard({
     product: p,
@@ -29,6 +30,133 @@ export default function ProductCard({
     const catInfo = categories.find(c => c.id === p.category);
     const unitInfo = UNITS.find(u => u.id === p.unit);
     const efectivoPrecio = streetRate > 0 ? `$${smartCashRounding(valBs / streetRate)}` : null;
+
+    const copyTicketDebugLog = (e) => {
+        e.stopPropagation();
+        const mode = localStorage.getItem('label_currency_mode') || 'mixto';
+        const suffix = mode === 'mixto' ? '_mixto' : '_unico';
+        
+        const isMixto = mode === 'mixto';
+        const defNameX = isMixto ? '-1.5' : '1';
+        const defNameY = isMixto ? '2' : '0';
+        const defPriceX = isMixto ? '-1.5' : '1';
+        const defPriceY = isMixto ? '-7.5' : '-3';
+        const defSecPriceX = isMixto ? '-1.5' : '1';
+        const defSecPriceY = isMixto ? '-3' : '2';
+        const defFooterX = isMixto ? '-1.5' : '1';
+        const defFooterY = isMixto ? '-1' : '1';
+
+        const defFontName = isMixto ? '5' : '1';
+        const defFontPrice = isMixto ? '10' : '6';
+        const defFontSecPrice = isMixto ? '12.5' : '0';
+        const defFontFooter = isMixto ? '4' : '2';
+
+        const nameX = parseFloat(localStorage.getItem(`label_offset_name_x${suffix}`) || defNameX);
+        const nameY = parseFloat(localStorage.getItem(`label_offset_name_y${suffix}`) || defNameY);
+        const priceX = parseFloat(localStorage.getItem(`label_offset_price_x${suffix}`) || defPriceX);
+        const priceYOffset = parseFloat(localStorage.getItem(`label_offset_price_y${suffix}`) || defPriceY);
+        const secPriceX = parseFloat(localStorage.getItem(`label_offset_sec_price_x${suffix}`) || defSecPriceX);
+        const secPriceYOffset = parseFloat(localStorage.getItem(`label_offset_sec_price_y${suffix}`) || defSecPriceY);
+        const footerX = parseFloat(localStorage.getItem(`label_offset_footer_x${suffix}`) || defFooterX);
+        const footerYOffset = parseFloat(localStorage.getItem(`label_offset_footer_y${suffix}`) || defFooterY);
+
+        const fontName = parseFloat(localStorage.getItem(`label_offset_font_name${suffix}`) || defFontName);
+        const fontPrice = parseFloat(localStorage.getItem(`label_offset_font_price${suffix}`) || defFontPrice);
+        const fontSecPrice = parseFloat(localStorage.getItem(`label_offset_font_sec_price${suffix}`) || defFontSecPrice);
+        const fontFooter = parseFloat(localStorage.getItem(`label_offset_font_footer${suffix}`) || defFontFooter);
+
+        // --- CÁLCULO FÍSICO DE COORDENADAS REALES (Misma lógica que labelGenerator.js) ---
+        const LABEL_W = 58;
+        const hasSecondaryPrice = copEnabled && tasaCop > 0;
+        let labelH = mode === 'mixto' ? 60 : (hasSecondaryPrice ? 50 : 44);
+        const marginX = 4.5;
+        const marginY = 3.5;
+
+        // Eje central compensado
+        let centerX = mode === 'mixto' ? (LABEL_W / 2 - 3) : (LABEL_W / 2 + 0.5);
+
+        // 1. TÍTULO
+        const titleStartY = marginY + 2.5; // 6 mm
+        const finalTitleY = titleStartY + nameY;
+        let titleFontSize = (mode === 'bs' || mode === 'usd') ? 11.5 : 10;
+        let calcTitleFontSize = titleFontSize + fontName;
+        if (calcTitleFontSize < 5) calcTitleFontSize = 5;
+        // Altura del bloque de título
+        const isLongName = p.name.length > 18;
+        const linesCount = isLongName ? 2 : 1;
+        const titleHeight = linesCount * (calcTitleFontSize * 0.3527 * 1.25);
+        const titleEndY = titleStartY + titleHeight;
+
+        // 2. FOOTER
+        const footerY = labelH - marginY - 2;
+        const finalFooterY = footerY + footerYOffset;
+        const footerStartY = hasSecondaryPrice ? footerY - 5.5 : footerY - 1.5;
+
+        // 3. PRECIOS
+        const freeSpace = footerStartY - titleEndY;
+        let finalPriceFontSize = (mode === 'mixto' ? 24 : 28) + fontPrice;
+        if (finalPriceFontSize < 5) finalPriceFontSize = 5;
+        let finalSecondaryFontSize = 11 + fontSecPrice;
+        if (finalSecondaryFontSize < 5) finalSecondaryFontSize = 5;
+
+        let priceHeight = finalPriceFontSize * 0.3527 * 0.75;
+        let secondaryHeight = finalSecondaryFontSize * 0.3527 * 0.75;
+        const showSecondary = mode === 'mixto';
+        let priceBlockHeight = showSecondary ? (priceHeight + secondaryHeight + 3.5) : priceHeight;
+
+        // Proporcional
+        const maxAllowedBlockHeight = freeSpace * 0.82;
+        if (priceBlockHeight > maxAllowedBlockHeight && maxAllowedBlockHeight > 4) {
+            const scaleFactor = maxAllowedBlockHeight / priceBlockHeight;
+            finalPriceFontSize = Math.max(5, finalPriceFontSize * scaleFactor);
+            finalSecondaryFontSize = Math.max(5, finalSecondaryFontSize * scaleFactor);
+            priceHeight = finalPriceFontSize * 0.3527 * 0.75;
+            secondaryHeight = finalSecondaryFontSize * 0.3527 * 0.75;
+            priceBlockHeight = showSecondary ? (priceHeight + secondaryHeight + 3.5) : priceHeight;
+        }
+
+        const calculatedPriceY = titleEndY + ((freeSpace - priceBlockHeight) / 2) + priceHeight;
+        const finalPriceY = calculatedPriceY + priceYOffset;
+
+        const calculatedSecPriceY = calculatedPriceY + secondaryHeight + 3.5;
+        const finalSecPriceY = calculatedSecPriceY + secPriceYOffset;
+
+        // Formatear texto del log con coordenadas reales en mm
+        const logString = `=== COORDENADAS FÍSICAS DE ETIQUETA REAL (jsPDF) ===
+Producto: ${p.name.toUpperCase()}
+Modo Moneda: ${mode.toUpperCase()}
+Dimensiones de Hoja: ${LABEL_W}mm ancho x ${labelH}mm alto
+Tasa BCV: ${effectiveRate} Bs | Tasa COP: ${tasaCop || 'N/A'}
+Margen Horizontal Central (Compensado): X = ${centerX.toFixed(2)} mm
+
+--- ELEMENTOS Y COORDENADAS FÍSICAS EN PAPEL ---
+[TÍTULO DEL PRODUCTO]
+  * X Central (Base): ${centerX.toFixed(2)} mm  |  Con Desplazamiento X: ${(centerX + nameX).toFixed(2)} mm
+  * Y Baseline (Base): ${titleStartY.toFixed(2)} mm  |  Con Calibración Y: ${finalTitleY.toFixed(2)} mm
+  * Tamaño Fuente: ${calcTitleFontSize.toFixed(1)} pt  |  Líneas Estimadas: ${linesCount}
+
+[PRECIO PRINCIPAL]
+  * X Central (Base): ${centerX.toFixed(2)} mm  |  Con Desplazamiento X: ${(centerX + priceX).toFixed(2)} mm
+  * Y Baseline (Base): ${calculatedPriceY.toFixed(2)} mm  |  Con Calibración Y: ${finalPriceY.toFixed(2)} mm
+  * Tamaño Fuente: ${finalPriceFontSize.toFixed(1)} pt
+
+${showSecondary ? `[PRECIO SECUNDARIO]
+  * X Central (Base): ${centerX.toFixed(2)} mm  |  Con Desplazamiento X: ${(centerX + secPriceX).toFixed(2)} mm
+  * Y Baseline (Base): ${calculatedSecPriceY.toFixed(2)} mm  |  Con Calibración Y: ${finalSecPriceY.toFixed(2)} mm
+  * Tamaño Fuente: ${finalSecondaryFontSize.toFixed(1)} pt` : '[PRECIO SECUNDARIO]: Inactivo en este modo'}
+
+[PIE DE PÁGINA (BARCODE/FECHA)]
+  * X Central (Base): ${centerX.toFixed(2)} mm  |  Con Desplazamiento X: ${(centerX + footerX).toFixed(2)} mm
+  * Y Baseline (Base): ${footerY.toFixed(2)} mm  |  Con Calibración Y: ${finalFooterY.toFixed(2)} mm
+  * Tamaño Fuente: ${(6.5 + fontFooter).toFixed(1)} pt`;
+
+        navigator.clipboard.writeText(logString).then(() => {
+            showToast('¡Coordenadas reales copiadas al portapapeles!', 'success');
+        }).catch((err) => {
+            console.error('Error al copiar log:', err);
+            showToast('Error al copiar coordenadas reales', 'error');
+        });
+    };
 
     return (
         <div className={`bg-white dark:bg-slate-900 rounded-2xl shadow-sm border flex flex-col overflow-hidden group ${isLowStock ? 'border-amber-300 dark:border-amber-700' : 'border-slate-100 dark:border-slate-800'} ${isSelected ? 'ring-2 ring-brand border-brand shadow-brand/20 bg-brand/5 dark:bg-brand/10' : ''}`}>
@@ -173,6 +301,7 @@ export default function ProductCard({
                 >
                     <Printer size={15} />
                 </button>
+
                 {!readOnly && (
                     <button 
                         onClick={() => onEdit(p)} 

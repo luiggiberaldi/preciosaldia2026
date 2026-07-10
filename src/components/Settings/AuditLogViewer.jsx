@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getAuditLog, getAuditCount, clearAuditLog, exportAuditLog } from '../../services/auditService';
 import { showToast } from '../Toast';
+import { useAuthStore } from '../../hooks/store/useAuthStore';
 import { jsPDF } from 'jspdf';
 import {
     FileText, Download, Trash2, Filter, Shield, ShoppingCart,
@@ -202,11 +203,16 @@ export default function AuditLogViewer({ triggerHaptic }) {
     useEffect(() => { loadLog(); }, [loadLog]);
 
     const handleClear = async () => {
-        await clearAuditLog();
-        showToast('Audit log borrado', 'success');
-        triggerHaptic?.();
-        setShowClearConfirm(false);
-        loadLog();
+        const usuarioActivo = useAuthStore.getState().usuarioActivo;
+        try {
+            await clearAuditLog(usuarioActivo);
+            showToast('Audit log borrado', 'success');
+            triggerHaptic?.();
+            setShowClearConfirm(false);
+            loadLog();
+        } catch (err) {
+            showToast(err.message || 'Error al borrar el log', 'error');
+        }
     };
 
     const handleExportJSON = async () => {

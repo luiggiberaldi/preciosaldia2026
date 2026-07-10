@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import localforage from 'localforage';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { useAuthStore } from './store/useAuthStore';
 
@@ -132,7 +133,6 @@ async function _applyFromCloud(docId, collection, payload) {
             window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: docId } }));
         } else {
             // Colección 'store' → IndexedDB directo, sin pasar por storageService.setItem
-            const { default: localforage } = await import('localforage');
             const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
             await lf.setItem(docId, payload);
 
@@ -222,7 +222,6 @@ export function useCloudSync(deviceId) {
 
                 // ── Auto-recuperación: Purgar/subir datos locales que no llegaron a enviarse debido al bug anterior ──
                 try {
-                    const { default: localforage } = await import('localforage');
                     const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
                     const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_accounts_v2'];
                     for (const key of criticalKeys) {
@@ -277,7 +276,6 @@ export function useCloudSync(deviceId) {
             if (!key || !SYNC_KEYS.includes(key)) return;
 
             try {
-                const { default: localforage } = await import('localforage');
                 const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
                 const localValue = await lf.getItem(key);
                 if (localValue !== null) {
@@ -292,7 +290,6 @@ export function useCloudSync(deviceId) {
         const forcePushLocalData = async () => {
             if (isSyncingFromCloud || !deviceId) return;
             try {
-                const { default: localforage } = await import('localforage');
                 const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
                 const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_accounts_v2'];
                 for (const key of criticalKeys) {

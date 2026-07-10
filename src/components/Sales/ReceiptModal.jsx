@@ -187,31 +187,50 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                                         <span className="flex items-center gap-1.5">
                                             <CasheaIcon size={12} /> Financiado (Cashea):
                                         </span>
-                                        <span>${receipt.casheaUsd.toFixed(2)} USD</span>
+                                        <span>
+                                            {receiptCurrencyMode === 'usd'
+                                                ? `$${receipt.casheaUsd.toFixed(2)} USD`
+                                                : receiptCurrencyMode === 'bs'
+                                                ? `Bs ${formatBs(receipt.casheaUsd * receipt.rate)}`
+                                                : `$${receipt.casheaUsd.toFixed(2)} USD / Bs ${formatBs(receipt.casheaUsd * receipt.rate)}`
+                                            }
+                                        </span>
                                     </div>
                                 )}
 
                                 {receipt.changeUsd > 0 && (
                                     <div className="flex justify-between text-emerald-600 font-bold mt-2 pt-2 border-t border-slate-200">
                                         <span>Vuelto Emitido:</span>
-                                        <span>{receipt.copEnabled && receipt.tasaCop > 0
-                                            ? copPrimary
-                                                ? `${formatCop(receipt.changeUsd * receipt.tasaCop)} COP / $${receipt.changeUsd.toFixed(2)} / ${formatBs(receipt.changeBs)} Bs`
-                                                : `$${receipt.changeUsd.toFixed(2)} / ${formatCop(receipt.changeUsd * receipt.tasaCop)} COP / ${formatBs(receipt.changeBs)} Bs`
-                                            : `$${receipt.changeUsd.toFixed(2)} / ${formatBs(receipt.changeBs)} Bs`
-                                        }</span>
+                                        <span>
+                                            {receiptCurrencyMode === 'usd'
+                                                ? `$${receipt.changeUsd.toFixed(2)}`
+                                                : receiptCurrencyMode === 'bs'
+                                                ? `Bs ${formatBs(receipt.changeBs)}`
+                                                : receipt.copEnabled && receipt.tasaCop > 0
+                                                ? copPrimary
+                                                    ? `${formatCop(receipt.changeUsd * receipt.tasaCop)} COP / $${receipt.changeUsd.toFixed(2)} / ${formatBs(receipt.changeBs)} Bs`
+                                                    : `$${receipt.changeUsd.toFixed(2)} / ${formatCop(receipt.changeUsd * receipt.tasaCop)} COP / ${formatBs(receipt.changeBs)} Bs`
+                                                : `$${receipt.changeUsd.toFixed(2)} / ${formatBs(receipt.changeBs)}`
+                                            }
+                                        </span>
                                     </div>
                                 )}
 
                                 {receipt.fiadoUsd > 0 && (
                                     <div className="flex justify-between text-amber-600 font-bold mt-2 pt-2 border-t border-slate-200">
                                         <span>Pendiente (Fiado):</span>
-                                        <span>{receipt.copEnabled && receipt.tasaCop > 0
-                                            ? copPrimary
-                                                ? `${formatCop(receipt.fiadoUsd * receipt.tasaCop)} COP / $${receipt.fiadoUsd.toFixed(2)} / ${formatBs(receipt.fiadoUsd * (currentRate || receipt.rate))} Bs`
-                                                : `$${receipt.fiadoUsd.toFixed(2)} / ${formatCop(receipt.fiadoUsd * receipt.tasaCop)} COP / ${formatBs(receipt.fiadoUsd * (currentRate || receipt.rate))} Bs`
-                                            : `$${receipt.fiadoUsd.toFixed(2)} / ${formatBs(receipt.fiadoUsd * (currentRate || receipt.rate))} Bs`
-                                        }</span>
+                                        <span>
+                                            {receiptCurrencyMode === 'usd'
+                                                ? `$${receipt.fiadoUsd.toFixed(2)}`
+                                                : receiptCurrencyMode === 'bs'
+                                                ? `Bs ${formatBs(receipt.fiadoUsd * (currentRate || receipt.rate))}`
+                                                : receipt.copEnabled && receipt.tasaCop > 0
+                                                ? copPrimary
+                                                    ? `${formatCop(receipt.fiadoUsd * receipt.tasaCop)} COP / $${receipt.fiadoUsd.toFixed(2)} / ${formatBs(receipt.fiadoUsd * (currentRate || receipt.rate))} Bs`
+                                                    : `$${receipt.fiadoUsd.toFixed(2)} / ${formatCop(receipt.fiadoUsd * receipt.tasaCop)} COP / ${formatBs(receipt.fiadoUsd * (currentRate || receipt.rate))} Bs`
+                                                : `$${receipt.fiadoUsd.toFixed(2)} / ${formatBs(receipt.fiadoUsd * (currentRate || receipt.rate))}`
+                                            }
+                                        </span>
                                     </div>
                                 )}
                             </div>

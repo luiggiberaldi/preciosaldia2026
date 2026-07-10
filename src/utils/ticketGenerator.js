@@ -288,13 +288,21 @@ export async function generateTicketPDF(sale, bcvRate) {
             doc.setFontSize(8);
             doc.setTextColor(...RED);
             doc.text('Deuda pendiente:', M, y);
-            doc.text(fmtUsd(sale.fiadoUsd), RIGHT, y, { align: 'right' });
-            y += 4;
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(6.5);
-            // FIN-024: mulR en vez de multiplicación raw.
-            doc.text('Bs ' + formatBs(mulR(sale.fiadoUsd, fiadoRate)) + ' (tasa actual)', RIGHT, y, { align: 'right' });
-            y += 6;
+
+            if (receiptCurrencyMode === 'usd') {
+                doc.text(fmtUsd(sale.fiadoUsd), RIGHT, y, { align: 'right' });
+                y += 6;
+            } else if (receiptCurrencyMode === 'bs') {
+                doc.text('Bs ' + formatBs(mulR(sale.fiadoUsd, fiadoRate)), RIGHT, y, { align: 'right' });
+                y += 6;
+            } else {
+                doc.text(fmtUsd(sale.fiadoUsd), RIGHT, y, { align: 'right' });
+                y += 4;
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(6.5);
+                doc.text('Bs ' + formatBs(mulR(sale.fiadoUsd, fiadoRate)) + ' (tasa actual)', RIGHT, y, { align: 'right' });
+                y += 6;
+            }
         }
 
         y += 2;

@@ -1,3 +1,5 @@
+import { formatBs } from '../../utils/calculatorUtils';
+
 /**
  * Builds a WhatsApp-ready receipt URL for sharing a sale.
  * @param {object} receipt - The sale/receipt object
@@ -79,13 +81,21 @@ export function buildReceiptWhatsAppUrl(receipt, currentRate) {
 
     // Vuelto
     const changeLines = r.changeUsd > 0.005
-        ? `\nVUELTO: ${fmtUsd(r.changeUsd)}`
+        ? receiptCurrencyMode === 'usd'
+            ? `\nVUELTO: ${fmtUsd(r.changeUsd)}`
+            : receiptCurrencyMode === 'bs'
+            ? `\nVUELTO: Bs ${formatBs(r.changeBs)}`
+            : `\nVUELTO: ${fmtUsd(r.changeUsd)} / Bs ${formatBs(r.changeBs)}`
         : '';
 
     // Fiado
     const fiadoRate = currentRate || r.rate || 1;
     const fiadoLine = r.fiadoUsd > 0.005
-        ? `\nPENDIENTE (fiado): ${fmtUsd(r.fiadoUsd)} / Bs ${formatBs(r.fiadoUsd * fiadoRate)}`
+        ? receiptCurrencyMode === 'usd'
+            ? `\nPENDIENTE (fiado): ${fmtUsd(r.fiadoUsd)}`
+            : receiptCurrencyMode === 'bs'
+            ? `\nPENDIENTE (fiado): Bs ${formatBs(r.fiadoUsd * fiadoRate)}`
+            : `\nPENDIENTE (fiado): ${fmtUsd(r.fiadoUsd)} / Bs ${formatBs(r.fiadoUsd * fiadoRate)}`
         : '';
 
     // Cliente

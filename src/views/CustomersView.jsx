@@ -668,9 +668,86 @@ function CustomerCard({ customer, bcvRate, tasaCop, copEnabled, copPrimary, onCl
     );
 }
 
+// Genera la URL de WhatsApp con el estado de cuenta formateado y las últimas 7 transacciones
+function buildCustomerStatementWhatsAppUrl(customer, sales, bcvRate) {
+    const formattedName = customer.name
+        ? customer.name.trim().toLowerCase().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+        : '';
+        
+    let msg = `*ESTADO DE CUENTA - PRECIOS AL DÍA*\n`;
+    msg += `----------------------------------\n`;
+    msg += `*Cliente:* ${formattedName}\n`;
+    if (customer.documentId) msg += `*C.I:* ${customer.documentId}\n`;
+
+    const deuda = customer.deuda || 0;
+    const favor = customer.favor || 0;
+    const casheaDeuda = customer.casheaDeuda || 0;
+
+    if (deuda > 0) {
+        msg += `*Estado:* Deuda Pendiente de *$${formatUsd(deuda)}*`;
+        if (bcvRate > 0) msg += ` (Bs ${formatBs(deuda * bcvRate)})`;
+        msg += `\n`;
+    } else if (favor > 0) {
+        msg += `*Estado:* Saldo a Favor de *$${formatUsd(favor)}*`;
+        if (bcvRate > 0) msg += ` (Bs ${formatBs(favor * bcvRate)})`;
+        msg += `\n`;
+    } else {
+        msg += `*Estado:* Al día [Activo]\n`;
+    }
+
+    if (casheaDeuda > 0) {
+        msg += `*Financiamiento Cashea:* Debe *$${formatUsd(casheaDeuda)}*\n`;
+    }
+
+    msg += `\n*ÚLTIMAS TRANSACCIONES:*\n`;
+    const lastSales = (sales || []).slice(0, 7);
+    if (lastSales.length === 0) {
+        msg += `Sin movimientos registrados.\n`;
+    } else {
+        lastSales.forEach((sale, idx) => {
+            const date = new Date(sale.timestamp);
+            const dateStr = date.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+            
+            const isCobro = sale.tipo === 'COBRO_DEUDA';
+            const isFiada = sale.tipo === 'VENTA_FIADA';
+            const isCashea = sale.tipo === 'VENTA_CASHEA';
+            const isAnulada = sale.status === 'ANULADA';
+
+            let typeStr = isCobro ? 'Abono de deuda' : isFiada ? 'Venta fiada' : isCashea ? 'Venta Cashea' : 'Venta';
+            if (isAnulada) typeStr += ' (ANULADA)';
+
+            let sign = isCobro ? '+' : '';
+            msg += `${idx + 1}. [${dateStr}] ${typeStr}: *${sign}$${formatUsd(sale.totalUsd || 0)}*`;
+            if (bcvRate > 0 && !isAnulada) msg += ` (Bs ${formatBs((sale.totalUsd || 0) * bcvRate)})`;
+            msg += `\n`;
+
+            if (sale.items && sale.items.length > 0) {
+                const itemsStr = sale.items.map(i => i.name).join(', ');
+                msg += `   _${itemsStr.substring(0, 60)}${itemsStr.length > 60 ? '...' : ''}_\n`;
+            }
+        });
+    }
+
+    msg += `----------------------------------\n`;
+    msg += `_Reporte generado el ${new Date().toLocaleDateString('es-VE')} a las ${new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', hour12: true })}._`;
+
+    const cleanPhone = (customer.phone || '').replace(/\D/g, '');
+    const phoneWithCountry = cleanPhone.length === 10 ? `58${cleanPhone}` : cleanPhone;
+
+    return `https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(msg)}`;
+}
+
 // ─── Sub-componente: Bottom Sheet de Detalle ────────────────
 function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, onReset, onSaldarCashea, onEdit, onDelete, bcvRate, tasaCop, copEnabled, copPrimary, sales }) {
     if (!isOpen || !customer) return null;
+
+    // Mini-paginación del historial
+    const [historyPage, setHistoryPage] = useState(1);
+    
+    // Resetear página de historial cuando cambia el cliente
+    useEffect(() => {
+        setHistoryPage(1);
+    }, [customer.id]);
 
     const createdDate = customer.createdAt
         ? new Date(customer.createdAt).toLocaleDateString('es-VE', { month: 'long', year: 'numeric' })
@@ -696,7 +773,7 @@ function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, on
                 <div className="px-5 pb-6 space-y-5">
                     {/* Header */}
                     <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 rounded-full bg-brand-light dark:bg-surface-800/30 flex items-center justify-center shrink-0 border border-emerald-100 dark:border-slate-700 shadow-sm">
+                        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-brand/20 to-emerald-500/10 dark:from-brand/30 dark:to-emerald-500/20 flex items-center justify-center shrink-0 border border-emerald-100 dark:border-slate-700 shadow-sm animate-in fade-in">
                             <span className="text-2xl font-black text-brand-dark dark:text-brand">
                                 {customer.name.charAt(0).toUpperCase()}
                             </span>
@@ -709,10 +786,17 @@ function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, on
                                         C.I: {customer.documentId}
                                     </span>
                                 )}
-                                {customer.phone && (
-                                    <span className="text-[9px] font-bold text-slate-500 dark:text-slate-350 flex items-center gap-0.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-200/50 dark:border-slate-800/50 px-1.5 py-0.5 rounded-md leading-none shrink-0">
+                                {customer.phone ? (
+                                    <span className="text-[9px] font-bold text-slate-500 dark:text-slate-355 flex items-center gap-0.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-200/50 dark:border-slate-800/50 px-1.5 py-0.5 rounded-md leading-none shrink-0">
                                         <Phone size={9} aria-hidden="true" /> {customer.phone}
                                     </span>
+                                ) : (
+                                    <button
+                                        onClick={onEdit}
+                                        className="text-[9px] font-black text-emerald-800 dark:text-emerald-300 bg-emerald-100/80 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/50 px-2 py-1 rounded-md leading-none flex items-center gap-1 hover:bg-emerald-200/80 dark:hover:bg-emerald-900/50 transition-all shrink-0 active:scale-95 shadow-sm"
+                                    >
+                                        <Phone size={9} aria-hidden="true" /> Añadir Teléfono
+                                    </button>
                                 )}
                             </div>
                             {createdDate && (
@@ -727,45 +811,49 @@ function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, on
                             {customer.deuda > 0 || customer.casheaDeuda > 0 ? (
                                 <>
                                     {customer.deuda > 0 && (
-                                        <div className="flex-1 bg-red-100 dark:bg-red-900/40 border border-red-300 dark:border-red-700/50 rounded-xl px-3 py-2.5 text-center">
-                                            <p className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase">Debe</p>
-                                            <p className={`text-lg font-black ${copEnabled && copPrimary ? 'text-amber-700 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}`}>
+                                        <div className="flex-1 bg-red-500/[0.03] dark:bg-red-500/[0.05] border border-red-200 dark:border-red-900/40 rounded-2xl px-3 py-2.5 text-center shadow-sm">
+                                            <p className="text-[10px] font-black text-red-500 dark:text-red-400 uppercase tracking-wider mb-1">Deuda Pendiente</p>
+                                            <p className={`text-xl font-black ${copEnabled && copPrimary ? 'text-amber-700 dark:text-amber-450' : 'text-red-500'} tracking-tight leading-tight`}>
                                                 {copEnabled && copPrimary && tasaCop > 0
                                                     ? `-${formatCop(customer.deuda * tasaCop)} COP`
                                                     : `-$${formatUsd(customer.deuda)}`}
                                             </p>
-                                            {copEnabled && copPrimary && <p className="text-[10px] font-bold text-red-600 dark:text-red-400">-${formatUsd(customer.deuda)}</p>}
-                                            {bcvRate > 0 && <p className="text-[10px] font-bold text-red-600 dark:text-red-400">-{formatBs(customer.deuda * bcvRate)} Bs</p>}
-                                            {copEnabled && !copPrimary && tasaCop > 0 && <p className="text-[10px] font-bold text-red-600 dark:text-red-400">-{formatCop(customer.deuda * tasaCop)} COP</p>}
+                                            <div className="mt-1 space-y-0.5 text-[9px] font-bold text-slate-400 dark:text-slate-550 leading-none">
+                                                {copEnabled && copPrimary && <p>-${formatUsd(customer.deuda)}</p>}
+                                                {bcvRate > 0 && <p>-{formatBs(customer.deuda * bcvRate)} Bs</p>}
+                                                {copEnabled && !copPrimary && tasaCop > 0 && <p>-{formatCop(customer.deuda * tasaCop)} COP</p>}
+                                            </div>
                                         </div>
                                     )}
                                     {customer.casheaDeuda > 0 && (
-                                        <div className="flex-1 bg-purple-100 dark:bg-purple-900/40 border border-purple-300 dark:border-purple-700/50 rounded-xl px-3 py-2.5 text-center animate-in fade-in">
-                                            <p className="text-[10px] font-bold text-purple-700 dark:text-purple-300 uppercase flex items-center justify-center gap-1"><CasheaIcon size={12} /> Cashea</p>
-                                            <p className="text-lg font-black text-purple-700 dark:text-purple-300">
+                                        <div className="flex-1 bg-purple-500/[0.03] dark:bg-purple-500/[0.05] border border-purple-200 dark:border-purple-900/40 rounded-2xl px-3 py-2.5 text-center shadow-sm animate-in fade-in">
+                                            <p className="text-[10px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-wider mb-1 flex items-center justify-center gap-1"><CasheaIcon size={11} /> Cashea</p>
+                                            <p className="text-xl font-black text-purple-600 dark:text-purple-450 tracking-tight leading-tight">
                                                 -${formatUsd(customer.casheaDeuda)}
                                             </p>
-                                            {bcvRate > 0 && <p className="text-[10px] font-bold text-purple-600 dark:text-purple-400">-{formatBs(customer.casheaDeuda * bcvRate)} Bs</p>}
+                                            {bcvRate > 0 && <p className="text-[9px] font-bold text-slate-400 dark:text-slate-550 mt-1 leading-none">-{formatBs(customer.casheaDeuda * bcvRate)} Bs</p>}
                                         </div>
                                     )}
                                 </>
                             ) : customer.favor > 0 ? (
-                                <div className="flex-1 bg-emerald-100 dark:bg-emerald-900/40 border border-emerald-300 dark:border-emerald-700/50 rounded-xl px-3 py-2.5 text-center">
-                                    <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 uppercase">A favor</p>
-                                    <p className={`text-lg font-black ${copEnabled && copPrimary ? 'text-amber-700 dark:text-amber-400' : 'text-emerald-700 dark:text-emerald-300'}`}>
+                                <div className="flex-1 bg-emerald-500/[0.03] dark:bg-emerald-500/[0.05] border border-emerald-200 dark:border-emerald-900/40 rounded-2xl px-3 py-2.5 text-center shadow-sm">
+                                    <p className="text-[10px] font-black text-emerald-600 dark:text-emerald-450 uppercase tracking-wider mb-1">Saldo a Favor</p>
+                                    <p className={`text-xl font-black ${copEnabled && copPrimary ? 'text-amber-700 dark:text-amber-450' : 'text-emerald-500'} tracking-tight leading-tight`}>
                                         {copEnabled && copPrimary && tasaCop > 0
                                             ? `+${formatCop(customer.favor * tasaCop)} COP`
                                             : `+$${formatUsd(customer.favor)}`}
                                     </p>
-                                    {copEnabled && copPrimary && <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">+${formatUsd(customer.favor)}</p>}
-                                    {bcvRate > 0 && <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">+{formatBs(customer.favor * bcvRate)} Bs</p>}
-                                    {copEnabled && !copPrimary && tasaCop > 0 && <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">+{formatCop(customer.favor * tasaCop)} COP</p>}
+                                    <div className="mt-1 space-y-0.5 text-[9px] font-bold text-slate-400 dark:text-slate-550 leading-none">
+                                        {copEnabled && copPrimary && <p>+${formatUsd(customer.favor)}</p>}
+                                        {bcvRate > 0 && <p>+{formatBs(customer.favor * bcvRate)} Bs</p>}
+                                        {copEnabled && !copPrimary && tasaCop > 0 && <p>+{formatCop(customer.favor * tasaCop)} COP</p>}
+                                    </div>
                                 </div>
                             ) : (
-                                <div className="flex-1 bg-emerald-50/50 dark:bg-emerald-950/10 border border-emerald-100/70 dark:border-emerald-900/30 rounded-xl px-3 py-2.5 text-center shadow-sm">
-                                    <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-0.5">Estado Financiero</p>
-                                    <p className="text-sm font-black text-emerald-600 dark:text-emerald-400 flex items-center justify-center gap-1 mt-0.5">
-                                        <CheckCircle2 size={14} className="text-emerald-500" aria-hidden="true" /> Al día
+                                <div className="flex-1 bg-emerald-500/[0.02] dark:bg-emerald-500/[0.04] border border-emerald-100 dark:border-emerald-900/30 rounded-2xl px-3 py-3 text-center shadow-sm">
+                                    <p className="text-[10px] font-black text-emerald-500 dark:text-emerald-450 uppercase tracking-wider mb-0.5">Estado Financiero</p>
+                                    <p className="text-sm font-black text-emerald-600 dark:text-emerald-400 flex items-center justify-center gap-1.5 mt-1.5">
+                                        <CheckCircle2 size={15} className="text-emerald-500" aria-hidden="true" /> Al día
                                     </p>
                                 </div>
                             )}
@@ -779,32 +867,55 @@ function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, on
                             <div className="grid grid-cols-2 gap-2">
                                 <button
                                     onClick={onAjustar}
-                                    className={`flex flex-col items-center justify-center gap-1.5 py-3.5 min-h-[80px] bg-brand dark:bg-brand-dark text-white rounded-xl text-xs font-bold hover:opacity-95 transition-all active:scale-95 shadow-sm ${showReset ? 'col-span-1' : 'col-span-2'}`}
+                                    className={`flex flex-col items-center justify-center gap-1 py-2.5 min-h-[64px] bg-brand dark:bg-brand-dark text-white rounded-xl text-xs font-bold hover:opacity-95 transition-all active:scale-95 shadow-sm ${showReset ? 'col-span-1' : 'col-span-2'}`}
                                 >
-                                    <CreditCard size={18} aria-hidden="true" />
+                                    <CreditCard size={16} aria-hidden="true" />
                                     <span>Ajustar Cuenta</span>
                                 </button>
                                 {showReset && (
                                     <button
                                         onClick={onReset}
-                                        className="flex flex-col items-center justify-center gap-1.5 py-3.5 min-h-[80px] bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors active:scale-95 border border-slate-200/40 dark:border-slate-700/50"
+                                        className="flex flex-col items-center justify-center gap-1 py-2.5 min-h-[64px] bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-750 transition-colors active:scale-95 border border-slate-200/40 dark:border-slate-700/50"
                                     >
-                                        <RefreshCw size={18} aria-hidden="true" />
+                                        <RefreshCw size={16} aria-hidden="true" />
                                         <span>Poner en 0</span>
                                     </button>
                                 )}
                                 {customer.casheaDeuda > 0 && isAdmin && (
                                     <button
                                         onClick={() => onSaldarCashea(customer)}
-                                        className="flex flex-col items-center justify-center gap-1.5 py-3 min-h-[80px] bg-purple-100 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 rounded-xl text-xs font-bold hover:bg-purple-200 dark:hover:bg-purple-900/40 transition-colors active:scale-95 col-span-2"
+                                        className="flex flex-col items-center justify-center gap-1 py-2.5 min-h-[64px] bg-purple-100 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 rounded-xl text-xs font-bold hover:bg-purple-200 dark:hover:bg-purple-900/40 transition-colors active:scale-95 col-span-2"
                                     >
-                                        <CheckCircle2 size={18} aria-hidden="true" />
+                                        <CheckCircle2 size={16} aria-hidden="true" />
                                         <span>Saldar Deuda Cashea</span>
                                     </button>
                                 )}
                             </div>
                         );
                     })()}
+
+                    {/* Botón Enviar Estado de Cuenta por WhatsApp */}
+                    <div className="flex flex-col gap-1.5 w-full">
+                        <button
+                            onClick={() => {
+                                const url = buildCustomerStatementWhatsAppUrl(customer, sales, bcvRate);
+                                window.open(url, '_blank');
+                            }}
+                            disabled={!customer.phone}
+                            title={!customer.phone ? "Debe configurar un teléfono para el cliente para poder enviar por WhatsApp" : "Enviar estado de cuenta por WhatsApp"}
+                            className="flex items-center justify-center gap-2 py-3 px-4 w-full bg-emerald-600 dark:bg-emerald-700 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 dark:hover:bg-emerald-600 transition-all active:scale-95 disabled:bg-slate-100 disabled:text-slate-400 dark:disabled:bg-surface-800 dark:disabled:text-slate-500 disabled:shadow-none disabled:cursor-not-allowed shadow-sm shrink-0"
+                        >
+                            <svg className="w-4 h-4 fill-current shrink-0" viewBox="0 0 24 24">
+                                <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.625 1.451 5.403.002 9.803-4.392 9.806-9.8.001-2.617-1.01-5.079-2.859-6.93C16.378 2.025 13.926.994 12.01.994c-5.405 0-9.804 4.393-9.807 9.8-.001 1.77.464 3.5 1.345 5.03L2.57 20.31l4.077-1.156z"/>
+                            </svg>
+                            <span>Enviar Estado de Cuenta (WhatsApp)</span>
+                        </button>
+                        {!customer.phone && (
+                            <div className="bg-amber-500/[0.06] dark:bg-amber-500/[0.08] border border-amber-200/60 dark:border-amber-900/40 text-amber-800 dark:text-amber-300 rounded-xl px-3 py-2 flex items-center justify-center gap-1.5 text-[10px] font-bold mt-1 shadow-sm">
+                                <span>\u26A0\uFE0F Asigna un teléfono arriba para habilitar WhatsApp</span>
+                            </div>
+                        )}
+                    </div>
 
                     {/* Historial */}
                     <div>
@@ -819,7 +930,7 @@ function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, on
                             </div>
                         ) : (
                             <div className="space-y-2">
-                                {sales.slice(0, 10).map(sale => {
+                                {sales.slice(0, historyPage * 5).map(sale => {
                                     const date = new Date(sale.timestamp);
                                     const dateStr = date.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: '2-digit' });
                                     const timeStr = date.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -828,7 +939,7 @@ function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, on
                                     const isCashea = sale.tipo === 'VENTA_CASHEA';
                                     const isAnulada = sale.status === 'ANULADA';
                                     return (
-                                        <div key={sale.id} className={`flex items-start gap-2.5 py-2 px-2 bg-slate-50 dark:bg-slate-950 rounded-xl ${isAnulada ? 'opacity-50 grayscale' : ''}`}>
+                                        <div key={sale.id} className={`flex items-start gap-2.5 py-3 px-3.5 bg-slate-50 dark:bg-slate-950 rounded-xl ${isAnulada ? 'opacity-50 grayscale' : ''}`}>
                                             <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${isAnulada ? 'bg-slate-200 dark:bg-slate-800' : isCobro ? 'bg-emerald-100 dark:bg-emerald-900/30' : isFiada ? 'bg-amber-100 dark:bg-amber-900/30' : isCashea ? 'bg-purple-100 dark:bg-purple-900/30' : 'bg-brand-light dark:bg-surface-800/30'}`}>
                                                 {isCobro ? <ArrowUpRight size={14} className={isAnulada ? "text-slate-500" : "text-emerald-500"} /> : isFiada ? <CreditCard size={14} className={isAnulada ? "text-slate-500" : "text-amber-500"} /> : isCashea ? <Smartphone size={14} className={isAnulada ? "text-slate-500" : "text-purple-500"} /> : <ShoppingBag size={14} className={isAnulada ? "text-slate-500" : "text-brand"} />}
                                             </div>
@@ -867,6 +978,16 @@ function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, on
                                         </div>
                                     );
                                 })}
+
+                                {sales.length > historyPage * 5 && (
+                                    <button
+                                        onClick={() => setHistoryPage(p => p + 1)}
+                                        className="w-full mt-2.5 py-2 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-[10px] font-bold text-slate-600 dark:text-slate-300 rounded-xl transition-all flex items-center justify-center gap-1 active:scale-[0.97]"
+                                    >
+                                        <Clock size={11} className="opacity-70" />
+                                        <span>Cargar más transacciones ({sales.length - historyPage * 5} más)</span>
+                                    </button>
+                                )}
                             </div>
                         )}
                     </div>

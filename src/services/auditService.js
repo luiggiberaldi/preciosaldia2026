@@ -169,16 +169,10 @@ export async function purgeOldEntries() {
  * @returns {Promise<void>}
  * @throws {Error} Si no hay `user` con `rol === 'ADMIN'`.
  */
-export async function clearAuditLog(user = null) {
-    // SEC-019: si no se pasa `user`, intentar leerlo del store de auth.
-    // Backward-compat para callers existentes (ej. AuditLogViewer) que no pasan user.
+export async function clearAuditLog(user) {
+    // SEC-019: El usuario debe proporcionarse de forma explícita desde la UI
     if (!user) {
-        try {
-            const mod = await import('../hooks/store/useAuthStore');
-            user = mod.useAuthStore.getState().usuarioActivo || null;
-        } catch {
-            // Si el import fallase (ciclo o módulo no cargado), user queda null.
-        }
+        throw new Error('Permiso denegado: se requiere un usuario autenticado para realizar esta acción.');
     }
 
     // SEC-019: rol debe ser ADMIN (no OWNER/SUPERADMIN inventados).

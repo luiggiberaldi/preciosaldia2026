@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useMemo, Suspense, lazy } from 'rea
 import { Home, ShoppingCart, Store, Users, Download, FlaskConical, Moon, Sun, BarChart3, WifiOff, X, Settings, Clock } from 'lucide-react';
 
 import DashboardView from './views/DashboardView';
-import AIAssistantWidget from './components/AIAssistantWidget';
 
 // Lazy-loaded views
 const SalesView = lazy(() => import('./views/SalesView'));
@@ -11,6 +10,7 @@ const SettingsView = lazy(() => import('./views/SettingsView'));
 const CustomersView = lazy(() => import('./views/CustomersView'));
 const ReportsView = lazy(() => import('./views/ReportsView'));
 const TesterView = lazy(() => import('./views/TesterView').then(m => ({ default: m.TesterView })));
+const AIAssistantWidget = lazy(() => import('./components/AIAssistantWidget'));
 
 import { useRates } from './hooks/useRates';
 import { useSecurity } from './hooks/useSecurity';
@@ -29,7 +29,7 @@ import { LogOut } from 'lucide-react';
 import { purgeOldEntries } from './services/auditService';
 import { useCloudSync } from './hooks/useCloudSync';
 
-import OwnerMonitorView from './views/OwnerMonitorView';
+const OwnerMonitorView = lazy(() => import('./views/OwnerMonitorView'));
 import PairingScanScreen from './components/PairingScanScreen';
 
 export default function App() {
@@ -203,7 +203,9 @@ export default function App() {
     return (
       <ErrorBoundary>
         <ProductProvider rates={rates}>
-          <OwnerMonitorView theme={theme} toggleTheme={toggleTheme} triggerHaptic={triggerHaptic} />
+          <Suspense fallback={<div className="flex-1 flex items-center justify-center p-6 text-slate-500 font-bold">Cargando monitor...</div>}>
+            <OwnerMonitorView theme={theme} toggleTheme={toggleTheme} triggerHaptic={triggerHaptic} />
+          </Suspense>
         </ProductProvider>
       </ErrorBoundary>
     );
@@ -376,7 +378,11 @@ export default function App() {
             </div>
           )}
         </Suspense>
-        {activeTab === 'inicio' && <AIAssistantWidget />}
+        {activeTab === 'inicio' && (
+          <Suspense fallback={null}>
+            <AIAssistantWidget />
+          </Suspense>
+        )}
       </main>
 
       </ProductProvider>
