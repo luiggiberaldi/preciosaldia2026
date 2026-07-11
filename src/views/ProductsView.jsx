@@ -28,6 +28,7 @@ import { useProductFiltering } from '../hooks/useProductFiltering';
 import { useProductForm } from '../hooks/useProductForm';
 import { useProductSorting } from '../hooks/useProductSorting';
 import { buildProductPayload } from '../utils/productProcessor';
+import { uploadProductImage, migrateProductImagesToStorage } from '../utils/imageUpload';
 // useAuthStore removed - single-user app
 import { useAudit } from '../hooks/useAudit';
 
@@ -111,6 +112,48 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
     }, [viewMode]);
+
+    // ─── FASE 3 (Egress): migración única de imágenes base64 → Storage ───────
+    // Las imágenes viejas viven como base64 dentro de bodega_products_v1 (el doc
+    // que se sincroniza por Realtime). Las subimos a Storage una sola vez y las
+    // reemplazamos por URLs, encogiendo el doc y cortando su re-emisión en cada
+    // cambio de stock/precio. Guardado por flag; solo online; en segundo plano.
+    // Seguro: si un upload falla, ese producto conserva su base64 y se reintenta
+    // en la próxima sesión (el flag solo se fija si migró todo sin fallos).
+    useEffect(() => {
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+        if (localStorage.getItem('pda_images_migrated_v1') === 'true') return;
+
+        let cancelled = false;
+        const timer = setTimeout(async () => {
+            try {
+                const current = await storageService.getItem('bodega_products_v1', []);
+                const hasBase64 = Array.isArray(current)
+                    && current.some(p => typeof p?.image === 'string' && p.image.startsWith('data:'));
+                if (!hasBase64) {
+                    localStorage.setItem('pda_images_migrated_v1', 'true');
+                    return;
+                }
+
+                const res = await migrateProductImagesToStorage(current, async (out) => {
+                    await storageService.setItem('bodega_products_v1', out);
+                    if (!cancelled) setProducts(out);
+                });
+
+                if (res.failed === 0) {
+                    localStorage.setItem('pda_images_migrated_v1', 'true');
+                }
+                if (res.migrated > 0) {
+                    showToast(`${res.migrated} imágenes movidas a la nube`, 'success');
+                }
+            } catch {
+                // Silencioso: se reintenta en la próxima sesión.
+            }
+        }, 4000);
+
+        return () => { cancelled = true; clearTimeout(timer); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const toggleViewMode = () => {
         const next = viewMode === 'grid' ? 'list' : 'grid';
@@ -350,8 +393,21 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         _commitSave(productData);
     };
 
-    const _commitSave = (productData) => {
+    const _commitSave = async (productData) => {
         setHighPriceConfirm(null);
+
+        const productId = editingId || crypto.randomUUID();
+
+        // FASE 3 (Egress): si la imagen es base64, subirla a Storage y guardar la
+        // URL en vez del data URI, para que no viaje dentro del doc de sync.
+        // Si falla (offline/límite), uploadProductImage devuelve null y se conserva
+        // el base64 — nunca se pierde la imagen. Las imágenes ya en URL o "" pasan
+        // tal cual (no se re-suben).
+        let finalImage = image;
+        if (typeof image === 'string' && image.startsWith('data:')) {
+            const url = await uploadProductImage(image, { id: productId });
+            if (url) finalImage = url;
+        }
 
         let updatedProducts;
         if (editingId) {
@@ -360,14 +416,14 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 // "" (string vacío) es falsy en JS y caía al fallback con la foto vieja.
                 // Ahora solo usamos la imagen previa si image es estrictamente `undefined`
                 // (es decir, el campo nunca fue tocado en el formulario).
-                p.id === editingId ? { ...p, ...productData, image: image !== undefined ? image : p.image } : p
+                p.id === editingId ? { ...p, ...productData, image: finalImage !== undefined ? finalImage : p.image } : p
             );
             auditLog('INVENTARIO', 'PRODUCTO_EDITADO', `Producto "${name}" editado`);
         } else {
             updatedProducts = [{
-                id: crypto.randomUUID(),
+                id: productId,
                 ...productData,
-                image,
+                image: finalImage,
                 createdAt: new Date().toISOString()
             }, ...products];
             auditLog('INVENTARIO', 'PRODUCTO_CREADO', `Producto "${name}" creado - $${priceUsd || '0'}`);

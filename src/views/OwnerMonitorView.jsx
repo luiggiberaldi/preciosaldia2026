@@ -426,7 +426,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
     const isShiftActive = activeShiftApertura !== null || activeShiftSales.length > 0;
 
     return (
-        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 font-sans pb-12 transition-colors duration-300">
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 font-sans pb-12 transition-colors duration-300 overflow-x-hidden">
             {/* Header del Monitor */}
             <header className="sticky top-0 z-50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 py-3 flex items-center justify-between shadow-sm">
                 <div className="flex items-center gap-3">

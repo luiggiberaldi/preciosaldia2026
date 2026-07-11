@@ -44,6 +44,19 @@ export default defineConfig(({ mode }) => {
               cacheableResponse: { statuses: [0, 200] },
             },
           },
+          {
+            // FASE 3 (Egress): imágenes de producto en Supabase Storage. Se cachean
+            // para que se vean sin conexión (antes viajaban como base64 embebido,
+            // siempre offline; ahora son URLs y necesitan cache runtime para no
+            // perder esa capacidad offline-first).
+            urlPattern: /\/storage\/v1\/object\/public\/product-images\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'product-images-cache',
+              expiration: { maxEntries: 500, maxAgeSeconds: 60 * 60 * 24 * 90 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
         ],
       },
       manifest: {

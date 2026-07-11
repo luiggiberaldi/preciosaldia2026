@@ -113,7 +113,18 @@ export const ProductShareModal = ({ isOpen, onClose, product, rates, accounts, s
         try {
             // Check if Web Share API is available and supports files
             if (navigator.share && product.image) {
-                const imageFile = dataURLtoFile(product.image, `${product.name.replace(/\s+/g, '_')}.webp`);
+                // FASE 3 (Egress): product.image puede ser un data URI (imágenes
+                // viejas/offline) o una URL de Supabase Storage (nuevas). Soportar
+                // ambos: si es data URI se decodifica local; si es URL se descarga.
+                const filename = `${product.name.replace(/\s+/g, '_')}.webp`;
+                let imageFile;
+                if (product.image.startsWith('data:')) {
+                    imageFile = dataURLtoFile(product.image, filename);
+                } else {
+                    const resp = await fetch(product.image);
+                    const blob = await resp.blob();
+                    imageFile = new File([blob], filename, { type: blob.type || 'image/webp' });
+                }
 
                 if (navigator.canShare && navigator.canShare({ files: [imageFile] })) {
                     await navigator.share({
