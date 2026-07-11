@@ -261,15 +261,112 @@ export default defineConfig(({ mode }) => {
                 }
 
                 const { createClient } = await import('@supabase/supabase-js');
-                const supabase = createClient(supabaseUrl, supabaseKey);
+                const customMappings = {
+                  'TRIFOGON': 'trifogon',
+                  'TOM GUAYABANA': 'dulce tom',
+                  'TOM PLATANO': 'dulce tom',
+                  'ALISOFT PAPEL': 'alisoft',
+                  'EURO': 'papel euro',
+                  'BAMBOO 4 ROLLO': 'bamboo',
+                  'BAMBOO UNIDA': 'bamboo',
+                  'LA PAMPA': 'pampa',
+                  'AURORA SOYA': 'aurora',
+                  'DOÑA TITA VINAGRE': 'dona tita',
+                  'CAPRI SALSA': 'capri',
+                  'KETCHUP': 'ketchup',
+                  'PAZCUM SALSA': 'pazcum',
+                  'SARDINES OIL': 'sardinas',
+                  'TWISTI': 'twisti',
+                  'MARGARINA ATUN': 'margarina',
+                  'DIABLITO UNDER': 'diablito',
+                  'BLANCA FLOR LEUDANTE': 'blanca flor',
+                  'BLANCA FLOR TODO': 'blanca flor',
+                  'KONFIT AZUCAR': 'konfit',
+                  'RONCO CORTA PLUMA 500 GR': 'ronco',
+                  'MARY PASTA PLUMA 500 GR': 'mary',
+                  'SAN SIMON LECHE 400GR': 'san simon',
+                  'ARROZ MARY SUPERIOR': 'arroz mary',
+                  'ARROZ MARY PREMIUM': 'arroz mary',
+                  'DOÑA BELEN': 'dona belen',
+                  'PRIMOR PASTA LARGA': 'primor',
+                  'MARY PASTA LARGA PREMIUM 500G': 'mary pasta',
+                  'SAL PROSANCA': 'prosanca',
+                  'CAFÉ LA PROTECTORA 100GR': 'protectora',
+                  'CAFÉ LA PROTECTORA 200GR': 'protectora',
+                  'ALIVE DETERGENTE POLVO 400GR': 'alive',
+                  'AVENA 400GR GRAVENCA': 'gravenca',
+                  'JUMBY RIKO': 'jumby',
+                  'BUEN ARROZ 900GR': 'buen arroz',
+                  'HARINA BUDARE': 'budare',
+                  'HARINA MARY 900G': 'harina mary',
+                  'WYNCON BUZZY': 'buzzy',
+                  'JABON ANITA': 'anita',
+                  'LA LLAVES JABON': 'llaves',
+                  'BON BON SURTIDO': 'bon bon',
+                  'CARAMELO CAFÉ': 'caramelo cafe',
+                  'TOALLAS WANITA': 'wanita',
+                  'PRESTOBALBA DORCO AZUL , ROSADA': 'dorco',
+                  'GALLETAS MARIA ALIVAL': 'galletas maria',
+                  'MIMLOT JABON': 'mimlot',
+                  'MAVESA MARGARINA MANTEQUILLA': 'margarina mavesa',
+                  'JUSTY DURAZNO 400L': 'justy',
+                  'JUSTY MANZANA 400L': 'justy',
+                  'GLUP COLA 2L': 'glup',
+                  'GLUP SABORES 1L': 'glup',
+                  'GLUP COLA 400L': 'glup',
+                  'CIGARRO CONSUL PAQ': 'consul',
+                  'CIGARRO VICEBOY PAQ': 'viceboy',
+                  'CHEESKING 50G': 'cheeseking',
+                  'CREMA ALIDENT AZUL': 'alident',
+                  'SUAVITETWL 180ML': 'suavitel',
+                  'AGUA COLL 1.5L': 'agua coll',
+                  'AGUA COLL 600M': 'agua coll',
+                  'GALLETA COCO RANCH': 'coco ranch',
+                  'GALLETA ANIMALITOS': 'animalitos',
+                  'GALLETA SODA': 'galleta soda',
+                  'GALLETA CLUB SOCIAL': 'club social',
+                  'LECHE DOBON 120G': 'dobon',
+                  'PALITO DANIBISK': 'danibisk',
+                  'FLIPS 120GR CHOCO': 'flips',
+                  'FLIPS 120GR DULCE': 'flips',
+                  'TIP TOP CHOCO': 'tip top',
+                  'GALLETA INDEPENDENCIA': 'independencia',
+                  'GALLETA DANINBISK': 'danibisk',
+                  'OREO TUBO': 'oreo',
+                  'RAQUETY PICANTE': 'raquety',
+                  'CHEESE TRIS 4G': 'cheese tris',
+                  'CHISKESITOS 45G': 'chiskesitos',
+                  'TOSTON TOM 80G': 'toston tom',
+                  'ESPONJA AMARILLA': 'esponja',
+                  'HUEVOS TIPO A und': 'huevos',
+                  'MANTEQUILLA NELLY 250G': 'nelly',
+                  'MAYONESAMAVESA 500G': 'mayonesa mavesa',
+                  'MAYONES MAVESA 175G': 'mayonesa mavesa',
+                  'DESIFENTANTE 1LT': 'desinfectante'
+                };
 
-                const trimmedQuery = query.trim();
-                const slug = trimmedQuery
+                const cleanText = (str) => str
                   .toLowerCase()
                   .normalize("NFD")
                   .replace(/[\u0300-\u036f]/g, "")
-                  .replace(/[^a-z0-9]+/g, "-")
-                  .replace(/(^-|-$)+/g, "");
+                  .replace(/[^a-z0-9\s]/g, " ")
+                  .replace(/\s+/g, ' ')
+                  .trim();
+
+                const originalQuery = query.trim();
+                const normalizedQuery = cleanText(originalQuery).toUpperCase();
+                
+                // Obtener query semántico sanitizado
+                let searchQuery = customMappings[normalizedQuery] || normalizedQuery.toLowerCase();
+                if (!customMappings[normalizedQuery]) {
+                  let words = normalizedQuery.split(' ');
+                  const noise = ['UND', 'UNIDA', 'LOTE', 'PAQ', 'PAQUE', 'PAQUETE', 'GR', 'GRS', 'KG', '1KG', '400GR', '500GR', '900G', '175G', '250G', '180ML', '200ML', '1LT', '1.5L', '2L', '1L', '400L', '600M'];
+                  words = words.filter(w => !noise.includes(w) && w.length > 1);
+                  searchQuery = words.length > 0 ? words[0].toLowerCase() : normalizedQuery.toLowerCase();
+                }
+
+                // Generar slug para coincidencia exacta
+                const slug = searchQuery.replace(/\s+/g, '-');
 
                 // 1. Intentar coincidencia exacta de slug
                 const { data: exactMatch } = await supabase
@@ -287,20 +384,33 @@ export default defineConfig(({ mode }) => {
                 }
 
                 // 2. Intentar coincidencia parcial
-                const words = trimmedQuery.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+                const words = searchQuery.split(/\s+/).filter(w => w.length > 2);
                 if (words.length > 0) {
                   const { data: matches } = await supabase
                     .from("product_images_catalog")
-                    .select("id, name, image_url")
+                    .select("id, name, image_url, tags")
                     .overlaps("tags", words);
 
                   if (matches && matches.length > 0) {
                     const ranked = matches.map(item => {
                       let score = 0;
                       const nameLower = item.name.toLowerCase();
+                      
+                      // Scoring inteligente
                       words.forEach(w => {
-                        if (nameLower.includes(w)) score += 10;
+                        if (nameLower.includes(w)) {
+                          score += 10;
+                          // Bonus si el nombre empieza con la palabra buscada
+                          if (nameLower.startsWith(w)) score += 5;
+                        }
                       });
+
+                      // Bonus por coincidencia exacta de palabras en tags
+                      const itemTags = Array.isArray(item.tags) ? item.tags : [];
+                      words.forEach(w => {
+                        if (itemTags.includes(w)) score += 15;
+                      });
+
                       return { ...item, score };
                     })
                     .filter(item => item.score > 0)
