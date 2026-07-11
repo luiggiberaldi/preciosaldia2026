@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { Camera, X, AlertTriangle, Package, Tag, Scale, Droplets, ChevronDown, ChevronUp, Barcode, Banknote, CheckCircle, Plus, Search, Link, Sparkles } from 'lucide-react';
 import { useProductContext } from '../../context/ProductContext';
 import CustomSelect from '../CustomSelect';
+import { showToast } from '../Toast';
 
 const PACKAGING_TYPES = [
     { id: 'suelto', label: 'Suelto', Icon: Tag, desc: 'Unidad individual', color: 'emerald' },
@@ -114,14 +115,14 @@ export default function ProductFormQuick({
                         </>
                     )}
                     <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
-                    {image && <button onClick={(e) => { e.stopPropagation(); setImage(null); }} className="absolute top-2 right-2 p-1 bg-black/50 text-white rounded-full"><X size={12} /></button>}
+                    {image && <button onClick={(e) => { e.stopPropagation(); setImage(''); }} className="absolute top-2 right-2 p-1 bg-black/50 text-white rounded-full"><X size={12} /></button>}
                 </div>
 
                 {/* Web Image Finder & URL Paste Zone */}
                 <div 
                     onClick={() => {
                         if (!name || name.trim().length < 3) {
-                            alert('Ingresa el nombre del producto (mín. 3 letras) para buscar automáticamente');
+                            showToast('Ingresa el nombre del producto (mín. 3 letras) para buscar automáticamente', 'warning');
                             return;
                         }
                         handleAutoSearchImage(name);

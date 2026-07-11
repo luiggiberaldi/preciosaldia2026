@@ -27,7 +27,7 @@ const INITIAL_STATE = {
     unitPriceUsd: '',
     category: 'otros',
     lowStockAlert: '5',
-    image: null,
+    image: undefined,
     packagingType: 'suelto',
     stockInLotes: '',
     granelUnit: 'kg',
