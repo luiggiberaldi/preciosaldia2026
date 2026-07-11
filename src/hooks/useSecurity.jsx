@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
 import { storageService } from '../utils/storageService';
 import { supabase } from '../core/supabaseClient';
 import { verifyLicenseToken } from '../security/tokenCrypto';
@@ -38,7 +38,14 @@ async function _fetchRemoteLicense(currentDeviceId) {
 // Worker, Vercel o index.html <meta http-equiv>). No se pueden aplicar correctamente
 // desde el bundle. Ver ISSUES.md SEC-022 / INFRA-011 — pendiente para Agente D.
 
-export function useSecurity() {
+// HOOK: useSecurity() lee de un Context compartido (SecurityProvider) en vez de
+// correr su propio ciclo de estado por cada componente que lo consume. Antes, cada
+// uno de los ~7 componentes que llaman useSecurity() (App, DashboardView, SettingsView,
+// WalletView, SettingsModal, PremiumGuard, ManualMode) disparaba su propio auto-registro,
+// verificación de licencia y heartbeat al montar — generando ráfagas de RPCs duplicadas
+// contra Supabase en cada arranque/navegación. Con Context, el ciclo corre una sola vez
+// por sesión de app, sin importar cuántos componentes consuman el estado.
+function useSecurityState() {
     const [deviceId, setDeviceId] = useState('');
     const [isPremium, setIsPremium] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -781,4 +788,17 @@ export function useSecurity() {
         isMonthlyGracePeriod,
         monthlyGraceDaysLeft,
     };
+}
+
+const SecurityContext = createContext(null);
+
+export function SecurityProvider({ children }) {
+    const value = useSecurityState();
+    return <SecurityContext.Provider value={value}>{children}</SecurityContext.Provider>;
+}
+
+export function useSecurity() {
+    const ctx = useContext(SecurityContext);
+    if (!ctx) throw new Error('useSecurity debe usarse dentro de un SecurityProvider');
+    return ctx;
 }

@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import ResetPasswordView from './views/ResetPasswordView.jsx'
 import { ToastProvider } from './components/Toast.jsx'
+import { SecurityProvider } from './hooks/useSecurity.jsx'
 import { supabaseCloud } from './config/supabaseCloud.js'
 import './index.css'
 
@@ -90,7 +91,9 @@ function AppRouter() {
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ToastProvider>
-      <AppRouter />
+      <SecurityProvider>
+        <AppRouter />
+      </SecurityProvider>
     </ToastProvider>
   </React.StrictMode>,
 )
