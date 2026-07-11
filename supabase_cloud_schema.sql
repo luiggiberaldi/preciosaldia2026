@@ -1,6 +1,8 @@
 -- ============================================================
 -- Supabase Cloud Sync Schema (CANÓNICO para cloud_backups)
--- Proyecto: ewwszyzzvoweudholmbf
+-- Proyecto: sodgzkablshladvbtnes ("preciosaldia rebranding", el que apunta
+--           VITE_SUPABASE_CLOUD_URL). Refs viejos fgzwmwrugerptfqfrsjd /
+--           ewwszyzzvoweudholmbf están obsoletos.
 -- Identificador: device_id (auth.uid()::text == device_id)
 -- ============================================================
 -- ISSUES cubiertos: INFRA-002 / SEC-002 / SEC-003 / INFRA-014 / INFRA-015
