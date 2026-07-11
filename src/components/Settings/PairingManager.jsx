@@ -303,6 +303,37 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
                     </button>
                 </div>
             )}
+
+            {/* Modal de Confirmación de Desvinculación de Supervisor */}
+            {showConfirmUnpair && (
+                <div className="fixed inset-0 z-[250] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 max-w-sm w-full shadow-2xl space-y-5 animate-scale-in">
+                        <div className="w-12 h-12 bg-rose-50 dark:bg-rose-950/20 rounded-2xl flex items-center justify-center text-rose-500 mx-auto">
+                            <Trash2 size={22} />
+                        </div>
+                        <div className="space-y-1.5 text-center">
+                            <h4 className="text-base font-black text-slate-800 dark:text-white">Desvincular Supervisor</h4>
+                            <p className="text-xs font-semibold text-slate-500 leading-relaxed">
+                                ¿Estás seguro de que deseas desvincular el celular del supervisor? Perderá el acceso de monitoreo en tiempo real a las transacciones de esta caja.
+                            </p>
+                        </div>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => { triggerHaptic?.(); setShowConfirmUnpair(false); }}
+                                className="flex-1 py-3 px-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-350 font-black text-xs rounded-2xl border border-slate-200 dark:border-slate-700 transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={handleUnpairConfirm}
+                                className="flex-1 py-3 px-4 bg-rose-500 hover:bg-rose-600 text-white font-black text-xs rounded-2xl shadow-lg shadow-rose-500/20 transition-colors"
+                            >
+                                Desvincular
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

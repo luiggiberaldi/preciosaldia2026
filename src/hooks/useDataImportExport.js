@@ -133,12 +133,13 @@ export function useDataImportExport({
                 }
 
                 setImportStatus('success');
-                setStatusMessage('Restauracion completa. Reiniciando...');
+                setStatusMessage('Restauracion completa. Sincronizando con la nube...');
+                localStorage.setItem('pda_backup_imported_flag', 'true');
                 auditLog('SISTEMA', 'BACKUP_IMPORTADO', `Backup restaurado (${json.source || 'archivo'}) — ${Object.keys(json.data.idb || {}).join(', ')}`);
                 triggerHaptic?.();
 
-                // Reload inmediato — no damos tiempo al auto-save del contexto
-                setTimeout(() => window.location.reload(), 800);
+                // Damos tiempo a guardar los datos antes de reiniciar
+                setTimeout(() => window.location.reload(), 1200);
             } catch (error) {
                 console.error('[IMPORT ERROR]', error);
                 setImportStatus('error');

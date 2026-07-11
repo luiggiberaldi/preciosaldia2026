@@ -211,25 +211,43 @@ export function useCloudSync(deviceId) {
                 isCloudSyncActive = true;
                 isInitialized.current = true;
 
-                // ── Pull Inicial ───────────────────────────────────────────
-                const { data: docs } = await supabaseCloud
-                    .from('sync_documents')
-                    .select('collection, doc_id, data')
-                    .eq('device_id', deviceId)
-                    .in('collection', ['store', 'local']);
-
-                if (docs?.length > 0) {
-                    for (const doc of docs) {
-                        // SEC-002: nunca aplicar `abasto-auth-storage` desde la nube.
-                        if (doc.doc_id === 'abasto-auth-storage') continue;
-                        try {
-                            await _applyFromCloud(doc.doc_id, doc.collection, doc.data.payload);
-                        } catch (e) {
-                            // HOOK-023: try/catch por documento para no abortar el pull completo.
-                            console.warn(`[CloudSync] Error aplicando doc ${doc.doc_id}:`, e);
+                // ── Pull Inicial / Sincronización de Importación ──
+                const backupImported = localStorage.getItem('pda_backup_imported_flag') === 'true';
+                
+                if (backupImported) {
+                    console.log('[CloudSync] Detectado backup importado localmente. Subiendo datos locales a la nube...');
+                    const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
+                    const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_accounts_v2'];
+                    for (const key of criticalKeys) {
+                        const localValue = await lf.getItem(key);
+                        if (localValue !== null) {
+                            await pushCloudSync(key, localValue);
+                            const hashKey = LAST_PUSH_HASH_PREFIX + key;
+                            localStorage.setItem(hashKey, quickHash(localValue));
                         }
                     }
-                    console.log(`[CloudSync] Pull inicial: ${docs.length} documentos aplicados.`);
+                    localStorage.removeItem('pda_backup_imported_flag');
+                    console.log('[CloudSync] Sincronización de importación completada.');
+                } else {
+                    const { data: docs } = await supabaseCloud
+                        .from('sync_documents')
+                        .select('collection, doc_id, data')
+                        .eq('device_id', deviceId)
+                        .in('collection', ['store', 'local']);
+
+                    if (docs?.length > 0) {
+                        for (const doc of docs) {
+                            // SEC-002: nunca aplicar `abasto-auth-storage` desde la nube.
+                            if (doc.doc_id === 'abasto-auth-storage') continue;
+                            try {
+                                await _applyFromCloud(doc.doc_id, doc.collection, doc.data.payload);
+                            } catch (e) {
+                                // HOOK-023: try/catch por documento para no abortar el pull completo.
+                                console.warn(`[CloudSync] Error aplicando doc ${doc.doc_id}:`, e);
+                            }
+                        }
+                        console.log(`[CloudSync] Pull inicial: ${docs.length} documentos aplicados.`);
+                    }
                 }
 
                 // ── Auto-recuperación: Purgar/subir datos locales que no llegaron a enviarse debido al bug anterior ──
