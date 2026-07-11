@@ -102,6 +102,10 @@ export const pushCloudSync = async (key, value) => {
             updated_at: new Date().toISOString()
         }, { onConflict: 'device_id,collection,doc_id' });
 
+        // Update local hash to prevent periodic push from re-uploading
+        const hashKey = LAST_PUSH_HASH_PREFIX + key;
+        localStorage.setItem(hashKey, quickHash(value));
+
     } catch (e) {
         // Silencioso en producción
     }
@@ -151,6 +155,10 @@ async function _applyFromCloud(docId, collection, payload) {
             // Notificar a los componentes React que lean este store
             window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: docId } }));
         }
+
+        // Update local hash to prevent periodic push from re-uploading what we just downloaded
+        const hashKey = LAST_PUSH_HASH_PREFIX + docId;
+        localStorage.setItem(hashKey, quickHash(payload));
     } finally {
         isSyncingFromCloud = false;
     }
