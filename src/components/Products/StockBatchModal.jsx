@@ -72,18 +72,22 @@ function AdjustRow({ p, qty, direction, adjUnit, tempPkgSize, onSetQty, onSetAdj
                 {/* Info del producto */}
                 <div className="flex-1 min-w-0">
                     <p className="text-sm font-black text-slate-750 dark:text-slate-200 truncate">{p.name}</p>
-                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        <span className="text-[10px] font-bold text-slate-500 dark:text-slate-450">
-                            {stock}
+                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                        <span className="text-[10px] font-black text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700/60">
+                            Stock: {stock}
                         </span>
-                        <span className={`text-[11px] font-black flex items-center gap-0.5 ${direction === 'ingreso' ? 'text-emerald-500' : 'text-red-500'}`}>
+                        <span className={`text-[11px] font-black flex items-center gap-0.5 ${direction === 'ingreso' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-450'}`}>
                             → {newStock}
                         </span>
-                        <span className={`text-[10px] font-bold ${direction === 'ingreso' ? 'text-emerald-500/70' : 'text-red-500/70'}`}>
+                        <span className={`text-[10px] font-black px-1.5 py-0.5 rounded border ${
+                            direction === 'ingreso'
+                                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-350 border-emerald-250/20'
+                                : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-350 border-rose-250/20'
+                        }`}>
                             ({deltaLabel})
                         </span>
                         {currentBultos !== null && (
-                            <span className="text-[9px] font-bold text-brand/80 dark:text-brand/70 bg-brand-light dark:bg-slate-800 px-1.5 py-0.5 rounded-md border border-brand/15">
+                            <span className="text-[9px] font-black text-brand bg-brand-light/75 dark:bg-slate-800 dark:text-brand px-2 py-0.5 rounded border border-brand/20">
                                 {currentBultos} bulto{currentBultos !== 1 ? 's' : ''} actuales
                             </span>
                         )}
@@ -132,8 +136,8 @@ function AdjustRow({ p, qty, direction, adjUnit, tempPkgSize, onSetQty, onSetAdj
             <div className="flex items-center gap-3 mt-2.5 flex-wrap">
                 {/* Input inline de tamano de caja/bulto — siempre visible */}
                 <div className="flex items-center gap-1.5">
-                    <Edit3 size={10} className="text-slate-400 dark:text-slate-500 shrink-0" />
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">Uds/bulto:</span>
+                    <Edit3 size={10} className="text-slate-650 dark:text-slate-350 shrink-0" />
+                    <span className="text-[10px] text-slate-700 dark:text-slate-200 font-extrabold">Uds/bulto:</span>
                     <input
                         type="number"
                         min="1"
@@ -150,7 +154,7 @@ function AdjustRow({ p, qty, direction, adjUnit, tempPkgSize, onSetQty, onSetAdj
                                 onSetAdjUnit(p.id, 'uds');
                             }
                         }}
-                        className="w-12 h-6 text-center text-xs font-black bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand/50 transition-all text-slate-700 dark:text-white [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        className="w-12 h-6 text-center text-xs font-black bg-white dark:bg-slate-800 border border-slate-350 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand/50 transition-all text-slate-850 dark:text-white [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     />
                 </div>
 
@@ -162,8 +166,8 @@ function AdjustRow({ p, qty, direction, adjUnit, tempPkgSize, onSetQty, onSetAdj
                             onClick={() => onSetAdjUnit(p.id, 'uds')}
                             className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all border ${
                                 adjUnit === 'uds'
-                                    ? 'bg-slate-700 dark:bg-slate-200 text-white dark:text-slate-900 border-slate-700 dark:border-slate-200'
-                                    : 'bg-white dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700 hover:border-slate-400'
+                                    ? 'bg-slate-750 dark:bg-slate-200 text-white dark:text-slate-900 border-slate-750 dark:border-slate-200 shadow-sm'
+                                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:border-slate-500 hover:text-slate-800 dark:hover:text-white'
                             }`}
                         >
                             Uds
@@ -174,7 +178,7 @@ function AdjustRow({ p, qty, direction, adjUnit, tempPkgSize, onSetQty, onSetAdj
                             className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all border ${
                                 adjUnit === 'lotes'
                                     ? 'bg-brand text-white border-brand shadow-sm shadow-brand/20'
-                                    : 'bg-white dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700 hover:border-brand/50 hover:text-brand'
+                                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:border-brand hover:text-brand dark:hover:text-brand-light'
                             }`}
                         >
                             Bultos ({unitsPerPkg} uds)
@@ -398,18 +402,18 @@ export default function StockBatchModal({
                                         <div key={productId} className="py-2 border-b border-slate-100 dark:border-slate-800/40">
                                             <div className="flex items-start justify-between gap-3">
                                                 <span className="font-bold text-xs text-slate-650 dark:text-slate-300 truncate flex-1">{p?.name || '?'}</span>
-                                                <span className="font-black text-xs shrink-0 text-slate-500 dark:text-slate-400">
-                                                    {stock} <span className={direction === 'ingreso' ? 'text-emerald-500' : 'text-red-500'}>→ {newStock}</span>
+                                                <span className="font-black text-xs shrink-0 text-slate-700 dark:text-slate-350">
+                                                    {stock} <span className={direction === 'ingreso' ? 'text-emerald-600 dark:text-emerald-400 font-black' : 'text-rose-600 dark:text-rose-400 font-black'}>→ {newStock}</span>
                                                 </span>
                                             </div>
-                                            <p className={`text-[10px] font-bold mt-0.5 ${direction === 'ingreso' ? 'text-emerald-500/70' : 'text-red-500/70'}`}>
+                                            <p className={`text-[10px] font-black mt-0.5 ${direction === 'ingreso' ? 'text-emerald-700 dark:text-emerald-350' : 'text-rose-700 dark:text-rose-350'}`}>
                                                 {isBulkMode
                                                     ? `${direction === 'ingreso' ? '+' : '-'}${qty} bulto${qty !== 1 ? 's' : ''} x ${unitsPerPkg} uds = ${direction === 'ingreso' ? '+' : '-'}${deltaUnits} uds`
                                                     : `${direction === 'ingreso' ? '+' : '-'}${deltaUnits} ud${deltaUnits !== 1 ? 's' : ''}`
                                                 }
                                             </p>
                                             {hasInlineEdit && (
-                                                <p className="text-[9px] text-brand/70 font-bold mt-0.5">
+                                                <p className="text-[9px] text-brand dark:text-brand-light font-black mt-0.5">
                                                     Tamano de empaque guardado: {tempPackageSizes[productId]} uds/bulto
                                                 </p>
                                             )}
