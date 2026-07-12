@@ -51,6 +51,7 @@ export default function CheckoutModalPOS({
     currentFloatUsd = 0,
     currentFloatBs = 0,
     onSwitchMode,
+    isProcessing = false,
 }) {
     const { setCheckoutMode } = useProductContext();
 
@@ -452,6 +453,7 @@ export default function CheckoutModalPOS({
                             clienteSeleccionado={clienteSeleccionado}
                             totalPagadoGlobalUSD={totalPagadoGlobalUSD}
                             onProcesar={procesarPago}
+                            isProcessing={isProcessing}
                         />
                     </div>
                 </div>

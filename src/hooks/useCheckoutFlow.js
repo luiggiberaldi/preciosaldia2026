@@ -1,3 +1,4 @@
+import { useState, useRef } from 'react';
 import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
 import { processSaleTransaction } from '../utils/checkoutProcessor';
@@ -14,8 +15,14 @@ export function useCheckoutFlow({
     setCart, setCartSelectedIndex, setShowConfetti, setTodayAperturaData, setIsAperturaOpen,
     playCheckout, playError, notifyLowStock, notifySaleComplete, triggerHaptic
 }) {
+    const [isProcessing, setIsProcessing] = useState(false);
+    const isProcessingRef = useRef(false);
 
     const handleCheckout = async (payments, changeBreakdown) => {
+        if (isProcessingRef.current) return;
+        isProcessingRef.current = true;
+        setIsProcessing(true);
+
         triggerHaptic && triggerHaptic();
 
         const opts = {
@@ -31,6 +38,8 @@ export function useCheckoutFlow({
             console.error('[checkout] Error inesperado en processSaleTransaction:', err);
             showToast('Error al procesar la venta. Intenta de nuevo.', 'error');
             playError();
+            isProcessingRef.current = false;
+            setIsProcessing(false);
             return;
         }
 
@@ -38,6 +47,8 @@ export function useCheckoutFlow({
             console.error('Abortando venta:', result.error);
             showToast(result.error, result.error.includes('No se pueden') ? 'warning' : 'error');
             playError();
+            isProcessingRef.current = false;
+            setIsProcessing(false);
             return;
         }
 
@@ -55,6 +66,8 @@ export function useCheckoutFlow({
         setShowCheckout(false);
         setSelectedCustomerId('');
         setCartSelectedIndex(-1);
+        isProcessingRef.current = false;
+        setIsProcessing(false);
     };
 
     const handleCreateCustomer = async (name, documentId, phone) => {
@@ -125,5 +138,6 @@ export function useCheckoutFlow({
         handleCheckout,
         handleCreateCustomer,
         handleSaveApertura,
+        isProcessing
     };
 }

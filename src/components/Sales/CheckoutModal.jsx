@@ -33,7 +33,8 @@ export default function CheckoutModal({
     copPrimary,
     tasaCop,
     currentFloatUsd = 0,
-    currentFloatBs = 0
+    currentFloatBs = 0,
+    isProcessing = false
 }) {
     const [confirmFiar, setConfirmFiar] = useState(false);
     const { setCheckoutMode } = useProductContext();
@@ -450,10 +451,10 @@ export default function CheckoutModal({
                                 handleConfirm();
                             }
                         }}
-                        disabled={rateError || copRateError || (!isPaid && casheaActive) || (!selectedCustomerId && remainingUsd > 0.01)}
+                        disabled={isProcessing || rateError || copRateError || (!isPaid && casheaActive) || (!selectedCustomerId && remainingUsd > 0.01)}
                         className={`w-full py-4 text-white font-black text-base rounded-2xl shadow-lg transition-all tracking-wide flex items-center justify-center gap-2 ${
-                            rateError || copRateError
-                                ? 'bg-red-500/80 cursor-not-allowed shadow-none'
+                            isProcessing || rateError || copRateError
+                                ? 'bg-slate-300 dark:bg-slate-800 text-slate-450 dark:text-slate-500 cursor-not-allowed shadow-none'
                                 : isPaid
                                     ? casheaActive
                                         ? 'bg-purple-600 hover:bg-purple-700 shadow-purple-500/25 active:scale-[0.98]'
@@ -463,7 +464,9 @@ export default function CheckoutModal({
                                         : 'bg-slate-300 dark:bg-slate-800 text-slate-500 shadow-none cursor-not-allowed'
                         }`}
                     >
-                        {rateError || copRateError ? (
+                        {isProcessing ? (
+                            <><span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> PROCESANDO...</>
+                        ) : rateError || copRateError ? (
                             <><AlertTriangle size={18} /> ERROR DE TASA</>
                         ) : isPaid ? (
                             casheaActive ? (
@@ -583,13 +586,16 @@ export default function CheckoutModal({
                             </button>
                             <button
                                 onClick={() => { setConfirmFiar(false); handleConfirm(); }}
+                                disabled={isProcessing}
                                 className={`flex-1 py-3.5 sm:py-4 font-black text-sm sm:text-base text-white rounded-xl shadow-lg active:scale-95 transition-all ${
-                                    casheaActive
-                                        ? 'bg-purple-600 hover:bg-purple-700 shadow-purple-500/25'
-                                        : 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/25'
+                                    isProcessing
+                                        ? 'bg-slate-400 dark:bg-slate-700 cursor-not-allowed shadow-none'
+                                        : casheaActive
+                                            ? 'bg-purple-600 hover:bg-purple-700 shadow-purple-500/25'
+                                            : 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/25'
                                 }`}
                             >
-                                {casheaActive ? 'Confirmar Cashea' : 'Confirmar fiado'}
+                                {isProcessing ? 'Procesando...' : casheaActive ? 'Confirmar Cashea' : 'Confirmar fiado'}
                             </button>
                         </div>
                     </div>

@@ -392,7 +392,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
     }, [cart, showCheckout, showReceipt, showHoldsModal, pendingCarts]);
 
     // ── Checkout Flow Hook ──────────────────────────
-    const { handleCheckout, handleCreateCustomer, handleSaveApertura } = useCheckoutFlow({
+    const { handleCheckout, handleCreateCustomer, handleSaveApertura, isProcessing } = useCheckoutFlow({
         cart, cartTotalUsd, cartTotalBs, cartSubtotalUsd,
         selectedCustomerId, customers, setCustomers, products, setProducts,
         effectiveRate, tasaCop, copEnabled, discountData, useAutoRate,
@@ -894,6 +894,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
                     currentFloatUsd: currentFloat.usd,
                     currentFloatBs: currentFloat.bs,
                     onSwitchMode: setCheckoutMode,
+                    isProcessing,
                 };
                 return checkoutMode === 'pos'
                     ? <CheckoutModalPOS {...sharedProps} />

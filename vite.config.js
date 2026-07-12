@@ -15,11 +15,11 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
     VitePWA({
-      registerType: 'prompt', // INFRA-007: 'autoUpdate' causaba recargas abruptas; ahora avisa.
+      registerType: 'autoUpdate', // INFRA-007: Actualización silenciosa en background; recarga vía controllerchange.
       includeAssets: ['favicon.ico', 'apple-touch-icon-180x180.png', 'pwa-192x192.png', 'pwa-512x512.png', 'logo.png', 'logodark.png'],
       workbox: {
         cleanupOutdatedCaches: true,
-        skipWaiting: false,   // INFRA-007: no forzar; dejar que el usuario acepte.
+        skipWaiting: true,   // INFRA-007: forzar activación del nuevo SW en background de inmediato.
         clientsClaim: true,
         // INFRA-006: cacheId estable basado en versión del package.json (no Date.now()).
         cacheId: `preciosaldia-bodega-v${APP_VERSION}`,
