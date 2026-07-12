@@ -8,7 +8,6 @@ function CatalogRow({ p, maxStock, onTapAdd }) {
     const stock = p.stock ?? 0;
     const lowAlert = p.lowStockAlert ?? 5;
     const isLow = stock <= lowAlert;
-    const stockPct = Math.min(100, Math.max(0, (stock / maxStock) * 105));
 
     return (
         <div
@@ -23,10 +22,15 @@ function CatalogRow({ p, maxStock, onTapAdd }) {
                     <span className={`text-[10px] font-black px-2 py-0.5 rounded-lg border ${
                         isLow
                             ? 'bg-amber-50 dark:bg-amber-950/20 text-amber-500 border-amber-200/30 animate-pulse'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-550 dark:text-slate-400 border-slate-200/30'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200/30'
                     }`}>
                         Stock: {stock}
                     </span>
+                    {p.packagingType === 'lote' && (p.unitsPerPackage ?? 1) > 1 && (
+                        <span className="text-[9px] font-bold text-brand bg-brand-light dark:bg-slate-800 dark:text-brand px-2 py-0.5 rounded-lg border border-brand/20">
+                            {p.unitsPerPackage} uds/bulto
+                        </span>
+                    )}
                 </div>
             </div>
 
@@ -38,26 +42,70 @@ function CatalogRow({ p, maxStock, onTapAdd }) {
 }
 
 // ─── FILA EN AJUSTE (VISTA DE CONTROL DE CANTIDAD) ───
-function AdjustRow({ p, qty, direction, onSetQty }) {
+function AdjustRow({ p, qty, direction, adjUnit, onSetQty, onSetAdjUnit }) {
     const stock = p.stock ?? 0;
-    const newStock = direction === 'ingreso' ? stock + qty : Math.max(0, stock - qty);
+    const unitsPerPkg = (p.packagingType === 'lote' && (p.unitsPerPackage ?? 1) > 1)
+        ? (p.unitsPerPackage ?? 1)
+        : 1;
+    const hasBulk = unitsPerPkg > 1;
+
+    // Delta y stock nuevo calculados correctamente según la unidad elegida
+    const delta = hasBulk && adjUnit === 'lotes' ? qty * unitsPerPkg : qty;
+    const newStock = direction === 'ingreso' ? stock + delta : Math.max(0, stock - delta);
+
+    // Label del cambio (ej: "+2 bultos de 12 uds" o "+5 uds")
+    const deltaLabel = hasBulk && adjUnit === 'lotes'
+        ? `${direction === 'ingreso' ? '+' : '-'}${qty} bulto${qty !== 1 ? 's' : ''} de ${unitsPerPkg} uds`
+        : `${direction === 'ingreso' ? '+' : '-'}${delta} ud${delta !== 1 ? 's' : ''}`;
 
     return (
-        <div className="flex items-center justify-between gap-3 px-4 py-3 bg-slate-50/30 dark:bg-slate-900/10 border-b border-slate-100 dark:border-slate-800/40">
+        <div className="flex items-start justify-between gap-3 px-4 py-3 bg-slate-50/30 dark:bg-slate-900/10 border-b border-slate-100 dark:border-slate-800/40">
+            {/* Info del producto */}
             <div className="flex-1 min-w-0">
                 <p className="text-sm font-black text-slate-750 dark:text-slate-200 truncate">{p.name}</p>
-                <div className="flex items-center gap-2 mt-1">
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
                     <span className="text-[10px] font-bold text-slate-500 dark:text-slate-450">
                         {stock}
                     </span>
                     <span className={`text-[11px] font-black flex items-center gap-0.5 ${direction === 'ingreso' ? 'text-emerald-500' : 'text-red-500'}`}>
-                        → {newStock} ({direction === 'ingreso' ? '+' : '-'}{qty})
+                        → {newStock}
+                    </span>
+                    <span className={`text-[10px] font-bold ${direction === 'ingreso' ? 'text-emerald-500/70' : 'text-red-500/70'}`}>
+                        ({deltaLabel})
                     </span>
                 </div>
+
+                {/* Toggle Uds / Bultos — solo si tiene empaque master válido */}
+                {hasBulk && (
+                    <div className="flex items-center gap-1 mt-2">
+                        <button
+                            type="button"
+                            onClick={() => onSetAdjUnit(p.id, 'uds')}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all border ${
+                                adjUnit === 'uds'
+                                    ? 'bg-slate-700 dark:bg-slate-200 text-white dark:text-slate-900 border-slate-700 dark:border-slate-200'
+                                    : 'bg-white dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700 hover:border-slate-400'
+                            }`}
+                        >
+                            Uds
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => onSetAdjUnit(p.id, 'lotes')}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all border ${
+                                adjUnit === 'lotes'
+                                    ? 'bg-brand text-white border-brand shadow-sm shadow-brand/20'
+                                    : 'bg-white dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700 hover:border-brand/50 hover:text-brand'
+                            }`}
+                        >
+                            Bultos ({unitsPerPkg} uds)
+                        </button>
+                    </div>
+                )}
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
-                {/* Controles de cantidad integrados */}
+            {/* Controles de cantidad */}
+            <div className="flex items-center gap-2 shrink-0 mt-0.5">
                 <div className="flex items-center bg-slate-100 dark:bg-slate-800/70 p-0.5 rounded-full border border-slate-200/50 dark:border-slate-700/50">
                     <button
                         type="button"
@@ -83,11 +131,10 @@ function AdjustRow({ p, qty, direction, onSetQty }) {
                     </button>
                 </div>
 
-                {/* Quitar item */}
                 <button
                     type="button"
                     onClick={() => onSetQty(p.id, 0)}
-                    className="w-8 h-8 rounded-full bg-red-50 dark:bg-red-950/20 flex items-center justify-center text-red-550 hover:text-red-650 hover:bg-red-100 transition-colors"
+                    className="w-8 h-8 rounded-full bg-red-50 dark:bg-red-950/20 flex items-center justify-center text-red-500 hover:bg-red-100 transition-colors"
                     title="Quitar de la lista"
                 >
                     <X size={14} strokeWidth={2.5} />
@@ -105,15 +152,16 @@ export default function StockBatchModal({
     adjustStock,
     triggerHaptic,
 }) {
-    const [direction, setDirection] = useState('ingreso'); // 'ingreso' | 'egreso'
+    const [direction, setDirection] = useState('ingreso');
     const [search, setSearch] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('todos');
-    const [adjustments, setAdjustments] = useState({});
+    const [adjustments, setAdjustments] = useState({});          // productId → qty (en bultos o uds, según adjUnit)
+    const [adjustmentUnits, setAdjustmentUnits] = useState({});  // productId → 'lotes' | 'uds'
     const [note, setNote] = useState('');
-    const [activeTab, setActiveTab] = useState('catalog'); // 'catalog' | 'adjusting'
+    const [activeTab, setActiveTab] = useState('catalog');
     const [isApplying, setIsApplying] = useState(false);
     const [showConfirm, setShowConfirm] = useState(false);
-    
+
     const categoryScrollRef = useRef(null);
     const listRef = useRef(null);
 
@@ -121,7 +169,6 @@ export default function StockBatchModal({
         (products || []).filter(p => !p.isCombo),
     [products]);
 
-    // Filtrar conteo por categoría
     const getCategoryProductCount = (catId) => {
         if (catId === 'todos') return allProducts.length;
         return allProducts.filter(p => p.category === catId).length;
@@ -132,11 +179,21 @@ export default function StockBatchModal({
             .sort((a, b) => a.name.localeCompare(b.name)),
     [allProducts, adjustments]);
 
+    // Lista de ajustes activos con delta en UNIDADES REALES calculado
     const activeAdjustments = useMemo(() =>
-        Object.entries(adjustments).filter(([, qty]) => qty > 0),
-    [adjustments]);
+        Object.entries(adjustments)
+            .filter(([, qty]) => qty > 0)
+            .map(([productId, qty]) => {
+                const p = allProducts.find(x => x.id === productId);
+                const unitsPerPkg = (p?.packagingType === 'lote' && (p?.unitsPerPackage ?? 1) > 1)
+                    ? (p.unitsPerPackage ?? 1) : 1;
+                const adjUnit = adjustmentUnits[productId] || (unitsPerPkg > 1 ? 'lotes' : 'uds');
+                const deltaUnits = (unitsPerPkg > 1 && adjUnit === 'lotes') ? qty * unitsPerPkg : qty;
+                return { productId, qty, adjUnit, unitsPerPkg, deltaUnits, p };
+            }),
+    [adjustments, adjustmentUnits, allProducts]);
 
-    const totalItems = activeAdjustments.reduce((sum, [, qty]) => sum + qty, 0);
+    const totalItems = activeAdjustments.reduce((sum, { deltaUnits }) => sum + deltaUnits, 0);
 
     const unselectedProducts = useMemo(() => {
         const term = search.toLowerCase().trim();
@@ -155,10 +212,21 @@ export default function StockBatchModal({
         setAdjustments(prev => ({ ...prev, [productId]: num }));
     };
 
+    const setAdjUnit = useCallback((productId, unit) => {
+        setAdjustmentUnits(prev => ({ ...prev, [productId]: unit }));
+    }, []);
+
     const tapAdd = useCallback((productId) => {
         triggerHaptic && triggerHaptic();
+        const p = allProducts.find(x => x.id === productId);
+        // Auto-inicializar en 'lotes' si el producto tiene empaque master válido
+        const unitsPerPkg = (p?.packagingType === 'lote' && (p?.unitsPerPackage ?? 1) > 1)
+            ? (p.unitsPerPackage ?? 1) : 1;
+        if (unitsPerPkg > 1) {
+            setAdjustmentUnits(prev => ({ ...prev, [productId]: 'lotes' }));
+        }
         setAdjustments(prev => ({ ...prev, [productId]: (prev[productId] || 0) + 1 }));
-    }, [triggerHaptic]);
+    }, [triggerHaptic, allProducts]);
 
     const needsNote = direction === 'egreso' && !note.trim();
 
@@ -177,8 +245,9 @@ export default function StockBatchModal({
         triggerHaptic && triggerHaptic();
 
         try {
-            for (const [productId, qty] of activeAdjustments) {
-                const delta = direction === 'ingreso' ? qty : -qty;
+            for (const { productId, deltaUnits } of activeAdjustments) {
+                // Delta real en UNIDADES (ya calculado en activeAdjustments)
+                const delta = direction === 'ingreso' ? deltaUnits : -deltaUnits;
                 await adjustStock(productId, delta);
             }
 
@@ -188,6 +257,7 @@ export default function StockBatchModal({
             );
 
             setAdjustments({});
+            setAdjustmentUnits({});
             setNote('');
             setSearch('');
             setSelectedCategory('todos');
@@ -203,6 +273,7 @@ export default function StockBatchModal({
 
     const handleClose = () => {
         setAdjustments({});
+        setAdjustmentUnits({});
         setSearch('');
         setNote('');
         setSelectedCategory('todos');
@@ -219,18 +290,17 @@ export default function StockBatchModal({
 
     return (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-            {/* Backdrop click to close */}
             <div className="absolute inset-0" onClick={handleClose} />
 
             <div className="relative bg-white dark:bg-slate-900 w-full max-w-md sm:max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 flex flex-col max-h-[92vh] sm:max-h-[85vh]">
-                
+
                 {/* Header */}
                 <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/50 rounded-t-3xl shrink-0">
                     <div className="flex items-center gap-2.5">
                         <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-brand-light dark:bg-slate-800 text-brand">
                             <Boxes size={16} strokeWidth={2.5} />
                         </div>
-                        <h3 className="text-lg font-black text-slate-850 dark:text-white tracking-tight">
+                        <h3 className="text-lg font-black text-slate-800 dark:text-white tracking-tight">
                             {showConfirm ? 'Confirmar Ajuste' : 'Ajuste de Inventario'}
                         </h3>
                     </div>
@@ -244,32 +314,41 @@ export default function StockBatchModal({
                     <div className="p-5 space-y-4 overflow-y-auto flex-1 scrollbar-hide">
                         <div className={`p-4 rounded-2xl border ${
                             direction === 'ingreso'
-                                ? 'bg-emerald-50/50 dark:bg-emerald-900/10 border-emerald-250/50 dark:border-emerald-800/30'
-                                : 'bg-red-50/50 dark:bg-red-900/10 border-red-250/50 dark:border-red-800/30'
+                                ? 'bg-emerald-50/50 dark:bg-emerald-900/10 border-emerald-200/50 dark:border-emerald-800/30'
+                                : 'bg-red-50/50 dark:bg-red-900/10 border-red-200/50 dark:border-red-800/30'
                         }`}>
                             <p className={`text-xs font-black uppercase tracking-widest mb-3.5 ${
                                 direction === 'ingreso' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'
                             }`}>
-                                {direction === 'ingreso' ? 'Ingreso' : 'Egreso'} masivo de stock
+                                {direction === 'ingreso' ? 'Ingreso' : 'Egreso'} masivo · {activeAdjustments.length} prod · {totalItems} uds totales
                             </p>
-                            <div className="space-y-2 max-h-[35vh] overflow-y-auto scrollbar-hide pr-1">
-                                {activeAdjustments.map(([id, qty]) => {
-                                    const p = products.find(x => x.id === id);
+                            <div className="space-y-2.5 max-h-[38vh] overflow-y-auto scrollbar-hide pr-1">
+                                {activeAdjustments.map(({ productId, qty, adjUnit, unitsPerPkg, deltaUnits, p }) => {
                                     const stock = p?.stock ?? 0;
-                                    const newStock = direction === 'ingreso' ? stock + qty : Math.max(0, stock - qty);
+                                    const newStock = direction === 'ingreso' ? stock + deltaUnits : Math.max(0, stock - deltaUnits);
+                                    const isBulkMode = unitsPerPkg > 1 && adjUnit === 'lotes';
+
                                     return (
-                                        <div key={id} className="flex items-center justify-between text-xs py-2 border-b border-slate-100 dark:border-slate-800/40">
-                                            <span className="font-bold text-slate-650 dark:text-slate-350 truncate mr-4">{p?.name || '?'}</span>
-                                            <span className="font-black shrink-0 text-slate-500 dark:text-slate-400">
-                                                {stock} <span className={direction === 'ingreso' ? 'text-emerald-500' : 'text-red-500'}>→ {newStock} ({direction === 'ingreso' ? '+' : '-'}{qty})</span>
-                                            </span>
+                                        <div key={productId} className="py-2 border-b border-slate-100 dark:border-slate-800/40">
+                                            <div className="flex items-start justify-between gap-3">
+                                                <span className="font-bold text-xs text-slate-650 dark:text-slate-300 truncate flex-1">{p?.name || '?'}</span>
+                                                <span className="font-black text-xs shrink-0 text-slate-500 dark:text-slate-400">
+                                                    {stock} <span className={direction === 'ingreso' ? 'text-emerald-500' : 'text-red-500'}>→ {newStock}</span>
+                                                </span>
+                                            </div>
+                                            <p className={`text-[10px] font-bold mt-0.5 ${direction === 'ingreso' ? 'text-emerald-500/70' : 'text-red-500/70'}`}>
+                                                {isBulkMode
+                                                    ? `${direction === 'ingreso' ? '+' : '-'}${qty} bulto${qty !== 1 ? 's' : ''} × ${unitsPerPkg} uds = ${direction === 'ingreso' ? '+' : '-'}${deltaUnits} uds`
+                                                    : `${direction === 'ingreso' ? '+' : '-'}${deltaUnits} ud${deltaUnits !== 1 ? 's' : ''}`
+                                                }
+                                            </p>
                                         </div>
                                     );
                                 })}
                             </div>
                             {note.trim() && (
                                 <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800">
-                                    <p className="text-xs text-slate-500 dark:text-slate-400"><span className="font-bold">Motivo/Nota:</span> {note}</p>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400"><span className="font-bold">Motivo:</span> {note}</p>
                                 </div>
                             )}
                         </div>
@@ -326,7 +405,7 @@ export default function StockBatchModal({
                                 </button>
                             </div>
 
-                            {/* Search Bar - Ancho completo */}
+                            {/* Search Bar */}
                             <div className="relative shrink-0">
                                 <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-450" />
                                 <input
@@ -338,13 +417,12 @@ export default function StockBatchModal({
                                 />
                             </div>
 
-                            {/* Category Filter Pills (Horizontal Scroll) */}
+                            {/* Category Filter Chips */}
                             <div className="relative w-full shrink-0">
-                                <div 
+                                <div
                                     ref={categoryScrollRef}
                                     className="flex gap-1.5 overflow-x-auto py-1 pl-0.5 pr-2 scrollbar-hide scroll-smooth"
                                 >
-                                    {/* Pestaña estática para la categoría 'Todos' */}
                                     <button
                                         type="button"
                                         onClick={() => setSelectedCategory('todos')}
@@ -364,7 +442,6 @@ export default function StockBatchModal({
                                         const count = getCategoryProductCount(cat.id);
                                         const isActive = selectedCategory === cat.id;
                                         const catColorClass = CATEGORY_COLORS[cat.color] || 'bg-brand text-white border-brand';
-                                        
                                         return (
                                             <button
                                                 key={cat.id}
@@ -386,7 +463,7 @@ export default function StockBatchModal({
                                 </div>
                             </div>
 
-                            {/* Navigation Tabs (Catálogo vs Ajustados) */}
+                            {/* Navigation Tabs */}
                             <div className="flex border-b border-slate-100 dark:border-slate-800 shrink-0">
                                 <button
                                     type="button"
@@ -394,7 +471,7 @@ export default function StockBatchModal({
                                     className={`flex-1 pb-2.5 text-xs font-bold transition-all border-b-2 text-center ${
                                         activeTab === 'catalog'
                                             ? 'border-brand text-brand font-black'
-                                            : 'border-transparent text-slate-400 dark:text-slate-500 hover:text-slate-650'
+                                            : 'border-transparent text-slate-400 dark:text-slate-500 hover:text-slate-600'
                                     }`}
                                 >
                                     Catálogo ({unselectedProducts.length})
@@ -405,14 +482,14 @@ export default function StockBatchModal({
                                     className={`flex-1 pb-2.5 text-xs font-bold transition-all border-b-2 text-center flex items-center justify-center gap-1.5 ${
                                         activeTab === 'adjusting'
                                             ? 'border-brand text-brand font-black'
-                                            : 'border-transparent text-slate-400 dark:text-slate-500 hover:text-slate-650'
+                                            : 'border-transparent text-slate-400 dark:text-slate-500 hover:text-slate-600'
                                     }`}
                                 >
                                     En ajuste
                                     {selectedProducts.length > 0 && (
                                         <span className={`px-1.5 py-0.5 text-[9px] font-black rounded-full ${
                                             direction === 'ingreso'
-                                                ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-450'
+                                                ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400'
                                                 : 'bg-red-100 dark:bg-red-950 text-red-500'
                                         }`}>
                                             {selectedProducts.length}
@@ -421,11 +498,10 @@ export default function StockBatchModal({
                                 </button>
                             </div>
 
-                            {/* Product List Container */}
+                            {/* Product List */}
                             <div ref={listRef} className="max-h-[38vh] min-h-[22vh] overflow-y-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 flex flex-col scrollbar-hide">
                                 <div className="divide-y divide-slate-100 dark:divide-slate-850">
                                     {activeTab === 'catalog' ? (
-                                        /* VISTA CATÁLOGO */
                                         unselectedProducts.length === 0 ? (
                                             <div className="py-12 text-center text-xs text-slate-400 font-medium">
                                                 <Package size={22} className="mx-auto mb-2 opacity-40" />
@@ -438,23 +514,33 @@ export default function StockBatchModal({
                                             />
                                         ))
                                     ) : (
-                                        /* VISTA EN AJUSTE */
                                         selectedProducts.length === 0 ? (
                                             <div className="py-12 text-center text-xs text-slate-400 font-medium">
                                                 <Boxes size={22} className="mx-auto mb-2 opacity-40 text-slate-300 dark:text-slate-700" />
                                                 No has seleccionado productos
                                             </div>
-                                        ) : selectedProducts.map(p => (
-                                            <AdjustRow
-                                                key={p.id} p={p} qty={adjustments[p.id] || 0}
-                                                direction={direction} onSetQty={setQty}
-                                            />
-                                        ))
+                                        ) : selectedProducts.map(p => {
+                                            const unitsPerPkg = (p.packagingType === 'lote' && (p.unitsPerPackage ?? 1) > 1)
+                                                ? (p.unitsPerPackage ?? 1) : 1;
+                                            const defaultUnit = unitsPerPkg > 1 ? 'lotes' : 'uds';
+                                            const adjUnit = adjustmentUnits[p.id] || defaultUnit;
+                                            return (
+                                                <AdjustRow
+                                                    key={p.id}
+                                                    p={p}
+                                                    qty={adjustments[p.id] || 0}
+                                                    direction={direction}
+                                                    adjUnit={adjUnit}
+                                                    onSetQty={setQty}
+                                                    onSetAdjUnit={setAdjUnit}
+                                                />
+                                            );
+                                        })
                                     )}
                                 </div>
                             </div>
 
-                            {/* Motivo/Nota input (Solo visible en pestaña de ajuste o cuando hay seleccionados) */}
+                            {/* Nota — solo en pestaña de ajuste con productos */}
                             {activeTab === 'adjusting' && selectedProducts.length > 0 && (
                                 <div className="relative shrink-0 animate-in fade-in slide-in-from-bottom-2 duration-150">
                                     <input
@@ -477,28 +563,28 @@ export default function StockBatchModal({
                             )}
                         </div>
 
-                        {/* Footer (Apply Action) */}
+                        {/* Footer */}
                         <div className="p-5 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 rounded-b-3xl shrink-0">
-                             <button
-                                 type="button"
-                                 onClick={activeTab === 'catalog' && selectedProducts.length > 0 ? () => setActiveTab('adjusting') : handleApply}
-                                 disabled={activeAdjustments.length === 0}
-                                 className={`w-full py-3.5 font-bold rounded-xl active:scale-95 transition-all text-sm flex justify-center items-center gap-2 ${
-                                     activeAdjustments.length === 0
-                                         ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed shadow-none border border-slate-200/50 dark:border-slate-700/50'
-                                         : direction === 'ingreso'
-                                             ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/25'
-                                             : 'bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/25'
-                                 }`}
-                             >
-                                 {activeAdjustments.length > 0 && <Check size={16} />}
-                                 {activeAdjustments.length === 0
-                                     ? 'Toca productos para agregar'
-                                     : activeTab === 'catalog'
-                                         ? `Revisar ajuste (${selectedProducts.length} prod · ${totalItems} uds) →`
-                                         : `Aplicar ${direction === 'ingreso' ? 'Ingreso' : 'Egreso'} (${totalItems} uds)`
-                                 }
-                             </button>
+                            <button
+                                type="button"
+                                onClick={activeTab === 'catalog' && selectedProducts.length > 0 ? () => setActiveTab('adjusting') : handleApply}
+                                disabled={activeAdjustments.length === 0}
+                                className={`w-full py-3.5 font-bold rounded-xl active:scale-95 transition-all text-sm flex justify-center items-center gap-2 ${
+                                    activeAdjustments.length === 0
+                                        ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed border border-slate-200/50 dark:border-slate-700/50'
+                                        : direction === 'ingreso'
+                                            ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/25'
+                                            : 'bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/25'
+                                }`}
+                            >
+                                {activeAdjustments.length > 0 && <Check size={16} />}
+                                {activeAdjustments.length === 0
+                                    ? 'Toca productos para agregar'
+                                    : activeTab === 'catalog'
+                                        ? `Revisar ajuste (${selectedProducts.length} prod · ${totalItems} uds) →`
+                                        : `Aplicar ${direction === 'ingreso' ? 'Ingreso' : 'Egreso'} (${totalItems} uds)`
+                                }
+                            </button>
                         </div>
                     </>
                 )}
