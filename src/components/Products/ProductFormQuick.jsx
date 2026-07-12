@@ -612,6 +612,27 @@ export default function ProductFormQuick({
                                 <label className="text-xs font-bold text-slate-400 ml-1 mb-1 block uppercase">Stock</label>
                                 <input type="number" inputMode="numeric" value={stock} onChange={e => setStock(e.target.value)} placeholder="0"
                                     className="w-full bg-slate-50 dark:bg-slate-800 p-3.5 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 text-sm" />
+                                {!isLote && parsedUnits > 1 && (parseInt(stock) || 0) > 0 && (() => {
+                                    const parsedStock = parseInt(stock) || 0;
+                                    const bultos = Math.floor(parsedStock / parsedUnits);
+                                    const sobrante = parsedStock % parsedUnits;
+                                    let msg = '';
+                                    if (bultos > 0) {
+                                        msg = `= ${bultos} bulto${bultos !== 1 ? 's' : ''}`;
+                                        if (sobrante > 0) {
+                                            msg += ` y ${sobrante} ud${sobrante !== 1 ? 's' : ''} suelta${sobrante !== 1 ? 's' : ''}`;
+                                        } else {
+                                            msg += ' exacto' + (bultos !== 1 ? 's' : '');
+                                        }
+                                    } else {
+                                        msg = `= ${sobrante} ud${sobrante !== 1 ? 's' : ''} suelta${sobrante !== 1 ? 's' : ''} (menos de 1 bulto)`;
+                                    }
+                                    return (
+                                        <p className="text-[10px] text-brand font-bold mt-1 ml-1 animate-in fade-in duration-200">
+                                            {msg}
+                                        </p>
+                                    );
+                                })()}
                             </>
                         )}
                     </div>

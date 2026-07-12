@@ -310,6 +310,31 @@ export default function ProductFormWizard({
                         </div>
                     )}
 
+                    {/* ─── CAMPO OPCIONAL: Unidades por Bulto/Caja (para Suelto y Granel en Wizard) ─── */}
+                    {!isLote && (
+                        <div className="bg-slate-50 dark:bg-slate-800/30 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/50 animate-in fade-in duration-200">
+                            <div className="flex items-center justify-between mb-2">
+                                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                                    Uds. por Bulto / Caja
+                                </label>
+                                <span className="text-[9px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full">Opcional</span>
+                            </div>
+                            <input
+                                type="number"
+                                inputMode="numeric"
+                                value={unitsPerPackage}
+                                onChange={e => setUnitsPerPackage(e.target.value)}
+                                placeholder="Ej: 24  (déjalo vacío si no aplica)"
+                                className="w-full bg-white dark:bg-slate-800 p-2.5 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-brand/50 text-sm border border-slate-200/60 dark:border-slate-700/60"
+                            />
+                            {parsedUnits > 1 && (
+                                <p className="text-[10px] text-brand font-bold mt-1.5 ml-1">
+                                    ✓ En ajuste por lote podrás elegir entre unidades sueltas o bultos de {parsedUnits} uds
+                                </p>
+                            )}
+                        </div>
+                    )}
+
                     {/* Lote Details */}
                     {isLote && (
                         <div className="bg-brand-light dark:bg-surface-800/10 p-4 rounded-xl border border-surface-200 dark:border-surface-800/30 space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
@@ -352,6 +377,27 @@ export default function ProductFormWizard({
                                     <label className="text-xs font-bold text-slate-400 ml-1 mb-1 block uppercase">Stock Inicial</label>
                                     <input type="number" inputMode="numeric" value={stock} onChange={e => setStock(e.target.value)} placeholder="0"
                                         className="w-full bg-slate-50 dark:bg-slate-800 p-3 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 text-sm" />
+                                    {parsedUnits > 1 && (parseInt(stock) || 0) > 0 && (() => {
+                                        const parsedStock = parseInt(stock) || 0;
+                                        const bultos = Math.floor(parsedStock / parsedUnits);
+                                        const sobrante = parsedStock % parsedUnits;
+                                        let msg = '';
+                                        if (bultos > 0) {
+                                            msg = `= ${bultos} bulto${bultos !== 1 ? 's' : ''}`;
+                                            if (sobrante > 0) {
+                                                msg += ` y ${sobrante} ud${sobrante !== 1 ? 's' : ''} suelta${sobrante !== 1 ? 's' : ''}`;
+                                            } else {
+                                                msg += ' exacto' + (bultos !== 1 ? 's' : '');
+                                            }
+                                        } else {
+                                            msg = `= ${sobrante} ud${sobrante !== 1 ? 's' : ''} suelta${sobrante !== 1 ? 's' : ''} (menos de 1 bulto)`;
+                                        }
+                                        return (
+                                            <p className="text-[10px] text-brand font-bold mt-1 ml-1 animate-in fade-in duration-200">
+                                                {msg}
+                                            </p>
+                                        );
+                                    })()}
                                 </>
                             )}
                         </div>
