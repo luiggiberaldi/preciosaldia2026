@@ -595,58 +595,107 @@ export default function ProductFormQuick({
                     )}
                 </div>
 
-                {/* ─── STOCK SECTION ─── */}
-                <div className="grid grid-cols-2 gap-3">
-                    <div>
-                        {isLote ? (
-                            <>
-                                <label className="text-xs font-bold text-slate-400 ml-1 mb-1 block uppercase">¿Cuántos bultos?</label>
-                                <input type="number" inputMode="numeric" value={stockInLotes} onChange={e => setStockInLotes(e.target.value)} placeholder="0"
-                                    className="w-full bg-slate-50 dark:bg-slate-800 p-3.5 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 text-sm" />
-                                {parsedStockLotes > 0 && parsedUnits > 0 && (
-                                    <p className="text-[10px] text-brand font-bold mt-1 ml-1">= {stockUnitsCalc} unidades</p>
-                                )}
-                            </>
-                        ) : (
-                            <>
-                                <label className="text-xs font-bold text-slate-400 ml-1 mb-1 block uppercase">Stock</label>
-                                <input type="number" inputMode="numeric" value={stock} onChange={e => setStock(e.target.value)} placeholder="0"
-                                    className="w-full bg-slate-50 dark:bg-slate-800 p-3.5 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 text-sm" />
-                                {!isLote && parsedUnits > 1 && (parseInt(stock) || 0) > 0 && (() => {
-                                    const parsedStock = parseInt(stock) || 0;
-                                    const bultos = Math.floor(parsedStock / parsedUnits);
-                                    const sobrante = parsedStock % parsedUnits;
-                                    let msg = '';
-                                    if (bultos > 0) {
-                                        msg = `= ${bultos} bulto${bultos !== 1 ? 's' : ''}`;
-                                        if (sobrante > 0) {
-                                            msg += ` y ${sobrante} ud${sobrante !== 1 ? 's' : ''} suelta${sobrante !== 1 ? 's' : ''}`;
-                                        } else {
-                                            msg += ' exacto' + (bultos !== 1 ? 's' : '');
-                                        }
+                {/* ─── STOCK & ALERTA SECTION ─── */}
+                {isLote ? (
+                    <div className="grid grid-cols-3 gap-3 animate-in fade-in duration-200">
+                        <div>
+                            <label className="text-[10px] font-black text-slate-400 ml-1 mb-1 block uppercase truncate">Bultos / Cajas</label>
+                            <input 
+                                type="number" 
+                                step="any"
+                                value={stockInLotes || ''} 
+                                onChange={e => {
+                                    const lotesVal = e.target.value;
+                                    setStockInLotes(lotesVal);
+                                    const numLotes = parseFloat(lotesVal) || 0;
+                                    const derivedUnits = Math.round(numLotes * parsedUnits);
+                                    setStock(lotesVal ? derivedUnits.toString() : '');
+                                }} 
+                                placeholder="0"
+                                className="w-full bg-slate-50 dark:bg-slate-800 p-3.5 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 text-sm" 
+                            />
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-black text-slate-400 ml-1 mb-1 block uppercase truncate">Equiv. Unidades</label>
+                            <input 
+                                type="number" 
+                                value={stock || ''} 
+                                onChange={e => {
+                                    const unitsVal = e.target.value;
+                                    setStock(unitsVal);
+                                    const numUnits = parseFloat(unitsVal) || 0;
+                                    const derivedLotes = parsedUnits > 0 ? parseFloat((numUnits / parsedUnits).toFixed(2)) : 0;
+                                    setStockInLotes(unitsVal ? derivedLotes.toString() : '');
+                                }} 
+                                placeholder="0"
+                                className="w-full bg-slate-50 dark:bg-slate-800 p-3.5 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 text-sm" 
+                            />
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-black text-amber-500 ml-1 mb-1 block uppercase flex items-center gap-1 truncate">
+                                <AlertTriangle size={10} /> Alerta (Uds)
+                            </label>
+                            <input 
+                                type="number" 
+                                inputMode="numeric" 
+                                value={lowStockAlert} 
+                                onChange={e => setLowStockAlert(e.target.value)} 
+                                placeholder="5"
+                                className="w-full bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800/30 p-3.5 rounded-xl font-bold text-amber-700 dark:text-amber-400 outline-none focus:ring-2 focus:ring-amber-500/50 text-sm" 
+                            />
+                            {parsedAlert > 0 && parsedUnits > 0 && (
+                                <p className="text-[9px] text-amber-500/80 font-bold mt-1 ml-1 truncate">= {alertLotesCalc.toFixed(1)} bultos</p>
+                            )}
+                        </div>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-2 gap-3 animate-in fade-in duration-200">
+                        <div>
+                            <label className="text-xs font-bold text-slate-400 ml-1 mb-1 block uppercase">Stock</label>
+                            <input 
+                                type="number" 
+                                inputMode="numeric" 
+                                value={stock} 
+                                onChange={e => setStock(e.target.value)} 
+                                placeholder="0"
+                                className="w-full bg-slate-50 dark:bg-slate-800 p-3.5 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 text-sm" 
+                            />
+                            {!isLote && parsedUnits > 1 && (parseInt(stock) || 0) > 0 && (() => {
+                                const parsedStock = parseInt(stock) || 0;
+                                const bultos = Math.floor(parsedStock / parsedUnits);
+                                const sobrante = parsedStock % parsedUnits;
+                                let msg = '';
+                                if (bultos > 0) {
+                                    msg = `= ${bultos} bulto${bultos !== 1 ? 's' : ''}`;
+                                    if (sobrante > 0) {
+                                        msg += ` y ${sobrante} ud${sobrante !== 1 ? 's' : ''} suelta${sobrante !== 1 ? 's' : ''}`;
                                     } else {
-                                        msg = `= ${sobrante} ud${sobrante !== 1 ? 's' : ''} suelta${sobrante !== 1 ? 's' : ''} (menos de 1 bulto)`;
+                                        msg += ' exacto' + (bultos !== 1 ? 's' : '');
                                     }
-                                    return (
-                                        <p className="text-[10px] text-brand font-bold mt-1 ml-1 animate-in fade-in duration-200">
-                                            {msg}
-                                        </p>
-                                    );
-                                })()}
-                            </>
-                        )}
+                                } else {
+                                    msg = `= ${sobrante} ud${sobrante !== 1 ? 's' : ''} suelta${sobrante !== 1 ? 's' : ''} (menos de 1 bulto)`;
+                                }
+                                return (
+                                    <p className="text-[10px] text-brand font-bold mt-1 ml-1 animate-in fade-in duration-200">
+                                        {msg}
+                                    </p>
+                                );
+                            })()}
+                        </div>
+                        <div>
+                            <label className="text-xs font-bold text-amber-500 ml-1 mb-1 block uppercase flex items-center gap-1">
+                                <AlertTriangle size={10} /> Alerta mín.
+                            </label>
+                            <input 
+                                type="number" 
+                                inputMode="numeric" 
+                                value={lowStockAlert} 
+                                onChange={e => setLowStockAlert(e.target.value)} 
+                                placeholder="5"
+                                className="w-full bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800/30 p-3.5 rounded-xl font-bold text-amber-700 dark:text-amber-400 outline-none focus:ring-2 focus:ring-amber-500/50 text-sm" />
+                        </div>
                     </div>
-                    <div>
-                        <label className="text-xs font-bold text-amber-500 ml-1 mb-1 block uppercase flex items-center gap-1">
-                            <AlertTriangle size={10} /> Alerta mín.
-                        </label>
-                        <input type="number" inputMode="numeric" value={lowStockAlert} onChange={e => setLowStockAlert(e.target.value)} placeholder="5"
-                            className="w-full bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800/30 p-3.5 rounded-xl font-bold text-amber-700 dark:text-amber-400 outline-none focus:ring-2 focus:ring-amber-500/50 text-sm" />
-                        {isLote && parsedAlert > 0 && parsedUnits > 0 && (
-                            <p className="text-[10px] text-amber-500 font-bold mt-1 ml-1">= {alertLotesCalc.toFixed(1)} bultos</p>
-                        )}
-                    </div>
-                </div>
+                )}
 
                 {/* ─── PRE-SAVE SUMMARY ─── */}
                 {name && parsedPrice > 0 && (

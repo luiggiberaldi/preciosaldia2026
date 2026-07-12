@@ -67,7 +67,7 @@ export function buildProductPayload(formData, effectiveRate) {
     // Stock: for lote, convert lotes → units
     let finalStock = stock ? parseInt(stock, 10) : 0;
     if (isLote && stockInLotes && parsedUnitsPerPkg > 0) {
-        finalStock = parseInt(stockInLotes, 10) * parsedUnitsPerPkg;
+        finalStock = Math.round(parseFloat(stockInLotes) * parsedUnitsPerPkg);
     }
 
     return {
