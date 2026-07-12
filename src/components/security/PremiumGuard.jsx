@@ -146,7 +146,7 @@ export default function PremiumGuard({ children, featureName = "Esta función", 
                 }
             `}</style>
 
-            <div className="w-full max-w-[320px] sm:max-w-sm max-h-[95%] overflow-hidden rounded-[2rem] p-4 relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-tone-lg">
+            <div className="w-full max-w-[320px] sm:max-w-sm max-h-[95%] overflow-y-auto scrollbar-hide rounded-[2rem] p-4 pb-6 relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-tone-lg">
 
                 {/* Decorative Background */}
                 <div className="absolute top-0 right-0 -mr-16 -mt-16 w-32 h-32 bg-accent-500/10 rounded-full blur-3xl pointer-events-none" />
