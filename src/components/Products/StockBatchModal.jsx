@@ -8,7 +8,8 @@ function CatalogRow({ p, maxStock, onTapAdd }) {
     const stock = p.stock ?? 0;
     const lowAlert = p.lowStockAlert ?? 5;
     const isLow = stock <= lowAlert;
-
+    const unitsPerPkg = (p.unitsPerPackage ?? 1);
+    const hasBulk = unitsPerPkg > 1;
     return (
         <div
             className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/30 cursor-pointer active:bg-slate-100 dark:active:bg-slate-800/50 transition-all border-b border-slate-100 dark:border-slate-800/40 group"
@@ -26,9 +27,9 @@ function CatalogRow({ p, maxStock, onTapAdd }) {
                     }`}>
                         Stock: {stock}
                     </span>
-                    {p.packagingType === 'lote' && (p.unitsPerPackage ?? 1) > 1 && (
+                    {hasBulk && (
                         <span className="text-[9px] font-bold text-brand bg-brand-light dark:bg-slate-800 dark:text-brand px-2 py-0.5 rounded-lg border border-brand/20">
-                            {p.unitsPerPackage} uds/bulto
+                            {unitsPerPkg} uds/bulto
                         </span>
                     )}
                 </div>
@@ -44,9 +45,7 @@ function CatalogRow({ p, maxStock, onTapAdd }) {
 // ─── FILA EN AJUSTE (VISTA DE CONTROL DE CANTIDAD) ───
 function AdjustRow({ p, qty, direction, adjUnit, onSetQty, onSetAdjUnit }) {
     const stock = p.stock ?? 0;
-    const unitsPerPkg = (p.packagingType === 'lote' && (p.unitsPerPackage ?? 1) > 1)
-        ? (p.unitsPerPackage ?? 1)
-        : 1;
+    const unitsPerPkg = (p.unitsPerPackage ?? 1) > 1 ? (p.unitsPerPackage ?? 1) : 1;
     const hasBulk = unitsPerPkg > 1;
 
     // Delta y stock nuevo calculados correctamente según la unidad elegida
@@ -185,8 +184,7 @@ export default function StockBatchModal({
             .filter(([, qty]) => qty > 0)
             .map(([productId, qty]) => {
                 const p = allProducts.find(x => x.id === productId);
-                const unitsPerPkg = (p?.packagingType === 'lote' && (p?.unitsPerPackage ?? 1) > 1)
-                    ? (p.unitsPerPackage ?? 1) : 1;
+        const unitsPerPkg = (p?.unitsPerPackage ?? 1) > 1 ? (p.unitsPerPackage ?? 1) : 1;
                 const adjUnit = adjustmentUnits[productId] || (unitsPerPkg > 1 ? 'lotes' : 'uds');
                 const deltaUnits = (unitsPerPkg > 1 && adjUnit === 'lotes') ? qty * unitsPerPkg : qty;
                 return { productId, qty, adjUnit, unitsPerPkg, deltaUnits, p };
@@ -220,8 +218,7 @@ export default function StockBatchModal({
         triggerHaptic && triggerHaptic();
         const p = allProducts.find(x => x.id === productId);
         // Auto-inicializar en 'lotes' si el producto tiene empaque master válido
-        const unitsPerPkg = (p?.packagingType === 'lote' && (p?.unitsPerPackage ?? 1) > 1)
-            ? (p.unitsPerPackage ?? 1) : 1;
+        const unitsPerPkg = (p?.unitsPerPackage ?? 1) > 1 ? (p.unitsPerPackage ?? 1) : 1;
         if (unitsPerPkg > 1) {
             setAdjustmentUnits(prev => ({ ...prev, [productId]: 'lotes' }));
         }
@@ -520,8 +517,7 @@ export default function StockBatchModal({
                                                 No has seleccionado productos
                                             </div>
                                         ) : selectedProducts.map(p => {
-                                            const unitsPerPkg = (p.packagingType === 'lote' && (p.unitsPerPackage ?? 1) > 1)
-                                                ? (p.unitsPerPackage ?? 1) : 1;
+                                            const unitsPerPkg = (p.unitsPerPackage ?? 1) > 1 ? (p.unitsPerPackage ?? 1) : 1;
                                             const defaultUnit = unitsPerPkg > 1 ? 'lotes' : 'uds';
                                             const adjUnit = adjustmentUnits[p.id] || defaultUnit;
                                             return (

@@ -297,6 +297,36 @@ export default function ProductFormQuick({
                     </div>
                 )}
 
+                {/* ─── CAMPO OPCIONAL: Unidades por Bulto/Caja (para Suelto y Granel) ─── */}
+                {!isLote && (
+                    <div className="bg-slate-50 dark:bg-slate-800/30 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/50 animate-in fade-in duration-200">
+                        <div className="flex items-center justify-between mb-2">
+                            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                                Uds. por Bulto / Caja
+                            </label>
+                            <span className="text-[9px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full">Opcional</span>
+                        </div>
+                        <input
+                            type="number"
+                            inputMode="numeric"
+                            value={unitsPerPackage}
+                            onChange={e => setUnitsPerPackage(e.target.value)}
+                            placeholder="Ej: 24  (déjalo vacío si no aplica)"
+                            className="w-full bg-white dark:bg-slate-800 p-3 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-brand/50 text-sm border border-slate-200/60 dark:border-slate-700/60"
+                        />
+                        {parsedUnits > 1 && (
+                            <p className="text-[10px] text-brand font-bold mt-1.5 ml-1">
+                                ✓ En ajuste por lote podrás elegir entre unidades sueltas o bultos de {parsedUnits} uds
+                            </p>
+                        )}
+                        {!parsedUnits || parsedUnits <= 1 ? (
+                            <p className="text-[10px] text-slate-400 mt-1.5 ml-1">
+                                Complétalo si el producto se maneja en cajas o bultos para activar ajuste por bulto en inventario
+                            </p>
+                        ) : null}
+                    </div>
+                )}
+
                 {/* ─── LOTE: Units per package ─── */}
                 {isLote && (
                     <div className="bg-brand-light dark:bg-surface-800/10 p-4 rounded-xl border border-surface-200 dark:border-surface-800/30 space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">

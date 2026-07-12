@@ -51,7 +51,9 @@ export function buildProductPayload(formData, effectiveRate) {
     else if (packagingType === 'granel') legacyUnit = granelUnit;
 
     const isLote = packagingType === 'lote';
-    const parsedUnitsPerPkg = isLote && unitsPerPackage ? parseInt(unitsPerPackage) : 1;
+    // Para productos de tipo Suelto o Granel, también guardamos unitsPerPackage si fue
+    // configurado voluntariamente (permite ajuste por bulto en StockBatchModal).
+    const parsedUnitsPerPkg = unitsPerPackage ? Math.max(1, parseInt(unitsPerPackage) || 1) : 1;
     const autoUnitPrice = parsedUnitsPerPkg > 1 ? divR(finalPriceUsd, parsedUnitsPerPkg) : finalPriceUsd;
     const finalUnitPrice = sellByUnit && unitPriceUsd ? round2(CurrencyService.safeParse(unitPriceUsd)) : autoUnitPrice;
 
