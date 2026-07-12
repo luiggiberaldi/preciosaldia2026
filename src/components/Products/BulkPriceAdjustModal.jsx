@@ -122,7 +122,7 @@ export default function BulkPriceAdjustModal({
 
             {/* Modal */}
             <div
-                className="relative bg-white dark:bg-slate-900 w-full max-w-md rounded-[2rem] shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-200"
+                className="relative bg-white dark:bg-slate-900 w-full max-w-md rounded-[2rem] shadow-2xl border border-slate-100 dark:border-slate-800 animate-in zoom-in-95 duration-200"
                 onClick={e => e.stopPropagation()}
             >
                 {/* Header */}
@@ -293,7 +293,7 @@ export default function BulkPriceAdjustModal({
                 </div>
 
                 {/* Footer */}
-                <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex gap-3">
+                <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex gap-3 rounded-b-[2rem]">
                     <button
                         onClick={handleClose}
                         className="flex-1 py-3.5 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-white font-bold rounded-xl active:scale-[0.98] transition-all"
@@ -314,7 +314,7 @@ export default function BulkPriceAdjustModal({
                         ) : (
                             <>
                                 {isUp ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
-                                {isUp ? '+' : '-'}{percent}% a {affectedProducts.length} productos
+                                Aplicar {isUp ? '+' : '-'}{percent}% ({affectedProducts.length})
                             </>
                         )}
                     </button>

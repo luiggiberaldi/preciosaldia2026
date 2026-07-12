@@ -3,6 +3,7 @@ import { X, ArrowDownRight, ArrowUpRight, CheckCircle2, Save } from 'lucide-reac
 import { procesarImpactoCliente } from '../../utils/financialLogic';
 import { formatUsd, formatBs, formatCop } from '../../utils/calculatorUtils';
 import CustomSelect from '../CustomSelect';
+import { getPaymentIcon } from '../../config/paymentMethods';
 
 export default function TransactionModal({
     transactionModal,
@@ -53,7 +54,7 @@ export default function TransactionModal({
 
     return (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-t-3xl sm:rounded-3xl shadow-xl overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200">
+            <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-t-3xl sm:rounded-3xl shadow-xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200">
                 <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
                     <h3 className="text-xl font-black text-slate-800 dark:text-white">Ajustar Cuenta</h3>
                     <button onClick={() => setTransactionModal({ isOpen: false, type: null, customer: null })} className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
@@ -92,17 +93,17 @@ export default function TransactionModal({
                     <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
                         <button
                             type="button"
-                            onClick={() => { setCurrencyMode('BS'); setTransactionAmount(''); setPaymentMethod('efectivo_bs'); }}
-                            className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${currencyMode === 'BS' ? 'bg-white dark:bg-slate-900 shadow-sm text-brand' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                        >
-                            Bs
-                        </button>
-                        <button
-                            type="button"
                             onClick={() => { setCurrencyMode('USD'); setTransactionAmount(''); setPaymentMethod('efectivo_usd'); }}
                             className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${currencyMode === 'USD' ? 'bg-white dark:bg-slate-900 shadow-sm text-emerald-500' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
                         >
                             USD
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => { setCurrencyMode('BS'); setTransactionAmount(''); setPaymentMethod('efectivo_bs'); }}
+                            className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${currencyMode === 'BS' ? 'bg-white dark:bg-slate-900 shadow-sm text-brand' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                        >
+                            Bs
                         </button>
                         {copEnabled && (
                             <button
@@ -205,10 +206,19 @@ export default function TransactionModal({
                                 value={filteredMethods.some(m => m.id === paymentMethod) ? paymentMethod : (filteredMethods[0]?.id || '')}
                                 onChange={setPaymentMethod}
                                 options={filteredMethods.map(method => {
-                                    const emoji = typeof method.icon === 'string' && method.icon.length <= 2 ? method.icon : '';
+                                    const IconComponent = getPaymentIcon(method.id);
+                                    let iconColor = "text-slate-500 dark:text-slate-400";
+                                    
+                                    if (method.id.includes('bs')) iconColor = "text-emerald-600 dark:text-emerald-400";
+                                    else if (method.id.includes('usd') || method.id.includes('zelle')) iconColor = "text-emerald-500 dark:text-emerald-400";
+                                    else if (method.id.includes('cop')) iconColor = "text-amber-500 dark:text-amber-400";
+                                    else if (method.id.includes('punto')) iconColor = "text-blue-500 dark:text-blue-400";
+                                    else if (method.id.includes('movil')) iconColor = "text-purple-500 dark:text-purple-400";
+
                                     return {
                                         value: method.id,
-                                        label: emoji ? `${emoji} ${method.label}` : method.label
+                                        label: method.label,
+                                        icon: IconComponent ? <IconComponent size={15} className={iconColor} /> : null
                                     };
                                 })}
                             />
@@ -242,7 +252,7 @@ export default function TransactionModal({
 
                 </div>
 
-                <div className="p-5 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+                <div className="p-5 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 rounded-b-3xl">
                     <button
                         onClick={handleTransaction}
                         disabled={!transactionAmount || parseFloat(transactionAmount) <= 0}

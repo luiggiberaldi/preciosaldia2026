@@ -24,7 +24,10 @@ export default function CustomSelect({ value, onChange, options, className = '',
                 onClick={() => setIsOpen(!isOpen)}
                 className="w-full bg-slate-50 dark:bg-slate-800 p-3.5 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 text-sm flex items-center justify-between text-left border border-transparent shadow-sm transition-all"
             >
-                <span className="truncate">{selectedOption ? selectedOption.label : placeholder}</span>
+                <span className="flex items-center gap-2.5 truncate">
+                    {selectedOption?.icon && <span className="flex items-center justify-center shrink-0">{selectedOption.icon}</span>}
+                    <span className="truncate">{selectedOption ? selectedOption.label : placeholder}</span>
+                </span>
                 <ChevronDown size={16} className={`text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
             </button>
             {isOpen && (
@@ -43,7 +46,10 @@ export default function CustomSelect({ value, onChange, options, className = '',
                                     : 'text-slate-700 dark:text-slate-350'
                             }`}
                         >
-                            <span>{opt.label}</span>
+                            <span className="flex items-center gap-2.5 truncate">
+                                {opt.icon && <span className="flex items-center justify-center shrink-0">{opt.icon}</span>}
+                                <span className="truncate">{opt.label}</span>
+                            </span>
                         </button>
                     ))}
                 </div>
