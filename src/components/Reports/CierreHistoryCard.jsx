@@ -45,9 +45,7 @@ export default function CierreHistoryCard({ cierre, correlativo, bcvRate, produc
                 s.items.forEach(item => {
                     if (!todayProductMap[item.name]) todayProductMap[item.name] = { name: item.name, qty: 0, revenue: 0 };
                     todayProductMap[item.name].qty += item.qty;
-                    todayProductMap[item.name].revenue += (item.priceCop && item.priceCop > 0)
-                        ? item.priceCop * item.qty
-                        : item.priceUsd * item.qty;
+                    todayProductMap[item.name].revenue += item.priceUsd * item.qty;
                 });
             }
         });

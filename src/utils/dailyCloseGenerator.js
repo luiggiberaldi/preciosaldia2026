@@ -668,20 +668,28 @@ export async function generateDailyClosePDF({
 
         topProducts.forEach((p, i) => {
             const rank = `${i + 1}.`;
-            const maxLen = is80 ? 22 : 12;
-            const name = p.name.length > maxLen ? p.name.substring(0, maxLen) + '…' : p.name;
-            doc.setFont('helvetica', 'bold');
+            const nameWidth = is80 ? 62 : 42;
+            const lines = doc.splitTextToSize(p.name, nameWidth);
+            
             doc.setFontSize(fBody);
-            doc.setTextColor(...INK);
-            doc.text(rank, M, y);
-            doc.setFont('helvetica', 'normal');
-            doc.setTextColor(...BODY);
-            doc.text(name, M + 4, y);
+            lines.forEach((line, lineIdx) => {
+                if (lineIdx === 0) {
+                    doc.setFont('helvetica', 'bold');
+                    doc.setTextColor(...INK);
+                    doc.text(rank, M, y);
+                }
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(...BODY);
+                doc.text(line, M + 5, y);
+                if (lineIdx < lines.length - 1) {
+                    y += 3.5;
+                }
+            });
             y += 4;
 
             doc.setFontSize(fMuted);
             doc.setTextColor(...MUTED);
-            doc.text(`${p.qty} vend. · ${fmtUsd(p.revenue)} · Bs ${formatBs(mulR(p.revenue, bcvRate))}`, M + 4, y);
+            doc.text(`${p.qty} vend. · ${fmtUsd(p.revenue)} · Bs ${formatBs(mulR(p.revenue, bcvRate))}`, M + 5, y);
             y += 5.5;
         });
 
