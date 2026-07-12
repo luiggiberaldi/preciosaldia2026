@@ -598,8 +598,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
 
             {/* ─── COP PRICE CORRECTION BANNER ─── */}
             {copEnabled && suspectCopProducts.length > 0 && !copCorrectionDismissed && (
-                // v1.2.0: reveal-on-scroll + bg-surface (warm) en vez de slate cool.
-                <div className="reveal bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 p-3 rounded-xl mb-3 shrink-0 animate-in slide-in-from-top-2">
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 p-3 rounded-xl mb-3 shrink-0 animate-in slide-in-from-top-2">
                     <div className="flex items-start gap-2">
                         <AlertTriangle size={20} className="text-red-500 shrink-0 mt-0.5" aria-hidden="true" />
                         <div className="flex-1 min-w-0">
@@ -632,8 +631,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
 
             {/* --- ACTION BAR SELECCION --- */}
             {selectedIds.size > 0 && (
-                // v1.2.0: reveal-on-scroll aplicado a action bar (sección de cabecera).
-                <div className="reveal flex items-center justify-between gap-2 p-2 px-3 bg-brand/10 border border-brand/20 rounded-xl mb-3 shrink-0 animate-in slide-in-from-top-2">
+                <div className="flex items-center justify-between gap-2 p-2 px-3 bg-brand/10 border border-brand/20 rounded-xl mb-3 shrink-0 animate-in slide-in-from-top-2">
                     <span className="text-sm font-bold text-brand flex items-center gap-1">
                         <CheckSquare size={16} aria-hidden="true" /> {selectedIds.size} seleccionados
                     </span>
@@ -745,7 +743,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                         ) : (
                         /* ── LIST VIEW ── */
                         // v1.2.0: surface tokens + border-surface-300 (warm border) para la lista.
-                        <div className="reveal bg-surface dark:bg-surface-900 rounded-2xl border border-surface-200 dark:border-surface-800 shadow-tone-sm overflow-hidden">
+                        <div className="bg-surface dark:bg-surface-900 rounded-2xl border border-surface-200 dark:border-surface-800 shadow-tone-sm overflow-hidden">
                             {/* Table Header — desktop */}
                             <div className="hidden sm:grid sm:grid-cols-[40px_1fr_100px_100px_70px_80px_110px] gap-2 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                                 <div className="flex items-center justify-center">
