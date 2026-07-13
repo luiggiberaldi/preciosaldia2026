@@ -128,6 +128,24 @@ export const pushLocalSync = (key, value) => {
 };
 
 /**
+ * EGRESS-FIX (RC2 + RC5): encola un push de una key `store` a la nube a través
+ * del debounce por-key (`_debouncePush`), en vez de empujar directo. Esto:
+ *   • Agrupa ráfagas de ediciones en las keys pesadas (HEAVY_KEYS → 3000ms).
+ *   • Colapsa el antiguo doble-push (storageService.setItem + listener de este
+ *     hook) en un solo upsert, ya que ambos caían en la misma key del debounce.
+ * `_debouncePush` → `pushCloudSync`, que respeta isSyncingFromCloud /
+ * isCloudSyncActive / SYNC_KEYS, así que la seguridad anti-eco se preserva.
+ *
+ * @param {string} key
+ * @param {any} value
+ */
+export const queueCloudSync = (key, value) => {
+    if (!SYNC_KEYS.includes(key)) return;
+    if (key === 'abasto-auth-storage') return; // SEC-002
+    _debouncePush(key, value);
+};
+
+/**
  * Aplica un documento recibido de la nube al almacenamiento local.
  * Garantiza que isSyncingFromCloud esté activo durante toda la operación.
  */
@@ -281,28 +299,13 @@ export function useCloudSync(deviceId) {
                 }
 
                 // ── Suscripción WebSocket Realtime ─────────────────────────
-                if (!globalSubscription) {
-                    globalSubscription = supabaseCloud
-                        .channel(`sync:${deviceId}`)
-                        .on('postgres_changes', {
-                            event: '*',
-                            schema: 'public',
-                            table: 'sync_documents',
-                            filter: `device_id=eq.${deviceId}`
-                        }, async (payload) => {
-                            const doc = payload.new;
-                            if (!doc || !['store', 'local'].includes(doc.collection)) return;
-                            // SEC-002: nunca aplicar auth-storage desde realtime.
-                            if (doc.doc_id === 'abasto-auth-storage') return;
-                            console.log(`[CloudSync] Recibido: ${doc.doc_id}`);
-                            await _applyFromCloud(doc.doc_id, doc.collection, doc.data.payload);
-                        })
-                        .subscribe((status) => {
-                            if (status === 'SUBSCRIBED') {
-                                console.log('[CloudSync] Conectado y escuchando en Tiempo Real');
-                            }
-                        });
-                }
+                // EGRESS-FIX (RC3): ELIMINADA la auto-suscripción a `sync:${deviceId}`.
+                // El dispositivo principal es el ÚNICO escritor de su propio device_id,
+                // así que ese canal solo le devolvía el ECO de sus propias escrituras
+                // (egress puro de Realtime, sin valor). El monitor del dueño mantiene su
+                // propia suscripción independiente en useMonitorSync (canal
+                // `monitor:${pairedDeviceId}`), por lo que sigue recibiendo cambios en
+                // vivo. El estado inicial se obtiene con el pull por PostgREST de arriba.
 
             } catch (err) {
                 console.error('[CloudSync] Fallo en inicialización:', err);
@@ -313,25 +316,14 @@ export function useCloudSync(deviceId) {
         initSync();
 
         // ── MECANISMOS DE SINCRONIZACIÓN AUTOMÁTICA Y CONTINUA ──
-        
-        // 1. Escuchar actualizaciones de almacenamiento locales para subirlas al instante
-        const handleAppStorageUpdate = async (e) => {
-            if (isSyncingFromCloud) return;
-            const key = e.detail?.key;
-            if (!key || !SYNC_KEYS.includes(key)) return;
+        //
+        // EGRESS-FIX (RC2): ELIMINADO el listener de `app_storage_update` que
+        // re-empujaba a la nube. Era la segunda mitad del doble-push: cada escritura
+        // por `storageService.setItem` ya encola el push (ahora vía queueCloudSync),
+        // así que este listener solo duplicaba el upsert (y su broadcast de Realtime).
+        // Ningún write local dependía SOLO de este listener.
 
-            try {
-                const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
-                const localValue = await lf.getItem(key);
-                if (localValue !== null) {
-                    await pushCloudSync(key, localValue);
-                }
-            } catch (err) {
-                // Silencioso
-            }
-        };
-
-        // 2. Escuchar evento 'online' y temporizador periódico para sincronizar datos locales pendientes
+        // Escuchar evento 'online' y temporizador periódico para sincronizar datos locales pendientes
         // HOOK: solo re-sube una key si cambió desde el último push (evita gastar cuota de
         // Supabase/Realtime subiendo el mismo dato sin cambios cada 20s — ver quickHash arriba).
         const forcePushLocalData = async () => {
@@ -355,7 +347,6 @@ export function useCloudSync(deviceId) {
             }
         };
 
-        window.addEventListener('app_storage_update', handleAppStorageUpdate);
         window.addEventListener('online', forcePushLocalData);
         
         // Ejecución periódica cada 20 segundos para asegurar sincronización en tiempo real
@@ -363,7 +354,6 @@ export function useCloudSync(deviceId) {
 
         return () => {
             isCloudSyncActive = false;
-            window.removeEventListener('app_storage_update', handleAppStorageUpdate);
             window.removeEventListener('online', forcePushLocalData);
             clearInterval(intervalId);
 

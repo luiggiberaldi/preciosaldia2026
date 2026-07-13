@@ -1,5 +1,5 @@
 import localforage from 'localforage';
-import { pushCloudSync } from '../hooks/useCloudSync';
+import { queueCloudSync } from '../hooks/useCloudSync';
 localforage.config({
     name: 'BodegaApp',
     storeName: 'bodega_app_data',
@@ -131,8 +131,10 @@ export const storageService = {
             if (typeof window !== "undefined") {
                 window.dispatchEvent(new CustomEvent("app_storage_update", { detail: { key } }));
             }
-            // Emitir a la nube silenciosamente de fondo
-            pushCloudSync(key, value);
+            // Emitir a la nube silenciosamente de fondo (EGRESS-FIX: debounced,
+            // ruta única — antes push directo que se duplicaba con el listener
+            // de useCloudSync y no agrupaba ráfagas de ediciones).
+            queueCloudSync(key, value);
         } catch (error) {
             if (_isQuotaError(error)) {
                 // HOOK-007: IndexedDB lleno. Avisar a la UI y encolar para reintento.
