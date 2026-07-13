@@ -205,6 +205,7 @@ export default function TransactionModal({
                             <CustomSelect
                                 value={filteredMethods.some(m => m.id === paymentMethod) ? paymentMethod : (filteredMethods[0]?.id || '')}
                                 onChange={setPaymentMethod}
+                                openUp={true}
                                 options={filteredMethods.map(method => {
                                     const IconComponent = getPaymentIcon(method.id);
                                     let iconColor = "text-slate-500 dark:text-slate-400";

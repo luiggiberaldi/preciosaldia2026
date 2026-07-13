@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChevronDown } from 'lucide-react';
 
-export default function CustomSelect({ value, onChange, options, className = '', placeholder = 'Seleccionar...' }) {
+export default function CustomSelect({ value, onChange, options, className = '', placeholder = 'Seleccionar...', openUp = false }) {
     const [isOpen, setIsOpen] = useState(false);
     const containerRef = useRef(null);
 
@@ -31,7 +31,9 @@ export default function CustomSelect({ value, onChange, options, className = '',
                 <ChevronDown size={16} className={`text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
             </button>
             {isOpen && (
-                <div className="absolute left-0 right-0 mt-1.5 max-h-60 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 py-1 scrollbar-hide animate-in fade-in duration-100">
+                <div className={`absolute left-0 right-0 max-h-60 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 py-1 scrollbar-hide animate-in fade-in duration-100 ${
+                    openUp ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+                }`}>
                     {options.map((opt) => (
                         <button
                             key={opt.value}
