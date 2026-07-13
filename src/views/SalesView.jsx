@@ -817,7 +817,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
                 {cart.length > 0 && !isCartSheetOpen && !showCheckout && !showReceipt && (
                     <button
                         onClick={() => { triggerHaptic && triggerHaptic(); setIsCartSheetOpen(true); }}
-                        className="fixed bottom-[max(5rem,env(safe-area-inset-bottom)+4.5rem)] left-4 right-4 bg-brand hover:bg-brand-dark text-white p-4 rounded-2xl shadow-primary-tone flex items-center justify-between z-40 active:scale-95 transition-all animate-in slide-in-from-bottom"
+                        className="fixed bottom-[max(6rem,env(safe-area-inset-bottom)+5.5rem)] left-4 right-4 bg-brand hover:bg-brand-dark text-white p-4 rounded-2xl shadow-primary-tone flex items-center justify-between z-40 active:scale-95 transition-all animate-in slide-in-from-bottom"
                     >
                         <div className="flex items-center gap-3">
                             <div className="bg-white/20 p-2 rounded-xl">

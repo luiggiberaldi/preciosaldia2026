@@ -126,7 +126,7 @@ export default function CategoryBar({
                 <div className="flex items-center gap-2 flex-wrap">
                     <button
                         onClick={() => { triggerHaptic && triggerHaptic(); onOpenHelp && onOpenHelp(); }}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800/50 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-[10px] font-black uppercase tracking-wide hover:bg-blue-100 transition-all active:scale-95"
+                        className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800/50 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-[10px] font-black uppercase tracking-wide hover:bg-blue-100 transition-all active:scale-95"
                     >
                         <HelpCircle size={11} /> AYUDA (?)
                     </button>
