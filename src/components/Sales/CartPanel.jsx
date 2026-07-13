@@ -45,10 +45,10 @@ export default function CartPanel({
     };
 
     return (
-        <div className="lg:flex-1 lg:min-h-0 flex flex-col bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm">
+        <div className="lg:flex-1 lg:min-h-0 flex flex-col lg:bg-white lg:dark:bg-slate-900 lg:rounded-2xl lg:sm:rounded-3xl lg:border lg:border-slate-100 lg:dark:border-slate-800 lg:shadow-sm bg-transparent border-0 shadow-none">
 
             {/* Header */}
-            <div className="shrink-0 px-4 py-4 border-b border-slate-100 dark:border-slate-800 bg-brand dark:bg-brand rounded-t-2xl sm:rounded-t-3xl">
+            <div className="shrink-0 hidden lg:block px-4 py-4 border-b border-slate-100 dark:border-slate-800 bg-brand dark:bg-brand rounded-t-2xl sm:rounded-t-3xl">
                 <div className="flex items-center justify-between">
                     <span className="text-sm font-black text-white flex items-center gap-2">
                         <ShoppingCart size={16} className="opacity-80" />
