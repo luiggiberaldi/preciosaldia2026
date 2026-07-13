@@ -784,7 +784,22 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                                             {/* Product Info (always visible) */}
                                             <div className="flex items-center gap-3 min-w-0">
                                                 <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 overflow-hidden">
-                                                    {p.image ? <img src={p.image} className="w-full h-full object-contain" alt={p.name} loading="lazy" /> : <Tag size={16} className="text-slate-300 dark:text-slate-600" />}
+                                                    {p.image ? (
+                                                        <img
+                                                            src={p.image}
+                                                            className="w-full h-full object-contain"
+                                                            alt={p.name}
+                                                            decoding="async"
+                                                            onError={(e) => {
+                                                                // IMG-FIX: reintento con cache-busting cuando la WebView
+                                                                // descarta la imagen de memoria (una vez, solo URLs remotas).
+                                                                const img = e.currentTarget;
+                                                                if (img.dataset.retried || !/^https?:/i.test(p.image)) return;
+                                                                img.dataset.retried = '1';
+                                                                img.src = `${p.image}${p.image.includes('?') ? '&' : '?'}cb=${Date.now()}`;
+                                                            }}
+                                                        />
+                                                    ) : <Tag size={16} className="text-slate-300 dark:text-slate-600" />}
                                                 </div>
                                                 <div className="min-w-0">
                                                     <p className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">{p.name}</p>

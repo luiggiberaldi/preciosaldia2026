@@ -202,7 +202,21 @@ ${showSecondary ? `[PRECIO SECUNDARIO]
                     <input type="checkbox" checked={isSelected} onChange={onToggleSelect} className="w-4 h-4 rounded border-slate-300 text-brand focus:ring-brand cursor-pointer shadow-sm" />
                 </div>
                 {p.image ? (
-                    <img src={p.image} className="w-full h-full object-contain p-1" alt={p.name} loading="lazy" />
+                    <img
+                        src={p.image}
+                        className="w-full h-full object-contain p-1"
+                        alt={p.name}
+                        decoding="async"
+                        onError={(e) => {
+                            // IMG-FIX: la WebView de Android descarta bitmaps bajo presión
+                            // de memoria y dejaba el <img> en blanco sin reintento. Forzamos
+                            // una recarga con cache-busting (una sola vez, solo URLs remotas).
+                            const img = e.currentTarget;
+                            if (img.dataset.retried || !/^https?:/i.test(p.image)) return;
+                            img.dataset.retried = '1';
+                            img.src = `${p.image}${p.image.includes('?') ? '&' : '?'}cb=${Date.now()}`;
+                        }}
+                    />
                 ) : (
                     <div className="w-full h-full flex items-center justify-center text-slate-300 dark:text-slate-600">
                         <Tag size={24} />
