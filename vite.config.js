@@ -274,6 +274,7 @@ export default defineConfig(({ mode }) => {
                 }
 
                 const { createClient } = await import('@supabase/supabase-js');
+                const supabase = createClient(supabaseUrl, supabaseKey);
                 const customMappings = {
                   'TRIFOGON': 'trifogon',
                   'TOM GUAYABANA': 'dulce tom',

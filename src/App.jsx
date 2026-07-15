@@ -57,6 +57,13 @@ export default function App() {
     if (requireLogin) logout();
   }, []);
 
+  // Al iniciar sesión, redirigir siempre a la pestaña de inicio
+  useEffect(() => {
+    if (usuarioActivo) {
+      setActiveTab('inicio');
+    }
+  }, [usuarioActivo]);
+
 
 
   // Inicializar Sincronización Realtime con Supabase (device_id como clave)

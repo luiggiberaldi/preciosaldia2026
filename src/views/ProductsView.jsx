@@ -790,6 +790,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                                                             className="w-full h-full object-contain"
                                                             alt={p.name}
                                                             decoding="async"
+                                                            loading="lazy"
                                                             onError={(e) => {
                                                                 // IMG-FIX: reintento con cache-busting cuando la WebView
                                                                 // descarta la imagen de memoria (una vez, solo URLs remotas).

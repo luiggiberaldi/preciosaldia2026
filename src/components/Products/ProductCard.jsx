@@ -207,6 +207,7 @@ ${showSecondary ? `[PRECIO SECUNDARIO]
                         className="w-full h-full object-contain p-1"
                         alt={p.name}
                         decoding="async"
+                        loading="lazy"
                         onError={(e) => {
                             // IMG-FIX: la WebView de Android descarta bitmaps bajo presión
                             // de memoria y dejaba el <img> en blanco sin reintento. Forzamos
