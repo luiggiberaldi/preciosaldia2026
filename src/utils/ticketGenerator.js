@@ -125,8 +125,8 @@ export async function generateTicketPDF(sale, bcvRate) {
             const qty = item.isWeight ? formatUsd(item.qty) : String(item.qty);
             const unit = item.isWeight ? 'Kg' : 'u';
             // FIN-024: mulR en vez de multiplicación raw.
-            const sub = mulR(item.priceUsd, item.qty);
-            const subBs = mulR(sub, rate);
+            const sub = item.exactBs != null ? (rate > 0 ? divR(item.exactBs, rate) : item.priceUsd) : mulR(item.priceUsd, item.qty);
+            const subBs = item.exactBs != null ? mulR(item.exactBs, item.qty) : mulR(sub, rate);
 
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(7.5);
@@ -146,9 +146,11 @@ export async function generateTicketPDF(sale, bcvRate) {
             doc.setFontSize(is80 ? 6 : 5.2);
             doc.setTextColor(...MUTED);
             // FIN-024: mulR para conversiones (priceCop*qty, sub*tasaCop, etc.).
-            let detailLine = isCop
-                ? 'USD ' + formatUsd(item.priceUsd) + ' c/u  ·  ' + formatCop(item.priceCop ? mulR(item.priceCop, item.qty) : mulR(sub, sale.tasaCop)) + ' COP  ·  Bs ' + formatBs(subBs)
-                : '$' + formatUsd(item.priceUsd) + ' c/u  ·  Bs ' + formatBs(subBs);
+            let detailLine = item.exactBs != null
+                ? 'Bs ' + formatBs(item.exactBs) + ' c/u'
+                : (isCop
+                    ? 'USD ' + formatUsd(item.priceUsd) + ' c/u  ·  ' + formatCop(item.priceCop ? mulR(item.priceCop, item.qty) : mulR(sub, sale.tasaCop)) + ' COP  ·  Bs ' + formatBs(subBs)
+                    : '$' + formatUsd(item.priceUsd) + ' c/u  ·  Bs ' + formatBs(subBs));
             if (!isCop && sale.tasaCop > 0) {
                 const copUnit = (item.priceCop || mulR(item.priceUsd, sale.tasaCop)).toLocaleString('es-CO', { maximumFractionDigits: 0 });
                 detailLine += '  ·  ' + copUnit + ' COP';

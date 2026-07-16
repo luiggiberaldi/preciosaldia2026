@@ -96,7 +96,12 @@ export async function processSaleTransaction({
             priceCop: i.priceCop || null,
             costBs: i.costBs || 0,
             costUsd: i.costUsd || 0,
-            isWeight: i.isWeight
+            isWeight: i.isWeight,
+            isCashAdvance: i.isCashAdvance || null,
+            montoEfectivo: i.montoEfectivo || null,
+            montoComision: i.montoComision || null,
+            comisionPct: i.comisionPct || null,
+            currency: i.currency || null
         })),
         cartSubtotalUsd: cartSubtotalUsd,
         discountType:       discountData?.type      || null,

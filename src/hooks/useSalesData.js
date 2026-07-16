@@ -5,7 +5,7 @@ import { getLocalISODate } from '../utils/dateHelpers';
 
 export const SALES_KEY = 'bodega_sales_v1';
 
-export function useSalesData({ setCart, cartRef, setProducts, isActive }) {
+export function useSalesData({ setCart, cartRef, isActive }) {
     const [customers, setCustomers] = useState([]);
     const [paymentMethods, setPaymentMethods] = useState([]);
     const [isLoadingLocal, setIsLoadingLocal] = useState(true);
@@ -49,16 +49,14 @@ export function useSalesData({ setCart, cartRef, setProducts, isActive }) {
         return () => { mounted = false; };
     }, []);
 
-    // Refresh products, payment methods, and customers when tab becomes active (consolidates window focus + isActive)
+    // Refresh payment methods and customers when tab becomes active (consolidates window focus + isActive)
     const handleReloadContent = useCallback(() => {
         if (!isActive) return;
         Promise.all([
-            storageService.getItem('bodega_products_v1', []),
             getActivePaymentMethods(),
             storageService.getItem('bodega_customers_v1', []),
             storageService.getItem(SALES_KEY, [])
-        ]).then(([savedProducts, methods, savedCustomers, savedSales]) => {
-            setProducts(savedProducts);
+        ]).then(([methods, savedCustomers, savedSales]) => {
             setPaymentMethods(methods);
             setCustomers(savedCustomers);
             setSalesData(savedSales);
@@ -73,7 +71,7 @@ export function useSalesData({ setCart, cartRef, setProducts, isActive }) {
             });
             setTodayAperturaData(apertura || null);
         }).catch(err => console.error('[useSalesData] Error al recargar datos:', err));
-    }, [isActive, setProducts]);
+    }, [isActive]);
 
     useEffect(() => {
         handleReloadContent();

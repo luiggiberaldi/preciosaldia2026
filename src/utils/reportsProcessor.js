@@ -10,10 +10,10 @@ export function calculateReportsData(allSales, from, to, bcvRate, products) {
         return dateStr >= from && dateStr <= to;
     });
 
-    // Flujo de Dinero (para Desglose de Pagos, incluye pagos de deudas)
+    // Flujo de Dinero (para Desglose de Pagos, incluye pagos de deudas y avances de efectivo)
     const salesForCashFlow = allSales.filter(s => {
         if (s.status === 'ANULADA') return false;
-        if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'VENTA_CASHEA' && s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'PAGO_PROVEEDOR') return false;
+        if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'VENTA_CASHEA' && s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'PAGO_PROVEEDOR' && s.tipo !== 'AVANCE_EFECTIVO') return false;
         const dateStr = getLocalISODate(new Date(s.timestamp));
         return dateStr >= from && dateStr <= to;
     });
@@ -28,7 +28,21 @@ export function calculateReportsData(allSales, from, to, bcvRate, products) {
     const totalBs = sumR(salesForStats.map(sale => sale.totalBs || 0));
     const totalCop = sumR(salesForStats.map(sale => sale.totalCop || 0));
     const totalItems = salesForStats.reduce((s, sale) => s + (sale.items ? sale.items.reduce((is, i) => is + i.qty, 0) : 0), 0);
-    const profit = FinancialEngine.calculateAggregateProfit(salesForStats, bcvRate, products);
+    
+    // Sumar ganancias de ventas + comisiones por avances de efectivo
+    const profitFromSales = FinancialEngine.calculateAggregateProfit(salesForStats, bcvRate, products);
+    const advancesInPeriod = allSales.filter(s => {
+        if (s.status === 'ANULADA' || s.tipo !== 'AVANCE_EFECTIVO') return false;
+        const dateStr = getLocalISODate(new Date(s.timestamp));
+        return dateStr >= from && dateStr <= to;
+    });
+    const profitFromAdvances = advancesInPeriod.reduce((sum, a) => {
+        const rate = a.rate || bcvRate || 1;
+        const commBs = a.currency === 'BS' ? (a.montoComision || 0) : mulR(a.montoComision || 0, rate);
+        return sum + commBs;
+    }, 0);
+    const profit = round2(profitFromSales + profitFromAdvances);
+    
     const paymentBreakdown = FinancialEngine.calculatePaymentBreakdown(salesForCashFlow);
 
     // Top productos
@@ -103,7 +117,7 @@ export function groupSalesByCierreId(allSales, from, to) {
 
             // Filtrar para métricas generales (stats) y flujo de caja (cashflow)
             const salesForStats = c.sales.filter(s => s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA');
-            const salesForCashFlow = c.sales.filter(s => s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA' || s.tipo === 'COBRO_DEUDA' || s.tipo === 'PAGO_PROVEEDOR');
+            const salesForCashFlow = c.sales.filter(s => s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA' || s.tipo === 'COBRO_DEUDA' || s.tipo === 'PAGO_PROVEEDOR' || s.tipo === 'AVANCE_EFECTIVO');
 
             const totalUsd = sumR(salesForStats.map(s => s.totalUsd || 0));
             const totalBs = sumR(salesForStats.map(s => s.totalBs || 0));

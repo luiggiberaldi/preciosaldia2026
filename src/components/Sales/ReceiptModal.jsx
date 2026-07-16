@@ -32,7 +32,9 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                             <CheckCircle size={36} className="text-emerald-500 relative z-10" />
                             <div className="absolute inset-0 bg-emerald-400 rounded-full animate-ping opacity-20"></div>
                         </div>
-                        <h3 className="text-2xl font-black text-slate-800 tracking-tight mb-1">Orden #{(receipt.id.substring(0, 6)).toUpperCase()}</h3>
+                        <h3 className="text-2xl font-black text-slate-800 tracking-tight mb-1">
+                            {receipt.tipo === 'AVANCE_EFECTIVO' ? 'Comprobante de Avance' : `Orden #${(receipt.id.substring(0, 6)).toUpperCase()}`}
+                        </h3>
                         {receipt.customerName && <p className="text-sm font-bold text-slate-500 mb-0 uppercase tracking-tight">{receipt.customerName}</p>}
                         {receipt.customerDocument && (
                             <p className="text-xs font-bold text-slate-400 mb-2 uppercase tracking-wide">
@@ -40,6 +42,13 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                             </p>
                         )}
                         {(() => {
+                            if (receipt.tipo === 'AVANCE_EFECTIVO') {
+                                return (
+                                    <p className="text-4xl font-black text-brand mb-2 tracking-tighter">
+                                        {receipt.currency === 'BS' ? `Bs ${formatBs(receipt.totalCobrado)}` : `$${receipt.totalCobrado.toFixed(2)} USD`}
+                                    </p>
+                                );
+                            }
                             const isCop = receipt.copEnabled && receipt.tasaCop > 0;
                             
                             if (receiptCurrencyMode === 'usd') {
@@ -85,12 +94,64 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                     </div>
 
                     <div className="bg-slate-50 px-6 sm:px-8 py-6">
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Detalle de Consumo</p>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">
+                            {receipt.tipo === 'AVANCE_EFECTIVO' ? 'Detalle del Avance' : 'Detalle de Consumo'}
+                        </p>
                         <div className="space-y-3">
-                            {receipt.items.map((item, i) => {
+                            {receipt.tipo === 'AVANCE_EFECTIVO' ? (
+                                <div className="space-y-3 text-sm">
+                                    <div className="flex justify-between items-center border-b border-slate-200/50 pb-2">
+                                        <span className="font-bold text-slate-600 dark:text-slate-400">Efectivo Entregado:</span>
+                                        <strong className="font-black text-slate-850 dark:text-slate-200">
+                                            {receipt.currency === 'BS' ? `${formatBs(receipt.montoEfectivo)} Bs` : `$${receipt.montoEfectivo.toFixed(2)}`}
+                                        </strong>
+                                    </div>
+                                    <div className="flex justify-between items-center border-b border-slate-200/50 pb-2">
+                                        <span className="font-bold text-slate-600 dark:text-slate-400">Comisión ({receipt.comisionPct}%):</span>
+                                        <strong className="font-black text-emerald-600 dark:text-emerald-450">
+                                            {receipt.currency === 'BS' ? `+${formatBs(receipt.montoComision)} Bs` : `+$${receipt.montoComision.toFixed(2)}`}
+                                        </strong>
+                                    </div>
+                                    <div className="flex justify-between items-center pt-1">
+                                        <span className="font-bold text-slate-700 dark:text-slate-300">Total a Cobrar:</span>
+                                        <strong className="text-base font-black text-brand">
+                                            {receipt.currency === 'BS' ? `${formatBs(receipt.totalCobrado)} Bs` : `$${receipt.totalCobrado.toFixed(2)}`}
+                                        </strong>
+                                    </div>
+                                </div>
+                            ) : (
+                                receipt.items.map((item, i) => {
                                 const isCop = receipt.copEnabled && receipt.tasaCop > 0;
                                 const priceBs = item.priceUsd * (receipt.rate || 0);
                                 const totalBs = item.priceUsd * item.qty * (receipt.rate || 0);
+
+                                if (item.isCashAdvance) {
+                                    return (
+                                        <div key={i} className="bg-amber-500/5 dark:bg-amber-500/10 border border-dashed border-amber-500/20 p-3 rounded-2xl space-y-1.5 text-xs text-left">
+                                            <div className="flex justify-between items-center text-slate-500">
+                                                <span className="font-bold text-slate-700 block leading-tight">{item.name}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-slate-650 dark:text-slate-400">
+                                                <span>Efectivo Entregado:</span>
+                                                <strong className="font-bold text-slate-800 dark:text-white">
+                                                    {item.currency === 'BS' ? `${formatBs(item.montoEfectivo)} Bs` : `$${item.montoEfectivo.toFixed(2)}`}
+                                                </strong>
+                                            </div>
+                                            <div className="flex justify-between items-center text-slate-650 dark:text-slate-400">
+                                                <span>Comisión Recargo ({item.comisionPct}%):</span>
+                                                <strong className="font-black text-emerald-600 dark:text-emerald-400">
+                                                    {item.currency === 'BS' ? `+${formatBs(item.montoComision)} Bs` : `+$${item.montoComision.toFixed(2)}`}
+                                                </strong>
+                                            </div>
+                                            <div className="flex justify-between items-center border-t border-slate-200/50 dark:border-slate-800/50 pt-1.5 text-sm">
+                                                <span className="font-bold text-slate-700 dark:text-slate-350">Total Cobrado:</span>
+                                                <strong className="text-sm font-black text-brand">
+                                                    {item.currency === 'BS' ? `${formatBs(item.montoEfectivo + item.montoComision)} Bs` : `$${(item.montoEfectivo + item.montoComision).toFixed(2)}`}
+                                                </strong>
+                                            </div>
+                                        </div>
+                                    );
+                                }
 
                                 if (receiptCurrencyMode === 'usd') {
                                     return (
@@ -169,7 +230,7 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                                         </div>
                                     </div>
                                 );
-                            })}
+                            }))}
                         </div>
 
                         {receipt.payments && receipt.payments.length > 0 && (

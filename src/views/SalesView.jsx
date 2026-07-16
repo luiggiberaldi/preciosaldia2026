@@ -23,6 +23,7 @@ import CheckoutModalPOS from '../components/Sales/CheckoutModalPOS';
 import CustomAmountModal from '../components/Sales/CustomAmountModal';
 import KeyboardHelpModal from '../components/Sales/KeyboardHelpModal';
 import DiscountModal from '../components/Sales/DiscountModal';
+import CashAdvanceModal from '../components/Sales/CashAdvanceModal';
 import CajaCerradaOverlay from '../components/Sales/CajaCerradaOverlay';
 import { getLocalISODate } from '../utils/dateHelpers';
 import AperturaCajaModal from '../components/Dashboard/AperturaCajaModal';
@@ -49,6 +50,11 @@ export default function SalesView({ triggerHaptic, isActive }) {
     const [showClearCartConfirm, setShowClearCartConfirm] = useState(false);
     const [showCustomAmountModal, setShowCustomAmountModal] = useState(false);
     const [showKeyboardHelp, setShowKeyboardHelp] = useState(false); // Keyboard shortcuts modal state
+    const [showCashAdvanceModal, setShowCashAdvanceModal] = useState(false);
+
+    // Opciones de Avance de Efectivo
+    const allowCashAdvance = localStorage.getItem('allow_cash_advance') === 'true';
+    const cashAdvanceDefaultPct = parseFloat(localStorage.getItem('cash_advance_default_pct')) || 10;
 
     // Apertura Caja
     const [isAperturaOpen, setIsAperturaOpen] = useState(false);
@@ -90,7 +96,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
         isLoadingLocal,
         salesData, setSalesData,
         todayAperturaData, setTodayAperturaData,
-    } = useSalesData({ setCart, cartRef, setProducts, isActive });
+    } = useSalesData({ setCart, cartRef, isActive });
 
     const isLoading = isLoadingProducts || isLoadingLocal;
 
@@ -404,9 +410,10 @@ export default function SalesView({ triggerHaptic, isActive }) {
     // ── Callbacks ─────────────────────────────────
     const addToCart = useCallback((product, qtyOverride = null, forceMode = null, isBarcodeSource = false) => {
         triggerHaptic && triggerHaptic();
+        const isAdvance = !!product.isCashAdvance;
 
         // Validación temprana: rechazar productos sin precio válido
-        if (!product.priceUsdt || isNaN(product.priceUsdt) || product.priceUsdt <= 0) {
+        if (!isAdvance && (!product.priceUsdt || isNaN(product.priceUsdt) || product.priceUsdt <= 0)) {
             playError();
             showToast('Este producto no tiene precio válido. Edítalo primero.', 'warning');
             return;
@@ -415,7 +422,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
         // Validación temprana de stock (si la configuración lo exige)
         const allowNegativeStock = localStorage.getItem('allow_negative_stock') === 'true';
         const currentStock = parseFloat(product.stock) || 0;
-        if (!allowNegativeStock && currentStock <= 0) {
+        if (!isAdvance && !allowNegativeStock && currentStock <= 0) {
             playError();
             showToast(`${product.name}: sin stock`, 'warning');
             return;
@@ -442,7 +449,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
         }
 
         // Pre-calculate stock check BEFORE setCart to avoid React StrictMode double-firing
-        if (!allowNegativeStock) {
+        if (!isAdvance && !allowNegativeStock) {
             const currentCart = cartRef.current;
             const existingInCart = currentCart.find(i => i.id === cartId && i.priceUsd === priceToUse);
             const addingQty = existingInCart ? (qtyOverride || 1) : qtyToAdd;
@@ -464,7 +471,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
         }
 
         // Soft warning when allowNegativeStock is ON but stock just ran out
-        if (allowNegativeStock && currentStock > 0) {
+        if (!isAdvance && allowNegativeStock && currentStock > 0) {
             const currentCart = cartRef.current;
             const existingInCart = currentCart.find(i => i.id === cartId && i.priceUsd === priceToUse);
             const existingQtyForThis = existingInCart ? existingInCart.qty : 0;
@@ -654,6 +661,34 @@ export default function SalesView({ triggerHaptic, isActive }) {
         setShowCustomAmountModal(false);
     };
 
+    const handleConfirmCashAdvance = (advanceData) => {
+        try {
+            const advanceProduct = {
+                id: `advance_${Date.now()}`,
+                name: `Avance Efectivo (${advanceData.currency})`,
+                priceUsdt: advanceData.totalCobrado / effectiveRate,
+                exactBs: advanceData.currency === 'BS' ? advanceData.totalCobrado : null,
+                costBs: 0,
+                costUsd: 0,
+                unit: 'servicio',
+                category: 'otros',
+                stock: 9999,
+                isCashAdvance: true,
+                montoEfectivo: advanceData.montoEfectivo,
+                montoComision: advanceData.montoComision,
+                comisionPct: advanceData.comisionPct,
+                currency: advanceData.currency
+            };
+            addToCart(advanceProduct);
+            setShowCashAdvanceModal(false);
+            showToast('Avance de efectivo agregado al carrito', 'success');
+        } catch (error) {
+            console.error('Error al agregar avance:', error);
+            showToast('Error al agregar el avance al carrito', 'error');
+            if (playError) playError();
+        }
+    };
+
     // ==========================================
     // KEYBOARD SHORTCUTS (LISTO POS Port)
     // ==========================================
@@ -787,6 +822,8 @@ export default function SalesView({ triggerHaptic, isActive }) {
                                     onOpenHelp={() => setShowKeyboardHelp(true)}
                                     onOpenHolds={() => setShowHoldsModal(true)}
                                     cart={cart}
+                                    allowCashAdvance={allowCashAdvance}
+                                    onOpenCashAdvance={() => setShowCashAdvanceModal(true)}
                                 />
                     )}
                 </div>
@@ -916,6 +953,20 @@ export default function SalesView({ triggerHaptic, isActive }) {
                     onClose={() => setShowCustomAmountModal(false)}
                     onConfirm={handleAddCustomAmount}
                     effectiveRate={effectiveRate}
+                    triggerHaptic={triggerHaptic}
+                />
+            )}
+
+            {/* Cash Advance Modal */}
+            {showCashAdvanceModal && (
+                <CashAdvanceModal
+                    onClose={() => setShowCashAdvanceModal(false)}
+                    onConfirm={handleConfirmCashAdvance}
+                    effectiveRate={effectiveRate}
+                    paymentMethods={paymentMethods}
+                    defaultCommissionPct={cashAdvanceDefaultPct}
+                    copEnabled={copEnabled}
+                    tasaCop={tasaCop}
                     triggerHaptic={triggerHaptic}
                 />
             )}

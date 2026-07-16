@@ -190,11 +190,6 @@ export default function ProductFormWizard({
                             onChange={e => setName(e.target.value)} 
                             autoFocus 
                             placeholder="Ej: Harina PAN 1kg"
-                            onBlur={() => {
-                                if (!image && name && name.trim().length >= 3) {
-                                    handleAutoSearchImage(name);
-                                }
-                            }}
                             className="w-full bg-slate-50 dark:bg-slate-800 p-3.5 pr-10 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 capitalize text-sm" 
                         />
                         {name && name.trim().length >= 3 && (

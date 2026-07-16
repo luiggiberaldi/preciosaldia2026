@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Clock, Send, Ban, ChevronDown, ChevronUp, Trash2, Shuffle, Recycle, Receipt, Printer, LockIcon, CornerDownLeft, Smartphone } from 'lucide-react';
+import { Clock, Send, Ban, ChevronDown, ChevronUp, Trash2, Shuffle, Recycle, Receipt, Printer, LockIcon, CornerDownLeft, Smartphone, DollarSign } from 'lucide-react';
 import { formatBs, formatCop } from '../../utils/calculatorUtils';
 import { getPaymentLabel, getPaymentMethod, PAYMENT_ICONS, toTitleCase, getPaymentIcon } from '../../config/paymentMethods';
 import EmptyState from '../EmptyState';
@@ -154,7 +154,7 @@ export default function SalesHistory({
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <p className={`text-sm font-bold flex items-center gap-1.5 truncate ${isCanceled ? 'line-through text-slate-400' : 'text-slate-800 dark:text-slate-200'}`}>
-                                        {s.customerName || 'Consumidor Final'} 
+                                        {s.tipo === 'AVANCE_EFECTIVO' ? 'Avance de Efectivo' : (s.customerName || 'Consumidor Final')} 
                                         {s.tipo === 'VENTA_FIADA' && <span className="text-[9px] bg-amber-100 text-amber-600 px-1 rounded uppercase font-black">Fiado</span>}
                                         {hasCashea && <span className="text-[9px] bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 px-1.5 py-0.5 rounded uppercase font-black flex items-center gap-0.5"><CasheaIcon size={10} /> Cashea</span>}
                                     </p>
@@ -188,7 +188,29 @@ export default function SalesHistory({
                             {/* Expanded details */}
                             {isExpanded && (
                                 <div className="px-3 pb-3 pt-1 border-t border-slate-200 dark:border-slate-700/50 text-sm animate-in fade-in slide-in-from-top-1">
-                                    {s.items && s.items.length > 0 ? (
+                                    {s.tipo === 'AVANCE_EFECTIVO' ? (
+                                        <div className="space-y-1 mb-3 pt-2">
+                                            <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1">Detalles del Avance</p>
+                                            <div className="flex justify-between items-center text-xs text-slate-600 dark:text-slate-400">
+                                                <span>Efectivo Entregado:</span>
+                                                <strong className="font-bold text-slate-800 dark:text-white">
+                                                    {s.currency === 'BS' ? `${formatBs(s.montoEfectivo)} Bs` : `$${s.montoEfectivo.toFixed(2)}`}
+                                                </strong>
+                                            </div>
+                                            <div className="flex justify-between items-center text-xs text-slate-600 dark:text-slate-400">
+                                                <span>Comisión Recargada ({s.comisionPct}%):</span>
+                                                <strong className="font-bold text-emerald-600 dark:text-emerald-450">
+                                                    {s.currency === 'BS' ? `+${formatBs(s.montoComision)} Bs` : `+$${s.montoComision.toFixed(2)}`}
+                                                </strong>
+                                            </div>
+                                            <div className="flex justify-between items-center text-xs text-slate-700 dark:text-slate-200 pt-1 border-t border-slate-200/50 dark:border-slate-800/50">
+                                                <span>Total Cobrado:</span>
+                                                <strong className="font-black text-brand">
+                                                    {s.currency === 'BS' ? `${formatBs(s.totalCobrado)} Bs` : `$${s.totalCobrado.toFixed(2)}`}
+                                                </strong>
+                                            </div>
+                                        </div>
+                                    ) : s.items && s.items.length > 0 ? (
                                         <div className="space-y-1 mb-3 pt-2">
                                             <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1">Productos ({s.items.length})</p>
                                             {s.items.map((item, i) => (

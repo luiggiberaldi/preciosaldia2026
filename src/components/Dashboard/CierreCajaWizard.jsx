@@ -1,10 +1,43 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { X, ChevronRight, DollarSign, Wallet, CheckCircle2, AlertTriangle, TrendingUp, ShoppingBag, Package, ArrowRight, Coins } from 'lucide-react';
 import { formatBs, formatCop } from '../../utils/calculatorUtils';
 import { getPaymentLabel, getPaymentIcon, toTitleCase } from '../../config/paymentMethods';
 import { round2, subR, mulR } from '../../utils/dinero';
 // FIN-028: semáforo de cierre ahora considera las tres monedas con tolerancias explícitas.
 import { FINANCIAL_EPSILON } from '../../utils/securityConstants';
+
+const extractAdvancesFromSales = (salesArray) => {
+    const list = [];
+    salesArray.forEach(s => {
+        if (s.status === 'ANULADA') return;
+        if (s.tipo === 'AVANCE_EFECTIVO') {
+            list.push({
+                id: s.id,
+                currency: s.currency || 'BS',
+                montoEfectivo: s.montoEfectivo || 0,
+                montoComision: s.montoComision || 0,
+                comisionPct: s.comisionPct || 10,
+                totalCobrado: s.totalCobrado || 0,
+                timestamp: s.timestamp
+            });
+        } else if (s.items && s.items.length > 0) {
+            s.items.forEach((item, index) => {
+                if (item.isCashAdvance) {
+                    list.push({
+                        id: `${s.id}_adv_${index}`,
+                        currency: item.currency || 'BS',
+                        montoEfectivo: item.montoEfectivo || 0,
+                        montoComision: item.montoComision || 0,
+                        comisionPct: item.comisionPct || 10,
+                        totalCobrado: item.montoEfectivo + item.montoComision,
+                        timestamp: s.timestamp
+                    });
+                }
+            });
+        }
+    });
+    return list;
+};
 
 export default function CierreCajaWizard({
     isOpen,
@@ -23,12 +56,33 @@ export default function CierreCajaWizard({
     bcvRate = 1,
     copEnabled = false,
     copPrimary = false,
-    tasaCop = 0
+    tasaCop = 0,
+    todayCashFlow = []
 }) {
     const [step, setStep] = useState(1);
     const [actualUsd, setActualUsd] = useState('');
     const [actualBs, setActualBs] = useState('');
     const [actualCop, setActualCop] = useState('');
+
+    const todayAdvances = useMemo(() => {
+        return extractAdvancesFromSales(todayCashFlow);
+    }, [todayCashFlow]);
+
+    const totalAdvancesEfectivoBs = useMemo(() => {
+        return todayAdvances.filter(a => a.currency === 'BS').reduce((sum, a) => sum + (a.montoEfectivo || 0), 0);
+    }, [todayAdvances]);
+
+    const totalAdvancesEfectivoUsd = useMemo(() => {
+        return todayAdvances.filter(a => a.currency === 'USD').reduce((sum, a) => sum + (a.montoEfectivo || 0), 0);
+    }, [todayAdvances]);
+
+    const totalAdvancesComisionBs = useMemo(() => {
+        return todayAdvances.filter(a => a.currency === 'BS').reduce((sum, a) => sum + (a.montoComision || 0), 0);
+    }, [todayAdvances]);
+
+    const totalAdvancesComisionUsd = useMemo(() => {
+        return todayAdvances.filter(a => a.currency === 'USD').reduce((sum, a) => sum + (a.montoComision || 0), 0);
+    }, [todayAdvances]);
 
     if (!isOpen) return null;
 
@@ -271,6 +325,40 @@ export default function CierreCajaWizard({
                                                 <span className="text-xs font-bold text-slate-500 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-md">{p.qty} uds</span>
                                             </div>
                                         ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Avances de Efectivo */}
+                            {todayAdvances.length > 0 && (
+                                <div className="animate-in fade-in slide-in-from-bottom-1">
+                                    <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 pl-1">Avances de Efectivo</h4>
+                                    <div className="bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/10 rounded-xl p-4 space-y-2 text-xs">
+                                        <div className="flex justify-between items-center text-slate-500 dark:text-slate-400">
+                                            <span>Cantidad de avances:</span>
+                                            <strong className="font-bold text-slate-800 dark:text-white">{todayAdvances.length} servicios</strong>
+                                        </div>
+                                        {totalAdvancesEfectivoBs > 0 && (
+                                            <div className="flex justify-between items-center text-slate-500 dark:text-slate-400">
+                                                <span>Efectivo Bs retirado de caja:</span>
+                                                <strong className="font-bold text-red-600 dark:text-red-400">-{formatBs(totalAdvancesEfectivoBs)} Bs</strong>
+                                            </div>
+                                        )}
+                                        {totalAdvancesEfectivoUsd > 0 && (
+                                            <div className="flex justify-between items-center text-slate-500 dark:text-slate-400">
+                                                <span>Efectivo USD retirado de caja:</span>
+                                                <strong className="font-bold text-red-600 dark:text-red-400">-${totalAdvancesEfectivoUsd.toFixed(2)}</strong>
+                                            </div>
+                                        )}
+                                        <div className="flex justify-between items-center border-t border-slate-200/50 dark:border-slate-700/50 pt-2 text-sm text-emerald-600 dark:text-emerald-450">
+                                            <span className="font-bold">Comisiones Ganadas:</span>
+                                            <strong className="font-black">
+                                                {totalAdvancesComisionBs > 0 && `${formatBs(totalAdvancesComisionBs)} Bs`}
+                                                {totalAdvancesComisionBs > 0 && totalAdvancesComisionUsd > 0 && ' + '}
+                                                {totalAdvancesComisionUsd > 0 && `$${totalAdvancesComisionUsd.toFixed(2)}`}
+                                                {totalAdvancesComisionBs === 0 && totalAdvancesComisionUsd === 0 && '0'}
+                                            </strong>
+                                        </div>
                                     </div>
                                 </div>
                             )}

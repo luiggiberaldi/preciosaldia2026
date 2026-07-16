@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Package, Calculator, ChevronDown, Clock, HelpCircle, Trash2, X } from 'lucide-react';
+import { Package, Calculator, ChevronDown, Clock, HelpCircle, Trash2, X, DollarSign } from 'lucide-react';
 import { BODEGA_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../config/categories';
 import { formatCop, formatBs, getCop, getUsd } from '../../utils/calculatorUtils';
 
@@ -28,6 +28,8 @@ export default function CategoryBar({
     onOpenHelp,
     onOpenHolds,
     cart = [],
+    allowCashAdvance = false,
+    onOpenCashAdvance,
 }) {
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
     const categoryScrollRef = useRef(null);
@@ -88,6 +90,17 @@ export default function CategoryBar({
                         <Calculator size={11} />
                         Monto Libre
                     </button>
+
+                    {/* Avance Efectivo Button */}
+                    {allowCashAdvance && (
+                        <button
+                            onClick={() => { triggerHaptic && triggerHaptic(); onOpenCashAdvance && onOpenCashAdvance(); }}
+                            className="shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black transition-all active:scale-95 bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40 hover:bg-amber-100/50 shadow-sm"
+                        >
+                            <DollarSign size={11} />
+                            Avance Efectivo
+                        </button>
+                    )}
 
                     {/* Divider */}
                     <div className="w-px h-5 bg-slate-200 dark:bg-slate-700 my-auto mx-0.5 rounded-full shrink-0" />

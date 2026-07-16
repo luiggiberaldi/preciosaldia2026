@@ -128,7 +128,7 @@ const PaymentLeftColumn = ({
                             <p className="text-[10px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400">Falta por Pagar</p>
                             <p className="text-4xl lg:text-5xl font-black text-slate-800 dark:text-white my-2">${faltaPorPagar.toFixed(2)}</p>
                             <div className="text-lg font-black text-[#01696f] dark:text-[#1ce2ee]">
-                                Bs {round2(faltaPorPagar * tasaSegura).toLocaleString('es-VE', { minimumFractionDigits: 2 })}
+                                Bs {faltaPorPagarBS.toLocaleString('es-VE', { minimumFractionDigits: 2 })}
                             </div>
                         </div>
                     )}

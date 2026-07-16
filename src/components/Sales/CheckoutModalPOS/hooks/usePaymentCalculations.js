@@ -64,7 +64,7 @@ export const usePaymentCalculations = ({
     }, [totalPagadoUSD, casheaAmountUsd, pagoSaldoFavorNum]);
 
     const faltaPorPagar = Math.max(0, subR(totalUSD, totalPagadoGlobalUSD));
-    const faltaPorPagarBS = round2(faltaPorPagar * tasaSegura);
+    const faltaPorPagarBS = Math.max(0, subR(totalBS, totalPagadoBS + mulR(casheaAmountUsd, tasaSegura) + mulR(pagoSaldoFavorNum, tasaSegura)));
     const cambioUSD = Math.max(0, subR(totalPagadoGlobalUSD, totalUSD));
 
     // IGTF — simplificado (la bodega no usa FinancialController de Listo POS)

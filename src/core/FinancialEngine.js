@@ -74,7 +74,16 @@ export class FinancialEngine {
      * @returns {number} Net Profit in Bs.
      */
     static calculateSaleProfit(sale, bcvRate, products, productsMap) {
-        if (!sale || !sale.items || sale.items.length === 0) return 0;
+        if (!sale) return 0;
+        if (sale.tipo === 'AVANCE_EFECTIVO') {
+            const saleRate = sale.rate || bcvRate || 1;
+            if (sale.currency === 'BS') {
+                return round2(sale.montoComision || 0);
+            } else {
+                return mulR(sale.montoComision || 0, saleRate);
+            }
+        }
+        if (!sale.items || sale.items.length === 0) return 0;
 
         const saleRate = sale.rate || bcvRate;
         // FIN-011: usar Map si viene, si no construirlo una sola vez por call.
@@ -84,6 +93,13 @@ export class FinancialEngine {
 
         // Sum the profit of each individual item (Revenue - Cost)
         const itemProfits = sale.items.map(item => {
+            if (item.isCashAdvance) {
+                if (item.currency === 'BS') {
+                    return round2(item.montoComision || 0);
+                } else {
+                    return mulR(item.montoComision || 0, saleRate);
+                }
+            }
             let costBs = 0;
 
             if (item.costUsd) {
@@ -156,6 +172,53 @@ export class FinancialEngine {
                     breakdown['efectivo_cop'].total = round2(breakdown['efectivo_cop'].total + round2(sale.openingCop));
                 }
                 return; // Do NOT count opening as revenue
+            }
+
+            if (sale.tipo === 'AVANCE_EFECTIVO') {
+                const isBs = sale.currency === 'BS';
+                const isUsd = sale.currency === 'USD';
+                const isCop = sale.currency === 'COP';
+                
+                // 1. Registrar salida de efectivo físico del cajón
+                const cashMethod = isBs ? 'efectivo_bs' : (isUsd ? 'efectivo_usd' : 'efectivo_cop');
+                const cashCurrency = isBs ? 'BS' : (isUsd ? 'USD' : 'COP');
+                if (!breakdown[cashMethod]) {
+                    breakdown[cashMethod] = { total: 0, currency: cashCurrency, label: _resolveMethodLabel(cashMethod) };
+                }
+                breakdown[cashMethod].total = round2(breakdown[cashMethod].total - round2(sale.montoEfectivo || 0));
+
+                // 2. Registrar entrada de dinero electrónico cobrado
+                const paymentMethod = sale.metodoPago || 'pago_movil';
+                let resolvedCurrency = 'BS';
+                if (paymentMethod.includes('usd') || paymentMethod.includes('zelle') || paymentMethod.includes('binance')) {
+                    resolvedCurrency = 'USD';
+                } else if (paymentMethod.includes('cop')) {
+                    resolvedCurrency = 'COP';
+                }
+
+                if (!breakdown[paymentMethod]) {
+                    breakdown[paymentMethod] = { 
+                        total: 0, 
+                        currency: resolvedCurrency, 
+                        label: _resolveMethodLabel(paymentMethod) 
+                    };
+                }
+                breakdown[paymentMethod].total = round2(breakdown[paymentMethod].total + round2(sale.totalCobrado || 0));
+
+                // 3. Registrar la comisión ganada en el breakdown como concepto de avance para auditoría
+                if (!breakdown['_comision_avance']) {
+                    breakdown['_comision_avance'] = { 
+                        total: 0, 
+                        currency: 'USD', 
+                        label: 'Comisión por Avances',
+                        isCommission: true 
+                    };
+                }
+                const saleRate = sale.rate || 1;
+                const comisionInUsd = sale.currency === 'BS' ? (sale.montoComision || 0) / saleRate : (sale.montoComision || 0);
+                breakdown['_comision_avance'].total = round2(breakdown['_comision_avance'].total + round2(comisionInUsd));
+
+                return; // Ya procesado, no continuar al flujo normal de vuelto y pagos
             }
 
             // Fiado sales: bucket "fiado" tracks the *outstanding debt* generated (fiadoUsd),
@@ -293,6 +356,38 @@ export class FinancialEngine {
             if (safeChangeBs > 0) {
                 if (!breakdown['_vuelto_bs']) breakdown['_vuelto_bs'] = { total: 0, currency: 'BS', label: 'Vuelto En Bs Entregado', isChange: true };
                 breakdown['_vuelto_bs'].total = round2(breakdown['_vuelto_bs'].total + safeChangeBs);
+            }
+
+            // Si la venta tiene algún ítem de tipo avance de efectivo, ajustamos el efectivo físico y registramos la comisión.
+            if (sale.items && sale.items.length > 0) {
+                sale.items.forEach(item => {
+                    if (item.isCashAdvance) {
+                        const isBs = item.currency === 'BS';
+                        const isUsd = item.currency === 'USD';
+                        const isCop = item.currency === 'COP';
+
+                        // 1. Restar el efectivo físico entregado del cajón
+                        const cashMethod = isBs ? 'efectivo_bs' : (isUsd ? 'efectivo_usd' : 'efectivo_cop');
+                        const cashCurrency = isBs ? 'BS' : (isUsd ? 'USD' : 'COP');
+                        if (!breakdown[cashMethod]) {
+                            breakdown[cashMethod] = { total: 0, currency: cashCurrency, label: _resolveMethodLabel(cashMethod) };
+                        }
+                        breakdown[cashMethod].total = round2(breakdown[cashMethod].total - round2(item.montoEfectivo || 0));
+
+                        // 2. Registrar la comisión ganada contablemente
+                        if (!breakdown['_comision_avance']) {
+                            breakdown['_comision_avance'] = { 
+                                total: 0, 
+                                currency: 'USD', 
+                                label: 'Comisión por Avances',
+                                isCommission: true 
+                            };
+                        }
+                        const saleRate = sale.rate || 1;
+                        const comisionInUsd = item.currency === 'BS' ? (item.montoComision || 0) / saleRate : (item.montoComision || 0);
+                        breakdown['_comision_avance'].total = round2(breakdown['_comision_avance'].total + round2(comisionInUsd));
+                    }
+                });
             }
         });
 

@@ -38,6 +38,8 @@ export default function CierreCajaSummaryModal({
     const hasCop = copEnabled && (expectedCop > 0 || declaredCop > 0);
     const fmtCop = (v) => formatCop(v);
 
+    const advances = summaryData?.advances || { count: 0, totalEfectivoBs: 0, totalEfectivoUsd: 0, totalComisionBs: 0, totalComisionUsd: 0 };
+
     // Determinar color de semáforo
     const isCuadrado = Math.abs(diffUsd) <= 0.50 && Math.abs(diffBs) <= expectedBs * 0.02 && (!hasCop || Math.abs(diffCop) <= expectedCop * 0.02);
 
@@ -141,6 +143,36 @@ export default function CierreCajaSummaryModal({
                             }
                         </div>
                     </div>
+
+                    {/* Avances de Efectivo Summary */}
+                    {advances && advances.count > 0 && (
+                        <div className="bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/10 p-3 rounded-2xl text-[11px] space-y-1">
+                            <div className="flex justify-between items-center text-slate-500 dark:text-slate-400 font-bold uppercase text-[9px] tracking-wider mb-1">
+                                <span>Avances de Efectivo</span>
+                                <span className="text-amber-600">{advances.count} servicios</span>
+                            </div>
+                            {advances.totalEfectivoBs > 0 && (
+                                <div className="flex justify-between items-center text-slate-500 dark:text-slate-400">
+                                    <span>Efectivo Bs dispensado:</span>
+                                    <strong className="text-slate-700 dark:text-slate-350">{formatBs(advances.totalEfectivoBs)} Bs</strong>
+                                </div>
+                            )}
+                            {advances.totalEfectivoUsd > 0 && (
+                                <div className="flex justify-between items-center text-slate-500 dark:text-slate-400">
+                                    <span>Efectivo USD dispensado:</span>
+                                    <strong className="text-slate-700 dark:text-slate-350">${advances.totalEfectivoUsd.toFixed(2)}</strong>
+                                </div>
+                            )}
+                            <div className="flex justify-between items-center text-emerald-600 dark:text-emerald-400 pt-1 border-t border-slate-200/50 dark:border-slate-800/50">
+                                <span className="font-bold">Comisiones Ganadas:</span>
+                                <strong className="font-black">
+                                    {advances.totalComisionBs > 0 && `${formatBs(advances.totalComisionBs)} Bs`}
+                                    {advances.totalComisionBs > 0 && advances.totalComisionUsd > 0 && ' + '}
+                                    {advances.totalComisionUsd > 0 && `$${advances.totalComisionUsd.toFixed(2)}`}
+                                </strong>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Acciones principales */}

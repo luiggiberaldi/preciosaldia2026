@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Package, CreditCard, FileText } from 'lucide-react';
+import { Package, CreditCard, FileText, DollarSign } from 'lucide-react';
 import { SectionCard, Toggle } from '../../SettingsShared';
 import PaymentMethodsManager from '../PaymentMethodsManager';
 import CasheaIcon from '../../CasheaIcon';
@@ -11,6 +11,8 @@ export default function SettingsTabVentas({
     const [casheaEnabled, setCasheaEnabled] = useState(localStorage.getItem('cashea_enabled') === 'true');
     const [casheaMinAmount, setCasheaMinAmount] = useState(localStorage.getItem('cashea_min_amount') || '0');
     const [receiptCurrency, setReceiptCurrency] = useState(() => localStorage.getItem('receipt_currency_mode') || 'bs');
+    const [cashAdvanceEnabled, setCashAdvanceEnabled] = useState(() => localStorage.getItem('allow_cash_advance') === 'true');
+    const [cashAdvancePct, setCashAdvancePct] = useState(() => localStorage.getItem('cash_advance_default_pct') || '10');
 
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
@@ -111,6 +113,49 @@ export default function SettingsTabVentas({
                             );
                         })}
                     </div>
+                </div>
+            </SectionCard>
+
+            <SectionCard icon={DollarSign} title="Avance de Efectivo" subtitle="Configuración de Avances" iconColor="text-amber-500">
+                <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Habilitar Avances</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Permitir avances de efectivo con comisión en caja</p>
+                        </div>
+                        <Toggle
+                            enabled={cashAdvanceEnabled}
+                            onChange={() => {
+                                const newVal = !cashAdvanceEnabled;
+                                setCashAdvanceEnabled(newVal);
+                                localStorage.setItem('allow_cash_advance', newVal.toString());
+                                forceHeartbeat();
+                                showToast(newVal ? 'Módulo de Avance de Efectivo activado' : 'Módulo de Avance de Efectivo desactivado', 'success');
+                                triggerHaptic?.();
+                            }}
+                        />
+                    </div>
+
+                    {cashAdvanceEnabled && (
+                        <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800 animate-in fade-in">
+                            <div>
+                                <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Comisión por Defecto (%)</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Porcentaje de recargo por el servicio de avance</p>
+                            </div>
+                            <input
+                                type="number"
+                                placeholder="10"
+                                value={cashAdvancePct}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    setCashAdvancePct(val);
+                                    localStorage.setItem('cash_advance_default_pct', val);
+                                    forceHeartbeat();
+                                }}
+                                className="w-20 text-right font-bold text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-700 dark:text-white outline-none focus:ring-1 focus:ring-amber-500"
+                            />
+                        </div>
+                    )}
                 </div>
             </SectionCard>
 

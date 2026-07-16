@@ -32,6 +32,41 @@ import MonitorView from './MonitorView';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 
 const SALES_KEY = 'bodega_sales_v1';
+
+// Helper para extraer todos los avances (tanto tipo AVANCE_EFECTIVO como los embebidos en VENTA)
+const extractAdvancesFromSales = (salesArray) => {
+    const list = [];
+    salesArray.forEach(s => {
+        if (s.status === 'ANULADA') return;
+        if (s.tipo === 'AVANCE_EFECTIVO') {
+            list.push({
+                id: s.id,
+                currency: s.currency || 'BS',
+                montoEfectivo: s.montoEfectivo || 0,
+                montoComision: s.montoComision || 0,
+                comisionPct: s.comisionPct || 10,
+                totalCobrado: s.totalCobrado || 0,
+                timestamp: s.timestamp
+            });
+        } else if (s.items && s.items.length > 0) {
+            s.items.forEach((item, index) => {
+                if (item.isCashAdvance) {
+                    list.push({
+                        id: `${s.id}_adv_${index}`,
+                        currency: item.currency || 'BS',
+                        montoEfectivo: item.montoEfectivo || 0,
+                        montoComision: item.montoComision || 0,
+                        comisionPct: item.comisionPct || 10,
+                        totalCobrado: item.montoEfectivo + item.montoComision,
+                        timestamp: s.timestamp
+                    });
+                }
+            });
+        }
+    });
+    return list;
+};
+
 export default function DashboardView({ rates, triggerHaptic, onNavigate, theme, toggleTheme, isActive, isDemo, demoTimeLeft }) {
     const { notifyCierrePendiente, requestPermission } = useNotifications();
     const { deviceId } = useSecurity();
@@ -206,6 +241,12 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             });
             const salesForPDF = todayCashFlow.filter(s => s.tipo !== 'APERTURA_CAJA');
 
+            const todayAdvances = extractAdvancesFromSales(todayCashFlow);
+            const totalAdvancesEfectivoBs = todayAdvances.filter(a => a.currency === 'BS').reduce((sum, a) => sum + (a.montoEfectivo || 0), 0);
+            const totalAdvancesEfectivoUsd = todayAdvances.filter(a => a.currency === 'USD').reduce((sum, a) => sum + (a.montoEfectivo || 0), 0);
+            const totalAdvancesComisionBs = todayAdvances.filter(a => a.currency === 'BS').reduce((sum, a) => sum + (a.montoComision || 0), 0);
+            const totalAdvancesComisionUsd = todayAdvances.filter(a => a.currency === 'USD').reduce((sum, a) => sum + (a.montoComision || 0), 0);
+
             summaryObj = {
                 sales: salesForPDF,
                 allSales: allTodayForReport,
@@ -220,6 +261,13 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 apertura: todayApertura,
                 copEnabled,
                 tasaCop,
+                advances: {
+                    count: todayAdvances.length,
+                    totalEfectivoBs: totalAdvancesEfectivoBs,
+                    totalEfectivoUsd: totalAdvancesEfectivoUsd,
+                    totalComisionBs: totalAdvancesComisionBs,
+                    totalComisionUsd: totalAdvancesComisionUsd
+                }
             };
             setCierreSummaryData(summaryObj);
         }
@@ -227,11 +275,17 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         const currentCierreId = new Date().getTime();
         const existingCloses = sales.filter(s => s.tipo === 'REGISTRO_CIERRE');
         const cierreNumber = existingCloses.reduce((mx, s) => Math.max(mx, s.cierreNumber || 0), 0) + 1;
-        const validTiposParaCerrar = ['VENTA', 'VENTA_FIADA', 'VENTA_CASHEA', 'COBRO_DEUDA', 'PAGO_PROVEEDOR', 'APERTURA_CAJA'];
+        const validTiposParaCerrar = ['VENTA', 'VENTA_FIADA', 'VENTA_CASHEA', 'COBRO_DEUDA', 'PAGO_PROVEEDOR', 'APERTURA_CAJA', 'AVANCE_EFECTIVO'];
         
         // Registrar el cierre formalmente en el log de transacciones para sincronización con el supervisor
         let registroCierre = null;
         if (summaryObj) {
+            const todayAdvances = extractAdvancesFromSales(todayCashFlow);
+            const totalAdvancesEfectivoBs = todayAdvances.filter(a => a.currency === 'BS').reduce((sum, a) => sum + (a.montoEfectivo || 0), 0);
+            const totalAdvancesEfectivoUsd = todayAdvances.filter(a => a.currency === 'USD').reduce((sum, a) => sum + (a.montoEfectivo || 0), 0);
+            const totalAdvancesComisionBs = todayAdvances.filter(a => a.currency === 'BS').reduce((sum, a) => sum + (a.montoComision || 0), 0);
+            const totalAdvancesComisionUsd = todayAdvances.filter(a => a.currency === 'USD').reduce((sum, a) => sum + (a.montoComision || 0), 0);
+
             registroCierre = {
                 id: `cierre_${currentCierreId}`,
                 tipo: 'REGISTRO_CIERRE',
@@ -250,6 +304,13 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                     cashier: {
                         nombre: activeUser?.nombre || 'Cajero',
                         rol: activeUser?.rol || 'CAJERO'
+                    },
+                    advances: {
+                        count: todayAdvances.length,
+                        totalEfectivoBs: totalAdvancesEfectivoBs,
+                        totalEfectivoUsd: totalAdvancesEfectivoUsd,
+                        totalComisionBs: totalAdvancesComisionBs,
+                        totalComisionUsd: totalAdvancesComisionUsd
                     }
                 }
             };
@@ -634,6 +695,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 copEnabled={copEnabled}
                 copPrimary={copPrimary}
                 tasaCop={tasaCop}
+                todayCashFlow={todayCashFlow}
             />
             <CierreCajaSummaryModal
                 isOpen={showCierreSummary}
