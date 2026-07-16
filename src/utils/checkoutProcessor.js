@@ -101,7 +101,8 @@ export async function processSaleTransaction({
             montoEfectivo: i.montoEfectivo || null,
             montoComision: i.montoComision || null,
             comisionPct: i.comisionPct || null,
-            currency: i.currency || null
+            currency: i.currency || null,
+            exactBs: i.exactBs || null
         })),
         cartSubtotalUsd: cartSubtotalUsd,
         discountType:       discountData?.type      || null,
