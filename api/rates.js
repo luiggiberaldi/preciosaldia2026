@@ -1,5 +1,6 @@
 // Vercel Serverless Function — Proxy de tasas BCV (dolarapi.com)
 // Cachea en memoria por 14 minutos para no saturar la fuente externa.
+import { fetchBcvRates } from './bcvRatesHelper.js';
 
 let cache = null;
 let cacheTime = 0;
@@ -18,27 +19,12 @@ export default async function handler(req, res) {
     }
 
     try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 7000);
-        const response = await fetch('https://ve.dolarapi.com/v1/dolares', { signal: controller.signal });
-        clearTimeout(timeout);
-
-        if (!response.ok) throw new Error(`dolarapi ${response.status}`);
-
-        const data = await response.json();
-        const oficial  = Array.isArray(data) ? data.find(d => d.fuente === 'oficial'  || d.nombre === 'Oficial')  : null;
-        const paralelo = Array.isArray(data) ? data.find(d => d.fuente === 'paralelo' || d.nombre === 'Paralelo') : null;
-
-        if (!oficial?.promedio) throw new Error('Sin tasa oficial');
-
-        const bcvPrice  = parseFloat(oficial.promedio);
-        const euroPrice = parseFloat((bcvPrice * 1.09).toFixed(2));
-        const usdtPrice = parseFloat(paralelo?.promedio || (bcvPrice * 1.02).toFixed(2));
+        const rates = await fetchBcvRates();
 
         cache = {
-            bcv:  { price: bcvPrice,  source: 'BCV Oficial', change: 0 },
-            euro: { price: euroPrice, source: 'Euro BCV',    change: 0 },
-            usdt: { price: usdtPrice, source: 'USDT Binance', change: 0 },
+            bcv:  { price: rates.bcv,  source: `${rates.source} (USD)`, change: 0 },
+            euro: { price: rates.euro, source: `${rates.source} (EUR)`, change: 0 },
+            usdt: { price: rates.usdt, source: 'USDT Binance', change: 0 },
             lastUpdate: new Date().toISOString(),
         };
         cacheTime = Date.now();
@@ -49,6 +35,6 @@ export default async function handler(req, res) {
         if (cache) {
             return res.status(200).setHeader('X-Cache', 'STALE').json({ ...cache, stale: true });
         }
-        return res.status(503).json({ error: 'No se pudo obtener la tasa de cambio.' });
+        return res.status(503).json({ error: 'No se pudo obtener la tasa de cambio: ' + err.message });
     }
 }

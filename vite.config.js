@@ -2,6 +2,7 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { fetchBcvRates } from './api/bcvRatesHelper.js';
 
 // Versión del package.json para cacheId estable (INFRA-006).
 import pkg from './package.json' with { type: 'json' };
@@ -207,43 +208,16 @@ export default defineConfig(({ mode }) => {
               res.setHeader('Access-Control-Allow-Origin', corsOrigin);
               res.setHeader('Vary', 'Origin');
               try {
-                const googleScriptUrl = process.env.VITE_GOOGLE_SCRIPT_URL;
-                if (!googleScriptUrl) {
-                  throw new Error('VITE_GOOGLE_SCRIPT_URL no configurada');
-                }
-                const response = await fetch(googleScriptUrl);
-                const data = await response.json();
-                if (data && data.bcv) {
-                  const rates = {
-                    bcv: { price: data.bcv.price, source: 'BCV Oficial (Local Dev)', change: data.bcv.change || 0 },
-                    euro: { price: data.euro?.price || data.bcv.price * 1.09, source: 'Euro BCV (Local Dev)', change: data.euro?.change || 0 },
-                    usdt: { price: data.usdt?.price || data.usdt || data.bcv.price * 1.01, source: 'USDT Binance (Local Dev)', change: data.usdt?.change || 0 },
-                    lastUpdate: new Date().toISOString(),
-                  };
-                  res.end(JSON.stringify(rates));
-                } else {
-                  throw new Error('Invalid data format');
-                }
+                const rates = await fetchBcvRates();
+                res.end(JSON.stringify({
+                  bcv: { price: rates.bcv, source: `${rates.source} (USD)`, change: 0 },
+                  euro: { price: rates.euro, source: `${rates.source} (EUR)`, change: 0 },
+                  usdt: { price: rates.usdt, source: 'USDT Binance', change: 0 },
+                  lastUpdate: new Date().toISOString(),
+                }));
               } catch (err) {
-                // Fallback a ve.dolarapi.com
-                try {
-                  const response = await fetch('https://ve.dolarapi.com/v1/dolares');
-                  const data = await response.json();
-                  const oficial = Array.isArray(data) ? data.find((d) => d.fuente === 'oficial' || d.nombre === 'Oficial') : null;
-                  const paralelo = Array.isArray(data) ? data.find((d) => d.fuente === 'paralelo' || d.nombre === 'Paralelo') : null;
-                  const bcvPrice = parseFloat(oficial?.promedio || 580);
-                  const euroPrice = parseFloat((bcvPrice * 1.09).toFixed(2));
-                  const usdtPrice = parseFloat(paralelo?.promedio || (bcvPrice * 1.02).toFixed(2));
-                  res.end(JSON.stringify({
-                    bcv: { price: bcvPrice, source: 'BCV Oficial (Fallback)', change: 0 },
-                    euro: { price: euroPrice, source: 'Euro BCV (Fallback)', change: 0 },
-                    usdt: { price: usdtPrice, source: 'USDT Binance (Fallback)', change: 0 },
-                    lastUpdate: new Date().toISOString(),
-                  }));
-                } catch (fallbackErr) {
-                  res.statusCode = 500;
-                  res.end(JSON.stringify({ error: 'Failed to fetch rates: ' + err.message }));
-                }
+                res.statusCode = 500;
+                res.end(JSON.stringify({ error: 'Failed to fetch rates: ' + err.message }));
               }
             })();
             return;
