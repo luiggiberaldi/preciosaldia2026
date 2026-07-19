@@ -45,7 +45,7 @@ export default function CartPanel({
     };
 
     return (
-        <div className="lg:flex-1 lg:min-h-0 flex flex-col lg:bg-white lg:dark:bg-slate-900 lg:rounded-2xl lg:sm:rounded-3xl lg:border lg:border-slate-100 lg:dark:border-slate-800 lg:shadow-sm bg-transparent border-0 shadow-none">
+        <div className="flex-1 min-h-0 flex flex-col lg:bg-white lg:dark:bg-slate-900 lg:rounded-2xl lg:sm:rounded-3xl lg:border lg:border-slate-100 lg:dark:border-slate-800 lg:shadow-sm bg-transparent border-0 shadow-none">
 
             {/* Header */}
             <div className="shrink-0 hidden lg:block px-4 py-4 border-b border-slate-100 dark:border-slate-800 bg-brand dark:bg-brand rounded-t-2xl sm:rounded-t-3xl">
@@ -59,7 +59,7 @@ export default function CartPanel({
 
             {/* Cart Items — scrollable area with touch support */}
             <div
-                className="lg:flex-1 lg:min-h-0 lg:overflow-y-auto overscroll-contain p-2 sm:p-3"
+                className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-2 sm:p-3"
                 style={{ WebkitOverflowScrolling: 'touch' }}
             >
                 {cart.length === 0 ? (
@@ -221,7 +221,7 @@ export default function CartPanel({
             </div>
 
             {/* Footer — shrink-0, always visible at bottom of flex container */}
-            <div className="shrink-0 p-3 sm:p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 rounded-b-2xl sm:rounded-b-3xl space-y-2.5">
+            <div className="shrink-0 p-3 sm:p-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:pb-[calc(1rem+env(safe-area-inset-bottom))] lg:pb-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 rounded-b-none lg:rounded-b-2xl lg:sm:rounded-b-3xl space-y-2.5">
                 
                 {/* Botón de Descuento */}
                 <button

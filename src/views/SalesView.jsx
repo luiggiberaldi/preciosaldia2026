@@ -878,9 +878,9 @@ export default function SalesView({ triggerHaptic, isActive }) {
 
                 {/* Bottom Sheet Overlay — v1.2.0: cart panel con bg-surface-2 */}
                 {isCartSheetOpen && !showCheckout && !showReceipt && (
-                    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-surface-950/60 backdrop-blur-sm animate-in fade-in duration-200 pb-[max(0px,env(safe-area-inset-bottom))]"
+                    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-surface-950/60 backdrop-blur-sm animate-in fade-in duration-200"
                          onClick={() => setIsCartSheetOpen(false)}>
-                        <div className="bg-surface-2 dark:bg-surface-950 w-full rounded-t-3xl shadow-tone-lg flex flex-col max-h-[85vh] animate-in slide-in-from-bottom-full duration-300"
+                        <div className="bg-surface-200 dark:bg-surface-950 w-full rounded-t-3xl shadow-tone-lg flex flex-col max-h-[85vh] animate-in slide-in-from-bottom-full duration-300"
                              onClick={e => e.stopPropagation()}>
                             <div className="shrink-0 flex justify-center pt-3 pb-2" onClick={() => setIsCartSheetOpen(false)}>
                                 <div className="w-12 h-1.5 bg-surface-300 dark:bg-surface-700 rounded-full cursor-pointer" />
@@ -893,22 +893,20 @@ export default function SalesView({ triggerHaptic, isActive }) {
                                     <X size={20} />
                                 </button>
                             </div>
-                            <div className="flex-1 overflow-y-auto">
-                                <CartPanel
-                                    cart={cart} effectiveRate={effectiveRate}
-                                    cartSubtotalUsd={cartSubtotalUsd} cartSubtotalBs={cartSubtotalBs}
-                                    cartTotalUsd={cartTotalUsd} cartTotalBs={cartTotalBs} cartTotalCop={cartTotalCop} cartItemCount={cartItemCount}
-                                    discountData={discountData} onOpenDiscount={() => setShowDiscountModal(true)}
-                                    updateQty={updateQty} removeFromCart={removeFromCart}
-                                    onCheckout={() => { triggerHaptic && triggerHaptic(); setShowCheckout(true); setIsCartSheetOpen(false); }}
-                                    onClearCart={() => { triggerHaptic && triggerHaptic(); setShowClearCartConfirm(true); }}
-                                    triggerHaptic={triggerHaptic}
-                                    cartSelectedIndex={cartSelectedIndex}
-                                    copEnabled={copEnabled}
-                                    copPrimary={copPrimary}
-                                    tasaCop={tasaCop}
-                                />
-                            </div>
+                            <CartPanel
+                                cart={cart} effectiveRate={effectiveRate}
+                                cartSubtotalUsd={cartSubtotalUsd} cartSubtotalBs={cartSubtotalBs}
+                                cartTotalUsd={cartTotalUsd} cartTotalBs={cartTotalBs} cartTotalCop={cartTotalCop} cartItemCount={cartItemCount}
+                                discountData={discountData} onOpenDiscount={() => setShowDiscountModal(true)}
+                                updateQty={updateQty} removeFromCart={removeFromCart}
+                                onCheckout={() => { triggerHaptic && triggerHaptic(); setShowCheckout(true); setIsCartSheetOpen(false); }}
+                                onClearCart={() => { triggerHaptic && triggerHaptic(); setShowClearCartConfirm(true); }}
+                                triggerHaptic={triggerHaptic}
+                                cartSelectedIndex={cartSelectedIndex}
+                                copEnabled={copEnabled}
+                                copPrimary={copPrimary}
+                                tasaCop={tasaCop}
+                            />
                         </div>
                     </div>
                 )}
