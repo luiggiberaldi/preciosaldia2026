@@ -212,7 +212,7 @@ export default function CierreCajaWizard({
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto px-6 pb-6 scrollbar-hide">
+                <div className="flex-1 overflow-y-auto px-6 pb-6">
 
                     {/* ═══ STEP 1: Resumen del Dia ═══ */}
                     {step === 1 && (
