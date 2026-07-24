@@ -223,13 +223,6 @@ export default function SettingsTabLicencia({ deviceId, triggerHaptic }) {
                 </SectionCard>
             </div>
 
-            {/* Dispositivos y Terminales Registrados (100% de dispositivos) */}
-            <div className="md:col-span-2 xl:col-span-3">
-                <SectionCard icon={Smartphone} title="Terminales Registrados" subtitle="Lista en tiempo real del 100% de dispositivos que abren la app" iconColor="text-emerald-500">
-                    <DevicesManager triggerHaptic={triggerHaptic} currentDeviceId={deviceId} />
-                </SectionCard>
-            </div>
-
             {/* Datos Técnicos de Licencia */}
             <div className="md:col-span-2 xl:col-span-3">
                 <SectionCard icon={Hash} title="Identificación del Equipo" subtitle="ID asociado para licenciamiento" iconColor="text-slate-500">
