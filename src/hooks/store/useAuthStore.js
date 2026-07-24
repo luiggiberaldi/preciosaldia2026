@@ -196,8 +196,8 @@ export const useAuthStore = create(
             // SEC-018: sesión validada al rehidratar; sin `pin` (SEC-013).
             usuarioActivo: _readPersistedSession(),
             // SEC-005: usuarios vacíos al iniciar; se rellenan en `_ensureDefaultUsers`.
-            usuarios: [],
             requireLogin: _defaultRequireLogin(),
+            requireCajeroPin: true,
             // SEC-006: persistidos en partialize.
             failedAttempts: 0,
             lockUntil: null,
@@ -514,6 +514,38 @@ export const useAuthStore = create(
                 logEvent('CONFIG', 'LOGIN_REQUERIDO_MODIFICADO', `Login requerido establecido a ${val ? 'SI' : 'NO'}`);
             },
 
+            setRequireCajeroPin: (val) => {
+                set({ requireCajeroPin: val });
+                logEvent('CONFIG', 'PIN_CAJERO_MODIFICADO', `Pedir PIN al Cajero establecido a ${val ? 'SI' : 'NO'}`);
+            },
+
+            /**
+             * Permite iniciar sesión directamente a un usuario sin validación de PIN (e.g. Cajero sin PIN).
+             * @param {number} userId
+             * @returns {{ success: boolean, error?: string }}
+             */
+            loginDirect: (userId) => {
+                const { usuarios } = get();
+                const target = usuarios.find(u => u.id === userId);
+                if (!target) return { success: false, error: 'Usuario no encontrado' };
+
+                const session = {
+                    id: target.id,
+                    nombre: target.nombre,
+                    rol: target.rol,
+                };
+                set({
+                    usuarioActivo: session,
+                    failedAttempts: 0,
+                    lockUntil: null,
+                    consecutiveLockouts: 0,
+                    lastFailedAttemptTs: 0,
+                });
+                localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+                logEvent('AUTH', 'LOGIN_DIRECTO', `${target.nombre} inicio sesion (sin PIN)`, session);
+                return { success: true };
+            },
+
             /**
              * SEC-004: setAdminCredentials — persiste el email en sessionStorage.
              * La password NUNCA se persiste en localStorage (solo en memoria de la
@@ -548,6 +580,7 @@ export const useAuthStore = create(
             partialize: (state) => ({
                 usuarios: state.usuarios,
                 requireLogin: state.requireLogin,
+                requireCajeroPin: state.requireCajeroPin ?? true,
                 // SEC-006: rate-limiting persistido (sobrevive recarga).
                 failedAttempts: state.failedAttempts,
                 lockUntil: state.lockUntil,

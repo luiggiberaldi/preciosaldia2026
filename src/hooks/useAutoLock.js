@@ -25,13 +25,15 @@ import { AUTOLOCK_POLICY } from '../utils/securityConstants';
 export function useAutoLock() {
     const usuarioActivo = useAuthStore(s => s.usuarioActivo);
     const requireLogin = useAuthStore(s => s.requireLogin);
+    const requireCajeroPin = useAuthStore(s => s.requireCajeroPin ?? true);
     const isCloudConfigured = useAuthStore(s => s.isCloudConfigured);
     const logout = useAuthStore(s => s.logout);
     const unlock = useAuthStore(s => s.unlock);
+    const isCajeroNoPin = usuarioActivo?.rol === 'CAJERO' && requireCajeroPin === false;
 
     // SEC-004/HOOK-001: el auto-lock aplica cuando hay sesión activa y el login es requerido.
-    // El flag `isCloudConfigured` ahora es persistido por `setAdminCredentials`.
-    const isLoginRequired = Boolean(requireLogin && usuarioActivo);
+    // Si el usuario activo es Cajero y tiene deshabilitado el PIN, no requiere auto-lock.
+    const isLoginRequired = Boolean(requireLogin && usuarioActivo && !isCajeroNoPin);
     // Si hay cloud, también aplicamos auto-lock para no-admin (antes solo ADMIN).
     // Si no hay cloud pero requireLogin=true, igual aplicamos (POS local con PIN).
     const timeoutRef = useRef(null);

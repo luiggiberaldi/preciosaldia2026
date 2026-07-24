@@ -4,11 +4,19 @@ import UserCard from './UserCard';
 import LoginPinModal from './LoginPinModal';
 
 export default function LockScreen({ onOpenPairing }) {
-  const { usuarios, login } = useAuthStore();
+  const { usuarios, login, loginDirect, requireCajeroPin } = useAuthStore();
   const [selectedUser, setSelectedUser] = useState(null);
   const [showWelcome, setShowWelcome] = useState(() => {
     return localStorage.getItem('pda_welcome_dismissed') !== 'true';
   });
+
+  const handleUserClick = (user) => {
+    if (user?.rol === 'CAJERO' && requireCajeroPin === false) {
+      loginDirect(user.id);
+    } else {
+      setSelectedUser(user);
+    }
+  };
 
   const handlePinSubmit = async (pin, userId) => {
     const result = await login(pin, userId);
@@ -49,7 +57,7 @@ export default function LockScreen({ onOpenPairing }) {
             <UserCard
               key={user.id}
               user={user}
-              onClick={() => setSelectedUser(user)}
+              onClick={() => handleUserClick(user)}
             />
           ))}
         </div>
@@ -57,9 +65,8 @@ export default function LockScreen({ onOpenPairing }) {
 
       {/* Footer */}
       <div className="relative z-10 pb-6 text-center flex flex-col items-center gap-3">
-        {/* SEC-017: todos los roles usan 6 dígitos (PIN_POLICY.MIN_LENGTH). */}
         <p className="text-[10px] text-slate-400 font-medium tracking-wider">
-          PIN de 6 dígitos para todos los usuarios
+          {requireCajeroPin === false ? 'PIN de 6 dígitos para Administrador (Cajero sin PIN)' : 'PIN de 6 dígitos para todos los usuarios'}
         </p>
         <button
           onClick={() => window.location.reload()}

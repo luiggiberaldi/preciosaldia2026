@@ -3,12 +3,16 @@ import { Users, Lock } from 'lucide-react';
 import { SectionCard } from '../../SettingsShared';
 import UsersManager from '../UsersManager';
 import { Toggle } from '../../SettingsShared';
+import { useAuthStore } from '../../../hooks/store/useAuthStore';
 
 export default function SettingsTabUsuarios({
     requireLogin, setRequireLogin,
     autoLockMinutes, setAutoLockMinutes,
     showToast, triggerHaptic,
 }) {
+    const requireCajeroPin = useAuthStore(s => s.requireCajeroPin ?? true);
+    const setRequireCajeroPin = useAuthStore(s => s.setRequireCajeroPin);
+
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
             <div className="md:col-span-2 xl:col-span-3">
@@ -37,8 +41,26 @@ export default function SettingsTabUsuarios({
                         />
                     </div>
 
-                    {/* Bloqueo automático — solo si PIN está activo */}
-                    {requireLogin && (
+                    {/* Toggle PIN Cajero */}
+                    <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-800 pb-4">
+                        <div>
+                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Pedir PIN al Cajero</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Si se desactiva, el Cajero podrá iniciar sesión sin pedir PIN.</p>
+                        </div>
+                        <Toggle
+                            enabled={requireCajeroPin}
+                            color="rose"
+                            onChange={() => {
+                                const newVal = !requireCajeroPin;
+                                setRequireCajeroPin(newVal);
+                                triggerHaptic?.();
+                                showToast(newVal ? 'PIN activado para Cajero' : 'Acceso directo para Cajero activado', 'success');
+                            }}
+                        />
+                    </div>
+
+                    {/* Bloqueo automático — solo si algún PIN está activo */}
+                    {(requireLogin || requireCajeroPin) && (
                         <div>
                             <label className="text-[11px] uppercase tracking-wider font-extrabold text-slate-500 dark:text-slate-400 block mb-1.5">Bloqueo Automático</label>
                             <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Tu sesión se bloqueará tras estos minutos de inactividad.</p>
