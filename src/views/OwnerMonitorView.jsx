@@ -13,6 +13,7 @@ import {
 import { formatBs, formatCop } from '../utils/calculatorUtils';
 import { getLocalISODate } from '../utils/dateHelpers';
 import { getPaymentLabel, toTitleCase } from '../config/paymentMethods';
+import DevicesManager from '../components/Settings/DevicesManager';
 
 // Helper: icon por método de pago
 const PAYMENT_METHOD_ICONS = {
@@ -498,36 +499,46 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
             {/* Contenido Principal */}
             <main className="max-w-7xl mx-auto px-4 mt-6 space-y-6">
                 {/* Selector de Pestañas */}
-                <div className="flex bg-slate-200/60 dark:bg-slate-900/60 p-1 rounded-2xl w-full max-w-sm shadow-sm">
+                <div className="flex bg-slate-200/60 dark:bg-slate-900/60 p-1 rounded-2xl w-full max-w-md shadow-sm overflow-x-auto">
                     <button
                         onClick={() => { triggerHaptic?.(); setViewTab('activo'); }}
-                        className={`flex-1 py-2 text-[10px] sm:text-xs font-black rounded-xl transition-all ${
+                        className={`flex-1 py-2 px-2 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap ${
                             viewTab === 'activo' 
                                 ? 'bg-white dark:bg-slate-800 text-slate-850 dark:text-white shadow-sm' 
                                 : 'text-slate-400 hover:text-slate-650 dark:hover:text-slate-200'
                         }`}
                     >
-                        Turno Activo (En Vivo)
+                        Turno Activo
                     </button>
                     <button
                         onClick={() => { triggerHaptic?.(); setViewTab('cierres'); }}
-                        className={`flex-1 py-2 text-[10px] sm:text-xs font-black rounded-xl transition-all ${
+                        className={`flex-1 py-2 px-2 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap ${
                             viewTab === 'cierres' 
                                 ? 'bg-white dark:bg-slate-800 text-slate-850 dark:text-white shadow-sm' 
                                 : 'text-slate-400 hover:text-slate-650 dark:hover:text-slate-200'
                         }`}
                     >
-                        Cierres de Caja
+                        Cierres
                     </button>
                     <button
                         onClick={() => { triggerHaptic?.(); setViewTab('inventario'); }}
-                        className={`flex-1 py-2 text-[10px] sm:text-xs font-black rounded-xl transition-all ${
+                        className={`flex-1 py-2 px-2 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap ${
                             viewTab === 'inventario' 
                                 ? 'bg-white dark:bg-slate-800 text-slate-850 dark:text-white shadow-sm' 
                                 : 'text-slate-400 hover:text-slate-650 dark:hover:text-slate-200'
                         }`}
                     >
                         Inventario
+                    </button>
+                    <button
+                        onClick={() => { triggerHaptic?.(); setViewTab('terminales'); }}
+                        className={`flex-1 py-2 px-2 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap ${
+                            viewTab === 'terminales' 
+                                ? 'bg-white dark:bg-slate-800 text-slate-850 dark:text-white shadow-sm' 
+                                : 'text-slate-400 hover:text-slate-650 dark:hover:text-slate-200'
+                        }`}
+                    >
+                        Terminales
                     </button>
                 </div>
 
@@ -1287,6 +1298,13 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                                 </button>
                             </div>
                         )}
+                    </div>
+                )}
+
+                {/* ── SECCIÓN 4: TERMINALES Y DISPOSITIVOS ── */}
+                {viewTab === 'terminales' && (
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 border border-slate-200/60 dark:border-slate-800/80 shadow-sm">
+                        <DevicesManager triggerHaptic={triggerHaptic} currentDeviceId={localStorage.getItem('pda_device_id')} />
                     </div>
                 )}
             </main>

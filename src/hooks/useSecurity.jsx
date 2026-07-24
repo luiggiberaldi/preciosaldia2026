@@ -316,32 +316,30 @@ function useSecurityState() {
             } catch { }
         }
 
-        // Migracion silenciosa: asegurar registro en Supabase via RPC seguro.
-        if (isPremiumConfirmed) {
-            const migrateToSupabase = async () => {
-                try {
-                    const bName = localStorage.getItem('business_name') || localStorage.getItem('restaurant_name') || '';
-                    const mEmail = localStorage.getItem('marketing_email') || '';
-                    const clientName = mEmail ? `${bName} | ${mEmail}` : bName;
-                    await supabase.rpc('auto_register_device', {
-                        p_device_id: currentDeviceId,
-                        p_product_id: PRODUCT_ID,
-                        p_client_name: clientName
-                    });
-                    await supabase.rpc('heartbeat_device', {
-                        p_device_id: currentDeviceId,
-                        p_product_id: PRODUCT_ID,
-                        p_client_name: clientName
-                    });
-                } catch (e) {
-                    if (import.meta.env?.DEV) {
-                        console.warn('[Security] Migración silenciosa falló:', e?.message ?? e);
-                    }
+        // Registro y heartbeat garantizado en Supabase para el 100% de los dispositivos
+        const registerAndHeartbeat = async () => {
+            try {
+                const bName = localStorage.getItem('business_name') || localStorage.getItem('restaurant_name') || '';
+                const mEmail = localStorage.getItem('marketing_email') || '';
+                const clientName = mEmail ? `${bName} | ${mEmail}` : bName;
+                await supabase.rpc('auto_register_device', {
+                    p_device_id: currentDeviceId,
+                    p_product_id: PRODUCT_ID,
+                    p_client_name: clientName
+                });
+                await supabase.rpc('heartbeat_device', {
+                    p_device_id: currentDeviceId,
+                    p_product_id: PRODUCT_ID,
+                    p_client_name: clientName
+                });
+            } catch (e) {
+                if (import.meta.env?.DEV) {
+                    console.warn('[Security] Registro / heartbeat falló:', e?.message ?? e);
                 }
-            };
+            }
+        };
 
-            migrateToSupabase();
-        }
+        registerAndHeartbeat();
 
         setLoading(false);
     }, [setDemoExpiredMsg]);

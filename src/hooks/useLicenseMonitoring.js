@@ -124,6 +124,7 @@ export function useLicenseMonitoring({
             verifyStatus();
             try {
                 const clientName = localStorage.getItem('business_name') || localStorage.getItem('restaurant_name') || '';
+                await supabase.rpc('auto_register_device', { p_device_id: deviceId, p_product_id: PRODUCT_ID, p_client_name: clientName });
                 await supabase.rpc('heartbeat_device', { p_device_id: deviceId, p_product_id: PRODUCT_ID, p_client_name: clientName });
             } catch (e) {
                 if (import.meta.env?.DEV) {
@@ -133,10 +134,8 @@ export function useLicenseMonitoring({
         };
 
         sendHeartbeat();
-        // Sin cuenta activa: no hay canal Realtime, así que el heartbeat es la única
-        // forma de notar una activación nueva — se acelera a 5 min. Con cuenta activa,
-        // el canal cubre la detección instantánea y el heartbeat vuelve a su cadencia normal.
-        const heartbeatIntervalMs = isPremium ? 4 * 60 * 60 * 1000 : 5 * 60 * 1000;
+        // Frecuencia constante de heartbeat a 3 minutos para mantener estado online preciso en Estación Maestra
+        const heartbeatIntervalMs = 3 * 60 * 1000;
         const heartbeatInterval = setInterval(sendHeartbeat, heartbeatIntervalMs);
 
         const handleVisibility = () => {
