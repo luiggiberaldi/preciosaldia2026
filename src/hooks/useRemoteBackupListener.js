@@ -3,6 +3,7 @@ import { supabaseCloud } from '../config/supabaseCloud';
 import { storageService } from '../utils/storageService';
 import { IDB_KEYS, LS_KEYS } from '../config/backupKeys';
 import { compressString, isCompressionSupported } from '../utils/compression';
+import { uploadToGoogleDrive } from '../utils/driveBackupUploader';
 
 async function collectAndUpload(deviceId) {
     // Recolectar datos locales
@@ -40,11 +41,35 @@ async function collectAndUpload(deviceId) {
         }
     }
 
-    // Subir a cloud_backups
+    const clientName = localStorage.getItem('business_name') || 'Mi Negocio';
+    let driveResult = null;
+    try {
+        driveResult = await uploadToGoogleDrive(payloadToUpload, deviceId, clientName);
+    } catch (driveErr) {
+        console.error('[RemoteBackup] Error al subir remote backup a Google Drive:', driveErr);
+    }
+
+    const metadataPayload = {
+        drive_url: driveResult?.downloadUrl || null,
+        size_bytes: driveResult?.sizeBytes || JSON.stringify(payloadToUpload).length,
+        product_count: Array.isArray(idbData.bodega_products_v1) ? idbData.bodega_products_v1.length : 0,
+        sales_count: Array.isArray(idbData.bodega_sales_v1) ? idbData.bodega_sales_v1.length : 0,
+        customer_count: Array.isArray(idbData.bodega_customers_v1) ? idbData.bodega_customers_v1.length : 0,
+        updated_at: new Date().toISOString()
+    };
+
+    // Subir metadatos a cloud_backups
     const { error } = await supabaseCloud
         .from('cloud_backups')
-        .upsert({ device_id: deviceId, backup_data: payloadToUpload, updated_at: new Date().toISOString() },
-            { onConflict: 'device_id' });
+        .upsert({
+            device_id: deviceId,
+            backup_data: metadataPayload,
+            size_bytes: metadataPayload.size_bytes,
+            product_count: metadataPayload.product_count,
+            sales_count: metadataPayload.sales_count,
+            customer_count: metadataPayload.customer_count,
+            updated_at: new Date().toISOString()
+        }, { onConflict: 'device_id' });
     if (error) throw error;
 }
 

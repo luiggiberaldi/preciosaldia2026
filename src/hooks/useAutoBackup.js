@@ -3,6 +3,7 @@ import { storageService } from '../utils/storageService';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { IDB_KEYS, LS_KEYS } from '../config/backupKeys';
 import { compressString, isCompressionSupported } from '../utils/compression';
+import { uploadToGoogleDrive } from '../utils/driveBackupUploader';
 
 
 // ─── Configuración optimizada ───────────────────────────────────────────────
@@ -117,10 +118,28 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                     const customerCount = Array.isArray(idbData.bodega_customers_v1) ? idbData.bodega_customers_v1.length : 0;
                     const sizeBytes = JSON.stringify(payloadToUpload).length;
 
+                    const clientName = localStorage.getItem('business_name') || 'Mi Negocio';
+                    let driveResult = null;
+                    try {
+                        driveResult = await uploadToGoogleDrive(payloadToUpload, devId, clientName);
+                    } catch (driveErr) {
+                        console.error('[AutoBackup] Error al subir a Google Drive:', driveErr);
+                    }
+
+                    // Guardar metadatos ultraligeros en Supabase (0% Egress)
+                    const metadataPayload = {
+                        drive_url: driveResult?.downloadUrl || null,
+                        size_bytes: driveResult?.sizeBytes || sizeBytes,
+                        product_count: productCount,
+                        sales_count: salesCount,
+                        customer_count: customerCount,
+                        updated_at: new Date().toISOString()
+                    };
+
                     await supabaseCloud.from('cloud_backups').upsert({
                         device_id: devId,
-                        backup_data: payloadToUpload,
-                        size_bytes: sizeBytes,
+                        backup_data: metadataPayload,
+                        size_bytes: metadataPayload.size_bytes,
                         product_count: productCount,
                         sales_count: salesCount,
                         customer_count: customerCount,

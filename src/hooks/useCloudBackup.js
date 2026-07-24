@@ -5,6 +5,7 @@ import { supabaseCloud } from '../config/supabaseCloud';
 import { IDB_KEYS, LS_KEYS } from '../config/backupKeys';
 import { runWithoutEco } from '../utils/syncFlags';
 import { compressString, decompressString, isCompressionSupported } from '../utils/compression';
+import { uploadToGoogleDrive } from '../utils/driveBackupUploader';
 
 
 /**
@@ -107,12 +108,27 @@ export function useCloudBackup({
             }
         }
 
-        // 1. Backup blob completo
+        // 1. Subir a Google Drive y guardar metadatos en Supabase
+        const clientName = localStorage.getItem('business_name') || 'Mi Negocio';
+        let driveResult = null;
+        try {
+            driveResult = await uploadToGoogleDrive(payloadToUpload, deviceId, clientName);
+        } catch (driveErr) {
+            console.error('[CloudBackup] Error al subir manual backup a Google Drive:', driveErr);
+        }
+
+        const metadataPayload = {
+            drive_url: driveResult?.downloadUrl || null,
+            size_bytes: driveResult?.sizeBytes || JSON.stringify(payloadToUpload).length,
+            updated_at: new Date().toISOString()
+        };
+
         const { error } = await supabaseCloud
             .from('cloud_backups')
             .upsert({
                 device_id: deviceId,
-                backup_data: payloadToUpload,
+                backup_data: metadataPayload,
+                size_bytes: metadataPayload.size_bytes,
                 updated_at: new Date().toISOString()
             }, { onConflict: 'device_id' });
         if (error) throw error;
