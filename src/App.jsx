@@ -228,7 +228,15 @@ export default function App() {
 
 
       {/* Lock Screen — solo si login está activado y no hay sesión activa */}
-      {requireLogin && !usuarioActivo && <LockScreen onOpenPairing={() => setShowPairingScan(true)} />}
+      {requireLogin && !usuarioActivo && (
+        <LockScreen
+          onOpenPairing={() => setShowPairingScan(true)}
+          installPrompt={installPrompt}
+          onInstall={handleInstall}
+          showIOSButton={showIOSButton}
+          onShowIOSInstall={() => setShowIOSInstall(true)}
+        />
+      )}
 
       {showPairingScan && (
         <PairingScanScreen onCancel={() => setShowPairingScan(false)} triggerHaptic={triggerHaptic} />

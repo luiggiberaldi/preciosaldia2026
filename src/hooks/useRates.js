@@ -15,7 +15,7 @@ const CACHE_MAX_AGE_MS = 14 * 60 * 1000; // refrescar si tiene más de 14 min
 
 // Fallback directo (solo si el endpoint /api/rates no está disponible)
 const EXCHANGERATE_KEY = import.meta.env.VITE_EXCHANGERATE_KEY || '';
-const GOOGLE_SCRIPT_URL = import.meta.env.VITE_GOOGLE_SCRIPT_URL || '';
+const GOOGLE_SCRIPT_URL = import.meta.env.VITE_GOOGLE_SCRIPT_RATES_URL || import.meta.env.VITE_GOOGLE_SCRIPT_URL || '';
 
 export function useRates() {
     const [rates, setRates] = useState(() => {

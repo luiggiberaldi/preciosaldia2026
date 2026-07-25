@@ -1,14 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import { Download, CheckCircle2, X } from 'lucide-react';
 import { useAuthStore } from '../../hooks/store/useAuthStore';
 import UserCard from './UserCard';
 import LoginPinModal from './LoginPinModal';
 
-export default function LockScreen({ onOpenPairing }) {
+export default function LockScreen({ onOpenPairing, installPrompt, onInstall, showIOSButton, onShowIOSInstall }) {
   const { usuarios, login, loginDirect, requireCajeroPin } = useAuthStore();
   const [selectedUser, setSelectedUser] = useState(null);
+  const [showPwaInfoModal, setShowPwaInfoModal] = useState(false);
   const [showWelcome, setShowWelcome] = useState(() => {
     return localStorage.getItem('pda_welcome_dismissed') !== 'true';
   });
+
+  const isStandalone = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  }, []);
 
   const handleUserClick = (user) => {
     if (user?.rol === 'CAJERO' && requireCajeroPin === false) {
@@ -37,6 +44,42 @@ export default function LockScreen({ onOpenPairing }) {
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-[30%] -left-[15%] w-[600px] h-[600px] bg-sky-500/10 rounded-full blur-[120px]" />
         <div className="absolute -bottom-[30%] -right-[15%] w-[600px] h-[600px] bg-teal-400/10 rounded-full blur-[120px]" />
+      </div>
+
+      {/* Top Bar with PWA Install Button */}
+      <div className="absolute top-4 right-4 z-30 flex items-center gap-2">
+        {isStandalone ? (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[10px] font-extrabold uppercase tracking-wider rounded-xl shadow-sm">
+            <CheckCircle2 size={13} className="text-emerald-500" />
+            <span>App Instalada</span>
+          </div>
+        ) : installPrompt ? (
+          <button
+            onClick={onInstall}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold rounded-2xl shadow-lg shadow-emerald-600/20 transition-all cursor-pointer animate-pulse"
+            title="Instalar como aplicación en este dispositivo"
+          >
+            <Download size={15} strokeWidth={2.5} />
+            <span>Instalar App</span>
+          </button>
+        ) : showIOSButton ? (
+          <button
+            onClick={onShowIOSInstall}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold rounded-2xl shadow-lg shadow-emerald-600/20 transition-all cursor-pointer animate-pulse"
+            title="Instalar en iOS"
+          >
+            <Download size={15} strokeWidth={2.5} />
+            <span>Instalar App</span>
+          </button>
+        ) : (
+          <button
+            onClick={() => setShowPwaInfoModal(true)}
+            className="flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/90 active:scale-95 text-xs font-bold rounded-2xl shadow-sm transition-all cursor-pointer"
+          >
+            <Download size={14} className="text-emerald-600" strokeWidth={2.5} />
+            <span>Instalar PWA</span>
+          </button>
+        )}
       </div>
 
       <div className="relative z-10 flex flex-col items-center justify-center flex-1 p-6">
@@ -98,6 +141,47 @@ export default function LockScreen({ onOpenPairing }) {
         isOpen={showWelcome}
         onClose={handleDismissWelcome}
       />
+
+      {/* PWA Info Modal (Manual instructions for Desktop/Mobile Chrome & Safari) */}
+      {showPwaInfoModal && (
+        <div className="fixed inset-0 z-[300] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 max-w-md w-full rounded-3xl p-6 shadow-2xl border border-slate-100 dark:border-slate-800 text-left relative animate-in fade-in zoom-in-95 duration-200">
+            <button
+              onClick={() => setShowPwaInfoModal(false)}
+              className="absolute top-4 right-4 p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full text-slate-500 transition-colors"
+            >
+              <X size={16} />
+            </button>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-3 bg-emerald-500/10 text-emerald-600 rounded-2xl">
+                <Download size={22} strokeWidth={2.5} />
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900 dark:text-white">Instalar PreciosAlDía PWA</h3>
+                <p className="text-xs text-slate-500">Acceso directo sin barra de navegador</p>
+              </div>
+            </div>
+            <div className="space-y-3 text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+              <p className="font-bold text-slate-800 dark:text-slate-200">En Chrome / Edge (Computadora o Android):</p>
+              <ol className="list-decimal pl-4 space-y-1">
+                <li>Haz clic en el icono de <strong>Instalar</strong> en la barra de direcciones (arriba a la derecha ⊕) o el menú de 3 puntos.</li>
+                <li>Selecciona <strong>"Instalar PreciosAlDía..."</strong> o <strong>"Agregar a la pantalla principal"</strong>.</li>
+              </ol>
+              <p className="font-bold text-slate-800 dark:text-slate-200 mt-3">En iPhone / iPad (Safari):</p>
+              <ol className="list-decimal pl-4 space-y-1">
+                <li>Toca el botón <strong>Compartir</strong> (cuadro con flecha arriba ⎘).</li>
+                <li>Desliza hacia abajo y selecciona <strong>"Agregar al inicio"</strong>.</li>
+              </ol>
+            </div>
+            <button
+              onClick={() => setShowPwaInfoModal(false)}
+              className="w-full mt-5 py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-2xl shadow-md transition-all active:scale-98 cursor-pointer"
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -105,63 +189,22 @@ export default function LockScreen({ onOpenPairing }) {
 function WelcomeModal({ isOpen, onClose }) {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-[300] bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-slate-900 rounded-[2rem] p-6 sm:p-8 max-w-md w-full shadow-2xl border border-slate-100 dark:border-slate-800 text-center animate-in zoom-in-95 duration-300">
-        <div className="w-16 h-16 bg-cyan-50 dark:bg-cyan-950/30 rounded-2xl flex items-center justify-center mx-auto mb-4 animate-bounce">
-          <span className="text-3xl">👋</span>
+    <div className="fixed inset-0 z-[300] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-slate-900 max-w-sm w-full rounded-3xl p-6 shadow-2xl border border-slate-100 dark:border-slate-800 text-center relative animate-in fade-in zoom-in-95 duration-200">
+        <div className="flex justify-center mb-4">
+          <div className="p-3 bg-emerald-500/10 text-emerald-500 rounded-2xl">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
         </div>
-        
-        <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-2 leading-tight">
-          ¡Te damos la bienvenida!
-        </h2>
-        
-        <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
-          Precios al Día está listo para usar. Sigue estos sencillos pasos para empezar:
+        <h3 className="text-lg font-black text-slate-800 dark:text-white mb-2">PreciosAlDía Bodega</h3>
+        <p className="text-xs text-slate-500 leading-relaxed mb-6">
+          Tu punto de venta rápido y seguro. Selecciona tu perfil para comenzar a operar.
         </p>
-
-        <div className="text-left space-y-4 mb-6">
-          <div className="flex gap-3 items-start">
-            <div className="w-6 h-6 rounded-full bg-brand text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5 shadow-md">
-              1
-            </div>
-            <div>
-              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">Ingresa con el PIN inicial</h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Selecciona <strong>Administrador</strong> o <strong>Cajero</strong> e ingresa el código de fábrica: <code className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded font-mono text-brand font-bold text-sm">000000</code> (seis ceros).
-              </p>
-            </div>
-          </div>
-
-          <div className="flex gap-3 items-start">
-            <div className="w-6 h-6 rounded-full bg-brand text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5 shadow-md">
-              2
-            </div>
-            <div>
-              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">Configura tus accesos</h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Ve a <strong>Ajustes → Usuarios</strong> (dentro del panel de Admin) para cambiar tu PIN por uno seguro y agregar a tu personal.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex gap-3 items-start">
-            <div className="w-6 h-6 rounded-full bg-brand text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5 shadow-md">
-              3
-            </div>
-            <div>
-              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">Carga inventario y vende</h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Agrega tus productos en la pestaña <strong>Inventario</strong> y empieza a facturar desde la pestaña <strong>Vender</strong>.
-              </p>
-            </div>
-          </div>
-        </div>
-
         <button
           onClick={onClose}
-          className="w-full py-3 bg-brand hover:bg-brand-dark text-white font-bold rounded-xl shadow-lg active:scale-95 transition-transform text-sm"
+          className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white font-bold text-xs rounded-2xl shadow-lg shadow-emerald-500/20 transition-all cursor-pointer"
         >
-          ¡Entendido, comenzar!
+          Comenzar
         </button>
       </div>
     </div>

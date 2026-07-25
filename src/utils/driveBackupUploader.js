@@ -4,9 +4,9 @@
  * Reusable by useAutoBackup, useCloudBackup, and useRemoteBackupListener.
  */
 export async function uploadToGoogleDrive(payload, deviceId, clientName) {
-    const GOOGLE_SCRIPT_URL = import.meta.env.VITE_GOOGLE_SCRIPT_URL;
+    const GOOGLE_SCRIPT_URL = import.meta.env.VITE_GOOGLE_SCRIPT_BACKUPS_URL || import.meta.env.VITE_GOOGLE_SCRIPT_URL;
     if (!GOOGLE_SCRIPT_URL) {
-        throw new Error('[DriveBackup] VITE_GOOGLE_SCRIPT_URL no configurada en .env');
+        throw new Error('[DriveBackup] VITE_GOOGLE_SCRIPT_BACKUPS_URL no configurada en .env');
     }
 
     const response = await fetch(GOOGLE_SCRIPT_URL, {
