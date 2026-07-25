@@ -38,6 +38,18 @@ export default function LockScreen({ onOpenPairing, installPrompt, onInstall, sh
     setShowWelcome(false);
   };
 
+  const handleInstallClick = async () => {
+    if (onInstall) {
+      const success = await onInstall();
+      if (success) return;
+    }
+    if (showIOSButton && onShowIOSInstall) {
+      onShowIOSInstall();
+      return;
+    }
+    setShowPwaInfoModal(true);
+  };
+
   return (
     <div className="fixed inset-0 z-[250] bg-slate-50 text-slate-800 font-sans overflow-hidden flex flex-col">
       {/* Background glow */}
@@ -53,31 +65,14 @@ export default function LockScreen({ onOpenPairing, installPrompt, onInstall, sh
             <CheckCircle2 size={13} className="text-emerald-500" />
             <span>App Instalada</span>
           </div>
-        ) : installPrompt ? (
+        ) : (
           <button
-            onClick={onInstall}
+            onClick={handleInstallClick}
             className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold rounded-2xl shadow-lg shadow-emerald-600/20 transition-all cursor-pointer animate-pulse"
             title="Instalar como aplicación en este dispositivo"
           >
             <Download size={15} strokeWidth={2.5} />
             <span>Instalar App</span>
-          </button>
-        ) : showIOSButton ? (
-          <button
-            onClick={onShowIOSInstall}
-            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold rounded-2xl shadow-lg shadow-emerald-600/20 transition-all cursor-pointer animate-pulse"
-            title="Instalar en iOS"
-          >
-            <Download size={15} strokeWidth={2.5} />
-            <span>Instalar App</span>
-          </button>
-        ) : (
-          <button
-            onClick={() => setShowPwaInfoModal(true)}
-            className="flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/90 active:scale-95 text-xs font-bold rounded-2xl shadow-sm transition-all cursor-pointer"
-          >
-            <Download size={14} className="text-emerald-600" strokeWidth={2.5} />
-            <span>Instalar PWA</span>
           </button>
         )}
       </div>

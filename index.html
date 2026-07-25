@@ -44,6 +44,15 @@
     href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Work+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;700&family=DM+Mono:wght@400;500&family=Outfit:wght@400;500;600;700;800&display=swap"
     rel="stylesheet">
 
+  <!-- Capturar prompt de instalación PWA desde el inicio -->
+  <script>
+    window.deferredInstallPrompt = null;
+    window.addEventListener('beforeinstallprompt', function (e) {
+      e.preventDefault();
+      window.deferredInstallPrompt = e;
+    });
+  </script>
+
   <!-- Anti-FOUC: aplicar tema antes del render para evitar flash de tema incorrecto -->
   <script>
     (function () {

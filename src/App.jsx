@@ -94,16 +94,33 @@ export default function App() {
   useEffect(() => { if (rates) cacheRates(rates); }, [rates, cacheRates]);
 
   useEffect(() => {
-    const handler = (e) => { e.preventDefault(); setInstallPrompt(e); };
+    if (window.deferredInstallPrompt) {
+      setInstallPrompt(window.deferredInstallPrompt);
+    }
+    const handler = (e) => {
+      e.preventDefault();
+      window.deferredInstallPrompt = e;
+      setInstallPrompt(e);
+    };
     window.addEventListener('beforeinstallprompt', handler);
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
   const handleInstall = async () => {
-    if (!installPrompt) return;
-    installPrompt.prompt();
-    const { outcome } = await installPrompt.userChoice;
-    if (outcome === 'accepted') setInstallPrompt(null);
+    const promptEvent = installPrompt || window.deferredInstallPrompt;
+    if (!promptEvent) return false;
+    try {
+      promptEvent.prompt();
+      const { outcome } = await promptEvent.userChoice;
+      if (outcome === 'accepted') {
+        setInstallPrompt(null);
+        window.deferredInstallPrompt = null;
+        return true;
+      }
+    } catch (e) {
+      console.warn('[PWA] Error en prompt de instalación:', e);
+    }
+    return false;
   };
 
 
