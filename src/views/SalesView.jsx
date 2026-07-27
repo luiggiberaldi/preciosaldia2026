@@ -539,7 +539,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
         });
     }, [tasaCop]);
 
-    const updateQty = (id, delta) => {
+    const updateQty = useCallback((id, delta) => {
         triggerHaptic && triggerHaptic();
         if (delta < 0) playRemove();
 
@@ -577,13 +577,13 @@ export default function SalesView({ triggerHaptic, isActive }) {
             if (newQty < 0) newQty = 0;
             return newQty === 0 ? null : { ...i, qty: newQty };
         }).filter(Boolean));
-    };
+    }, [triggerHaptic, playRemove, playError, products]);
 
-    const removeFromCart = (id) => {
+    const removeFromCart = useCallback((id) => {
         triggerHaptic && triggerHaptic();
         playRemove();
         setCart(prev => prev.filter(i => i.id !== id));
-    };
+    }, [triggerHaptic, playRemove]);
 
     const handleSearchKeyDown = (e) => {
         if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIndex(prev => Math.min(prev + 1, searchResults.length - 1)); }

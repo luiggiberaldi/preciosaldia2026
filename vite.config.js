@@ -16,17 +16,21 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
     VitePWA({
-      registerType: 'autoUpdate', // INFRA-007: Actualización silenciosa en background; recarga vía controllerchange.
-      includeAssets: ['favicon.ico', 'apple-touch-icon-180x180.png', 'pwa-192x192.png', 'pwa-512x512.png', 'logo.png', 'logodark.png'],
+      registerType: 'prompt', // SW prompt: no fuerza recargas abruptas durante operaciones POS (A-001/B-003).
+      includeAssets: [
+        'favicon.ico',
+        'apple-touch-icon.png',
+        'pwa-144x144.png',
+        'pwa-192x192.png',
+        'pwa-512x512.png',
+        'pwa-maskable-192.png',
+        'pwa-maskable-512.png',
+      ],
       workbox: {
         cleanupOutdatedCaches: true,
-        skipWaiting: true,   // INFRA-007: forzar activación del nuevo SW en background de inmediato.
+        skipWaiting: false, // No forzar skipWaiting automático para evitar pérdida de datos en caja.
         clientsClaim: true,
-        // INFRA-006: cacheId estable basado en versión del package.json (no Date.now()).
         cacheId: `preciosaldia-bodega-v${APP_VERSION}`,
-        // OFFLINE-IMG: servir el shell (index.html) en navegaciones offline para
-        // que la PWA abra sin internet. navigateFallback solo aplica a GET; los
-        // endpoints same-origin /api/* quedan excluidos por la denylist.
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
@@ -49,10 +53,6 @@ export default defineConfig(({ mode }) => {
             },
           },
           {
-            // FASE 3 (Egress): imágenes de producto en Supabase Storage. Se cachean
-            // para que se vean sin conexión (antes viajaban como base64 embebido,
-            // siempre offline; ahora son URLs y necesitan cache runtime para no
-            // perder esa capacidad offline-first).
             urlPattern: /\/storage\/v1\/object\/public\/product-images\/.*/i,
             handler: 'CacheFirst',
             options: {
@@ -73,7 +73,10 @@ export default defineConfig(({ mode }) => {
         orientation: 'portrait',
         scope: '/',
         start_url: '/',
+        categories: ['business', 'finance', 'shopping'],
+        prefer_related_applications: false,
         icons: [
+          { src: 'pwa-144x144.png', sizes: '144x144', type: 'image/png' },
           { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
           { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
           { src: 'pwa-maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },

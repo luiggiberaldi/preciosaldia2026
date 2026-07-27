@@ -98,6 +98,25 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [selectedChartDate, setSelectedChartDate] = useState(null);
     const [showTopDeudas, setShowTopDeudas] = useState(false);
+    const [isScrolled, setIsScrolled] = useState(false);
+
+    // Escuchar el scroll del contenedor <main> (idéntico a donde juancho)
+    useEffect(() => {
+        const mainEl = document.querySelector('main');
+        const handleScroll = () => {
+            if (mainEl) {
+                setIsScrolled(mainEl.scrollTop > 10);
+            }
+        };
+        if (mainEl) {
+            mainEl.addEventListener('scroll', handleScroll);
+        }
+        return () => {
+            if (mainEl) {
+                mainEl.removeEventListener('scroll', handleScroll);
+            }
+        };
+    }, []);
     const [showCierreSummary, setShowCierreSummary] = useState(false);
     const [cierreSummaryData, setCierreSummaryData] = useState(null);
     const touchStartY = useRef(0);
@@ -392,8 +411,13 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     const handleTouchEnd = async () => {
         if (pullDistance > 60) {
             setIsRefreshing(true);
-            await refreshData();
-            setIsRefreshing(false);
+            try {
+                await refreshData();
+            } catch (err) {
+                console.warn('[DashboardView] Pull-to-refresh error:', err);
+            } finally {
+                setIsRefreshing(false);
+            }
         }
         setPullDistance(0);
     };
@@ -401,7 +425,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     return (
         <div
             ref={setRootRef}
-            className="flex flex-col h-full bg-surface-50 dark:bg-surface-950 p-3 sm:p-5 lg:p-6 xl:p-8 overflow-y-auto scrollbar-hide"
+            className="flex flex-col bg-surface-50 dark:bg-surface-950 p-3 sm:p-5 lg:p-6 xl:p-8"
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
@@ -415,62 +439,73 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 </div>
             )}
 
-            {/* Header */}
-            <div className="flex md:grid md:grid-cols-3 items-center justify-between mb-4 pt-2">
-                {/* Reloj y fecha en PC */}
-                <div className="hidden md:flex flex-col items-start gap-1">
-                    <span className="text-xl font-display font-bold italic text-slate-800 dark:text-white leading-none">
-                        {timeString}
-                    </span>
-                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider leading-none">
-                        {formattedDate}
-                    </span>
+            {/* Header Sticky con 5 Fichas Integradas (estilo donde juancho - Glassmorphism & Scroll reactive) */}
+            <div className={`sticky top-0 z-30 flex flex-col transition-all duration-200 -mx-3 sm:-mx-5 lg:-mx-6 xl:-mx-8 px-3 sm:px-5 lg:px-6 xl:px-8 py-2 mb-4 bg-surface-50/95 dark:bg-surface-950/95 backdrop-blur-md border-b ${isScrolled ? 'border-slate-200/80 dark:border-slate-800/80 shadow-md' : 'border-transparent'}`}>
+                {/* Fila Superior: Reloj | Logo | SyncStatus */}
+                <div className="flex md:grid md:grid-cols-3 items-center justify-between">
+                    {/* Reloj y fecha en PC */}
+                    <div className="hidden md:flex flex-col items-start gap-1">
+                        <span className="text-xl font-display font-bold italic text-slate-800 dark:text-white leading-none">
+                            {timeString}
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider leading-none">
+                            {formattedDate}
+                        </span>
+                    </div>
+                    <div className="flex flex-col items-start md:items-center justify-center gap-0.5 shrink min-w-0">
+                        <img src={theme === 'dark' ? './logodark.png' : './logo.png'} alt="PreciosAlDía" className="h-10 sm:h-12 md:h-[85px] w-auto object-contain drop-shadow-sm shrink-0" />
+                    </div>
+                    <div className="flex items-center justify-end gap-1.5 shrink-0">
+                        <button
+                            onClick={() => { triggerHaptic(); setIsAddGastoOpen(true); }}
+                            className="sm:hidden h-8 px-2 bg-rose-500/10 hover:bg-rose-500/20 active:scale-95 text-rose-600 dark:text-rose-400 border border-rose-500/25 rounded-xl text-xs font-extrabold flex items-center gap-1 transition-all shadow-sm shrink-0"
+                            title="Registrar Gasto"
+                        >
+                            <Wallet size={15} className="text-rose-500 shrink-0" />
+                            <span className="hidden sm:inline text-[11px]">Gasto</span>
+                        </button>
+                        <SyncStatus />
+                    </div>
                 </div>
-                <div className="flex flex-col items-start md:items-center justify-center gap-0.5">
-                    <img src={theme === 'dark' ? './logodark.png' : './logo.png'} alt="PreciosAlDía" className="h-14 md:h-[85px] w-auto object-contain drop-shadow-sm" />
-                </div>
-                <div className="flex items-center justify-end gap-2">
-                    <SyncStatus />
-                </div>
-            </div>
 
-            {/* Acciones Rápidas — v1.2.0: shadow-tone-sm tone-matched */}
-            <div className="grid grid-cols-4 lg:grid-cols-6 gap-3 mb-5">
-                <button 
-                    onClick={() => { if (onNavigate) { triggerHaptic(); onNavigate('ventas'); } }} 
-                    className="bg-[#01696f] hover:bg-[#00575d] dark:bg-[#1ce2ee] dark:hover:bg-[#0bc2cd] text-white dark:text-slate-950 rounded-2xl p-3 flex flex-col items-center justify-center gap-2 shadow-tone-sm hover:shadow-primary-tone hover:scale-[1.02] active:scale-95 transition-all"
-                >
-                    <ShoppingCart size={22} />
-                    <span className="text-xs font-bold">Vender</span>
-                </button>
-                <button 
-                    onClick={() => { if (onNavigate) { triggerHaptic(); onNavigate('catalogo'); } }} 
-                    className="bg-[#01696f] hover:bg-[#00575d] dark:bg-[#1ce2ee] dark:hover:bg-[#0bc2cd] text-white dark:text-slate-950 rounded-2xl p-3 flex flex-col items-center justify-center gap-2 shadow-tone-sm hover:scale-[1.02] active:scale-95 transition-all"
-                >
-                    <Store size={22} />
-                    <span className="text-xs font-bold">Inventario</span>
-                </button>
-                <button 
-                    onClick={() => { if (onNavigate) { triggerHaptic(); onNavigate('clientes'); } }} 
-                    className="bg-[#01696f] hover:bg-[#00575d] dark:bg-[#1ce2ee] dark:hover:bg-[#0bc2cd] text-white dark:text-slate-950 rounded-2xl p-3 flex flex-col items-center justify-center gap-2 shadow-tone-sm hover:scale-[1.02] active:scale-95 transition-all"
-                >
-                    <Users size={22} />
-                    <span className="text-xs font-bold">Clientes</span>
-                </button>
-                <button 
-                    onClick={() => { triggerHaptic(); setShowMonitor(true); }} 
-                    className="bg-[#01696f] hover:bg-[#00575d] dark:bg-[#1ce2ee] dark:hover:bg-[#0bc2cd] text-white dark:text-slate-950 rounded-2xl p-3 flex flex-col items-center justify-center gap-2 shadow-tone-sm hover:scale-[1.02] active:scale-95 transition-all"
-                >
-                    <TrendingUp size={22} />
-                    <span className="text-xs font-bold">Monitor</span>
-                </button>
-                <button 
-                    onClick={() => { triggerHaptic(); setIsAddGastoOpen(true); }} 
-                    className="bg-red-500 hover:bg-red-600 dark:bg-red-500 dark:hover:bg-red-600 text-white rounded-2xl p-3 flex flex-col items-center justify-center gap-2 shadow-tone-sm hover:scale-[1.02] active:scale-95 transition-all"
-                >
-                    <Wallet size={22} />
-                    <span className="text-xs font-bold">Gastos</span>
-                </button>
+                {/* Fila Inferior: 5 Fichas Pro (Visibles en Tablet/Desktop sm:grid, Ocultas en móvil para evitar redundancia con la Bottom Nav Bar) */}
+                <div className="hidden sm:grid sm:grid-cols-5 gap-1 sm:gap-3 mt-2 pt-2 border-t border-slate-200/40 dark:border-slate-800/40 w-full max-w-4xl mx-auto">
+                    <button
+                        onClick={() => { if (onNavigate) { triggerHaptic(); onNavigate('ventas'); } }}
+                        className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 px-1 sm:px-3 py-1.5 sm:py-2 bg-[#01696f] hover:bg-[#00575d] dark:bg-[#1ce2ee] dark:hover:bg-[#0bc2cd] text-white dark:text-slate-950 rounded-xl font-extrabold text-[9.5px] sm:text-xs leading-tight transition-all active:scale-95 shadow-sm text-center"
+                    >
+                        <ShoppingCart size={17} className="shrink-0" />
+                        <span className="truncate sm:whitespace-nowrap">Vender</span>
+                    </button>
+                    <button
+                        onClick={() => { if (onNavigate) { triggerHaptic(); onNavigate('catalogo'); } }}
+                        className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 px-1 sm:px-3 py-1.5 sm:py-2 bg-[#01696f] hover:bg-[#00575d] dark:bg-[#1ce2ee] dark:hover:bg-[#0bc2cd] text-white dark:text-slate-950 rounded-xl font-extrabold text-[9.5px] sm:text-xs leading-tight transition-all active:scale-95 shadow-sm text-center"
+                    >
+                        <Store size={17} className="shrink-0" />
+                        <span className="truncate sm:whitespace-nowrap">Inventario</span>
+                    </button>
+                    <button
+                        onClick={() => { if (onNavigate) { triggerHaptic(); onNavigate('clientes'); } }}
+                        className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 px-1 sm:px-3 py-1.5 sm:py-2 bg-[#01696f] hover:bg-[#00575d] dark:bg-[#1ce2ee] dark:hover:bg-[#0bc2cd] text-white dark:text-slate-950 rounded-xl font-extrabold text-[9.5px] sm:text-xs leading-tight transition-all active:scale-95 shadow-sm text-center"
+                    >
+                        <Users size={17} className="shrink-0" />
+                        <span className="truncate sm:whitespace-nowrap">Clientes</span>
+                    </button>
+                    <button
+                        onClick={() => { triggerHaptic(); setShowMonitor(true); }}
+                        className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 px-1 sm:px-3 py-1.5 sm:py-2 bg-[#01696f] hover:bg-[#00575d] dark:bg-[#1ce2ee] dark:hover:bg-[#0bc2cd] text-white dark:text-slate-950 rounded-xl font-extrabold text-[9.5px] sm:text-xs leading-tight transition-all active:scale-95 shadow-sm text-center"
+                    >
+                        <TrendingUp size={17} className="shrink-0" />
+                        <span className="truncate sm:whitespace-nowrap">Monitor</span>
+                    </button>
+                    <button
+                        onClick={() => { triggerHaptic(); setIsAddGastoOpen(true); }}
+                        className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 px-1 sm:px-3 py-1.5 sm:py-2 bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600 text-white rounded-xl font-extrabold text-[9.5px] sm:text-xs leading-tight transition-all active:scale-95 shadow-sm text-center"
+                    >
+                        <Wallet size={17} className="shrink-0" />
+                        <span className="truncate sm:whitespace-nowrap">Gastos</span>
+                    </button>
+                </div>
             </div>
 
             {/* ── CAJERO: vista simplificada — v1.2.0: reveal + shadow-tone-sm + font-display en totales ── */}

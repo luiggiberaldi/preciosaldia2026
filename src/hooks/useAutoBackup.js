@@ -136,11 +136,15 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                     } catch (apiErr) {
                         console.error('[AutoBackup] Error al notificar API de Estación:', apiErr);
                         // Fallback intento directo
-                        await supabaseCloud.from('cloud_backups').upsert({
-                            device_id: devId,
-                            backup_data: metadataPayload,
-                            updated_at: new Date().toISOString()
-                        }, { onConflict: 'device_id' }).catch(() => {});
+                        try {
+                            await supabaseCloud.from('cloud_backups').upsert({
+                                device_id: devId,
+                                backup_data: metadataPayload,
+                                updated_at: new Date().toISOString()
+                            }, { onConflict: 'device_id' });
+                        } catch (upsertErr) {
+                            // Silenciar error en fallback
+                        }
                     }
 
                     localStorage.setItem(LAST_UPLOAD_HASH_KEY, currentHash);
@@ -201,8 +205,9 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
             }
         };
 
-        // Comprobar solicitudes pendientes al conectar
+        // Comprobar solicitudes pendientes al conectar y cada 10s (Fail-safe contra pérdida de WebSocket)
         checkPendingRequests();
+        const pendingPollInterval = setInterval(checkPendingRequests, 10000);
 
         // Suscribirse al canal en tiempo real de forma anónima
         channel = supabaseCloud
@@ -216,16 +221,12 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                 if (payload.new?.status === 'pending') {
                     console.log('[AutoBackup] Solicitud de backup recibida en tiempo real. Ejecutando...');
                     await performBackupRef.current?.(true); // forzar subida
-                    await supabaseCloud.from('backup_requests').update({
-                        status: 'completed',
-                        completed_at: new Date().toISOString()
-                    }).eq('device_id', deviceId);
-                    console.log('[AutoBackup] Backup en tiempo real completado.');
                 }
             })
             .subscribe();
 
         return () => {
+            clearInterval(pendingPollInterval);
             if (channel) {
                 supabaseCloud.removeChannel(channel).catch(() => {});
             }

@@ -70,8 +70,8 @@ async function _createDefaultUsersWithRandomPins() {
     const adminHash = await hashPin(adminPin);
     const cajeroHash = await hashPin(cajeroPin);
     const usuarios = [
-        { id: 1, nombre: 'Administrador', rol: 'ADMIN', pin: adminHash },
-        { id: 2, nombre: 'Cajero', rol: 'CAJERO', pin: cajeroHash },
+        { id: 1, nombre: 'Administrador', rol: 'ADMIN', pin: adminHash, requirePin: false },
+        { id: 2, nombre: 'Cajero', rol: 'CAJERO', pin: cajeroHash, requirePin: false },
     ];
     const initialPins = [
         { id: 1, nombre: 'Administrador', rol: 'ADMIN', pin: adminPin },
@@ -197,6 +197,7 @@ export const useAuthStore = create(
             usuarioActivo: _readPersistedSession(),
             // SEC-005: usuarios vacíos al iniciar; se rellenan en `_ensureDefaultUsers`.
             requireLogin: _defaultRequireLogin(),
+            requireAdminPin: true,
             requireCajeroPin: true,
             // SEC-006: persistidos en partialize.
             failedAttempts: 0,
@@ -402,6 +403,36 @@ export const useAuthStore = create(
             },
 
             /**
+             * Restablece el PIN de un usuario vía procedimiento de emergencia y limpia lockouts.
+             * @param {number} userId
+             * @param {string} nuevoPin - PIN en claro (debe pasar validatePin).
+             * @returns {Promise<{ ok: boolean, error?: string }>}
+             */
+            resetPinEmergency: async (userId, nuevoPin) => {
+                const err = validatePin(String(nuevoPin ?? ''));
+                if (err) return { ok: false, error: err };
+
+                try {
+                    const hashedPin = await hashPin(String(nuevoPin));
+                    set((state) => ({
+                        usuarios: state.usuarios.map(u =>
+                            u.id === userId ? { ...u, pin: hashedPin } : u
+                        ),
+                        failedAttempts: 0,
+                        lockUntil: null,
+                        consecutiveLockouts: 0,
+                        lastFailedAttemptTs: 0,
+                    }));
+                    const target = get().usuarios.find(u => u.id === userId);
+                    logEvent('AUTH', 'PIN_EMERGENCIA_RESTABLECIDO', `PIN de emergencia restablecido para ${target?.nombre || 'usuario'}`, get().usuarioActivo);
+                    return { ok: true };
+                } catch (e) {
+                    console.error('[useAuthStore] resetPinEmergency falló:', e);
+                    return { ok: false, error: 'Error al procesar el hash del nuevo PIN' };
+                }
+            },
+
+            /**
              * Cambia el PIN de un usuario.
              * @param {number} userId
              * @param {string} nuevoPin - PIN en claro (será validado y hasheado).
@@ -447,7 +478,7 @@ export const useAuthStore = create(
                         set((state) => {
                             const maxId = state.usuarios.reduce((max, u) => Math.max(max, u.id), 0);
                             return {
-                                usuarios: [...state.usuarios, { id: maxId + 1, nombre, rol, pin: hashedPin }]
+                                usuarios: [...state.usuarios, { id: maxId + 1, nombre, rol, pin: hashedPin, requirePin: false }]
                             };
                         });
                         logEvent('USUARIO', 'USUARIO_CREADO', `Usuario "${nombre}" (${rol}) creado`, get().usuarioActivo);
@@ -512,6 +543,11 @@ export const useAuthStore = create(
             setRequireLogin: (val) => {
                 set({ requireLogin: val });
                 logEvent('CONFIG', 'LOGIN_REQUERIDO_MODIFICADO', `Login requerido establecido a ${val ? 'SI' : 'NO'}`);
+            },
+
+            setRequireAdminPin: (val) => {
+                set({ requireAdminPin: val });
+                logEvent('CONFIG', 'PIN_ADMIN_MODIFICADO', `Pedir PIN al Administrador establecido a ${val ? 'SI' : 'NO'}`);
             },
 
             setRequireCajeroPin: (val) => {
@@ -580,6 +616,7 @@ export const useAuthStore = create(
             partialize: (state) => ({
                 usuarios: state.usuarios,
                 requireLogin: state.requireLogin,
+                requireAdminPin: state.requireAdminPin ?? true,
                 requireCajeroPin: state.requireCajeroPin ?? true,
                 // SEC-006: rate-limiting persistido (sobrevive recarga).
                 failedAttempts: state.failedAttempts,

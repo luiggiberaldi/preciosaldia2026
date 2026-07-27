@@ -19,15 +19,24 @@
  * @module security/tokenCrypto
  */
 
-export const PUBLIC_KEY_JWK = {
+const DEFAULT_PUBLIC_KEY_JWK = {
     "kty": "RSA",
     "n": "-Gh3FwCQ0uA4uHjdfnA6JQtVRZ6oG1bS6LDngpmB2AZY4Zbewed9cBVWI_Gh7NOoTcSRfwcqMUE_6IaEYLMgY2J-6vSbfCX3unuTn4ZHk9qKUPtUeBl6xJVHpMh-vGd3cqQiMHUvxEOMKQcOJDJyhf1sVR2ODKnVuVJvsX9-uYuUhLC4DrrrJe56PMW0gJwKnri5a9PEAJs0Ku-GeTbbE-3_gvGgsRaRDI8bgfwfxtussO_JYNM-gqMf8HiMPopNMW05NZQ-BrHIxRHBJRli6Q8ptsP5iH_qw46T7LXdsM0UqGSwxwRTfrxb5T4fgLwIE2rqIyFtJvaFiPRDWnNBjw",
     "e": "AQAB"
 };
 
-// SEC-007: La clave XOR legacy se conserva exportada solo para permitir migrar/leer
-// tokens viejos. NO se usa para mintear tokens nuevos. `verifyLicenseToken` la rechaza.
-export const XOR_KEY = 'PDA_SEC_2026';
+/** Clave pública JWK cargada dinámicamente desde el entorno o fallback seguro. */
+export const PUBLIC_KEY_JWK = (() => {
+    try {
+        const envKey = import.meta.env?.VITE_LICENSE_PUBLIC_KEY;
+        return envKey ? JSON.parse(envKey) : DEFAULT_PUBLIC_KEY_JWK;
+    } catch {
+        return DEFAULT_PUBLIC_KEY_JWK;
+    }
+})();
+
+// SEC-007: XOR legacy desactivado.
+export const XOR_KEY = '';
 
 const _LEGACY_WARNING_FIRED = new Set();
 

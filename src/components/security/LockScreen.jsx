@@ -1,16 +1,36 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Download, CheckCircle2, X } from 'lucide-react';
 import { useAuthStore } from '../../hooks/store/useAuthStore';
 import UserCard from './UserCard';
 import LoginPinModal from './LoginPinModal';
+import EmergencyPinResetModal from './EmergencyPinResetModal';
 
 export default function LockScreen({ onOpenPairing, installPrompt, onInstall, showIOSButton, onShowIOSInstall }) {
-  const { usuarios, login, loginDirect, requireCajeroPin } = useAuthStore();
+  const { usuarios, login, loginDirect, requireCajeroPin, requireAdminPin, resetPinEmergency } = useAuthStore();
   const [selectedUser, setSelectedUser] = useState(null);
-  const [showPwaInfoModal, setShowPwaInfoModal] = useState(false);
+  const [showEmergencyModal, setShowEmergencyModal] = useState(false);
+  const [logoClickCount, setLogoClickCount] = useState(0);
+  const clickTimeoutRef = useRef(null);
   const [showWelcome, setShowWelcome] = useState(() => {
     return localStorage.getItem('pda_welcome_dismissed') !== 'true';
   });
+
+  const handleLogoClick = () => {
+    if (clickTimeoutRef.current) clearTimeout(clickTimeoutRef.current);
+
+    const nextCount = logoClickCount + 1;
+    if (nextCount >= 7) {
+      setLogoClickCount(0);
+      try { navigator.vibrate?.([100, 50, 100]); } catch {}
+      setShowEmergencyModal(true);
+    } else {
+      setLogoClickCount(nextCount);
+      try { navigator.vibrate?.(40); } catch {}
+      clickTimeoutRef.current = setTimeout(() => {
+        setLogoClickCount(0);
+      }, 1500);
+    }
+  };
 
   const isStandalone = useMemo(() => {
     if (typeof window === 'undefined') return false;
@@ -18,7 +38,7 @@ export default function LockScreen({ onOpenPairing, installPrompt, onInstall, sh
   }, []);
 
   const handleUserClick = (user) => {
-    if (user?.rol === 'CAJERO' && requireCajeroPin === false) {
+    if (user?.requirePin === false) {
       loginDirect(user.id);
     } else {
       setSelectedUser(user);
@@ -40,14 +60,12 @@ export default function LockScreen({ onOpenPairing, installPrompt, onInstall, sh
 
   const handleInstallClick = async () => {
     if (onInstall) {
-      const success = await onInstall();
-      if (success) return;
+      await onInstall();
+      return;
     }
     if (showIOSButton && onShowIOSInstall) {
       onShowIOSInstall();
-      return;
     }
-    setShowPwaInfoModal(true);
   };
 
   return (
@@ -81,7 +99,13 @@ export default function LockScreen({ onOpenPairing, installPrompt, onInstall, sh
         {/* Header */}
         <div className="text-center mb-14">
           <div className="flex justify-center mb-6">
-            <img src="./logo.png" alt="Logo" className="h-24 sm:h-32 w-auto object-contain drop-shadow-md" />
+            <img
+              src="./logo.png"
+              alt="Logo"
+              onClick={handleLogoClick}
+              className="h-24 sm:h-32 w-auto object-contain drop-shadow-md cursor-pointer select-none active:scale-95 transition-transform"
+              title="Precios Al Día"
+            />
           </div>
           <h1 className="text-2xl sm:text-3xl font-light tracking-[0.15em] text-slate-600">
             Quien esta{' '}
@@ -104,7 +128,9 @@ export default function LockScreen({ onOpenPairing, installPrompt, onInstall, sh
       {/* Footer */}
       <div className="relative z-10 pb-6 text-center flex flex-col items-center gap-3">
         <p className="text-[10px] text-slate-400 font-medium tracking-wider">
-          {requireCajeroPin === false ? 'PIN de 6 dígitos para Administrador (Cajero sin PIN)' : 'PIN de 6 dígitos para todos los usuarios'}
+          {usuarios.every(u => u?.requirePin === false)
+            ? 'Acceso directo activado para todos los usuarios'
+            : 'Haz clic en tu perfil para ingresar'}
         </p>
         <button
           onClick={() => window.location.reload()}
@@ -131,52 +157,22 @@ export default function LockScreen({ onOpenPairing, installPrompt, onInstall, sh
         onSubmit={handlePinSubmit}
       />
 
+      {/* Emergency PIN Reset Modal */}
+      {showEmergencyModal && (
+        <EmergencyPinResetModal
+          usuarios={usuarios}
+          onClose={() => setShowEmergencyModal(false)}
+          onResetPin={resetPinEmergency}
+        />
+      )}
+
       {/* Welcome Modal */}
       <WelcomeModal
         isOpen={showWelcome}
         onClose={handleDismissWelcome}
       />
 
-      {/* PWA Info Modal (Manual instructions for Desktop/Mobile Chrome & Safari) */}
-      {showPwaInfoModal && (
-        <div className="fixed inset-0 z-[300] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 max-w-md w-full rounded-3xl p-6 shadow-2xl border border-slate-100 dark:border-slate-800 text-left relative animate-in fade-in zoom-in-95 duration-200">
-            <button
-              onClick={() => setShowPwaInfoModal(false)}
-              className="absolute top-4 right-4 p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full text-slate-500 transition-colors"
-            >
-              <X size={16} />
-            </button>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-3 bg-emerald-500/10 text-emerald-600 rounded-2xl">
-                <Download size={22} strokeWidth={2.5} />
-              </div>
-              <div>
-                <h3 className="text-base font-extrabold text-slate-900 dark:text-white">Instalar PreciosAlDía PWA</h3>
-                <p className="text-xs text-slate-500">Acceso directo sin barra de navegador</p>
-              </div>
-            </div>
-            <div className="space-y-3 text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-              <p className="font-bold text-slate-800 dark:text-slate-200">En Chrome / Edge (Computadora o Android):</p>
-              <ol className="list-decimal pl-4 space-y-1">
-                <li>Haz clic en el icono de <strong>Instalar</strong> en la barra de direcciones (arriba a la derecha ⊕) o el menú de 3 puntos.</li>
-                <li>Selecciona <strong>"Instalar PreciosAlDía..."</strong> o <strong>"Agregar a la pantalla principal"</strong>.</li>
-              </ol>
-              <p className="font-bold text-slate-800 dark:text-slate-200 mt-3">En iPhone / iPad (Safari):</p>
-              <ol className="list-decimal pl-4 space-y-1">
-                <li>Toca el botón <strong>Compartir</strong> (cuadro con flecha arriba ⎘).</li>
-                <li>Desliza hacia abajo y selecciona <strong>"Agregar al inicio"</strong>.</li>
-              </ol>
-            </div>
-            <button
-              onClick={() => setShowPwaInfoModal(false)}
-              className="w-full mt-5 py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-2xl shadow-md transition-all active:scale-98 cursor-pointer"
-            >
-              Entendido
-            </button>
-          </div>
-        </div>
-      )}
+
     </div>
   );
 }

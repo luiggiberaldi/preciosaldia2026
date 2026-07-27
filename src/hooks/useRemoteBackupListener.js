@@ -70,59 +70,9 @@ async function collectAndUpload(deviceId) {
 }
 
 /**
- * Escucha solicitudes de backup remoto desde la Estación Maestra.
- * Cuando llega una solicitud (status='pending'), sube el backup y la marca como completada.
+ * @deprecated C-001: Consolidado en `useAutoBackup.js`.
+ * Se conserva la exportación no-op para compatibilidad de importación sin duplicar el canal Realtime.
  */
 export function useRemoteBackupListener(deviceId) {
-    useEffect(() => {
-        if (!supabaseCloud || !deviceId) return;
-
-        const handleRequest = async () => {
-            try {
-                await collectAndUpload(deviceId);
-                await supabaseCloud
-                    .from('backup_requests')
-                    .update({ status: 'completed', completed_at: new Date().toISOString() })
-                    .eq('device_id', deviceId);
-                console.log('[RemoteBackup] Backup enviado al admin.');
-            } catch (err) {
-                console.error('[RemoteBackup] Error al responder solicitud:', err);
-                await supabaseCloud
-                    .from('backup_requests')
-                    .update({ status: 'error' })
-                    .eq('device_id', deviceId)
-                    .catch(() => {});
-            }
-        };
-
-        let channel = null;
-
-        // Verificar si hay una solicitud pendiente al conectar
-        supabaseCloud
-            .from('backup_requests')
-            .select('status')
-            .eq('device_id', deviceId)
-            .single()
-            .then(({ data }) => { if (data?.status === 'pending') handleRequest(); })
-            .catch(() => {});
-
-        // Suscribirse a nuevas solicitudes en tiempo real de forma anónima
-        channel = supabaseCloud
-            .channel(`remote_backup:${deviceId}`)
-            .on('postgres_changes', {
-                event: '*',
-                schema: 'public',
-                table: 'backup_requests',
-                filter: `device_id=eq.${deviceId}`,
-            }, async (payload) => {
-                if (payload.new?.status === 'pending') await handleRequest();
-            })
-            .subscribe();
-
-        return () => {
-            if (channel) {
-                supabaseCloud.removeChannel(channel).catch(() => {});
-            }
-        };
-    }, [deviceId]);
+    // La escucha de solicitudes de backup remoto se maneja exclusivamente en useAutoBackup.js
 }

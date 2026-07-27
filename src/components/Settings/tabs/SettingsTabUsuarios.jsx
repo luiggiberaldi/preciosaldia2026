@@ -10,24 +10,21 @@ export default function SettingsTabUsuarios({
     autoLockMinutes, setAutoLockMinutes,
     showToast, triggerHaptic,
 }) {
-    const requireCajeroPin = useAuthStore(s => s.requireCajeroPin ?? true);
-    const setRequireCajeroPin = useAuthStore(s => s.setRequireCajeroPin);
-
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
             <div className="md:col-span-2 xl:col-span-3">
-                <SectionCard icon={Users} title="Usuarios y Roles" subtitle="Gestiona quien opera la app" iconColor="text-brand">
+                <SectionCard icon={Users} title="Usuarios y Roles" subtitle="Gestiona roles y configura el PIN de cada usuario" iconColor="text-brand">
                     <UsersManager triggerHaptic={triggerHaptic} />
                 </SectionCard>
             </div>
 
             <div className="md:col-span-2 xl:col-span-3">
-                <SectionCard icon={Lock} title="Seguridad" subtitle="Control de acceso por PIN" iconColor="text-rose-500">
+                <SectionCard icon={Lock} title="Seguridad Global" subtitle="Configuración general de acceso" iconColor="text-rose-500">
                     {/* Toggle login requerido */}
                     <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-800 pb-4">
                         <div>
-                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Pedir PIN al iniciar</p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Si se desactiva, entrará directo como Administrador.</p>
+                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Pantalla de Inicio de Sesión</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Si se desactiva, la app entrará directo sin solicitar selección de usuario.</p>
                         </div>
                         <Toggle
                             enabled={requireLogin}
@@ -36,31 +33,13 @@ export default function SettingsTabUsuarios({
                                 const newVal = !requireLogin;
                                 if (setRequireLogin) setRequireLogin(newVal);
                                 triggerHaptic?.();
-                                showToast(newVal ? 'PIN activado para inicio' : 'Acceso directo activado', 'success');
+                                showToast(newVal ? 'Pantalla de inicio activada' : 'Pantalla de inicio desactivada', 'success');
                             }}
                         />
                     </div>
 
-                    {/* Toggle PIN Cajero */}
-                    <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-800 pb-4">
-                        <div>
-                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Pedir PIN al Cajero</p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Si se desactiva, el Cajero podrá iniciar sesión sin pedir PIN.</p>
-                        </div>
-                        <Toggle
-                            enabled={requireCajeroPin}
-                            color="rose"
-                            onChange={() => {
-                                const newVal = !requireCajeroPin;
-                                setRequireCajeroPin(newVal);
-                                triggerHaptic?.();
-                                showToast(newVal ? 'PIN activado para Cajero' : 'Acceso directo para Cajero activado', 'success');
-                            }}
-                        />
-                    </div>
-
-                    {/* Bloqueo automático — solo si algún PIN está activo */}
-                    {(requireLogin || requireCajeroPin) && (
+                    {/* Bloqueo automático */}
+                    {requireLogin && (
                         <div>
                             <label className="text-[11px] uppercase tracking-wider font-extrabold text-slate-500 dark:text-slate-400 block mb-1.5">Bloqueo Automático</label>
                             <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Tu sesión se bloqueará tras estos minutos de inactividad.</p>

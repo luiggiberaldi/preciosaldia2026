@@ -28,6 +28,7 @@ import { useAutoLock } from './hooks/useAutoLock';
 import { useAuthStore } from './hooks/store/useAuthStore';
 import { LogOut } from 'lucide-react';
 import { purgeOldEntries } from './services/auditService';
+import { UpdateBanner } from './components/UpdateBanner';
 import { useCloudSync } from './hooks/useCloudSync';
 import { ImagePrecacheRunner } from './hooks/useImagePrecache';
 
@@ -241,6 +242,7 @@ export default function App() {
 
   return (
     <div className="font-sans antialiased bg-slate-50 dark:bg-black h-[100dvh] flex flex-col overflow-clip transition-colors duration-300">
+      <UpdateBanner />
 
       {/* Terms and Conditions Overlay (First Use) */}
       <TermsOverlay onAccept={forceHeartbeat} />

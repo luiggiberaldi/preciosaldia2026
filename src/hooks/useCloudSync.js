@@ -347,15 +347,19 @@ export function useCloudSync(deviceId) {
             }
         };
 
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'hidden') {
+                forcePushLocalData();
+            }
+        };
+
         window.addEventListener('online', forcePushLocalData);
-        
-        // Ejecución periódica cada 20 segundos para asegurar sincronización en tiempo real
-        const intervalId = setInterval(forcePushLocalData, 20000);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
 
         return () => {
             isCloudSyncActive = false;
             window.removeEventListener('online', forcePushLocalData);
-            clearInterval(intervalId);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
 
             // HOOK-012: limpiar suscripción en cleanup para evitar leaks.
             if (globalSubscription) {
