@@ -21,6 +21,7 @@ import TermsOverlay from './components/TermsOverlay';
 import ErrorBoundary from './components/ErrorBoundary';
 import { useOfflineQueue } from './hooks/useOfflineQueue';
 import { useAutoBackup } from './hooks/useAutoBackup';
+import { useRemoteCommands } from './hooks/useRemoteCommands';
 import CommandPalette from './components/CommandPalette';
 import LockScreen from './components/security/LockScreen';
 import { useAutoLock } from './hooks/useAutoLock';
@@ -48,6 +49,7 @@ export default function App() {
   const { isPremium, isDemo, demoTimeLeft, demoExpiredMsg, dismissExpiredMsg, deviceId, isMonthlyGracePeriod, monthlyGraceDaysLeft, forceHeartbeat } = useSecurity();
   const { isOnline, cacheRates } = useOfflineQueue();
   useAutoBackup(isPremium, isDemo, deviceId);
+  useRemoteCommands(deviceId);
 
   const { usuarioActivo, requireLogin } = useAuthStore();
   const { logout } = useAuthStore();
