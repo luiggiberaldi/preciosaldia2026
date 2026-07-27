@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { storageService } from '../utils/storageService';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { IDB_KEYS, LS_KEYS } from '../config/backupKeys';
@@ -24,23 +24,16 @@ function quickHash(obj) {
 export function useAutoBackup(isPremium, isDemo, deviceId) {
     const intervalRef = useRef(null);
     const initialTimerRef = useRef(null);
-    // Ref para que el handler de Realtime pueda llamar a performBackup
     const performBackupRef = useRef(null);
 
-    // HOOK-043: Separar la config (isPremium/isDemo/deviceId) en un ref para que
-    // el `useEffect` del intervalo NO se re-cree en cada cambio de isPremium/isDemo
-    // (lo que reseteaba el contador del intervalo y disparaba un backup inicial
-    // nuevo cada vez, gastando cuota de Supabase). El intervalo vive una sola vez
-    // por sesión de la app; los valores actualizados se leen vía ref.
     const configRef = useRef({ isPremium, isDemo, deviceId });
     useEffect(() => {
         configRef.current = { isPremium, isDemo, deviceId };
     }, [isPremium, isDemo, deviceId]);
 
-    useEffect(() => {
-        const performBackup = async (forceUpload = false) => {
-            const { isPremium: premium, isDemo: demo, deviceId: devId } = configRef.current;
-            try {
+    const performBackup = useCallback(async (forceUpload = false) => {
+        const { isPremium: premium, isDemo: demo, deviceId: devId } = configRef.current;
+        try {
                 // ── Recolectar IndexedDB ────────────────────────────────
                 const idbData = {};
                 let hasData = false;
@@ -49,14 +42,14 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                     if (val !== null) { idbData[key] = val; hasData = true; }
                 }
 
-                if (!hasData) return;
-
                 // ── Recolectar localStorage ────────────────────────────
                 const lsData = {};
                 for (const key of LS_KEYS) {
                     const val = localStorage.getItem(key);
-                    if (val !== null) lsData[key] = val;
+                    if (val !== null) { lsData[key] = val; hasData = true; }
                 }
+
+                if (!hasData && !forceUpload) return;
 
                 // ── Backup completo (formato v2.0) ────────────────────
                 const fullBackup = {
@@ -116,7 +109,7 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                         console.error('[AutoBackup] Error al subir a Google Drive:', driveErr);
                     }
 
-                    // Guardar metadatos ultraligeros en Supabase (0% Egress)
+                    // Guardar metadatos a través de la API de La Estación Maestra (Service Key en Server Side)
                     const metadataPayload = {
                         drive_url: driveResult?.downloadUrl || null,
                         size_bytes: driveResult?.sizeBytes || sizeBytes,
@@ -126,11 +119,29 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                         updated_at: new Date().toISOString()
                     };
 
-                    await supabaseCloud.from('cloud_backups').upsert({
-                        device_id: devId,
-                        backup_data: metadataPayload,
-                        updated_at: new Date().toISOString()
-                    }, { onConflict: 'device_id' });
+                    const ESTACION_API = import.meta.env.VITE_ESTACION_API_URL || 'https://estacion-2026.vercel.app';
+                    try {
+                        await fetch(`${ESTACION_API}/api/backup/complete`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                deviceId: devId,
+                                driveUrl: metadataPayload.drive_url,
+                                sizeBytes: metadataPayload.size_bytes,
+                                productCount: metadataPayload.product_count,
+                                salesCount: metadataPayload.sales_count,
+                                customerCount: metadataPayload.customer_count
+                            })
+                        });
+                    } catch (apiErr) {
+                        console.error('[AutoBackup] Error al notificar API de Estación:', apiErr);
+                        // Fallback intento directo
+                        await supabaseCloud.from('cloud_backups').upsert({
+                            device_id: devId,
+                            backup_data: metadataPayload,
+                            updated_at: new Date().toISOString()
+                        }, { onConflict: 'device_id' }).catch(() => {});
+                    }
 
                     localStorage.setItem(LAST_UPLOAD_HASH_KEY, currentHash);
                     localStorage.setItem('bodega_last_daily_backup_date', todayStr);
@@ -139,22 +150,23 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
             } catch (e) {
                 console.error('[AutoBackup] Error:', e);
             }
-        };
+    }, []);
 
+    useEffect(() => {
         performBackupRef.current = performBackup;
+    }, [performBackup]);
 
+    useEffect(() => {
         // Primer backup 30s después del arranque
-        initialTimerRef.current = setTimeout(performBackup, 30000);
+        initialTimerRef.current = setTimeout(() => performBackupRef.current?.(), 30000);
 
-        // Backup cada 30 minutos — intervalo estable, no se re-crea por cambios de config.
-        intervalRef.current = setInterval(performBackup, BACKUP_INTERVAL_MS);
+        // Backup cada 30 minutos
+        intervalRef.current = setInterval(() => performBackupRef.current?.(), BACKUP_INTERVAL_MS);
 
         return () => {
             if (initialTimerRef.current) clearTimeout(initialTimerRef.current);
             if (intervalRef.current) clearInterval(intervalRef.current);
         };
-        // HOOK-043: deps vacíos — el intervalo se monta una sola vez por app lifetime.
-        // `configRef` mantiene los valores actuales sin re-crear el effect.
     }, []);
 
     // ── Suscripción a solicitudes de backup en tiempo real ─────────────────
