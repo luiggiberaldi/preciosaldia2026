@@ -129,10 +129,6 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                     await supabaseCloud.from('cloud_backups').upsert({
                         device_id: devId,
                         backup_data: metadataPayload,
-                        size_bytes: metadataPayload.size_bytes,
-                        product_count: productCount,
-                        sales_count: salesCount,
-                        customer_count: customerCount,
                         updated_at: new Date().toISOString()
                     }, { onConflict: 'device_id' });
 

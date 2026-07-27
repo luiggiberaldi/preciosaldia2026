@@ -64,10 +64,6 @@ async function collectAndUpload(deviceId) {
         .upsert({
             device_id: deviceId,
             backup_data: metadataPayload,
-            size_bytes: metadataPayload.size_bytes,
-            product_count: metadataPayload.product_count,
-            sales_count: metadataPayload.sales_count,
-            customer_count: metadataPayload.customer_count,
             updated_at: new Date().toISOString()
         }, { onConflict: 'device_id' });
     if (error) throw error;
