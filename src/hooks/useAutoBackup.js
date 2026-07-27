@@ -70,18 +70,8 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                 // Guardar copia local
                 await storageService.setItem(BACKUP_KEY, fullBackup);
 
-                // Subir a la nube si hay sesión activa (para evitar 401 en consola)
+                // Subir a la nube si hay conexión a Supabase y deviceId
                 if (devId && supabaseCloud) {
-                    let hasAuth = false;
-                    try {
-                        const { data: { session } } = await supabaseCloud.auth.getSession();
-                        hasAuth = !!(session && !(session.expires_at && session.expires_at * 1000 < Date.now()));
-                    } catch (e) {
-                        hasAuth = false;
-                    }
-
-                    if (!hasAuth) return; // Omitir subida cloud si no está logueado
-
                     const todayStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
                     const lastDailyBackup = localStorage.getItem('bodega_last_daily_backup_date');
 
@@ -180,6 +170,32 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
 
         let channel = null;
 
+        const checkPendingRequests = async () => {
+            try {
+                const { data } = await supabaseCloud
+                    .from('backup_requests')
+                    .select('status')
+                    .eq('device_id', deviceId)
+                    .eq('status', 'pending')
+                    .maybeSingle();
+
+                if (data) {
+                    console.log('[AutoBackup] Solicitud de backup pendiente detectada. Ejecutando...');
+                    await performBackupRef.current?.(true);
+                    await supabaseCloud.from('backup_requests').update({
+                        status: 'completed',
+                        completed_at: new Date().toISOString()
+                    }).eq('device_id', deviceId);
+                    console.log('[AutoBackup] Backup pendiente procesado exitosamente.');
+                }
+            } catch (err) {
+                console.error('[AutoBackup] Error al procesar solicitud pendiente:', err);
+            }
+        };
+
+        // Comprobar solicitudes pendientes al conectar
+        checkPendingRequests();
+
         // Suscribirse al canal en tiempo real de forma anónima
         channel = supabaseCloud
             .channel(`backup_request_${deviceId}`)
@@ -190,7 +206,7 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                 filter: `device_id=eq.${deviceId}`
             }, async (payload) => {
                 if (payload.new?.status === 'pending') {
-                    console.log('[AutoBackup] Solicitud de backup recibida. Ejecutando...');
+                    console.log('[AutoBackup] Solicitud de backup recibida en tiempo real. Ejecutando...');
                     await performBackupRef.current?.(true); // forzar subida
                     await supabaseCloud.from('backup_requests').update({
                         status: 'completed',
