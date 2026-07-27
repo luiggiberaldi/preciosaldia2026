@@ -162,7 +162,7 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
     // socket abierto — evita gastar cupo de conexiones Realtime en instalaciones
     // sin licencia (free/demo vencida) que nunca usarán el backup remoto forzado.
     useEffect(() => {
-        if (!deviceId || !supabaseCloud || !isPremium) return;
+        if (!deviceId || !supabaseCloud) return;
 
         let channel = null;
 
@@ -218,7 +218,7 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                 supabaseCloud.removeChannel(channel).catch(() => {});
             }
         };
-    }, [deviceId, isPremium]);
+    }, [deviceId]);
 }
 
 // Restaurar desde backup local (para emergencias)
