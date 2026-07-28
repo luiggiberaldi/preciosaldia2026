@@ -30,13 +30,20 @@ export default function CartPanel({
     const inputRef = React.useRef(null);
 
     const handleQtyClick = (item) => {
+        triggerHaptic && triggerHaptic();
         setEditingQtyId(item.id);
-        setTempQty(item.qty.toString());
-        setTimeout(() => inputRef.current?.focus(), 50);
+        setTempQty(''); // Limpia la cifra al pulsar para edición directa
+        setTimeout(() => {
+            if (inputRef.current) {
+                inputRef.current.focus();
+                inputRef.current.select();
+            }
+        }, 50);
     };
 
     const submitCustomQty = (item) => {
         setEditingQtyId(null);
+        if (!tempQty || tempQty.trim() === '') return; // Si no ingresó nada, conserva la cantidad previa
         let parsed = parseFloat(tempQty.replace(',', '.'));
         if (isNaN(parsed) || parsed <= 0) return;
         const diff = parsed - item.qty;
@@ -201,8 +208,10 @@ export default function CartPanel({
                                                         type="number"
                                                         value={tempQty}
                                                         onChange={e => setTempQty(e.target.value)}
+                                                        onFocus={e => e.target.select()}
                                                         onBlur={() => submitCustomQty(item)}
                                                         onKeyDown={e => { if (e.key === 'Enter') submitCustomQty(item) }}
+                                                        placeholder={item.qty.toString()}
                                                         className="w-12 sm:w-16 h-7 sm:h-8 text-center font-black text-slate-700 bg-white dark:bg-slate-900 dark:text-white border border-emerald-500 rounded text-xs outline-none"
                                                         step={item.isWeight ? "0.01" : "1"}
                                                     />

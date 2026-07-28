@@ -3,6 +3,7 @@ import { storageService } from '../utils/storageService';
 import { withLock } from '../utils/withLock';
 import { subR, sumR, mulR } from '../utils/dinero';
 import { showToast } from '../components/Toast';
+import { useAuthStore } from './store/useAuthStore';
 
 const SALES_KEY    = 'bodega_sales_v1';
 const PRODUCTS_KEY = 'bodega_products_v1';
@@ -161,6 +162,13 @@ export function useGastosInternos({ bcvRate, tasaCop, copEnabled, triggerHaptic,
     // ─── Anulación (con reversión de stock si es autoconsumo) ───────────────
     const anularGasto = useCallback(async (gastoId) => {
         triggerHaptic && triggerHaptic();
+
+        // Guard de seguridad: Cajeros no pueden borrar/anular gastos
+        const authState = useAuthStore.getState();
+        if (authState?.requireLogin && authState?.usuarioActivo?.rol === 'CAJERO') {
+            showToast('Los cajeros no tienen permiso para anular gastos', 'warning');
+            return false;
+        }
 
         const targetGasto = sales.find(s => s.id === gastoId);
         if (!targetGasto) return;

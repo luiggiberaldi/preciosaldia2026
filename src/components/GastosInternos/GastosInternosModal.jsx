@@ -26,6 +26,7 @@ import {
     Tag,
 } from 'lucide-react';
 import { getLocalISODate } from '../../utils/dateHelpers';
+import { useAuthStore } from '../../hooks/store/useAuthStore';
 
 // Map GASTO_CATEGORIES identifiers to professional styling
 const CATEGORY_META = {
@@ -100,6 +101,10 @@ export default function GastosInternosModal({
     anularGasto,
     triggerHaptic
 }) {
+    const { usuarioActivo, requireLogin } = useAuthStore();
+    const isCajero = requireLogin && usuarioActivo?.rol === 'CAJERO';
+    const canDeleteGasto = !isCajero;
+
     const [activeTab, setActiveTab]           = useState('registrar');
     // ── Campos de gasto normal ──
     const [description, setDescription]       = useState('');
@@ -117,6 +122,7 @@ export default function GastosInternosModal({
     const [valoracion, setValoracion]         = useState('costo'); // 'costo' | 'venta'
     const [showResults, setShowResults]       = useState(false);
     const [lastSeenCount, setLastSeenCount]   = useState(0);
+    const [gastoToVoid, setGastoToVoid]       = useState(null);
 
     // Fetch active payment methods
     useEffect(() => {
@@ -707,6 +713,10 @@ export default function GastosInternosModal({
                                         inputMode="decimal"
                                         value={amount}
                                         onChange={handleAmountChange}
+                                        onFocus={(e) => {
+                                            e.target.select();
+                                            if (amount === '0' || amount === '0.00') setAmount('');
+                                        }}
                                         placeholder="0.00"
                                         className="w-full px-4 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-slate-800 dark:text-white text-base font-black transition-all focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent focus:bg-white dark:focus:bg-slate-800"
                                         required
@@ -881,16 +891,9 @@ export default function GastosInternosModal({
                                                 -{formattedAmount()}
                                             </span>
 
-                                            {!isVoided && !g.cajaCerrada && (
+                                            {!isVoided && !g.cajaCerrada && canDeleteGasto && (
                                                 <button
-                                                    onClick={() => {
-                                                        if (confirm(isAutoconsumoRecord
-                                                            ? '¿Anular este retiro? El stock será devuelto al inventario.'
-                                                            : '¿Estás seguro de anular este gasto?'
-                                                        )) {
-                                                            anularGasto(g.id);
-                                                        }
-                                                    }}
+                                                    onClick={() => setGastoToVoid(g)}
                                                     className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-full transition-colors"
                                                     title={isAutoconsumoRecord ? 'Anular y devolver stock' : 'Anular gasto'}
                                                 >
@@ -908,6 +911,42 @@ export default function GastosInternosModal({
                             })}
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* Modal de Confirmación de Anulación (Reemplaza a window.confirm — Regla 15) */}
+            {gastoToVoid && (
+                <div className="fixed inset-0 z-[300] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl text-center animate-in zoom-in-95 duration-200">
+                        <div className="w-12 h-12 rounded-2xl bg-red-100 dark:bg-red-950/30 text-red-500 flex items-center justify-center mx-auto mb-4">
+                            <Trash2 size={24} />
+                        </div>
+                        <h3 className="text-base font-black text-slate-800 dark:text-white mb-1">
+                            {gastoToVoid.isAutoconsumo ? '¿Anular este retiro?' : '¿Anular este gasto?'}
+                        </h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">
+                            {gastoToVoid.isAutoconsumo
+                                ? 'El stock retirado será devuelto automáticamente al inventario.'
+                                : 'Esta acción revertirá el egreso de la caja.'}
+                        </p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setGastoToVoid(null)}
+                                className="flex-1 py-2.5 rounded-xl font-bold text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    await anularGasto(gastoToVoid.id);
+                                    setGastoToVoid(null);
+                                }}
+                                className="flex-1 py-2.5 rounded-xl font-bold text-xs bg-red-500 hover:bg-red-600 text-white shadow-md shadow-red-500/20 active:scale-95 transition-all"
+                            >
+                                Sí, Anular
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </Modal>
