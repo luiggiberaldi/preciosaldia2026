@@ -16,7 +16,7 @@ import { useRates } from './hooks/useRates';
 import { useSecurity } from './hooks/useSecurity';
 import { RateProvider } from './context/RateContext';
 import { ProductProvider } from './context/ProductContext';
-import { CartProvider } from './context/CartContext';
+import { CartProvider, useCart } from './context/CartContext';
 import PremiumGuard from './components/security/PremiumGuard';
 import TermsOverlay from './components/TermsOverlay';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -427,6 +427,22 @@ export default function App() {
         )}
       </main>
 
+        {/* Bottom Nav — dentro de CartProvider para acceder al contador del carrito */}
+        <BottomNav
+          tabs={TABS}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          triggerHaptic={triggerHaptic}
+          requireLogin={requireLogin}
+          usuarioActivo={usuarioActivo}
+          logout={logout}
+          installPrompt={installPrompt}
+          handleInstall={handleInstall}
+          showIOSButton={showIOSButton}
+          setShowIOSInstall={setShowIOSInstall}
+          isKeyboardOpen={isKeyboardOpen}
+        />
+
       </ProductProvider>
       </CartProvider>
       </RateProvider>
@@ -437,48 +453,6 @@ export default function App() {
           onToggle={() => setIsCommandPaletteOpen(p => !p)} 
           navigateTo={setActiveTab} 
       />
-
-      {/* Bottom Nav — hidden in POS mode for full-screen selling */}
-      {!isKeyboardOpen && (
-        <div className="fixed bottom-0 left-0 right-0 px-3 sm:px-6 pb-[env(safe-area-inset-bottom)] pt-0 mb-4 max-w-full mx-auto z-30 pointer-events-none animate-in slide-in-from-bottom-4 duration-300">
-          <div className="bg-slate-900/95 dark:bg-slate-950/95 backdrop-blur-xl rounded-2xl p-1 flex justify-between items-center shadow-2xl shadow-slate-900/30 border border-white/10 ring-1 ring-black/5 pointer-events-auto">
-            {TABS.map(tab => (
-              <TabButton
-                key={tab.id}
-                icon={<tab.icon size={18} strokeWidth={activeTab === tab.id ? 3 : 2} />}
-                label={tab.label}
-                isActive={activeTab === tab.id}
-                onClick={() => { triggerHaptic(); setActiveTab(tab.id); }}
-                data-tour={`tab-${tab.id}`}
-              />
-            ))}
-
-            {/* Logout — solo si el login está activado */}
-            {requireLogin && usuarioActivo && (
-              <button
-                onClick={() => { triggerHaptic(); logout(); }}
-                className="flex flex-col items-center justify-center gap-0.5 py-2 px-3 rounded-xl text-slate-400 hover:text-rose-400 transition-colors active:scale-90"
-                title={`Cerrar sesión (${usuarioActivo.nombre})`}
-              >
-                <LogOut size={18} strokeWidth={2} />
-              </button>
-            )}
-
-            {installPrompt && activeTab === 'inicio' && (
-              <button onClick={() => { triggerHaptic(); handleInstall(); }} className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl transition-all duration-300 bg-brand text-white shadow-md animate-pulse">
-                <Download size={20} strokeWidth={3} />
-              </button>
-            )}
-
-            {/* iOS: botón manual de instalación */}
-            {!installPrompt && showIOSButton && activeTab === 'inicio' && (
-              <button onClick={() => { triggerHaptic(); setShowIOSInstall(true); }} className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl transition-all duration-300 bg-brand text-white shadow-md animate-pulse">
-                <Download size={20} strokeWidth={3} />
-              </button>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* iOS Install Instructions Modal */}
       {showIOSInstall && (
@@ -539,13 +513,135 @@ export default function App() {
   );
 }
 
-function TabButton({ icon, label, isActive, onClick, 'data-tour': dataTour }) {
+function BottomNav({
+  tabs,
+  activeTab,
+  setActiveTab,
+  triggerHaptic,
+  requireLogin,
+  usuarioActivo,
+  logout,
+  installPrompt,
+  handleInstall,
+  showIOSButton,
+  setShowIOSInstall,
+  isKeyboardOpen
+}) {
+  if (isKeyboardOpen) return null;
+
+  const { cart } = useCart();
+  const totalCartItems = useMemo(() => {
+    if (!Array.isArray(cart)) return 0;
+    return cart.reduce((acc, item) => acc + (item.qty || 1), 0);
+  }, [cart]);
+
   return (
-    <button data-tour={dataTour} onClick={onClick} className="flex-1 min-w-0 flex flex-col items-center justify-center gap-1 py-1.5 rounded-xl transition-all duration-300">
-      <span className={`flex items-center justify-center w-9 h-9 rounded-full transition-all duration-300 ${isActive ? 'bg-brand text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+    <div className="fixed bottom-0 left-0 right-0 px-2 sm:px-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-0 mb-2 sm:mb-3 max-w-lg mx-auto z-30 pointer-events-none animate-in slide-in-from-bottom-4 duration-300">
+      <div className="relative bg-slate-900/95 dark:bg-slate-950/95 backdrop-blur-2xl rounded-2xl px-2 py-2 flex justify-between items-center shadow-2xl shadow-black/40 border border-white/10 ring-1 ring-black/10 pointer-events-auto">
+        {tabs.map(tab => {
+          const isVender = tab.id === 'ventas';
+          const isActive = activeTab === tab.id;
+          const badgeCount = isVender ? totalCartItems : 0;
+
+          return (
+            <TabButton
+              key={tab.id}
+              id={tab.id}
+              icon={<tab.icon size={isVender ? 20 : 18} strokeWidth={isActive ? 2.5 : 2} />}
+              label={tab.label}
+              isActive={isActive}
+              isHero={isVender}
+              badgeCount={badgeCount}
+              onClick={() => { triggerHaptic(); setActiveTab(tab.id); }}
+              data-tour={`tab-${tab.id}`}
+            />
+          );
+        })}
+
+        {/* Logout — solo si el login está activado */}
+        {requireLogin && usuarioActivo && (
+          <button
+            onClick={() => { triggerHaptic(); logout(); }}
+            className="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-0.5 px-0.5 rounded-xl text-slate-400 hover:text-rose-400 transition-colors active:scale-90 overflow-hidden"
+            title={`Cerrar sesión (${usuarioActivo.nombre})`}
+          >
+            <span className="flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors shrink-0">
+              <LogOut size={16} strokeWidth={2} />
+            </span>
+            <span className="w-full max-w-full truncate text-center text-[8px] sm:text-[9px] font-bold text-slate-400 leading-none">Salir</span>
+          </button>
+        )}
+
+        {installPrompt && activeTab === 'inicio' && (
+          <button onClick={() => { triggerHaptic(); handleInstall(); }} className="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-0.5 px-0.5 rounded-xl transition-all duration-300 text-brand hover:bg-brand/10 animate-pulse overflow-hidden">
+            <span className="flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-brand text-white shadow-md shrink-0">
+              <Download size={15} strokeWidth={2.5} />
+            </span>
+            <span className="w-full max-w-full truncate text-center text-[8px] sm:text-[9px] font-bold text-brand leading-none">Instalar</span>
+          </button>
+        )}
+
+        {!installPrompt && showIOSButton && activeTab === 'inicio' && (
+          <button onClick={() => { triggerHaptic(); setShowIOSInstall(true); }} className="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-0.5 px-0.5 rounded-xl transition-all duration-300 text-brand hover:bg-brand/10 animate-pulse overflow-hidden">
+            <span className="flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-brand text-white shadow-md shrink-0">
+              <Download size={15} strokeWidth={2.5} />
+            </span>
+            <span className="w-full max-w-full truncate text-center text-[8px] sm:text-[9px] font-bold text-brand leading-none">Instalar</span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TabButton({ id, icon, label, isActive, isHero, badgeCount, onClick, 'data-tour': dataTour }) {
+  if (isHero) {
+    return (
+      <button
+        data-tour={dataTour}
+        onClick={onClick}
+        className="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 group relative transition-transform active:scale-95 px-0.5 overflow-visible"
+        title="Ir al Punto de Venta (Vender)"
+      >
+        <div className={`relative flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full transition-all duration-300 shadow-lg shrink-0 ${
+          isActive 
+            ? 'bg-gradient-to-tr from-emerald-500 via-teal-500 to-cyan-400 text-white shadow-emerald-500/40 ring-2 ring-emerald-400/50 scale-105' 
+            : 'bg-emerald-600/90 hover:bg-emerald-500 text-white shadow-emerald-900/50 hover:scale-105'
+        }`}>
+          {icon}
+          {badgeCount > 0 && (
+            <span className="absolute -top-1 -right-1 bg-rose-500 text-white font-black text-[9px] min-w-[16px] h-[16px] px-1 rounded-full flex items-center justify-center border-2 border-slate-900 shadow-md animate-bounce">
+              {badgeCount > 99 ? '99+' : badgeCount}
+            </span>
+          )}
+        </div>
+        <span className={`w-full max-w-full truncate text-center text-[8px] sm:text-[9px] font-black tracking-tighter leading-none transition-colors duration-200 ${
+          isActive ? 'text-emerald-400' : 'text-emerald-500/90 group-hover:text-emerald-400'
+        }`}>
+          {label}
+        </span>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      data-tour={dataTour}
+      onClick={onClick}
+      className="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-0.5 group transition-all duration-200 active:scale-95 px-0.5 overflow-hidden"
+    >
+      <span className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full transition-all duration-200 shrink-0 ${
+        isActive 
+          ? 'bg-white/10 text-white shadow-sm ring-1 ring-white/15' 
+          : 'text-slate-400 hover:text-white hover:bg-white/5'
+      }`}>
         {icon}
       </span>
-      {isActive && <span className="text-[10px] font-bold tracking-wide text-white leading-none whitespace-nowrap animate-in zoom-in duration-200">{label}</span>}
+      <span className={`w-full max-w-full truncate text-center text-[8px] sm:text-[9px] font-medium tracking-tighter leading-none transition-colors duration-200 ${
+        isActive ? 'text-white font-bold' : 'text-slate-400 group-hover:text-slate-200'
+      }`}>
+        {label}
+      </span>
     </button>
   );
 }
