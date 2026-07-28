@@ -1,23 +1,30 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bot, Send, Trash2, X, Sparkles, User, AlertCircle, Mic, MicOff, DollarSign, Package, BarChart3, Users, Receipt } from 'lucide-react';
+import { Bot, Send, Trash2, X, Sparkles, User, AlertCircle, Mic, MicOff, DollarSign, Package, BarChart3, Users, Receipt, WifiOff, ShieldCheck } from 'lucide-react';
 import { useProductContext } from '../context/ProductContext';
 import { useCart } from '../context/CartContext';
 import { useAuthStore } from '../hooks/store/useAuthStore';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { storageService } from '../utils/storageService';
-import { getActivePaymentMethods } from '../config/paymentMethods';
+import { compileSystemConsciousnessContext } from '../services/systemConsciousnessService';
+import { processDeterministicOfflineQuery } from '../services/deterministicBotEngine';
 
 export default function AIAssistantWidget() {
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState(() => {
         try {
             const saved = localStorage.getItem('pda_bot_chat_v2');
-            if (saved) return JSON.parse(saved);
+            const timestamp = localStorage.getItem('pda_bot_chat_v2_time');
+            const now = Date.now();
+
+            // Expiración a las 24 horas (Fase 8)
+            if (saved && timestamp && (now - parseInt(timestamp, 10) < 24 * 60 * 60 * 1000)) {
+                return JSON.parse(saved).slice(-15); // Máximo 15 mensajes
+            }
         } catch {}
         return [
             {
                 role: 'assistant',
-                content: '¡Hola! Soy tu **Asistente Bot 2.0 de Precios al Día**. Pregúntame sobre ventas, inventario, deudas del negocio o cálculo de vuelto cambiario en bolívares y dólares.'
+                content: '¡Hola! Soy tu **Conciencia Operativa del Sistema Precios al Día**. Pregúntame sobre ventas, inventario, salud de backups o cálculo de vuelto cambiario.'
             }
         ];
     });
@@ -26,11 +33,13 @@ export default function AIAssistantWidget() {
     const [isKeyboardActive, setIsKeyboardActive] = useState(false);
     const [isConfirmOpen, setIsConfirmOpen] = useState(false);
     const [isListening, setIsListening] = useState(false);
+    const [toastMessage, setToastMessage] = useState(null);
 
-    // Persistir chat localmente
+    // Persistir chat localmente con expiración de 24h
     useEffect(() => {
         try {
-            localStorage.setItem('pda_bot_chat_v2', JSON.stringify(messages));
+            localStorage.setItem('pda_bot_chat_v2', JSON.stringify(messages.slice(-15)));
+            localStorage.setItem('pda_bot_chat_v2_time', Date.now().toString());
         } catch {}
     }, [messages]);
 
@@ -43,6 +52,12 @@ export default function AIAssistantWidget() {
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null);
     const recognitionRef = useRef(null);
+
+    // Toast de notificación no-nativo (PISU UX Standard)
+    const showToast = (msg) => {
+        setToastMessage(msg);
+        setTimeout(() => setToastMessage(null), 3000);
+    };
 
     // Scroll al final al recibir nuevos mensajes
     useEffect(() => {
@@ -65,7 +80,7 @@ export default function AIAssistantWidget() {
     // Dictado por voz (Speech-to-Text)
     const toggleListening = () => {
         if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
-            alert('El dictado por voz no está soportado en este navegador');
+            showToast('El dictado por voz no está soportado en este navegador');
             return;
         }
         if (isListening) {
@@ -92,189 +107,6 @@ export default function AIAssistantWidget() {
         recognition.start();
     };
 
-    // Compilar contexto completo del POS en tiempo real
-    const compilePosContext = async () => {
-        const rateBcv = effectiveRate || 0;
-        const rateCop = tasaCop || 0;
-        const username = usuarioActivo?.nombre || 'Sin sesión';
-        const role = usuarioActivo?.rol || 'CAJERO';
-        const connection = isOnline ? 'Online (Sincronizado)' : 'Offline (Modo sin conexión)';
-        const businessName = localStorage.getItem('business_name') || 'Sin nombre registrado';
-        const businessRif = localStorage.getItem('business_rif') || 'Sin RIF';
-
-        const totalProducts = products?.length || 0;
-        const lowStockItems = products
-            ? products.filter(p => (p.stock ?? 0) <= (p.lowStockAlert ?? 5) && (p.stock ?? 0) >= 0)
-            : [];
-        const outOfStockItems = products
-            ? products.filter(p => (p.stock ?? 0) <= 0)
-            : [];
-
-        const criticalStock = lowStockItems
-            .sort((a, b) => (a.stock ?? 0) - (b.stock ?? 0))
-            .slice(0, 5)
-            .map(p => `${p.name} (stock: ${p.stock ?? 0}, alerta: ${p.lowStockAlert ?? 5})`)
-            .join(', ');
-
-        const categoriesInUse = products
-            ? [...new Set(products.map(p => p.category).filter(Boolean))]
-            : [];
-
-        const cartLen = cart?.length || 0;
-        const cartItems = cart?.length > 0
-            ? cart.map(i => `${i.name} x${i.qty} ($${(i.priceUsd || 0).toFixed(2)})`).join(', ')
-            : 'vacío';
-
-        let salesCount = 0, totalSalesUsd = 0, totalSalesBs = 0;
-        let paymentBreakdown = {};
-        let voidedCount = 0;
-        let lastSalesDetail = 'Sin ventas registradas hoy';
-        try {
-            const sales = await storageService.getItem('bodega_sales_v1', []);
-            const todayStr = new Date().toISOString().split('T')[0];
-            const todaySales = sales
-                .filter(s => s.timestamp?.startsWith(todayStr) && s.status !== 'ANULADA')
-                .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-            const todayVoided = sales.filter(s => s.timestamp?.startsWith(todayStr) && s.status === 'ANULADA');
-            salesCount = todaySales.length;
-            voidedCount = todayVoided.length;
-            totalSalesUsd = todaySales.reduce((acc, s) => acc + (s.totalUsd || 0), 0);
-            totalSalesBs = todaySales.reduce((acc, s) => acc + (s.totalBs || 0), 0);
-
-            todaySales.forEach(s => {
-                const pmethods = s.payments?.length > 0
-                    ? s.payments.map(p => p.methodLabel || p.methodId || 'Sin dato').join(' + ')
-                    : (s.paymentMethod || s.metodoPago || 'Sin dato');
-                if (!paymentBreakdown[pmethods]) paymentBreakdown[pmethods] = { count: 0, usd: 0 };
-                paymentBreakdown[pmethods].count++;
-                paymentBreakdown[pmethods].usd += (s.totalUsd || 0);
-            });
-
-            const last5 = sales
-                .filter(s => s.status !== 'ANULADA')
-                .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-                .slice(0, 5);
-
-            if (last5.length > 0) {
-                lastSalesDetail = last5.map((s, idx) => {
-                    const fDate = s.timestamp ? new Date(s.timestamp).toLocaleString('es-VE') : 'fecha/hora desconocida';
-                    const num = s.saleNumber ? `#${String(s.saleNumber).padStart(5, '0')}` : `(sin número)`;
-                    const cliente = s.customerName || s.clienteName || 'Consumidor Final';
-                    const tipo = s.tipo || 'VENTA';
-                    const productos = (s.items || []).map(i => `${i.name} x${i.qty}`).join(', ') || 'sin detalle';
-                    const metodo = s.payments?.length > 0
-                        ? s.payments.map(p => `${p.methodLabel || p.methodId || '?'} (${p.currency || '?'}): $${(p.amountUsd || 0).toFixed(2)}`).join(' | ')
-                        : 'Sin dato';
-                    const casheaDesglose = s.tipo === 'VENTA_CASHEA' && s.casheaUsd > 0
-                        ? `\n     Inicial pagado por el cliente: $${((s.totalUsd || 0) - (s.casheaUsd || 0)).toFixed(2)} USD | Financiado por Cashea: $${(s.casheaUsd || 0).toFixed(2)} USD`
-                        : '';
-                    const vuelto = (s.changeUsd > 0 || s.changeBs > 0)
-                        ? ` | Vuelto: $${(s.changeUsd || 0).toFixed(2)} USD / Bs.${(s.changeBs || 0).toFixed(2)}`
-                        : '';
-                    return `  ${idx === 0 ? '➡️ Última' : `  ${idx + 1}º`} Venta ${num} — ${fDate} | ${tipo} | Cliente: ${cliente}\n     Productos: ${productos}\n     Total: $${(s.totalUsd || 0).toFixed(2)} USD / Bs.${(s.totalBs || 0).toFixed(2)}\n     Pago: ${metodo}${casheaDesglose}${vuelto}`;
-                }).join('\n');
-            }
-        } catch (e) {}
-
-        const paymentSummary = Object.entries(paymentBreakdown)
-            .map(([pm, v]) => `${pm}: ${v.count} ventas ($${v.usd.toFixed(2)})`)
-            .join(' | ') || 'sin datos';
-
-        let customersCount = 0, customersWithDebt = 0, totalDebtUsd = 0;
-        let topDebtors = '';
-        try {
-            const customers = await storageService.getItem('bodega_customers_v1', []);
-            customersCount = customers.length;
-            const debtors = customers.filter(c => (c.deuda || 0) > 0.01);
-            customersWithDebt = debtors.length;
-            totalDebtUsd = debtors.reduce((acc, c) => acc + (c.deuda || 0), 0);
-            topDebtors = debtors
-                .sort((a, b) => (b.deuda || 0) - (a.deuda || 0))
-                .slice(0, 3)
-                .map(c => `${c.name}: $${(c.deuda || 0).toFixed(2)}`)
-                .join(', ');
-        } catch (e) {}
-
-        let suppliersCount = 0, pendingInvoices = 0, totalPendingUsd = 0;
-        try {
-            const suppliers = await storageService.getItem('bodega_suppliers_v1', []);
-            const invoices = await storageService.getItem('bodega_supplier_invoices_v1', []);
-            suppliersCount = suppliers.length;
-            const pending = invoices.filter(inv => inv.status === 'PENDIENTE');
-            pendingInvoices = pending.length;
-            totalPendingUsd = pending.reduce((acc, inv) => acc + (inv.totalUsd || inv.total || 0), 0);
-        } catch (e) {}
-
-        let activePayMethods = [];
-        try {
-            const methods = await getActivePaymentMethods();
-            activePayMethods = methods.map(m => `${m.label} (${m.currency})`);
-        } catch (e) { activePayMethods = ['Efectivo Bs', 'Pago Móvil', 'USD']; }
-
-        let usersInfo = 'Solo sesión simple (sin multi-usuario activo)';
-        try {
-            const usuarios = JSON.parse(localStorage.getItem('bodega_usuarios') || '[]');
-            if (usuarios.length > 0) {
-                usersInfo = usuarios.map(u => `${u.nombre} (${u.rol})`).join(', ');
-            }
-        } catch (e) {}
-
-        let aperturaInfo = 'No registrada hoy';
-        try {
-            const todayKey = new Date().toISOString().split('T')[0];
-            const apertura = JSON.parse(localStorage.getItem(`apertura_caja_${todayKey}`) || 'null');
-            if (apertura) {
-                aperturaInfo = `Fondo inicial: $${(apertura.fondoUsd || 0).toFixed(2)} USD / Bs.${(apertura.fondoBs || 0).toFixed(2)}`;
-            }
-        } catch (e) {}
-
-        return `
-[CONTEXTO EN TIEMPO REAL DEL POS — ${new Date().toLocaleString('es-VE')}]
-
-## NEGOCIO
-- Nombre: ${businessName} | RIF: ${businessRif}
-- Conexión: ${connection}
-- Usuario activo: ${username} (Rol: ${role})
-
-## TASAS DE CAMBIO VIGENTES
-- Tasa BCV (USD→Bs): Bs. ${rateBcv.toFixed(2)} por dólar
-- Tasa COP: ${rateCop > 0 ? `${rateCop.toFixed(2)} COP por dólar` : 'No configurada'}
-
-## INVENTARIO
-- Total productos registrados: ${totalProducts}
-- Productos con stock bajo: ${lowStockItems.length} (${outOfStockItems.length} agotados)
-- Críticos: ${criticalStock || 'ninguno'}
-- Categorías: ${categoriesInUse.join(', ') || 'ninguna'}
-
-## CARRITO ACTUAL
-- Productos en carrito: ${cartLen} (${cartItems})
-
-## VENTAS DEL DÍA
-- Transacciones: ${salesCount} | Anuladas: ${voidedCount}
-- Total: $${totalSalesUsd.toFixed(2)} USD / Bs. ${totalSalesBs.toFixed(2)}
-- Método de pago: ${paymentSummary}
-- Apertura: ${aperturaInfo}
-
-## ÚLTIMAS 5 VENTAS
-${lastSalesDetail}
-
-## CLIENTES
-- Total: ${customersCount}
-- Con deuda: ${customersWithDebt} ($${totalDebtUsd.toFixed(2)})
-- Mayores deudores: ${topDebtors || 'ninguno'}
-
-## PROVEEDORES
-- Total: ${suppliersCount}
-- Facturas pendientes: ${pendingInvoices} ($${totalPendingUsd.toFixed(2)})
-
-## MÉTODOS DE PAGO
-- ${activePayMethods.join(', ')}
-
-## USUARIOS
-- ${usersInfo}
-`.trim();
-    };
-
     const handleSend = async (textToSend) => {
         const messageText = textToSend || input;
         if (!messageText.trim() || isTyping) return;
@@ -286,11 +118,35 @@ ${lastSalesDetail}
         setMessages(newMessages);
         setIsTyping(true);
 
+        // FASE 6: Modo Offline Determinista (Si no hay internet, no llama a Groq y responde con motor local)
+        if (!isOnline || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+            const offlineReply = await processDeterministicOfflineQuery(messageText, {
+                effectiveRate,
+                tasaCop,
+                products,
+                cart,
+                usuarioActivo
+            });
+
+            setMessages([...newMessages, { role: 'assistant', content: offlineReply }]);
+            setIsTyping(false);
+            return;
+        }
+
         try {
-            const contextText = await compilePosContext();
-            
+            // FASE 4 & 5: Servicio de Contexto de Salud Operativa y Permisos por Rol
+            const contextText = await compileSystemConsciousnessContext({
+                effectiveRate,
+                tasaCop,
+                products,
+                cart,
+                usuarioActivo,
+                isOnline
+            });
+
+            // Enviar mensajes (el servidor worker.js inyectará CHAT_SYSTEM_CONSCIOUSNESS)
             const apiMessages = [
-                { role: 'system', content: contextText },
+                { role: 'user', content: `[CONTEXTO EN TIEMPO REAL DEL POS]\n${contextText}` },
                 ...newMessages.map(m => ({ role: m.role, content: m.content }))
             ];
 
@@ -342,12 +198,21 @@ ${lastSalesDetail}
                 }
             }
         } catch (error) {
+            // Fallback seguro a respuesta determinista local en caso de fallo de red/IA
+            const fallbackOfflineReply = await processDeterministicOfflineQuery(messageText, {
+                effectiveRate,
+                tasaCop,
+                products,
+                cart,
+                usuarioActivo
+            });
+
             setMessages(prev => {
                 const updated = [...prev];
                 if (updated[updated.length - 1].role === 'assistant' && updated[updated.length - 1].content === "") {
-                    updated[updated.length - 1].content = `❌ **Error de conexión**: ${error.message}`;
+                    updated[updated.length - 1].content = fallbackOfflineReply;
                 } else {
-                    updated.push({ role: 'assistant', content: `❌ **Error**: ${error.message}` });
+                    updated.push({ role: 'assistant', content: fallbackOfflineReply });
                 }
                 return updated;
             });
