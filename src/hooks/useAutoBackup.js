@@ -120,45 +120,39 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                         updated_at: new Date().toISOString()
                     };
 
-                    // Notificar metadatos a la API de Estación Maestra o Supabase solo si hay sesión cloud activa o entorno de producción
-                    const isLocalDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-                    const hasCloudSession = !!(localStorage.getItem('pda_cloud_session') || localStorage.getItem('pda_paired_device'));
-                    const allowRemoteNotify = hasCloudSession || (!isLocalDev && !!import.meta.env.VITE_ESTACION_API_URL);
-
-                    if (allowRemoteNotify) {
-                        const ESTACION_API = import.meta.env.VITE_ESTACION_API_URL || 'https://estacion-2026.vercel.app';
-                        let apiSuccess = false;
-                        try {
-                            const res = await fetch(`${ESTACION_API}/api/backup/complete`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    deviceId: devId,
-                                    driveUrl: metadataPayload.drive_url,
-                                    sizeBytes: metadataPayload.size_bytes,
-                                    productCount: metadataPayload.product_count,
-                                    salesCount: metadataPayload.sales_count,
-                                    customerCount: metadataPayload.customer_count
-                                })
-                            });
-                            if (res.ok) apiSuccess = true;
-                        } catch (apiErr) {
-                            if (import.meta.env?.DEV) {
-                                console.warn('[AutoBackup] Servidor de Estación Maestra no contactado:', apiErr?.message || apiErr);
-                            }
+                    // Notificar metadatos a la API de Estación Maestra o Supabase
+                    const ESTACION_API = import.meta.env.VITE_ESTACION_API_URL || 'https://estacion-2026.vercel.app';
+                    let apiSuccess = false;
+                    try {
+                        const res = await fetch(`${ESTACION_API}/api/backup/complete`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                deviceId: devId,
+                                driveUrl: metadataPayload.drive_url,
+                                sizeBytes: metadataPayload.size_bytes,
+                                productCount: metadataPayload.product_count,
+                                salesCount: metadataPayload.sales_count,
+                                customerCount: metadataPayload.customer_count
+                            })
+                        });
+                        if (res.ok) apiSuccess = true;
+                    } catch (apiErr) {
+                        if (import.meta.env?.DEV) {
+                            console.warn('[AutoBackup] Servidor de Estación Maestra no contactado:', apiErr?.message || apiErr);
                         }
+                    }
 
-                        // Fallback directo a Supabase solo si API de Estación falló y existe sesión activa
-                        if (!apiSuccess && supabaseCloud && hasCloudSession) {
-                            try {
-                                await supabaseCloud.from('cloud_backups').upsert({
-                                    device_id: devId,
-                                    backup_data: metadataPayload,
-                                    updated_at: new Date().toISOString()
-                                }, { onConflict: 'device_id' });
-                            } catch {
-                                // Silenciar excepción en fallback
-                            }
+                    // Fallback directo a Supabase en cloud_backups
+                    if (!apiSuccess && supabaseCloud) {
+                        try {
+                            await supabaseCloud.from('cloud_backups').upsert({
+                                device_id: devId,
+                                backup_data: metadataPayload,
+                                updated_at: new Date().toISOString()
+                            }, { onConflict: 'device_id' });
+                        } catch (sErr) {
+                            console.warn('[AutoBackup] Error guardando respaldo en cloud_backups:', sErr?.message);
                         }
                     }
 
@@ -193,11 +187,8 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
     // socket abierto — evita gastar cupo de conexiones Realtime en instalaciones
     // sin licencia (free/demo vencida) que nunca usarán el backup remoto forzado.
     useEffect(() => {
-        const isLocalDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-        const hasCloudSession = !!(localStorage.getItem('pda_cloud_session') || localStorage.getItem('pda_paired_device'));
-        const allowRemoteNotify = hasCloudSession || (!isLocalDev && !!import.meta.env.VITE_ESTACION_API_URL);
-
-        if (!deviceId || !supabaseCloud || !allowRemoteNotify) return;
+        // Garantizar que cualquier dispositivo con deviceId activo escuche solicitudes remotas de la Estación Maestra
+        if (!deviceId || !supabaseCloud) return;
 
         let channel = null;
 
