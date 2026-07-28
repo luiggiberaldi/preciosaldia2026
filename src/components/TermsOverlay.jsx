@@ -104,35 +104,35 @@ export default function TermsOverlay({ onAccept }) {
                                 <section>
                                     <h2 className="font-display text-lg text-surface-700 mb-1.5">3. Descargo de Responsabilidad</h2>
                                     
-                                    <h3 className="text-xs font-bold text-surface-700 mt-2 mb-1">3.1 Información No Vinculante</h3>
+                                    <h3 className="text-xs font-bold text-surface-700 mt-2 mb-1">3.1 Información No Vinculante y Tasa Oficial BCV</h3>
                                     <p className="text-xs text-surface-700 leading-relaxed">
-                                        <strong className="text-red-600 dark:text-red-400">TODA LA INFORMACIÓN PROPORCIONADA EN LA APLICACIÓN ES ESTRICTAMENTE INFORMATIVA Y DE REFERENCIA.</strong> PreciosAlDía no garantiza la exactitud, vigencia o fiabilidad absoluta de las tasas de cambio o conversiones comerciales automáticas del mercado.
+                                        <strong className="text-red-600 dark:text-red-400">TODA LA INFORMACIÓN PROPORCIONADA EN LA APLICACIÓN ES DE REFERENCIA OPERATIVA.</strong> Las conversiones multimoneda utilizan la tasa de cambio de referencia del <strong>Banco Central de Venezuela (BCV)</strong>. Es responsabilidad del Comercio fijar sus precios en Bolívares conforme a las regulaciones vigentes de la <strong>SUNDDE</strong>.
                                     </p>
 
-                                    <h3 className="text-xs font-bold text-surface-700 mt-2 mb-1">3.2 Operatividad y Caja</h3>
+                                    <h3 className="text-xs font-bold text-surface-700 mt-2 mb-1">3.2 Operatividad, Caja y Desvinculación Fiscal SENIAT</h3>
                                     <p className="text-xs text-surface-700 leading-relaxed">
-                                        El comerciante es el único responsable de la exactitud de los precios ingresados en su inventario, los ajustes de stock, y los arqueos de caja chica realizados en el dispositivo.
+                                        PreciosAlDía es un software de <strong>control operativo interno y gestión de inventario/caja</strong>. <strong>NO constituye una máquina fiscal ni sustituye a un sistema de facturación fiscal homologado por el SENIAT</strong>. El Comercio es el único responsable de emitir sus facturas fiscales legales exigidas por la ley.
                                     </p>
 
-                                    <h3 className="text-xs font-bold text-surface-700 mt-2 mb-1">3.3 Limitación de Responsabilidad</h3>
+                                    <h3 className="text-xs font-bold text-surface-700 mt-2 mb-1">3.3 Operaciones Financieras y Avances de Efectivo (SUDEBAN)</h3>
+                                    <p className="text-xs text-surface-700 leading-relaxed">
+                                        Las funciones de comisiones por avance de efectivo, transferencias bancarias o Pago Móvil son herramientas matemáticas para administración de caja chica. La custodia de dinero real y el cumplimiento de las normativas de la <strong>SUDEBAN</strong> recaen de forma individual en el Comercio.
+                                    </p>
+
+                                    <h3 className="text-xs font-bold text-surface-700 mt-2 mb-1">3.4 Limitación de Responsabilidad</h3>
                                     <p className="text-xs text-surface-700 leading-relaxed mb-1">PreciosAlDía y sus creadores no serán responsables bajo ninguna circunstancia por:</p>
                                     <ul className="text-xs text-surface-700 space-y-0.5 pl-4 list-disc">
-                                        <li>Pérdidas comerciales directas o indirectas derivadas del uso de la información de tasas.</li>
-                                        <li>Discrepancias en el redondeo inteligente de vuelto físico.</li>
+                                        <li>Sanciones tributarias o administrativas impuestas por el SENIAT, SUNDDE o entes reguladores.</li>
+                                        <li>Discrepancias en el redondeo inteligente de vuelto físico o desbalance de caja por error humano.</li>
                                         <li>Cortes de sincronización o incidencias en bases de datos externas de respaldo.</li>
                                         <li>La pérdida de datos locales almacenados en el almacenamiento indexado del dispositivo.</li>
                                     </ul>
-
-                                    <h3 className="text-xs font-bold text-surface-700 mt-2 mb-1">3.4 Uso Bajo Propio Riesgo</h3>
-                                    <p className="text-xs text-surface-700 leading-relaxed">
-                                        Al usar PreciosAlDía, usted acepta que lo hace bajo su propio riesgo y responsabilidad.
-                                    </p>
                                 </section>
 
                                 <section>
                                     <h2 className="font-display text-lg text-surface-700 mb-1.5">4. Licenciamiento y Activación Premium</h2>
                                     <p className="text-xs text-surface-700 leading-relaxed">
-                                        La Aplicación opera bajo un modelo de validación de hardware mediante el ID único de Instalación (deviceId). Se ofrece una licencia de prueba (Demo) automática de 7 días por terminal. El acceso permanente o renovaciones se activan exclusivamente desde la Estación Maestra escaneando el código QR del terminal. Queda estrictamente prohibido el bypass o alteración fraudulenta del guardián de licencias.
+                                        La Aplicación opera bajo un modelo de validación de hardware mediante el ID único de Instalación (deviceId). Se ofrece una licencia de prueba (Demo) automática de 3 días por terminal. El acceso permanente o renovaciones se activan exclusivamente desde la Estación Maestra escaneando el código QR del terminal. Queda estrictamente prohibido el bypass o alteración fraudulenta del guardián de licencias.
                                     </p>
                                 </section>
 

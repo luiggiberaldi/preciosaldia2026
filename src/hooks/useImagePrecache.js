@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useProductContext } from '../context/ProductContext';
+import { getProductImageCandidates } from '../utils/imageFallback';
+import { saveImageToCache } from '../services/imageBlobCache';
 
 /**
  * OFFLINE-IMG: Precalentador del cache de imágenes de producto.
@@ -9,6 +11,10 @@ import { useProductContext } from '../context/ProductContext';
  * llegó a VER estando online. Este hook recorre TODO el inventario y hace un
  * fetch silencioso de cada imagen para que el SW las guarde todas — así el
  * inventario y la caja se ven completos sin internet.
+ *
+ * OFFLINE-IMG (F3): cubre los DOS formatos cacheables — URLs de Storage y rutas
+ * locales /images/catalog/ del catálogo base (que antes quedaban fuera por el
+ * filtro /^https?:/). Los data: base64 no necesitan precalentado.
  *
  * Diseño:
  *  - Debounce de 5s tras cambios en `products` (agrupa ediciones/sync).
@@ -20,6 +26,32 @@ import { useProductContext } from '../context/ProductContext';
 
 const BATCH_SIZE = 4;
 const DEBOUNCE_MS = 5000;
+
+/**
+ * OFFLINE-IMG (F3): ¿el SW puede cachear esta imagen?
+ *  - URL remota (Supabase Storage) → sí, regla product-images-cache.
+ *  - Ruta local /images/... (catálogo base) → sí, regla catalog-images-cache.
+ *  - data: base64 → se EXCLUYE a propósito: ya viaja embebido en el producto,
+ *    está offline por definición y fetchearlo no aporta nada.
+ */
+function isPrecacheableImage(img) {
+    if (typeof img !== 'string' || img.length === 0) return false;
+    if (/^https?:/i.test(img)) return true;
+    return img.startsWith('/images/');
+}
+
+/**
+ * Resuelve una ruta relativa contra el origen. Cache Storage indexa por URL
+ * absoluta, así que sin esto `caches.match('/images/...')` dependería del <base>
+ * del documento.
+ */
+function toAbsoluteUrl(img) {
+    try {
+        return new URL(img, window.location.origin).href;
+    } catch {
+        return img;
+    }
+}
 
 function urlListHash(urls) {
     const str = urls.join('|');
@@ -42,12 +74,18 @@ async function precacheImages(urls) {
         const batch = urls.slice(i, i + BATCH_SIZE);
         await Promise.all(batch.map(async (url) => {
             try {
+                // Guardar en la caché permanente de IndexedDB
+                await saveImageToCache(url);
+
                 if (cacheStorage) {
                     const hit = await cacheStorage.match(url);
                     if (hit) return; // ya cacheada por el SW: 0 red
                 }
-                // El fetch pasa por el SW → la regla CacheFirst la persiste.
-                await fetch(url, { mode: 'no-cors' });
+                try {
+                    await fetch(url, { mode: 'cors', credentials: 'omit' });
+                } catch {
+                    await fetch(url, { mode: 'no-cors' });
+                }
             } catch { /* URL rota u offline parcial: continuar con el resto */ }
         }));
     }
@@ -81,11 +119,16 @@ export function useImagePrecache() {
             if (!navigator.onLine) return;
             if (runningRef.current) return;
 
-            const urls = [...new Set(
-                (products || [])
-                    .map(p => p?.image)
-                    .filter(img => typeof img === 'string' && /^https?:/i.test(img))
-            )];
+            const rawUrls = [];
+            (products || []).forEach(p => {
+                const candidates = getProductImageCandidates(p);
+                candidates.forEach(c => {
+                    if (isPrecacheableImage(c)) {
+                        rawUrls.push(toAbsoluteUrl(c));
+                    }
+                });
+            });
+            const urls = [...new Set(rawUrls)];
             if (urls.length === 0) return;
 
             const hash = urlListHash(urls);

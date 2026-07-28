@@ -110,20 +110,18 @@ export function useAutoLock() {
             return;
         }
 
-        const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart'];
+        const events = ['mousedown', 'keydown', 'touchstart'];
 
-        let tick = false;
-        const throttledResetTimer = () => {
-            if (!tick) {
-                requestAnimationFrame(() => {
-                    resetTimer();
-                    tick = false;
-                });
-                tick = true;
-            }
+        let debounceTimer = null;
+        const debouncedResetTimer = () => {
+            if (debounceTimer) return;
+            debounceTimer = setTimeout(() => {
+                debounceTimer = null;
+                resetTimer();
+            }, 2000);
         };
 
-        events.forEach(e => window.addEventListener(e, throttledResetTimer, { passive: true }));
+        events.forEach(e => window.addEventListener(e, debouncedResetTimer, { passive: true }));
 
         const handleVisibilityChange = () => {
             if (document.hidden) {
@@ -144,9 +142,10 @@ export function useAutoLock() {
         resetTimer();
 
         return () => {
-            events.forEach(e => window.removeEventListener(e, throttledResetTimer));
+            events.forEach(e => window.removeEventListener(e, debouncedResetTimer));
             document.removeEventListener('visibilitychange', handleVisibilityChange);
             if (timeoutRef.current) clearTimeout(timeoutRef.current);
+            if (debounceTimer) clearTimeout(debounceTimer);
         };
     }, [usuarioActivo, resetTimer, performLock]);
 

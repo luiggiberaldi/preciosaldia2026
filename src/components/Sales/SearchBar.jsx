@@ -2,6 +2,7 @@ import { forwardRef } from 'react';
 import { Search, Mic, Package, X, Box } from 'lucide-react';
 import { BODEGA_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../config/categories';
 import { formatCop, getCop, getUsd } from '../../utils/calculatorUtils';
+import SmartImage from '../SmartImage';
 
 const formatBs = (n) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
@@ -98,12 +99,16 @@ const SearchBar = forwardRef(function SearchBar({
                                     ${isOutOfStock ? 'opacity-50' : ''}`}
                             >
                                 <div className="w-10 h-10 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center shrink-0 overflow-hidden">
-                                    {p.image
-                                        ? <img src={p.image} className="w-full h-full object-contain" alt={p.name} />
-                                        : CatIcon
-                                            ? <CatIcon size={20} className="text-slate-400" />
-                                            : <Package size={16} className="text-slate-400" />
-                                    }
+                                    <SmartImage
+                                        src={p.image}
+                                        product={p}
+                                        alt={p.name}
+                                        fallbackIcon={
+                                            CatIcon
+                                                ? <CatIcon size={20} className="text-slate-400" />
+                                                : <Package size={16} className="text-slate-400" />
+                                        }
+                                    />
                                 </div>
                                 <div className="flex-1 min-w-0 text-left">
                                     <p className={`text-sm font-bold truncate leading-tight ${isSelected ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-800 dark:text-slate-100'}`}>

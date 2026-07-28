@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Package, Calculator, ChevronDown, Clock, HelpCircle, Trash2, X, DollarSign } from 'lucide-react';
 import { BODEGA_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../config/categories';
 import { formatCop, formatBs, getCop, getUsd } from '../../utils/calculatorUtils';
+import SmartImage from '../SmartImage';
 
 const PAGE_SIZE = 30;
 
@@ -35,6 +36,7 @@ export default function CategoryBar({
     const categoryScrollRef = useRef(null);
     const [showNoteInput, setShowNoteInput] = useState(false);
     const [holdNote, setHoldNote] = useState('');
+    const [imgErrorMap, setImgErrorMap] = useState({});
 
     const handleConfirmHold = () => {
         if (onHoldCart) {
@@ -231,12 +233,14 @@ export default function CategoryBar({
                                         {isOut ? 'AGOT.' : `${p.stock ?? 0} UNDS`}
                                     </span>
 
-                                    {/* Imagen centrada */}
+                                    {/* Imagen centrada con fallback local e icono inteligente */}
                                     <div className="w-full aspect-square rounded-lg bg-slate-50 dark:bg-slate-950 flex items-center justify-center mb-2 overflow-hidden">
-                                        {p.image
-                                            ? <img src={p.image} className="w-full h-full object-contain" alt={p.name} />
-                                            : <CatIcon size={22} className="text-slate-300" />
-                                        }
+                                        <SmartImage
+                                            src={p.image}
+                                            product={p}
+                                            alt={p.name}
+                                            fallbackIcon={<CatIcon size={22} className="text-slate-300 dark:text-slate-700" />}
+                                        />
                                     </div>
 
                                     {/* Nombre: izquierda, 2 líneas */}

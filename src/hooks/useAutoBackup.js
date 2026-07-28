@@ -63,8 +63,9 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                 // Guardar copia local
                 await storageService.setItem(BACKUP_KEY, fullBackup);
 
-                // Subir a la nube si hay conexión a Supabase y deviceId
-                if (devId && supabaseCloud) {
+                // Subir a la nube solo si hay conexión, deviceId y emparejamiento/licencia cloud activa
+                const hasCloudPairing = localStorage.getItem('pda_cloud_session') || localStorage.getItem('pda_paired_device') || premium;
+                if (devId && supabaseCloud && (hasCloudPairing || forceUpload)) {
                     const todayStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
                     const lastDailyBackup = localStorage.getItem('bodega_last_daily_backup_date');
 
@@ -119,31 +120,45 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                         updated_at: new Date().toISOString()
                     };
 
-                    const ESTACION_API = import.meta.env.VITE_ESTACION_API_URL || 'https://estacion-2026.vercel.app';
-                    try {
-                        await fetch(`${ESTACION_API}/api/backup/complete`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                deviceId: devId,
-                                driveUrl: metadataPayload.drive_url,
-                                sizeBytes: metadataPayload.size_bytes,
-                                productCount: metadataPayload.product_count,
-                                salesCount: metadataPayload.sales_count,
-                                customerCount: metadataPayload.customer_count
-                            })
-                        });
-                    } catch (apiErr) {
-                        console.error('[AutoBackup] Error al notificar API de Estación:', apiErr);
-                        // Fallback intento directo
+                    // Notificar metadatos a la API de Estación Maestra o Supabase solo si hay sesión cloud activa o entorno de producción
+                    const isLocalDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+                    const hasCloudSession = !!(localStorage.getItem('pda_cloud_session') || localStorage.getItem('pda_paired_device'));
+                    const allowRemoteNotify = hasCloudSession || (!isLocalDev && !!import.meta.env.VITE_ESTACION_API_URL);
+
+                    if (allowRemoteNotify) {
+                        const ESTACION_API = import.meta.env.VITE_ESTACION_API_URL || 'https://estacion-2026.vercel.app';
+                        let apiSuccess = false;
                         try {
-                            await supabaseCloud.from('cloud_backups').upsert({
-                                device_id: devId,
-                                backup_data: metadataPayload,
-                                updated_at: new Date().toISOString()
-                            }, { onConflict: 'device_id' });
-                        } catch (upsertErr) {
-                            // Silenciar error en fallback
+                            const res = await fetch(`${ESTACION_API}/api/backup/complete`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    deviceId: devId,
+                                    driveUrl: metadataPayload.drive_url,
+                                    sizeBytes: metadataPayload.size_bytes,
+                                    productCount: metadataPayload.product_count,
+                                    salesCount: metadataPayload.sales_count,
+                                    customerCount: metadataPayload.customer_count
+                                })
+                            });
+                            if (res.ok) apiSuccess = true;
+                        } catch (apiErr) {
+                            if (import.meta.env?.DEV) {
+                                console.warn('[AutoBackup] Servidor de Estación Maestra no contactado:', apiErr?.message || apiErr);
+                            }
+                        }
+
+                        // Fallback directo a Supabase solo si API de Estación falló y existe sesión activa
+                        if (!apiSuccess && supabaseCloud && hasCloudSession) {
+                            try {
+                                await supabaseCloud.from('cloud_backups').upsert({
+                                    device_id: devId,
+                                    backup_data: metadataPayload,
+                                    updated_at: new Date().toISOString()
+                                }, { onConflict: 'device_id' });
+                            } catch {
+                                // Silenciar excepción en fallback
+                            }
                         }
                     }
 
@@ -178,7 +193,11 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
     // socket abierto — evita gastar cupo de conexiones Realtime en instalaciones
     // sin licencia (free/demo vencida) que nunca usarán el backup remoto forzado.
     useEffect(() => {
-        if (!deviceId || !supabaseCloud) return;
+        const isLocalDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+        const hasCloudSession = !!(localStorage.getItem('pda_cloud_session') || localStorage.getItem('pda_paired_device'));
+        const allowRemoteNotify = hasCloudSession || (!isLocalDev && !!import.meta.env.VITE_ESTACION_API_URL);
+
+        if (!deviceId || !supabaseCloud || !allowRemoteNotify) return;
 
         let channel = null;
 
@@ -205,9 +224,9 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
             }
         };
 
-        // Comprobar solicitudes pendientes al conectar y cada 10s (Fail-safe contra pérdida de WebSocket)
+        // Comprobar solicitudes pendientes al conectar y cada 60s (Fail-safe contra pérdida de WebSocket)
         checkPendingRequests();
-        const pendingPollInterval = setInterval(checkPendingRequests, 10000);
+        const pendingPollInterval = setInterval(checkPendingRequests, 60000);
 
         // Suscribirse al canal en tiempo real de forma anónima
         channel = supabaseCloud

@@ -69,10 +69,18 @@ export async function uploadProductImage(dataUri, opts = {}) {
             .from(BUCKET)
             .upload(path, blob, { contentType: blob.type, upsert: true });
 
-        if (error) return null;
-
         const { data } = supabaseCloud.storage.from(BUCKET).getPublicUrl(path);
-        return data?.publicUrl || null;
+        if (!data?.publicUrl) return null;
+
+        // OFFLINE-IMG (F4): la ruta es determinística y se sube con upsert, así
+        // que cambiar la foto de un producto NO cambia la URL. El SW la sirve con
+        // CacheFirst y mostraría la imagen vieja hasta que expire (90 días).
+        // Un sello ?v= por subida hace que cada versión sea una clave de cache
+        // distinta. Sigue matcheando el urlPattern de runtimeCaching y el regex
+        // de isStorageImageUrl, que no anclan el final de la URL.
+        const stamp = Date.now();
+        const sep = data.publicUrl.includes('?') ? '&' : '?';
+        return `${data.publicUrl}${sep}v=${stamp}`;
     } catch {
         return null;
     }

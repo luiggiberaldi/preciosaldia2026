@@ -57,7 +57,29 @@ export default defineConfig(({ mode }) => {
             handler: 'CacheFirst',
             options: {
               cacheName: 'product-images-cache',
-              expiration: { maxEntries: 500, maxAgeSeconds: 60 * 60 * 24 * 90 },
+              // OFFLINE-IMG (F2): 500 desalojaba imágenes en inventarios grandes.
+              // maxAge se mantiene en 90 días a propósito: la ruta en Storage es
+              // determinística con upsert, así que sin la Fase 4 una imagen
+              // re-subida solo se refresca al expirar.
+              expiration: { maxEntries: 1200, maxAgeSeconds: 60 * 60 * 24 * 90 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            // OFFLINE-IMG (F1): catálogo base servido desde public/images/catalog/.
+            // NO entra al precache: el globPatterns por defecto de vite-plugin-pwa
+            // no incluye .webp, y precargar los 612 archivos (23MB) al instalar
+            // bloquearía la activación del SW en equipos de gama baja. Con
+            // CacheFirst de runtime solo se persisten las que el negocio abre.
+            // Sin regex anclado con `$`: así también matchea si algún día llega
+            // con querystring.
+            urlPattern: /\/images\/catalog\//i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'catalog-images-cache',
+              // 612 archivos en el catálogo → 700 deja margen sin desalojar.
+              // Son inmutables (el nombre es el slug del producto) → 1 año.
+              expiration: { maxEntries: 700, maxAgeSeconds: 60 * 60 * 24 * 365 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },

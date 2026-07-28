@@ -1,10 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { storageService } from '../utils/storageService';
 import { BODEGA_CATEGORIES } from '../config/categories';
-// HOOK-011: Tras la eliminación del monkeypatch global de localStorage por el Agente B
-// (SEC-009), los callers que escriben claves `LOCAL_KEYS` deben invocar `pushLocalSync`
-// explícitamente para que el cambio se propague a `sync_documents` (colección 'local').
 import { pushLocalSync, pushCloudSync } from '../hooks/useCloudSync';
+import { useRateContext } from './RateContext';
 
 const ProductContext = createContext();
 
@@ -35,7 +33,9 @@ const normalizeCategories = (cats) => {
     }).filter(Boolean);
 };
 
-export function ProductProvider({ children, rates, rateDiscrepancyWarning }) {
+export function ProductProvider({ children }) {
+    const rateState = useRateContext();
+
     const [products, setProducts] = useState([]);
     const [categories, setRawCategories] = useState(() => normalizeCategories(BODEGA_CATEGORIES));
     const setCategories = useCallback((cats) => {
@@ -54,49 +54,6 @@ export function ProductProvider({ children, rates, rateDiscrepancyWarning }) {
         productsRef.current = products;
     }, [products]);
 
-    // MARKET LOGIC - Street Rate
-    const [streetRate, setStreetRate] = useState(() => {
-        const saved = localStorage.getItem('street_rate_bs');
-        return saved ? parseFloat(saved) : 0;
-    });
-
-    // GLOBAL RATE LOGIC — rateMode: 'bcv' | 'euro' | 'usdt' | 'manual'
-    // Backward-compat: si existía bodega_use_auto_rate=false se migra a 'manual'
-    const [rateMode, setRateMode] = useState(() => {
-        const saved = localStorage.getItem('bodega_rate_mode');
-        if (saved && ['bcv', 'euro', 'usdt', 'manual'].includes(saved)) return saved;
-        // Migrar desde el toggle antiguo
-        const oldAuto = localStorage.getItem('bodega_use_auto_rate');
-        return (oldAuto === 'false') ? 'manual' : 'bcv';
-    });
-    const [customRate, setCustomRate] = useState(() => {
-        const saved = localStorage.getItem('bodega_custom_rate');
-        return saved && parseFloat(saved) > 0 ? saved : '';
-    });
-    // Alias de compatibilidad: useAutoRate=true cuando no es manual
-    const useAutoRate = rateMode !== 'manual';
-    const setUseAutoRate = (val) => {
-        if (val) {
-            setRateMode(prev => ['bcv', 'euro', 'usdt'].includes(prev) ? prev : 'bcv');
-        } else {
-            setRateMode('manual');
-        }
-    };
-
-    // AUTO COP LOGIC
-    const [copEnabled, setCopEnabled] = useState(() => {
-        return localStorage.getItem('cop_enabled') === 'true';
-    });
-    const [autoCopEnabled, setAutoCopEnabled] = useState(() => {
-        return localStorage.getItem('auto_cop_enabled') === 'true';
-    });
-    const [tasaCopManual, setTasaCopManual] = useState(() => {
-        return localStorage.getItem('tasa_cop') || '';
-    });
-    const [copPrimary, setCopPrimary] = useState(() => {
-        return localStorage.getItem('cop_primary') === 'true';
-    });
-
     // CHECKOUT MODE — 'basic' (barras móviles) | 'pos' (2 columnas, estilo Listo POS)
     const [checkoutMode, setCheckoutModeState] = useState(() => {
         const saved = localStorage.getItem('checkout_mode');
@@ -109,19 +66,6 @@ export function ProductProvider({ children, rates, rateDiscrepancyWarning }) {
         setCheckoutModeState(mode);
         localStorage.setItem('checkout_mode', mode);
     };
-
-    // effectiveRate según el modo seleccionado
-    const effectiveRate = (() => {
-        if (rateMode === 'euro') return rates?.euro?.price || rates?.bcv?.price || 1;
-        if (rateMode === 'usdt') return rates?.usdt?.price || rates?.bcv?.price || 1;
-        if (rateMode === 'manual') return parseFloat(customRate) > 0 ? parseFloat(customRate) : (rates?.bcv?.price || 1);
-        return rates?.bcv?.price || 1; // 'bcv' (default)
-    })();
-    
-    // Calcula el COP efectivo. rates.autoCopRate es calculado en useRates basado en TRM y la Brecha USDT/BCV.
-    const tasaCop = autoCopEnabled && rates?.autoCopRate?.price 
-        ? rates.autoCopRate.price 
-        : (parseFloat(tasaCopManual) > 0 ? parseFloat(tasaCopManual) : 4150);
 
     // Initial Load
     useEffect(() => {
@@ -142,7 +86,7 @@ export function ProductProvider({ children, rates, rateDiscrepancyWarning }) {
     // One-time migration: assign priceCop to existing products that don't have it
     useEffect(() => {
         if (isLoadingProducts || products.length === 0) return;
-        if (!copEnabled || !tasaCop || tasaCop <= 0) return;
+        if (!rateState?.copEnabled || !rateState?.tasaCop || rateState.tasaCop <= 0) return;
         if (localStorage.getItem('priceCop_migration_v1') === 'done') return;
 
         const needsMigration = products.some(p => p.priceUsdt > 0 && (p.priceCop == null || p.priceCop <= 0));
@@ -152,10 +96,10 @@ export function ProductProvider({ children, rates, rateDiscrepancyWarning }) {
         }
 
         const migrated = products.map(p => {
-            if (p.priceUsdt > 0 && (p.priceCop == null || p.priceCop <= 0)) {
-                const priceCop = Math.round(p.priceUsdt * tasaCop);
+            if (p.priceUsdt > 0 && (p.priceCop == null || p.priceCop <= 0) && rateState.copEnabled && rateState.tasaCop > 0) {
+                const priceCop = Math.round(p.priceUsdt * rateState.tasaCop);
                 const unitPriceCop = p.unitPriceUsd > 0
-                    ? Math.round(p.unitPriceUsd * tasaCop)
+                    ? Math.round(p.unitPriceUsd * rateState.tasaCop)
                     : null;
                 return { ...p, priceCop, ...(unitPriceCop ? { unitPriceCop } : {}) };
             }
@@ -164,20 +108,16 @@ export function ProductProvider({ children, rates, rateDiscrepancyWarning }) {
 
         setProducts(migrated);
         localStorage.setItem('priceCop_migration_v1', 'done');
-    }, [isLoadingProducts, products.length, copEnabled, tasaCop]);
+    }, [isLoadingProducts, products.length, rateState?.copEnabled, rateState?.tasaCop]);
 
     // Set Initial Street Rate (from BCV)
     useEffect(() => {
-        if (!streetRate && rates.bcv?.price > 0 && !localStorage.getItem('street_rate_bs')) {
-            setStreetRate(rates.bcv.price);
+        if (!rateState?.streetRate && rateState?.rates?.bcv?.price > 0 && !localStorage.getItem('street_rate_bs')) {
+            rateState.setStreetRate(rateState.rates.bcv.price);
         }
-    }, [rates.bcv?.price, streetRate]);
+    }, [rateState?.rates?.bcv?.price, rateState?.streetRate, rateState?.setStreetRate]);
 
     // Auto-save products and categories with Debounce (Performance Fix)
-    // HOOK-018: Setear `savingRef.current = true` ANTES del setTimeout para que
-    // el handler de `app_storage_update` (disparado por el setItem dentro del
-    // callback, o por un push cloud que llega entre el schedule y el fire) vea
-    // el flag activo y NO dispare un re-fetch que pisaría el save en curso.
     useEffect(() => {
         if (isLoadingProducts) return;
 
@@ -186,7 +126,6 @@ export function ProductProvider({ children, rates, rateDiscrepancyWarning }) {
             return;
         }
 
-        // Setear el guard ANTES de agendar el timeout (HOOK-018).
         savingRef.current = true;
 
         const timer = setTimeout(() => {
@@ -198,69 +137,19 @@ export function ProductProvider({ children, rates, rateDiscrepancyWarning }) {
             }
             savePromises.push(storageService.setItem('my_categories_v1', categories));
             Promise.all(savePromises).finally(() => {
-                // Reset guard after microtask queue flushes
                 setTimeout(() => { savingRef.current = false; }, 50);
             });
-        }, 1000); // 1 segundo de debounce
+        }, 1000);
 
         return () => {
             clearTimeout(timer);
-            // Si el efecto se re-corre antes del fire (cambio rápido de products),
-            // dejamos el guard en true — el siguiente run lo reseteará al final.
-            // No tocamos savingRef aquí: lo gestiona el callback del setTimeout.
         };
     }, [products, categories, isLoadingProducts]);
 
-    useEffect(() => {
-        if (streetRate > 0) localStorage.setItem('street_rate_bs', streetRate.toString());
-    }, [streetRate]);
-
-    useEffect(() => {
-        localStorage.setItem('bodega_rate_mode', rateMode);
-        localStorage.setItem('bodega_use_auto_rate', JSON.stringify(rateMode !== 'manual'));
-        pushLocalSync('bodega_use_auto_rate', rateMode !== 'manual');
-        pushLocalSync('bodega_rate_mode', rateMode);
-        if (customRate) {
-            localStorage.setItem('bodega_custom_rate', customRate.toString());
-            pushLocalSync('bodega_custom_rate', parseFloat(customRate));
-        }
-    }, [rateMode, customRate]);
-
-    // Listener para actualizar si cambia en otra pestaña/componente
+    // Listener para actualizar productos/categorías si cambian en otra pestaña/componente
     useEffect(() => {
         const handleStorageChange = (e) => {
-            if (e.key === 'bodega_custom_rate') {
-                if (e.newValue && parseFloat(e.newValue) > 0) setCustomRate(e.newValue);
-            }
-            if (e.key === 'bodega_rate_mode') {
-                if (e.newValue) setRateMode(e.newValue);
-            }
-            if (e.key === 'bodega_use_auto_rate') {
-                // HOOK-022: antes catch silencioso; loguear en dev para detectar corrupción.
-                try {
-                    const isAuto = !!JSON.parse(e.newValue);
-                    if (isAuto) {
-                        setRateMode(prev => ['bcv', 'euro', 'usdt'].includes(prev) ? prev : 'bcv');
-                    } else {
-                        setRateMode('manual');
-                    }
-                }
-                catch (err) { console.warn('[ProductContext] storage bodega_use_auto_rate parse error:', err); }
-            }
-            if (e.key === 'cop_enabled') {
-                setCopEnabled(e.newValue === 'true');
-            }
-            if (e.key === 'auto_cop_enabled') {
-                setAutoCopEnabled(e.newValue === 'true');
-            }
-            if (e.key === 'tasa_cop') {
-                setTasaCopManual(e.newValue);
-            }
-            if (e.key === 'cop_primary') {
-                setCopPrimary(e.newValue === 'true');
-            }
             if (e.key === 'bodega_products_v1') {
-                // If modified in another tab, fetch it
                 storageService.getItem('bodega_products_v1', []).then(updatedProducts => {
                     if (JSON.stringify(updatedProducts) !== JSON.stringify(productsRef.current)) {
                         setProducts(updatedProducts);
@@ -286,37 +175,6 @@ export function ProductProvider({ children, rates, rateDiscrepancyWarning }) {
             if (key === 'my_categories_v1') {
                 const updatedCategories = await storageService.getItem('my_categories_v1', BODEGA_CATEGORIES);
                 setCategories(updatedCategories);
-            }
-            if (key === 'bodega_rate_mode') {
-                const val = localStorage.getItem('bodega_rate_mode');
-                if (val) setRateMode(val);
-            }
-            if (key === 'bodega_custom_rate') {
-                const val = localStorage.getItem('bodega_custom_rate');
-                if (val && parseFloat(val) > 0) setCustomRate(val);
-            }
-            if (key === 'bodega_use_auto_rate') {
-                const val = localStorage.getItem('bodega_use_auto_rate');
-                try {
-                    const isAuto = val ? JSON.parse(val) : true;
-                    if (isAuto) {
-                        setRateMode(prev => ['bcv', 'euro', 'usdt'].includes(prev) ? prev : 'bcv');
-                    } else {
-                        setRateMode('manual');
-                    }
-                } catch (err) {}
-            }
-            if (key === 'cop_enabled') {
-                setCopEnabled(localStorage.getItem('cop_enabled') === 'true');
-            }
-            if (key === 'auto_cop_enabled') {
-                setAutoCopEnabled(localStorage.getItem('auto_cop_enabled') === 'true');
-            }
-            if (key === 'tasa_cop') {
-                setTasaCopManual(localStorage.getItem('tasa_cop') || '');
-            }
-            if (key === 'cop_primary') {
-                setCopPrimary(localStorage.getItem('cop_primary') === 'true');
             }
         };
 
@@ -349,49 +207,20 @@ export function ProductProvider({ children, rates, rateDiscrepancyWarning }) {
     // TODOS los consumidores se re-rendericen en cada render del Provider.
     // Las setters de useState son estables y no necesitan estar en deps.
     const value = useMemo(() => ({
+        ...rateState,
         products,
         setProducts,
         categories,
         setCategories,
         isLoadingProducts,
-        streetRate,
-        setStreetRate,
-        rateMode,
-        setRateMode,
-        useAutoRate,
-        setUseAutoRate,
-        customRate,
-        setCustomRate,
-        effectiveRate,
-        rates,
-        rateDiscrepancyWarning,
-        copEnabled,
-        setCopEnabled,
-        autoCopEnabled,
-        setAutoCopEnabled,
-        tasaCopManual,
-        setTasaCopManual,
-        copPrimary,
-        setCopPrimary,
-        tasaCop,
         checkoutMode,
         setCheckoutMode,
         adjustStock
     }), [
+        rateState,
         products,
         categories,
         isLoadingProducts,
-        streetRate,
-        useAutoRate,
-        customRate,
-        effectiveRate,
-        rates,
-        rateDiscrepancyWarning,
-        copEnabled,
-        autoCopEnabled,
-        tasaCopManual,
-        copPrimary,
-        tasaCop,
         checkoutMode,
         adjustStock,
     ]);

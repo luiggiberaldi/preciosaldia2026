@@ -2,6 +2,7 @@ import React from 'react';
 import { ShoppingCart, Plus, Minus, X, CheckCircle, Package, Trash2, DollarSign, Percent, Search, Pause } from 'lucide-react';
 import { formatBs, formatCop, getCop, formatUsd } from '../../utils/calculatorUtils';
 import { mulR } from '../../utils/dinero';
+import SmartImage from '../SmartImage';
 
 export default function CartPanel({
     cart,
@@ -96,12 +97,20 @@ export default function CartPanel({
                                         }`}>
                                             {isCashAdvance ? (
                                                 <DollarSign size={22} className="animate-pulse" />
-                                            ) : item.image ? (
-                                                <img src={item.image} alt={item.name} className="w-full h-full object-contain mix-blend-multiply dark:mix-blend-normal" />
-                                            ) : isCustomProduct ? (
-                                                <DollarSign size={20} className="sm:w-[22px] sm:h-[22px]" />
                                             ) : (
-                                                <Package size={16} className="text-slate-300 sm:w-[18px] sm:h-[18px]" />
+                                                <SmartImage
+                                                    src={item.image}
+                                                    product={item}
+                                                    alt={item.name}
+                                                    className="w-full h-full object-contain mix-blend-multiply dark:mix-blend-normal"
+                                                    fallbackIcon={
+                                                        isCustomProduct ? (
+                                                            <DollarSign size={20} className="sm:w-[22px] sm:h-[22px]" />
+                                                        ) : (
+                                                            <Package size={16} className="text-slate-300 sm:w-[18px] sm:h-[18px]" />
+                                                        )
+                                                    }
+                                                />
                                             )}
                                         </div>
                                         <div className="flex-1 min-w-0 pr-1">

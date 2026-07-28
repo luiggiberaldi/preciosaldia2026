@@ -145,6 +145,19 @@ export const queueCloudSync = (key, value) => {
     _debouncePush(key, value);
 };
 
+// ─── Validación de Esquema para Sincronización Remota (DATA-001) ─────────────
+const STORE_SCHEMAS = {
+    'bodega_products_v1': (data) => Array.isArray(data),
+    'bodega_sales_v1': (data) => Array.isArray(data),
+    'bodega_customers_v1': (data) => Array.isArray(data),
+    'bodega_payment_methods_v1': (data) => Array.isArray(data),
+    'bodega_accounts_v2': (data) => Array.isArray(data),
+    'bodega_categories_v1': (data) => Array.isArray(data),
+    'monitor_rates_v12': (data) => typeof data === 'object' && data !== null,
+    'abasto_audit_log_v1': (data) => Array.isArray(data),
+    'pda_rate_mode': (data) => typeof data === 'string' && ['bcv', 'paralelo', 'promedio', 'custom'].includes(data),
+};
+
 /**
  * Aplica un documento recibido de la nube al almacenamiento local.
  * Garantiza que isSyncingFromCloud esté activo durante toda la operación.
@@ -152,11 +165,23 @@ export const queueCloudSync = (key, value) => {
 async function _applyFromCloud(docId, collection, payload) {
     isSyncingFromCloud = true;
     try {
+        if (payload == null) return;
+        if (docId === 'abasto-auth-storage') return;
+
+        // DATA-001: Validación de Schema antes de escribir en almacenamiento local
+        const validator = STORE_SCHEMAS[docId];
+        if (validator) {
+            let dataToValidate = payload;
+            if (typeof payload === 'string' && (payload.startsWith('[') || payload.startsWith('{'))) {
+                try { dataToValidate = JSON.parse(payload); } catch { /* silenciar parse error */ }
+            }
+            if (!validator(dataToValidate)) {
+                console.warn(`[CloudSync] Schema validation falló para ${docId}, ignorando payload remoto.`, payload);
+                return;
+            }
+        }
+
         if (collection === 'local') {
-            // Ignorar payload nulo/undefined para no escribir "undefined" en localStorage
-            if (payload == null) return;
-            // SEC-002: nunca aplicar `abasto-auth-storage` desde la nube.
-            if (docId === 'abasto-auth-storage') return;
             const stringPayload = typeof payload === 'string' ? payload : JSON.stringify(payload);
             originalSetItem(docId, stringPayload);   // Escribe sin pasar por interceptor (no existe ya)
             window.dispatchEvent(new StorageEvent('storage', {

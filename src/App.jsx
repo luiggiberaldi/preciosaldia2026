@@ -14,6 +14,7 @@ const AIAssistantWidget = lazy(() => import('./components/AIAssistantWidget'));
 
 import { useRates } from './hooks/useRates';
 import { useSecurity } from './hooks/useSecurity';
+import { RateProvider } from './context/RateContext';
 import { ProductProvider } from './context/ProductContext';
 import { CartProvider } from './context/CartContext';
 import PremiumGuard from './components/security/PremiumGuard';
@@ -340,8 +341,9 @@ export default function App() {
       )}
 
 
+      <RateProvider rates={rates} rateDiscrepancyWarning={rateDiscrepancyWarning}>
       <CartProvider>
-      <ProductProvider rates={rates} rateDiscrepancyWarning={rateDiscrepancyWarning}>
+      <ProductProvider>
         {/* OFFLINE-IMG: precalienta el cache del SW con TODAS las imágenes del inventario */}
         <ImagePrecacheRunner />
         <main className={`flex-1 min-h-0 w-full max-w-full px-0 lg:px-6 xl:px-8 mx-auto relative ${isKeyboardOpen ? 'pb-4' : 'pb-24'} flex flex-col overflow-y-auto`}>
@@ -427,6 +429,7 @@ export default function App() {
 
       </ProductProvider>
       </CartProvider>
+      </RateProvider>
       
       <CommandPalette 
           isOpen={isCommandPaletteOpen} 

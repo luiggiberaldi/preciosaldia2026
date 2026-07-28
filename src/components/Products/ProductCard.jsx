@@ -3,6 +3,7 @@ import { Tag, Banknote, AlertTriangle, Box, Minus, Plus, Pencil, Trash2, Package
 import { CATEGORY_COLORS, CATEGORY_ICONS, UNITS } from '../../config/categories';
 import { formatUsd, formatBs, formatCop, smartCashRounding, getCop, getUsd } from '../../utils/calculatorUtils';
 import { showToast } from '../Toast';
+import SmartImage from '../SmartImage';
 
 export default function ProductCard({
     product: p,
@@ -201,30 +202,17 @@ ${showSecondary ? `[PRECIO SECUNDARIO]
                 <div className="absolute top-1 left-1 z-10 w-6 h-6 flex items-center justify-center bg-white/80 dark:bg-slate-900/80 rounded backdrop-blur-sm">
                     <input type="checkbox" checked={isSelected} onChange={onToggleSelect} className="w-4 h-4 rounded border-slate-300 text-brand focus:ring-brand cursor-pointer shadow-sm" />
                 </div>
-                {p.image ? (
-                    <img
-                        src={p.image}
-                        className="w-full h-full object-contain p-1"
-                        alt={p.name}
-                        decoding="async"
-                        loading="lazy"
-                        onError={(e) => {
-                            // IMG-FIX: la WebView de Android descarta bitmaps bajo presión
-                            // de memoria y dejaba el <img> en blanco sin reintento. Forzamos
-                            // una recarga con cache-busting (una sola vez, solo URLs remotas).
-                            const img = e.currentTarget;
-                            // OFFLINE-IMG: sin conexión no reintentar (el ?cb= nunca
-                            // coincidiría con el cache del SW y ensucia el cache).
-                            if (img.dataset.retried || !navigator.onLine || !/^https?:/i.test(p.image)) return;
-                            img.dataset.retried = '1';
-                            img.src = `${p.image}${p.image.includes('?') ? '&' : '?'}cb=${Date.now()}`;
-                        }}
-                    />
-                ) : (
-                    <div className="w-full h-full flex items-center justify-center text-slate-300 dark:text-slate-600">
-                        <Tag size={24} />
-                    </div>
-                )}
+                <SmartImage
+                    src={p.image}
+                    product={p}
+                    alt={p.name}
+                    className="w-full h-full object-contain p-1"
+                    fallbackIcon={
+                        <div className="w-full h-full flex items-center justify-center text-slate-300 dark:text-slate-600">
+                            <Tag size={24} />
+                        </div>
+                    }
+                />
                 {/* Category badge */}
                 {catInfo && catInfo.id !== 'otros' && (
                     <div className={`absolute top-1 left-8 text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5 ${CATEGORY_COLORS[catInfo.color] || ''}`}>
