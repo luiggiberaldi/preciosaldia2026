@@ -120,7 +120,7 @@ export default function LockScreen({ onOpenPairing, installPrompt, onInstall, sh
 
         {/* User Grid */}
         <div className="w-full grid grid-cols-2 md:flex md:flex-row md:flex-wrap md:justify-center gap-8 sm:gap-14 max-w-[320px] md:max-w-5xl mx-auto">
-          {usuarios.map(user => (
+          {(usuarios || []).map(user => (
             <UserCard
               key={user.id}
               user={user}
@@ -133,7 +133,7 @@ export default function LockScreen({ onOpenPairing, installPrompt, onInstall, sh
       {/* Footer */}
       <div className="relative z-10 pb-6 text-center flex flex-col items-center gap-3">
         <p className="text-[10px] text-slate-400 font-medium tracking-wider">
-          {usuarios.every(u => u?.requirePin === false)
+          {(usuarios || []).every(u => u?.requirePin === false)
             ? 'Acceso directo activado para todos los usuarios'
             : 'Haz clic en tu perfil para ingresar'}
         </p>

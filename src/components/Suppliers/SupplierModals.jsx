@@ -219,14 +219,14 @@ export function PayInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, copPri
                                     : 'Pago con fondos externos. No altera el arqueo de caja.'}
                             </span>
                         </div>
-                        <label className="relative inline-flex items-center cursor-pointer select-none shrink-0">
+                        <label className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center cursor-pointer select-none shrink-0">
                             <input 
                                 type="checkbox" 
                                 checked={retiraCaja} 
                                 onChange={e => setRetiraCaja(e.target.checked)} 
                                 className="sr-only peer" 
                             />
-                            <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                            <div className="relative w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
                         </label>
                     </div>
 

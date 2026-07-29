@@ -1,5 +1,5 @@
 import React from 'react';
-import { X } from 'lucide-react';
+import CloseButton from './ui/CloseButton';
 
 export const Modal = ({ isOpen, onClose, title, children, className = '', size = 'max-w-sm' }) => {
   if (!isOpen) return null;
@@ -15,17 +15,17 @@ export const Modal = ({ isOpen, onClose, title, children, className = '', size =
       />
       
       {/* Contenido del Modal */}
-      <div className={`relative bg-white dark:bg-slate-900 w-full ${size} rounded-[2rem] shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-200 transition-all ${className}`}>
+      <div 
+        role="dialog"
+        aria-modal="true"
+        aria-label={title || "Diálogo"}
+        className={`relative bg-white dark:bg-slate-900 w-full ${size} rounded-[2rem] shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-200 transition-all ${className}`}
+      >
         
         {/* Cabecera */}
         <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/50">
           <h3 className="font-black text-slate-800 dark:text-white text-lg tracking-tight">{title}</h3>
-          <button 
-            onClick={onClose}
-            className="p-1.5 bg-slate-200 dark:bg-slate-700 rounded-full text-slate-500 hover:text-red-500 transition-colors"
-          >
-            <X size={16} strokeWidth={3} />
-          </button>
+          <CloseButton onClick={onClose} />
         </div>
 
         {/* Body con Scroll Mejorado */}

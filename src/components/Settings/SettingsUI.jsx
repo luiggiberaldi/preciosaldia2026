@@ -1,7 +1,7 @@
 // Shared primitive components used across all Settings tabs.
 // Extracted from SettingsView.jsx.
 
-export function Toggle({ enabled, onChange, color = 'emerald' }) {
+export function Toggle({ enabled, onChange, color = 'emerald', 'aria-label': ariaLabel = 'Interruptor de ajuste' }) {
     const colors = {
         emerald: enabled ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600',
         amber: enabled ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-600',
@@ -10,10 +10,16 @@ export function Toggle({ enabled, onChange, color = 'emerald' }) {
     };
     return (
         <button
+            type="button"
+            role="switch"
+            aria-checked={enabled}
+            aria-label={ariaLabel}
             onClick={onChange}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${colors[color]}`}
+            className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-1 cursor-pointer select-none shrink-0 active:scale-95 transition-transform"
         >
-            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+            <span className={`relative inline-flex h-6 w-11 items-center rounded-full p-0.5 transition-colors duration-200 ease-in-out ${colors[color]}`}>
+                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform duration-200 ease-in-out ${enabled ? 'translate-x-5' : 'translate-x-0'}`} />
+            </span>
         </button>
     );
 }

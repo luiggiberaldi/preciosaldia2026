@@ -8,7 +8,7 @@ import { useVoiceSearch } from '../hooks/useVoiceSearch';
 import { useNotifications } from '../hooks/useNotifications';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import { showToast } from '../components/Toast';
-import { ShoppingCart, X, DollarSign, CheckCircle2 } from 'lucide-react';
+import { ShoppingCart, X, DollarSign, CheckCircle2, Trash2 } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useProductContext } from '../context/ProductContext';
 
@@ -850,28 +850,28 @@ export default function SalesView({ triggerHaptic, isActive }) {
 
             {/* ── Mobile Cart FAB & Bottom Sheet (lg:hidden) ── */}
             <div className="lg:hidden">
-                {/* Floating Action Button — v1.2.0: bg-brand (cian) en vez de emerald */}
+                {/* Floating Action Button — v1.2.0: bg-brand con elevación elegante y espacio respecto al BottomNav */}
                 {cart.length > 0 && !isCartSheetOpen && !showCheckout && !showReceipt && (
                     <button
                         onClick={() => { triggerHaptic && triggerHaptic(); setIsCartSheetOpen(true); }}
-                        className="fixed bottom-[max(6rem,env(safe-area-inset-bottom)+5.5rem)] left-4 right-4 bg-brand hover:bg-brand-dark text-white p-4 rounded-2xl shadow-primary-tone flex items-center justify-between z-40 active:scale-95 transition-all animate-in slide-in-from-bottom"
+                        className="fixed bottom-[calc(max(0.75rem,env(safe-area-inset-bottom))+5.5rem)] left-4 right-4 max-w-lg sm:mx-auto bg-[#006A71] dark:bg-[#006A71] hover:bg-[#005B61] text-white p-3.5 px-4 rounded-2xl shadow-xl shadow-[#006A71]/25 border border-white/20 flex items-center justify-between z-40 active:scale-95 transition-all animate-in slide-in-from-bottom"
                     >
                         <div className="flex items-center gap-3">
-                            <div className="bg-white/20 p-2 rounded-xl">
+                            <div className="bg-white/20 p-2 rounded-xl shrink-0">
                                 <ShoppingCart size={20} />
                             </div>
                             <div className="text-left">
-                                <div className="text-xs font-bold text-white/80 uppercase tracking-wider">Ver Cesta</div>
-                                <div className="font-black leading-none">{cartItemCount} artículo{cartItemCount !== 1 && 's'}</div>
+                                <div className="text-[10px] font-bold text-white/80 uppercase tracking-wider">Ver Cesta</div>
+                                <div className="font-black text-sm leading-none">{cartItemCount} artículo{cartItemCount !== 1 && 's'}</div>
                             </div>
                         </div>
                         <div className="text-right">
-                            <div className="text-2xl font-black leading-none">
+                            <div className="text-xl font-black leading-none">
                                 {copEnabled && copPrimary && tasaCop > 0
                                     ? `${new Intl.NumberFormat('es-CO').format(Math.round(cartTotalCop))} COP`
                                     : `$${cartTotalUsd.toFixed(2)}`}
                             </div>
-                            <div className="text-xs font-bold text-white/80 mt-1">Bs {formatBs(cartTotalBs)}</div>
+                            <div className="text-[10px] font-bold text-white/80 mt-1">Bs {formatBs(cartTotalBs)}</div>
                         </div>
                     </button>
                 )}
@@ -889,9 +889,30 @@ export default function SalesView({ triggerHaptic, isActive }) {
                                 <h3 className="font-black text-surface-700 dark:text-surface-100 text-lg flex items-center gap-2">
                                     <ShoppingCart size={20} className="text-brand" /> Cesta Actual
                                 </h3>
-                                <button onClick={() => setIsCartSheetOpen(false)} className="p-2 -mr-2 text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 transition-colors">
-                                    <X size={20} />
-                                </button>
+                                <div className="flex items-center gap-1.5">
+                                    {cart.length > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                triggerHaptic && triggerHaptic();
+                                                setShowClearCartConfirm(true);
+                                            }}
+                                            className="flex items-center gap-1 py-1.5 px-3 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl text-xs font-bold transition-all active:scale-95 border border-rose-200/50 dark:border-rose-900/40"
+                                            title="Vaciar toda la cesta"
+                                        >
+                                            <Trash2 size={14} />
+                                            <span>Vaciar</span>
+                                        </button>
+                                    )}
+                                    <button 
+                                        type="button"
+                                        onClick={() => setIsCartSheetOpen(false)} 
+                                        aria-label="Cerrar cesta"
+                                        className="p-2 -mr-2 text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 rounded-full transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+                                    >
+                                        <X size={20} />
+                                    </button>
+                                </div>
                             </div>
                             <CartPanel
                                 cart={cart} effectiveRate={effectiveRate}

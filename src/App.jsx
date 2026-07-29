@@ -558,35 +558,23 @@ function BottomNav({
           );
         })}
 
-        {/* Logout — solo si el login está activado */}
-        {requireLogin && usuarioActivo && (
-          <button
-            onClick={() => { triggerHaptic(); logout(); }}
-            className="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-0.5 px-0.5 rounded-xl text-slate-400 hover:text-rose-400 transition-colors active:scale-90 overflow-hidden"
-            title={`Cerrar sesión (${usuarioActivo.nombre})`}
-          >
-            <span className="flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors shrink-0">
-              <LogOut size={16} strokeWidth={2} />
-            </span>
-            <span className="w-full max-w-full truncate text-center text-[8px] sm:text-[9px] font-bold text-slate-400 leading-none">Salir</span>
-          </button>
-        )}
+
 
         {installPrompt && activeTab === 'inicio' && (
-          <button onClick={() => { triggerHaptic(); handleInstall(); }} className="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-0.5 px-0.5 rounded-xl transition-all duration-300 text-brand hover:bg-brand/10 animate-pulse overflow-hidden">
-            <span className="flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-brand text-white shadow-md shrink-0">
-              <Download size={15} strokeWidth={2.5} />
+          <button onClick={() => { triggerHaptic(); handleInstall(); }} className="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-1 px-0.5 min-h-[44px] rounded-xl transition-all duration-300 text-brand hover:bg-brand/10 animate-pulse overflow-hidden">
+            <span className="flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-brand text-white shadow-md shrink-0">
+              <Download size={18} strokeWidth={2.5} />
             </span>
-            <span className="w-full max-w-full truncate text-center text-[8px] sm:text-[9px] font-bold text-brand leading-none">Instalar</span>
+            <span className="w-full max-w-full truncate text-center text-[10px] sm:text-xs font-bold text-brand leading-tight">Instalar</span>
           </button>
         )}
 
         {!installPrompt && showIOSButton && activeTab === 'inicio' && (
-          <button onClick={() => { triggerHaptic(); setShowIOSInstall(true); }} className="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-0.5 px-0.5 rounded-xl transition-all duration-300 text-brand hover:bg-brand/10 animate-pulse overflow-hidden">
-            <span className="flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-brand text-white shadow-md shrink-0">
-              <Download size={15} strokeWidth={2.5} />
+          <button onClick={() => { triggerHaptic(); setShowIOSInstall(true); }} className="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-1 px-0.5 min-h-[44px] rounded-xl transition-all duration-300 text-brand hover:bg-brand/10 animate-pulse overflow-hidden">
+            <span className="flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-brand text-white shadow-md shrink-0">
+              <Download size={18} strokeWidth={2.5} />
             </span>
-            <span className="w-full max-w-full truncate text-center text-[8px] sm:text-[9px] font-bold text-brand leading-none">Instalar</span>
+            <span className="w-full max-w-full truncate text-center text-[10px] sm:text-xs font-bold text-brand leading-tight">Instalar</span>
           </button>
         )}
       </div>
@@ -600,22 +588,22 @@ function TabButton({ id, icon, label, isActive, isHero, badgeCount, onClick, 'da
       <button
         data-tour={dataTour}
         onClick={onClick}
-        className="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 group relative transition-transform active:scale-95 px-0.5 overflow-visible"
+        className="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-1 min-h-[44px] group relative transition-transform active:scale-95 px-0.5 overflow-visible"
         title="Ir al Punto de Venta (Vender)"
       >
-        <div className={`relative flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full transition-all duration-300 shadow-lg shrink-0 ${
+        <div className={`relative flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 rounded-full transition-all duration-300 shadow-lg shrink-0 ${
           isActive 
             ? 'bg-gradient-to-tr from-emerald-500 via-teal-500 to-cyan-400 text-white shadow-emerald-500/40 ring-2 ring-emerald-400/50 scale-105' 
             : 'bg-emerald-600/90 hover:bg-emerald-500 text-white shadow-emerald-900/50 hover:scale-105'
         }`}>
           {icon}
           {badgeCount > 0 && (
-            <span className="absolute -top-1 -right-1 bg-rose-500 text-white font-black text-[9px] min-w-[16px] h-[16px] px-1 rounded-full flex items-center justify-center border-2 border-slate-900 shadow-md animate-bounce">
+            <span className="absolute -top-1 -right-1 bg-rose-500 text-white font-black text-[10px] min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center border-2 border-slate-900 shadow-md animate-bounce">
               {badgeCount > 99 ? '99+' : badgeCount}
             </span>
           )}
         </div>
-        <span className={`w-full max-w-full truncate text-center text-[8px] sm:text-[9px] font-black tracking-tighter leading-none transition-colors duration-200 ${
+        <span className={`w-full max-w-full truncate text-center text-[10px] sm:text-xs font-black leading-tight transition-colors duration-200 ${
           isActive ? 'text-emerald-400' : 'text-emerald-500/90 group-hover:text-emerald-400'
         }`}>
           {label}
@@ -628,16 +616,16 @@ function TabButton({ id, icon, label, isActive, isHero, badgeCount, onClick, 'da
     <button
       data-tour={dataTour}
       onClick={onClick}
-      className="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-0.5 group transition-all duration-200 active:scale-95 px-0.5 overflow-hidden"
+      className="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-1 min-h-[44px] group transition-all duration-200 active:scale-95 px-0.5 overflow-hidden"
     >
-      <span className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full transition-all duration-200 shrink-0 ${
+      <span className={`flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full transition-all duration-200 shrink-0 ${
         isActive 
           ? 'bg-white/10 text-white shadow-sm ring-1 ring-white/15' 
           : 'text-slate-400 hover:text-white hover:bg-white/5'
       }`}>
         {icon}
       </span>
-      <span className={`w-full max-w-full truncate text-center text-[8px] sm:text-[9px] font-medium tracking-tighter leading-none transition-colors duration-200 ${
+      <span className={`w-full max-w-full truncate text-center text-[10px] sm:text-xs font-medium leading-tight transition-colors duration-200 ${
         isActive ? 'text-white font-bold' : 'text-slate-400 group-hover:text-slate-200'
       }`}>
         {label}

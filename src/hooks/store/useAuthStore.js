@@ -195,6 +195,7 @@ export const useAuthStore = create(
         (set, get) => ({
             // SEC-018: sesión validada al rehidratar; sin `pin` (SEC-013).
             usuarioActivo: _readPersistedSession(),
+            usuarios: [],
             // SEC-005: usuarios vacíos al iniciar; se rellenan en `_ensureDefaultUsers`.
             requireLogin: _defaultRequireLogin(),
             requireAdminPin: true,

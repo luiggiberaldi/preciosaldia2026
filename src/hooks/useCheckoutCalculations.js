@@ -17,6 +17,7 @@ export function useCheckoutCalculations({
     paymentMethods,
     effectiveRate,
     tasaCop,
+    copEnabled = false,
     cartTotalUsd,
     cartTotalBs,
     triggerHaptic,
@@ -40,7 +41,7 @@ export function useCheckoutCalculations({
     const rateError = !effectiveRate || effectiveRate <= 0
         ? 'Tasa BCV no configurada. Configúrala antes de cobrar.'
         : null;
-    const copRateError = (tasaCop == null || tasaCop <= 0)
+    const copRateError = copEnabled && (tasaCop == null || tasaCop <= 0)
         ? 'Tasa COP no configurada. Configúrala antes de aceptar pagos en pesos.'
         : null;
 

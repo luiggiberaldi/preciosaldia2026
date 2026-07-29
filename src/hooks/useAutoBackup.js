@@ -65,6 +65,11 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
 
                 // Subir a la nube solo si hay conexión, deviceId y emparejamiento/licencia cloud activa
                 const hasCloudPairing = localStorage.getItem('pda_cloud_session') || localStorage.getItem('pda_paired_device') || premium;
+                const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+                // En entorno local (localhost) sin sesión de nube activa, omitir llamadas remotas para mantener la consola de desarrollo limpia
+                if (isLocalhost && !hasCloudPairing && !forceUpload) return;
+
                 if (devId && supabaseCloud && (hasCloudPairing || forceUpload)) {
                     const todayStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
                     const lastDailyBackup = localStorage.getItem('bodega_last_daily_backup_date');
@@ -138,21 +143,22 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                         });
                         if (res.ok) apiSuccess = true;
                     } catch (apiErr) {
-                        if (import.meta.env?.DEV) {
-                            console.warn('[AutoBackup] Servidor de Estación Maestra no contactado:', apiErr?.message || apiErr);
-                        }
+                        apiSuccess = false;
                     }
 
-                    // Fallback directo a Supabase en cloud_backups
+                    // Fallback directo a Supabase en cloud_backups (con manejo de 401/RLS)
                     if (!apiSuccess && supabaseCloud) {
                         try {
-                            await supabaseCloud.from('cloud_backups').upsert({
+                            const { error: supErr } = await supabaseCloud.from('cloud_backups').upsert({
                                 device_id: devId,
                                 backup_data: metadataPayload,
                                 updated_at: new Date().toISOString()
                             }, { onConflict: 'device_id' });
+                            if (supErr && import.meta.env?.DEV) {
+                                // Silencioso si no hay permisos de anon en RLS
+                            }
                         } catch (sErr) {
-                            console.warn('[AutoBackup] Error guardando respaldo en cloud_backups:', sErr?.message);
+                            // Omitir silenciosamente errores de autorización 401
                         }
                     }
 

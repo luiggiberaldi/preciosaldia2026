@@ -87,23 +87,29 @@ export function ToastProvider({ children }) {
     return (
         <ToastContext.Provider value={addToast}>
             {children}
-            {/* Toast container */}
-            <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] flex flex-col gap-2 w-[90vw] max-w-sm pointer-events-none">
+            {/* Toast container con ARIA live region */}
+            <div 
+                role="status" 
+                aria-live="polite" 
+                aria-atomic="true"
+                className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] flex flex-col gap-2 w-[90vw] max-w-sm pointer-events-none"
+            >
                 {toasts.map((toast) => {
                     const colors = COLORS[toast.type] || COLORS.info;
                     const IconComp = ICONS[toast.type] || Info;
                     return (
                         <div
                             key={toast.id}
-                            className={`pointer-events-auto flex items-start gap-2.5 px-3.5 py-3 rounded-xl border backdrop-blur-xl shadow-2xl shadow-black/40 animate-in slide-in-from-top-3 fade-in duration-300 ${colors.bg}`}
+                            className={`pointer-events-auto flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border backdrop-blur-xl shadow-2xl shadow-black/40 animate-in slide-in-from-top-3 fade-in duration-300 ${colors.bg}`}
                         >
-                            <IconComp size={18} className={`${colors.icon} shrink-0 mt-0.5`} />
+                            <IconComp size={18} className={`${colors.icon} shrink-0`} />
                             <p className="text-sm text-white/90 font-medium flex-1 leading-snug">{toast.message}</p>
                             <button
                                 onClick={() => removeToast(toast.id)}
-                                className="text-white/30 hover:text-white/70 transition-colors shrink-0 mt-0.5"
+                                aria-label="Cerrar notificación"
+                                className="text-white/40 hover:text-white transition-colors shrink-0 p-2 min-w-[44px] min-h-[44px] flex items-center justify-center -mr-1.5"
                             >
-                                <X size={14} />
+                                <X size={18} />
                             </button>
                         </div>
                     );

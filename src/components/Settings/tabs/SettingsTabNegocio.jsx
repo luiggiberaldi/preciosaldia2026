@@ -52,11 +52,12 @@ const CalibratorSlider = ({ label, value, setValue, baseKey, mode, paperWidth, m
                     <span className="text-[9px] font-black text-slate-400/80 dark:text-slate-500 select-none">{unit}</span>
                 </div>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2">
                 <button
                     type="button"
                     onClick={handleDecrement}
-                    className="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-650 dark:text-slate-350 hover:bg-slate-200 dark:hover:bg-slate-800 text-xs font-black transition-all active:scale-[0.85] select-none"
+                    className="w-10 h-10 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 text-sm font-black transition-all active:scale-95 select-none"
+                    aria-label="Disminuir"
                 >
                     -
                 </button>
@@ -71,12 +72,13 @@ const CalibratorSlider = ({ label, value, setValue, baseKey, mode, paperWidth, m
                         localStorage.setItem(storageKey, e.target.value);
                         triggerHaptic?.();
                     }}
-                    className="flex-1 h-1 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-brand"
+                    className="flex-1 h-2 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-brand"
                 />
                 <button
                     type="button"
                     onClick={handleIncrement}
-                    className="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-650 dark:text-slate-350 hover:bg-slate-200 dark:hover:bg-slate-800 text-xs font-black transition-all active:scale-[0.85] select-none"
+                    className="w-10 h-10 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 text-sm font-black transition-all active:scale-95 select-none"
+                    aria-label="Aumentar"
                 >
                     +
                 </button>

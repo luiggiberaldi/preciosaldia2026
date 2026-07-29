@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { processVoidSale } from '../utils/voidSaleProcessor';
 import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
-import { BarChart3, TrendingUp, Package, AlertTriangle, ShoppingCart, Store, Users, Settings, Wallet } from 'lucide-react';
+import { BarChart3, TrendingUp, Package, AlertTriangle, ShoppingCart, Store, Users, Settings, Wallet, LogOut } from 'lucide-react';
 import { formatBs, formatCop } from '../utils/calculatorUtils';
 import DashboardStats from '../components/Dashboard/DashboardStats';
 import DashboardPaymentBreakdown from '../components/Dashboard/DashboardPaymentBreakdown';
@@ -456,20 +456,26 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                         <img src={theme === 'dark' ? './logodark.png' : './logo.png'} alt="PreciosAlDía" className="h-10 sm:h-12 md:h-[85px] w-auto object-contain drop-shadow-sm shrink-0" />
                     </div>
                     <div className="flex items-center justify-end gap-1.5 shrink-0">
-                        <button
-                            onClick={() => { triggerHaptic(); setIsAddGastoOpen(true); }}
-                            className="sm:hidden h-8 px-2 bg-rose-500/10 hover:bg-rose-500/20 active:scale-95 text-rose-600 dark:text-rose-400 border border-rose-500/25 rounded-xl text-xs font-extrabold flex items-center gap-1 transition-all shadow-sm shrink-0"
-                            title="Registrar Gasto"
-                        >
-                            <Wallet size={15} className="text-rose-500 shrink-0" />
-                            <span className="hidden sm:inline text-[11px]">Gasto</span>
-                        </button>
                         <SyncStatus />
+
+                        {useAuthStore.getState().requireLogin && useAuthStore.getState().usuarioActivo && (
+                            <button
+                                onClick={() => {
+                                    triggerHaptic && triggerHaptic();
+                                    useAuthStore.getState().logout();
+                                }}
+                                className="h-8 min-h-[32px] px-2.5 sm:px-3 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200/60 dark:border-rose-900/50 rounded-full sm:rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition-all active:scale-95 shadow-sm shrink-0"
+                                title={`Cerrar sesión (${useAuthStore.getState().usuarioActivo?.nombre})`}
+                            >
+                                <LogOut size={15} className="text-rose-500 shrink-0" />
+                                <span className="hidden sm:inline text-xs font-bold">Salir</span>
+                            </button>
+                        )}
                     </div>
                 </div>
 
-                {/* Fila Inferior: 5 Fichas Pro (Visibles en Tablet/Desktop sm:grid, Ocultas en móvil para evitar redundancia con la Bottom Nav Bar) */}
-                <div className="hidden sm:grid sm:grid-cols-5 gap-1 sm:gap-3 mt-2 pt-2 border-t border-slate-200/40 dark:border-slate-800/40 w-full max-w-4xl mx-auto">
+                {/* Fila Inferior: 4 Fichas Pro (Visibles en Tablet/Desktop sm:grid) */}
+                <div className="hidden sm:grid sm:grid-cols-4 gap-1 sm:gap-3 mt-2 pt-2 border-t border-slate-200/40 dark:border-slate-800/40 w-full max-w-4xl mx-auto">
                     <button
                         onClick={() => { if (onNavigate) { triggerHaptic(); onNavigate('ventas'); } }}
                         className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 px-1 sm:px-3 py-1.5 sm:py-2 bg-[#01696f] hover:bg-[#00575d] dark:bg-[#1ce2ee] dark:hover:bg-[#0bc2cd] text-white dark:text-slate-950 rounded-xl font-extrabold text-[9.5px] sm:text-xs leading-tight transition-all active:scale-95 shadow-sm text-center"
@@ -497,13 +503,6 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                     >
                         <TrendingUp size={17} className="shrink-0" />
                         <span className="truncate sm:whitespace-nowrap">Monitor</span>
-                    </button>
-                    <button
-                        onClick={() => { triggerHaptic(); setIsAddGastoOpen(true); }}
-                        className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 px-1 sm:px-3 py-1.5 sm:py-2 bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600 text-white rounded-xl font-extrabold text-[9.5px] sm:text-xs leading-tight transition-all active:scale-95 shadow-sm text-center"
-                    >
-                        <Wallet size={17} className="shrink-0" />
-                        <span className="truncate sm:whitespace-nowrap">Gastos</span>
                     </button>
                 </div>
             </div>
@@ -559,6 +558,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 copPrimary={copPrimary}
                 tasaCop={tasaCop}
                 onTasaClick={() => setShowMonitor(true)}
+                onOpenGasto={() => setIsAddGastoOpen(true)}
             />
 
             {/* Pago por Metodo */}

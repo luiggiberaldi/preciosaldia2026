@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, ShoppingCart, Keyboard } from 'lucide-react';
+import { RefreshCw, ShoppingCart, Keyboard, LogOut } from 'lucide-react';
 import Tooltip from '../Tooltip';
 import { pushLocalSync } from '../../hooks/useCloudSync';
+import { useAuthStore } from '../../hooks/store/useAuthStore';
 
 const formatBs = (n) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
@@ -78,6 +79,8 @@ export default function SalesHeader({
         setShowRateConfig(false);
     };
 
+    const { usuarioActivo, requireLogin, logout } = useAuthStore();
+
     return (
         <div className={`shrink-0 ${showRateConfig ? 'mb-3 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-3 sm:p-4 shadow-sm border border-slate-100 dark:border-slate-800' : 'bg-transparent border-transparent shadow-none p-0'}`}>
             <div className="lg:hidden flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-3">
@@ -88,8 +91,8 @@ export default function SalesHeader({
                         </div>
                         Punto de Venta
                     </h2>
-                    {/* Tasa Móvil (visible solo en sm) */}
-                    <div>
+                    {/* Controles del Encabezado Móvil (Tasa + Salir) */}
+                    <div className="flex items-center gap-2">
                         <button
                             onClick={handleRateToggle}
                             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition-all bg-slate-50 border-slate-200 hover:border-emerald-500 hover:bg-emerald-50 active:scale-95 dark:bg-slate-800 dark:border-slate-700"
@@ -101,6 +104,17 @@ export default function SalesHeader({
                             }
                             {!isAuto && <span className="text-[8px] bg-brand-light dark:bg-surface-800/30 text-brand-dark dark:text-brand px-1 rounded font-bold">MAN</span>}
                         </button>
+
+                        {requireLogin && usuarioActivo && (
+                            <button
+                                onClick={() => { triggerHaptic && triggerHaptic(); logout(); }}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 hover:bg-rose-100 transition-colors border border-rose-200/50 text-xs font-bold active:scale-95 shrink-0"
+                                title={`Cerrar sesión (${usuarioActivo.nombre})`}
+                            >
+                                <LogOut size={14} />
+                                <span className="text-xs font-bold">Salir</span>
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
@@ -118,10 +132,18 @@ export default function SalesHeader({
                                         <span className="text-[11px] font-bold text-slate-400">
                                             {isAuto ? <span className="text-amber-500">Auto TRM</span> : <span>Manual</span>}
                                         </span>
-                                        <button onClick={handleAutoToggle}
-                                            className={`relative w-10 h-6 rounded-full transition-colors ${isAuto ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-600'}`}>
-                                            <span className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${isAuto ? 'translate-x-4' : 'translate-x-0'}`} />
-                                        </button>
+                                         <button 
+                                             type="button"
+                                             role="switch"
+                                             aria-checked={isAuto}
+                                             aria-label="Alternar tasa COP automática o manual"
+                                             onClick={handleAutoToggle}
+                                             className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-1 cursor-pointer select-none shrink-0 active:scale-95 transition-transform"
+                                         >
+                                             <span className={`relative inline-flex h-6 w-11 items-center rounded-full p-0.5 transition-colors duration-200 ease-in-out ${isAuto ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-600'}`}>
+                                                 <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform duration-200 ease-in-out ${isAuto ? 'translate-x-5' : 'translate-x-0'}`} />
+                                             </span>
+                                         </button>
                                     </div>
                                 </div>
                                 {!isAuto && (

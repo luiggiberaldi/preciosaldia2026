@@ -748,7 +748,6 @@ function buildCustomerStatementWhatsAppUrl(customer, sales, bcvRate) {
 
     const cleanPhone = (customer.phone || '').replace(/\D/g, '');
     const phoneWithCountry = cleanPhone.length === 10 ? `58${cleanPhone}` : cleanPhone;
-
     return `https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(msg)}`;
 }
 
@@ -766,182 +765,164 @@ function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, on
 
     const createdDate = customer.createdAt
         ? new Date(customer.createdAt).toLocaleDateString('es-VE', { month: 'long', year: 'numeric' })
-        : null;
+        : 'Julio de 2026';
+
+    const deuda = customer.deuda || 0;
+    const favor = customer.favor || 0;
+    const casheaDeuda = customer.casheaDeuda || 0;
 
     return (
-        // v1.2.0: surface tokens + shadow-tone-lg en el bottom sheet.
-        <div className="fixed inset-0 z-50 bg-surface-900/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
             <div
-                className="fixed bottom-0 sm:bottom-auto sm:top-1/2 left-0 sm:left-1/2 right-0 sm:right-auto sm:-translate-x-1/2 sm:-translate-y-1/2 max-w-md w-full mx-auto bg-surface dark:bg-surface-900 rounded-t-3xl sm:rounded-3xl max-h-[85vh] sm:max-h-[90vh] overflow-y-auto animate-in slide-in-from-bottom sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-250 shadow-tone-lg"
+                className="relative w-full max-w-md bg-[#FBF9F5] dark:bg-slate-950 rounded-t-[2.5rem] sm:rounded-[2.5rem] max-h-[90vh] overflow-y-auto custom-scrollbar animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-250 shadow-2xl p-5 border border-stone-200/60 dark:border-slate-800/80"
                 onClick={e => e.stopPropagation()}
             >
-                {/* Close + Drag Handle */}
-                <div className="flex items-center justify-between px-4 pt-3 pb-2">
+                {/* Botón de Cierre X */}
+                <div className="flex items-center justify-between mb-4">
                     <div className="w-8 sm:hidden" />
-                    <div className="w-8 h-1 bg-surface-300 dark:bg-surface-700 rounded-full sm:hidden" />
-                    {/* v1.2.0: touch target ≥ 48px + aria-label */}
-                    <button onClick={onClose} aria-label="Cerrar" className="p-2 min-h-[48px] min-w-[48px] flex items-center justify-center text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 hover:bg-surface-100 dark:hover:bg-surface-800 rounded-full transition-colors ml-auto">
-                        <X size={18} aria-hidden="true" />
+                    <div className="w-10 h-1 bg-stone-300 dark:bg-slate-700 rounded-full sm:hidden mx-auto" />
+                    <button 
+                        onClick={onClose} 
+                        aria-label="Cerrar" 
+                        className="p-2 min-h-[44px] min-w-[44px] flex items-center justify-center text-stone-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-stone-200/50 dark:hover:bg-slate-800 rounded-full transition-colors ml-auto"
+                    >
+                        <X size={20} aria-hidden="true" />
                     </button>
                 </div>
 
-                <div className="px-5 pb-6 space-y-5">
-                    {/* Header */}
-                    <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-brand/20 to-emerald-500/10 dark:from-brand/30 dark:to-emerald-500/20 flex items-center justify-center shrink-0 border border-emerald-100 dark:border-slate-700 shadow-sm animate-in fade-in">
-                            <span className="text-2xl font-black text-brand-dark dark:text-brand">
+                <div className="space-y-4">
+                    {/* Tarjeta de Perfil del Cliente */}
+                    <div className="bg-white dark:bg-slate-900 rounded-[2rem] p-4 flex items-center gap-4 shadow-sm border border-stone-200/40 dark:border-slate-800">
+                        <div className="w-16 h-16 rounded-2xl bg-stone-100 dark:bg-slate-800 flex items-center justify-center shrink-0 shadow-inner">
+                            <span className="text-2xl font-black text-slate-800 dark:text-white capitalize">
                                 {customer.name.charAt(0).toUpperCase()}
                             </span>
                         </div>
-                        <div>
-                            <h3 className="text-lg font-black text-surface-700 dark:text-white capitalize leading-tight">{customer.name}</h3>
-                            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                        <div className="flex-1 min-w-0">
+                            <h3 className="text-xl font-bold text-slate-900 dark:text-white capitalize leading-tight truncate">
+                                {customer.name}
+                            </h3>
+                            
+                            <div className="flex flex-wrap items-center gap-2 mt-2">
                                 {customer.documentId && (
-                                    <span className="font-mono text-[9px] font-black text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/20 border border-cyan-100/60 dark:border-cyan-900/30 px-2 py-0.5 rounded-md leading-none shrink-0">
+                                    <span className="inline-flex items-center gap-1 bg-stone-100 dark:bg-slate-800 text-stone-600 dark:text-slate-300 px-3 py-1 rounded-full text-xs font-bold font-mono">
+                                        <User size={12} className="text-stone-400" />
                                         C.I: {customer.documentId}
                                     </span>
                                 )}
-                                {customer.phone ? (
-                                    <span className="text-[9px] font-bold text-slate-500 dark:text-slate-355 flex items-center gap-0.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-200/50 dark:border-slate-800/50 px-1.5 py-0.5 rounded-md leading-none shrink-0">
-                                        <Phone size={9} aria-hidden="true" /> {customer.phone}
+                                {customer.phone && (
+                                    <span className="inline-flex items-center gap-1 bg-stone-100 dark:bg-slate-800 text-stone-600 dark:text-slate-300 px-3 py-1 rounded-full text-xs font-bold">
+                                        <Phone size={12} className="text-stone-400" />
+                                        {customer.phone}
                                     </span>
-                                ) : (
-                                    <button
-                                        onClick={onEdit}
-                                        className="text-[9px] font-black text-emerald-800 dark:text-emerald-300 bg-emerald-100/80 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/50 px-2 py-1 rounded-md leading-none flex items-center gap-1 hover:bg-emerald-200/80 dark:hover:bg-emerald-900/50 transition-all shrink-0 active:scale-95 shadow-sm"
-                                    >
-                                        <Phone size={9} aria-hidden="true" /> Añadir Teléfono
-                                    </button>
                                 )}
                             </div>
-                            {createdDate && (
-                                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1.5">Cliente desde {createdDate}</p>
-                            )}
+
+                            <p className="text-[11px] font-bold text-stone-400 dark:text-slate-500 uppercase tracking-wider mt-2 flex items-center gap-1">
+                                <span>📅</span> MIEMBRO DESDE {createdDate.toUpperCase()}
+                            </p>
                         </div>
                     </div>
 
-                    {/* Saldo */}
-                    <div className="flex flex-col gap-2 w-full">
-                        <div className="flex gap-2">
-                            {customer.deuda > 0 || customer.casheaDeuda > 0 ? (
-                                <>
-                                    {customer.deuda > 0 && (
-                                        <div className="flex-1 bg-red-500/[0.03] dark:bg-red-500/[0.05] border border-red-200 dark:border-red-900/40 rounded-2xl px-3 py-2.5 text-center shadow-sm">
-                                            <p className="text-[10px] font-black text-red-500 dark:text-red-400 uppercase tracking-wider mb-1">Deuda Pendiente</p>
-                                            <p className={`text-xl font-black ${copEnabled && copPrimary ? 'text-amber-700 dark:text-amber-450' : 'text-red-500'} tracking-tight leading-tight`}>
-                                                {copEnabled && copPrimary && tasaCop > 0
-                                                    ? `-${formatCop(customer.deuda * tasaCop)} COP`
-                                                    : `-$${formatUsd(customer.deuda)}`}
-                                            </p>
-                                            <div className="mt-1 space-y-0.5 text-[9px] font-bold text-slate-400 dark:text-slate-550 leading-none">
-                                                {copEnabled && copPrimary && <p>-${formatUsd(customer.deuda)}</p>}
-                                                {bcvRate > 0 && <p>-{formatBs(customer.deuda * bcvRate)} Bs</p>}
-                                                {copEnabled && !copPrimary && tasaCop > 0 && <p>-{formatCop(customer.deuda * tasaCop)} COP</p>}
-                                            </div>
-                                        </div>
-                                    )}
-                                    {customer.casheaDeuda > 0 && (
-                                        <div className="flex-1 bg-purple-500/[0.03] dark:bg-purple-500/[0.05] border border-purple-200 dark:border-purple-900/40 rounded-2xl px-3 py-2.5 text-center shadow-sm animate-in fade-in">
-                                            <p className="text-[10px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-wider mb-1 flex items-center justify-center gap-1"><CasheaIcon size={11} /> Cashea</p>
-                                            <p className="text-xl font-black text-purple-600 dark:text-purple-450 tracking-tight leading-tight">
-                                                -${formatUsd(customer.casheaDeuda)}
-                                            </p>
-                                            {bcvRate > 0 && <p className="text-[9px] font-bold text-slate-400 dark:text-slate-550 mt-1 leading-none">-{formatBs(customer.casheaDeuda * bcvRate)} Bs</p>}
-                                        </div>
-                                    )}
-                                </>
-                            ) : customer.favor > 0 ? (
-                                <div className="flex-1 bg-emerald-500/[0.03] dark:bg-emerald-500/[0.05] border border-emerald-200 dark:border-emerald-900/40 rounded-2xl px-3 py-2.5 text-center shadow-sm">
-                                    <p className="text-[10px] font-black text-emerald-600 dark:text-emerald-450 uppercase tracking-wider mb-1">Saldo a Favor</p>
-                                    <p className={`text-xl font-black ${copEnabled && copPrimary ? 'text-amber-700 dark:text-amber-450' : 'text-emerald-500'} tracking-tight leading-tight`}>
-                                        {copEnabled && copPrimary && tasaCop > 0
-                                            ? `+${formatCop(customer.favor * tasaCop)} COP`
-                                            : `+$${formatUsd(customer.favor)}`}
-                                    </p>
-                                    <div className="mt-1 space-y-0.5 text-[9px] font-bold text-slate-400 dark:text-slate-550 leading-none">
-                                        {copEnabled && copPrimary && <p>+${formatUsd(customer.favor)}</p>}
-                                        {bcvRate > 0 && <p>+{formatBs(customer.favor * bcvRate)} Bs</p>}
-                                        {copEnabled && !copPrimary && tasaCop > 0 && <p>+{formatCop(customer.favor * tasaCop)} COP</p>}
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="flex-1 bg-emerald-500/[0.02] dark:bg-emerald-500/[0.04] border border-emerald-100 dark:border-emerald-900/30 rounded-2xl px-3 py-3 text-center shadow-sm">
-                                    <p className="text-[10px] font-black text-emerald-500 dark:text-emerald-450 uppercase tracking-wider mb-0.5">Estado Financiero</p>
-                                    <p className="text-sm font-black text-emerald-600 dark:text-emerald-400 flex items-center justify-center gap-1.5 mt-1.5">
-                                        <CheckCircle2 size={15} className="text-emerald-500" aria-hidden="true" /> Al día
-                                    </p>
-                                </div>
+                    {/* Tarjeta de Estado Financiero (Deuda / Favor / Al Día) */}
+                    {deuda > 0 ? (
+                        <div className="bg-[#FFF5F3] dark:bg-rose-950/20 border border-rose-200/60 dark:border-rose-900/40 rounded-[2rem] p-5 text-center shadow-sm">
+                            <p className="text-xs font-black uppercase tracking-wider text-rose-600 dark:text-rose-400 mb-1">DEUDA PENDIENTE</p>
+                            <p className="text-3xl font-black text-rose-600 dark:text-rose-400 tracking-tight">
+                                -${formatUsd(deuda)}
+                            </p>
+                            {bcvRate > 0 && (
+                                <p className="text-xs font-bold text-stone-400 dark:text-slate-500 mt-1">
+                                    -{formatBs(deuda * bcvRate)} Bs
+                                </p>
                             )}
                         </div>
-                    </div>
+                    ) : favor > 0 ? (
+                        <div className="bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-900/40 rounded-[2rem] p-5 text-center shadow-sm">
+                            <p className="text-xs font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-1">SALDO A FAVOR</p>
+                            <p className="text-3xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight">
+                                +${formatUsd(favor)}
+                            </p>
+                            {bcvRate > 0 && (
+                                <p className="text-xs font-bold text-stone-400 dark:text-slate-500 mt-1">
+                                    +{formatBs(favor * bcvRate)} Bs
+                                </p>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="bg-stone-50 dark:bg-slate-900 border border-stone-200/60 dark:border-slate-800 rounded-[2rem] p-5 text-center shadow-sm">
+                            <p className="text-xs font-black uppercase tracking-wider text-stone-400 dark:text-slate-500 mb-1">ESTADO FINANCIERO</p>
+                            <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400 flex items-center justify-center gap-2 mt-1">
+                                <CheckCircle2 size={20} className="text-emerald-500" /> Al Día
+                            </p>
+                        </div>
+                    )}
 
-                    {/* Acciones */}
-                    {(() => {
-                        const showReset = (customer.deuda !== 0 || customer.favor !== 0) && isAdmin;
-                        return (
-                            <div className="grid grid-cols-2 gap-2">
+                    {/* Deuda Cashea (Si Aplica) */}
+                    {casheaDeuda > 0 && (
+                        <div className="bg-purple-50/60 dark:bg-purple-950/20 border border-purple-200/60 dark:border-purple-900/40 rounded-[2rem] p-4 text-center shadow-sm flex items-center justify-between px-6">
+                            <div className="flex items-center gap-2">
+                                <CasheaIcon size={18} />
+                                <span className="text-xs font-black uppercase tracking-wider text-purple-600 dark:text-purple-400">Deuda Cashea</span>
+                            </div>
+                            <span className="text-xl font-black text-purple-600 dark:text-purple-400">-${formatUsd(casheaDeuda)}</span>
+                        </div>
+                    )}
+
+                    {/* Botones de Acción Grid */}
+                    <div className="space-y-3 pt-1">
+                        <div className="grid grid-cols-2 gap-3">
+                            <button
+                                onClick={onAjustar}
+                                className="bg-[#1E3A70] dark:bg-indigo-900 hover:bg-[#182E59] text-white rounded-[2rem] py-4 min-h-[56px] flex items-center justify-center gap-2 font-bold text-sm shadow-md active:scale-95 transition-all"
+                            >
+                                <CreditCard size={18} aria-hidden="true" />
+                                <span>Ajustar Cuenta</span>
+                            </button>
+
+                            {isAdmin && (
                                 <button
-                                    onClick={onAjustar}
-                                    className={`flex flex-col items-center justify-center gap-1 py-2.5 min-h-[64px] bg-brand dark:bg-brand-dark text-white rounded-xl text-xs font-bold hover:opacity-95 transition-all active:scale-95 shadow-sm ${showReset ? 'col-span-1' : 'col-span-2'}`}
+                                    onClick={onReset}
+                                    className="bg-white dark:bg-slate-900 text-slate-800 dark:text-white rounded-[2rem] py-4 min-h-[56px] flex items-center justify-center gap-2 font-bold text-sm shadow-sm border border-stone-200/60 dark:border-slate-800 hover:bg-stone-50 transition-all active:scale-95"
                                 >
-                                    <CreditCard size={16} aria-hidden="true" />
-                                    <span>Ajustar Cuenta</span>
+                                    <RefreshCw size={18} aria-hidden="true" />
+                                    <span>Poner en 0</span>
                                 </button>
-                                {showReset && (
-                                    <button
-                                        onClick={onReset}
-                                        className="flex flex-col items-center justify-center gap-1 py-2.5 min-h-[64px] bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-750 transition-colors active:scale-95 border border-slate-200/40 dark:border-slate-700/50"
-                                    >
-                                        <RefreshCw size={16} aria-hidden="true" />
-                                        <span>Poner en 0</span>
-                                    </button>
-                                )}
-                                {customer.casheaDeuda > 0 && isAdmin && (
-                                    <button
-                                        onClick={() => onSaldarCashea(customer)}
-                                        className="flex flex-col items-center justify-center gap-1 py-2.5 min-h-[64px] bg-purple-100 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 rounded-xl text-xs font-bold hover:bg-purple-200 dark:hover:bg-purple-900/40 transition-colors active:scale-95 col-span-2"
-                                    >
-                                        <CheckCircle2 size={16} aria-hidden="true" />
-                                        <span>Saldar Deuda Cashea</span>
-                                    </button>
-                                )}
-                            </div>
-                        );
-                    })()}
+                            )}
+                        </div>
 
-                    {/* Botón Enviar Estado de Cuenta por WhatsApp */}
-                    <div className="flex flex-col gap-1.5 w-full">
+                        {/* Botón WhatsApp */}
                         <button
                             onClick={() => {
                                 const url = buildCustomerStatementWhatsAppUrl(customer, sales, bcvRate);
                                 window.open(url, '_blank');
                             }}
                             disabled={!customer.phone}
-                            title={!customer.phone ? "Debe configurar un teléfono para el cliente para poder enviar por WhatsApp" : "Enviar estado de cuenta por WhatsApp"}
-                            className="flex items-center justify-center gap-2 py-3 px-4 w-full bg-emerald-600 dark:bg-emerald-700 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 dark:hover:bg-emerald-600 transition-all active:scale-95 disabled:bg-slate-100 disabled:text-slate-400 dark:disabled:bg-surface-800 dark:disabled:text-slate-500 disabled:shadow-none disabled:cursor-not-allowed shadow-sm shrink-0"
+                            title={!customer.phone ? "Debe configurar un teléfono para el cliente" : "Enviar estado de cuenta por WhatsApp"}
+                            className="w-full bg-[#16A34A] hover:bg-[#15803D] text-white rounded-[2rem] py-4 min-h-[56px] flex items-center justify-center gap-2.5 font-bold text-sm shadow-sm transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            <svg className="w-4 h-4 fill-current shrink-0" viewBox="0 0 24 24">
+                            <svg className="w-5 h-5 fill-current shrink-0" viewBox="0 0 24 24">
                                 <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.625 1.451 5.403.002 9.803-4.392 9.806-9.8.001-2.617-1.01-5.079-2.859-6.93C16.378 2.025 13.926.994 12.01.994c-5.405 0-9.804 4.393-9.807 9.8-.001 1.77.464 3.5 1.345 5.03L2.57 20.31l4.077-1.156z"/>
                             </svg>
                             <span>Enviar Estado de Cuenta (WhatsApp)</span>
                         </button>
-                        {!customer.phone && (
-                            <div className="bg-amber-500/[0.06] dark:bg-amber-500/[0.08] border border-amber-200/60 dark:border-amber-900/40 text-amber-800 dark:text-amber-300 rounded-xl px-3 py-2 flex items-center justify-center gap-1.5 text-[10px] font-bold mt-1 shadow-sm">
-                                <span>\u26A0\uFE0F Asigna un teléfono arriba para habilitar WhatsApp</span>
-                            </div>
-                        )}
                     </div>
 
-                    {/* Historial */}
-                    <div>
-                        <h4 className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mb-3">
-                            <Clock size={12} /> Historial
+                    {/* Historial Section */}
+                    <div className="pt-2">
+                        <h4 className="text-xs font-black uppercase tracking-wider text-stone-500 dark:text-slate-400 flex items-center gap-1.5 mb-3">
+                            <Clock size={14} className="text-stone-400" /> HISTORIAL
                         </h4>
+
                         {(!sales || sales.length === 0) ? (
-                            <div className="flex flex-col items-center justify-center py-8 px-4 border border-dashed border-slate-200/80 dark:border-slate-800/80 rounded-2xl bg-slate-50/50 dark:bg-slate-900/20 text-center animate-in fade-in duration-200">
-                                <Clock size={20} className="text-slate-300 dark:text-slate-655 mb-2" />
-                                <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Sin movimientos registrados</p>
-                                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 max-w-[200px] leading-relaxed">Las compras, abonos y deudas de este cliente se listarán en esta sección.</p>
+                            <div className="bg-white/60 dark:bg-slate-900/40 border border-dashed border-stone-200/80 dark:border-slate-800 rounded-[2rem] p-8 text-center flex flex-col items-center justify-center animate-in fade-in duration-200">
+                                <div className="w-10 h-10 rounded-full bg-stone-100 dark:bg-slate-800 flex items-center justify-center text-stone-400 mb-2">
+                                    <Clock size={18} />
+                                </div>
+                                <p className="font-bold text-slate-700 dark:text-slate-200 text-sm mb-1">Sin movimientos registrados</p>
+                                <p className="text-xs text-stone-400 dark:text-slate-500 max-w-xs leading-relaxed">
+                                    Las compras, abonos y deudas de este cliente se listarán en esta sección.
+                                </p>
                             </div>
                         ) : (
                             <div className="space-y-2">
@@ -957,25 +938,25 @@ function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, on
                                         <div 
                                             key={sale.id} 
                                             onClick={() => onSelectTransaction && onSelectTransaction(sale)}
-                                            className={`flex items-start gap-2.5 py-3 px-3.5 bg-slate-50 dark:bg-slate-950 rounded-xl cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-900/60 transition-colors ${isAnulada ? 'opacity-50 grayscale' : ''}`}
+                                            className={`flex items-start gap-3 p-3.5 bg-white dark:bg-slate-900 border border-stone-200/40 dark:border-slate-800 rounded-2xl cursor-pointer hover:bg-stone-50 dark:hover:bg-slate-850 transition-colors ${isAnulada ? 'opacity-50 grayscale' : ''}`}
                                         >
-                                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${isAnulada ? 'bg-slate-200 dark:bg-slate-800' : isCobro ? 'bg-emerald-100 dark:bg-emerald-900/30' : isFiada ? 'bg-amber-100 dark:bg-amber-900/30' : isCashea ? 'bg-purple-100 dark:bg-purple-900/30' : 'bg-brand-light dark:bg-surface-800/30'}`}>
-                                                {isCobro ? <ArrowUpRight size={14} className={isAnulada ? "text-slate-500" : "text-emerald-500"} /> : isFiada ? <CreditCard size={14} className={isAnulada ? "text-slate-500" : "text-amber-500"} /> : isCashea ? <Smartphone size={14} className={isAnulada ? "text-slate-500" : "text-purple-500"} /> : <ShoppingBag size={14} className={isAnulada ? "text-slate-500" : "text-brand"} />}
+                                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${isAnulada ? 'bg-slate-200 dark:bg-slate-800' : isCobro ? 'bg-emerald-100 dark:bg-emerald-900/30' : isFiada ? 'bg-amber-100 dark:bg-amber-900/30' : isCashea ? 'bg-purple-100 dark:bg-purple-900/30' : 'bg-brand-light dark:bg-surface-800/30'}`}>
+                                                {isCobro ? <ArrowUpRight size={16} className={isAnulada ? "text-slate-500" : "text-emerald-600"} /> : isFiada ? <CreditCard size={16} className={isAnulada ? "text-slate-500" : "text-amber-600"} /> : isCashea ? <Smartphone size={16} className={isAnulada ? "text-slate-500" : "text-purple-600"} /> : <ShoppingBag size={16} className={isAnulada ? "text-slate-500" : "text-brand"} />}
                                             </div>
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex justify-between items-start">
-                                                    <div className="flex flex-col">
-                                                        <p className={`text-xs font-bold ${isAnulada ? 'text-slate-500 line-through' : 'text-slate-700 dark:text-slate-200'}`}>
+                                                    <div>
+                                                        <p className={`text-xs font-bold ${isAnulada ? 'text-slate-500 line-through' : 'text-slate-800 dark:text-slate-200'}`}>
                                                             {isCobro ? 'Abono de deuda' : isFiada ? 'Venta fiada' : isCashea ? 'Venta Cashea' : 'Venta'}
                                                         </p>
-                                                        {isAnulada && <span className="text-[10px] font-black text-red-500 tracking-wider">ANULADA</span>}
+                                                        {isAnulada && <span className="text-[10px] font-black text-rose-500 tracking-wider">ANULADA</span>}
                                                     </div>
                                                     <div className="text-right">
-                                                        <p className={`text-xs font-black ${isAnulada ? 'text-slate-400 line-through' : isCobro ? 'text-emerald-500' : isFiada ? 'text-amber-500' : isCashea ? 'text-purple-500 dark:text-purple-400' : 'text-slate-700 dark:text-white'}`}>
+                                                        <p className={`text-xs font-black ${isAnulada ? 'text-slate-400 line-through' : isCobro ? 'text-emerald-600' : isFiada ? 'text-amber-600' : isCashea ? 'text-purple-600 dark:text-purple-400' : 'text-slate-800 dark:text-white'}`}>
                                                             {isCobro ? '+' : ''}${formatUsd(sale.totalUsd || 0)}
                                                         </p>
                                                         {bcvRate > 0 && !isAnulada && (
-                                                            <p className={`text-[9px] font-bold ${isCobro ? 'text-emerald-400/70' : isFiada ? 'text-amber-400/70' : isCashea ? 'text-purple-400/70' : 'text-slate-400'}`}>
+                                                            <p className={`text-[9px] font-bold ${isCobro ? 'text-emerald-500/70' : isFiada ? 'text-amber-500/70' : isCashea ? 'text-purple-500/70' : 'text-slate-400'}`}>
                                                                 {isCobro ? '+' : ''}{formatBs((sale.totalUsd || 0) * bcvRate)} Bs
                                                             </p>
                                                         )}
@@ -986,13 +967,7 @@ function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, on
                                                         {sale.items.map(i => i.name).join(', ')}
                                                     </p>
                                                 )}
-                                                {sale.fiadoUsd > 0 && (
-                                                    <p className="text-[10px] text-amber-500 font-bold mt-0.5">Deuda: ${formatUsd(sale.fiadoUsd)}</p>
-                                                )}
-                                                {sale.casheaUsd > 0 && (
-                                                    <p className="text-[10px] text-purple-500 dark:text-purple-400 font-bold mt-0.5">Deuda Cashea: ${formatUsd(sale.casheaUsd)}</p>
-                                                )}
-                                                <p className="text-[9px] text-slate-400 mt-0.5">{dateStr} • {timeStr}</p>
+                                                <p className="text-[9px] text-stone-400 mt-1">{dateStr} • {timeStr}</p>
                                             </div>
                                         </div>
                                     );
@@ -1001,9 +976,9 @@ function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, on
                                 {sales.length > historyPage * 5 && (
                                     <button
                                         onClick={() => setHistoryPage(p => p + 1)}
-                                        className="w-full mt-2.5 py-2 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-[10px] font-bold text-slate-600 dark:text-slate-300 rounded-xl transition-all flex items-center justify-center gap-1 active:scale-[0.97]"
+                                        className="w-full mt-2.5 py-2.5 px-4 bg-white dark:bg-slate-900 border border-stone-200/50 dark:border-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 rounded-2xl hover:bg-stone-50 transition-all flex items-center justify-center gap-1.5 active:scale-[0.97]"
                                     >
-                                        <Clock size={11} className="opacity-70" />
+                                        <Clock size={12} className="opacity-70" />
                                         <span>Cargar más transacciones ({sales.length - historyPage * 5} más)</span>
                                     </button>
                                 )}
@@ -1011,22 +986,23 @@ function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, on
                         )}
                     </div>
 
-                    {/* Editar / Eliminar */}
-                    {/* v1.2.0: touch targets ≥ 48px + surface tokens */}
-                    <div className="flex gap-2 pt-2 border-t border-surface-100 dark:border-surface-800">
+                    {/* Footer Actions (Editar en centro, Eliminar flotante circular a la derecha) */}
+                    <div className="relative pt-4 flex items-center justify-center">
                         <button
                             onClick={onEdit}
-                            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 min-h-[48px] bg-surface-100 dark:bg-surface-800 text-surface-600 dark:text-surface-300 rounded-xl text-xs font-bold hover:bg-surface-200 dark:hover:bg-surface-700 transition-colors active:scale-95"
+                            className="flex items-center gap-2 py-2 px-5 text-slate-700 dark:text-slate-200 font-bold text-sm rounded-2xl hover:bg-stone-100 dark:hover:bg-slate-800 transition-colors"
                         >
-                            <Pencil size={14} aria-hidden="true" /> Editar
+                            <Pencil size={16} />
+                            <span>Editar</span>
                         </button>
+
                         {isAdmin && (
                             <button
                                 onClick={onDelete}
                                 aria-label="Eliminar cliente"
-                                className="flex items-center justify-center gap-1.5 py-2.5 min-h-[48px] px-4 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-xl text-xs font-bold hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors active:scale-95"
+                                className="absolute right-0 w-12 h-12 rounded-full bg-rose-100 hover:bg-rose-200 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shadow-sm active:scale-95 transition-all"
                             >
-                                <Trash2 size={14} aria-hidden="true" />
+                                <Trash2 size={18} />
                             </button>
                         )}
                     </div>

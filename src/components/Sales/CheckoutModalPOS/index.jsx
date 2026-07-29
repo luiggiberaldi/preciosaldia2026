@@ -375,8 +375,8 @@ export default function CheckoutModalPOS({
                     casheaActive={casheaActive}
                 />
 
-                {/* Body — dos columnas */}
-                <div className="flex flex-1 overflow-hidden">
+                {/* Body — dos columnas en lg, colapsable en mobile */}
+                <div className="flex flex-col lg:flex-row flex-1 overflow-y-auto lg:overflow-hidden">
                     {/* Columna Izquierda */}
                     <PaymentLeftColumn
                         totalUSD={cartTotalUsd}

@@ -152,34 +152,36 @@ export default function HoldsModal({ tickets = [], onRecuperar, onEliminar, onCl
                                     {/* Expanded Detail Panel */}
                                     {isExpanded && !isConfirmingDelete && (
                                         <div className="bg-white dark:bg-slate-900/30 border-t border-slate-100 dark:border-slate-800/80 p-4 animate-in slide-in-from-top-1 duration-150">
-                                            <table className="w-full text-left text-xs">
-                                                <thead>
-                                                    <tr className="text-slate-400 dark:text-slate-500 font-bold border-b border-slate-100 dark:border-slate-800 pb-2">
-                                                        <th className="pb-2 font-black">CANT</th>
-                                                        <th className="pb-2 font-black">PRODUCTO</th>
-                                                        <th className="pb-2 text-right font-black">P. UNIT ($)</th>
-                                                        <th className="pb-2 text-right font-black">TOTAL ($)</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
-                                                    {t.items.map((item, idx) => (
-                                                        <tr key={idx} className="text-slate-700 dark:text-slate-300">
-                                                            <td className="py-2.5 font-bold font-mono text-slate-800 dark:text-white">
-                                                                {item.qty} {item.isWeight ? 'kg/lt' : 'ud'}
-                                                            </td>
-                                                            <td className="py-2.5 font-semibold text-slate-800 dark:text-white pr-2">
-                                                                {item.name}
-                                                            </td>
-                                                            <td className="py-2.5 text-right font-medium">
-                                                                ${item.priceUsd.toFixed(2)}
-                                                            </td>
-                                                            <td className="py-2.5 text-right font-extrabold text-slate-800 dark:text-white">
-                                                                ${(item.qty * item.priceUsd).toFixed(2)}
-                                                            </td>
+                                            <div className="overflow-x-auto -mx-2 px-2">
+                                                <table className="w-full min-w-[360px] text-left text-xs">
+                                                    <thead>
+                                                        <tr className="text-slate-400 dark:text-slate-500 font-bold border-b border-slate-100 dark:border-slate-800 pb-2">
+                                                            <th className="pb-2 font-black">CANT</th>
+                                                            <th className="pb-2 font-black">PRODUCTO</th>
+                                                            <th className="pb-2 text-right font-black">P. UNIT ($)</th>
+                                                            <th className="pb-2 text-right font-black">TOTAL ($)</th>
                                                         </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                                                        {t.items.map((item, idx) => (
+                                                            <tr key={idx} className="text-slate-700 dark:text-slate-300">
+                                                                <td className="py-2.5 font-bold font-mono text-slate-800 dark:text-white">
+                                                                    {item.qty} {item.isWeight ? 'kg/lt' : 'ud'}
+                                                                </td>
+                                                                <td className="py-2.5 font-semibold text-slate-800 dark:text-white pr-2">
+                                                                    {item.name}
+                                                                </td>
+                                                                <td className="py-2.5 text-right font-medium">
+                                                                    ${item.priceUsd.toFixed(2)}
+                                                                </td>
+                                                                <td className="py-2.5 text-right font-extrabold text-slate-800 dark:text-white">
+                                                                    ${(item.qty * item.priceUsd).toFixed(2)}
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
                                         </div>
                                     )}
                                 </div>

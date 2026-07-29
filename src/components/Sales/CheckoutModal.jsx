@@ -76,6 +76,7 @@ export default function CheckoutModal({
         paymentMethods,
         effectiveRate,
         tasaCop,
+        copEnabled,
         cartTotalUsd,
         cartTotalBs,
         triggerHaptic,
@@ -451,9 +452,9 @@ export default function CheckoutModal({
                                 handleConfirm();
                             }
                         }}
-                        disabled={isProcessing || rateError || copRateError || (!isPaid && casheaActive) || (!selectedCustomerId && remainingUsd > 0.01)}
+                        disabled={isProcessing || rateError || (copEnabled && copRateError) || (!isPaid && casheaActive) || (!selectedCustomerId && remainingUsd > 0.01)}
                         className={`w-full py-4 text-white font-black text-base rounded-2xl shadow-lg transition-all tracking-wide flex items-center justify-center gap-2 ${
-                            isProcessing || rateError || copRateError
+                            isProcessing || rateError || (copEnabled && copRateError)
                                 ? 'bg-slate-300 dark:bg-slate-800 text-slate-450 dark:text-slate-500 cursor-not-allowed shadow-none'
                                 : isPaid
                                     ? casheaActive
@@ -466,7 +467,7 @@ export default function CheckoutModal({
                     >
                         {isProcessing ? (
                             <><span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> PROCESANDO...</>
-                        ) : rateError || copRateError ? (
+                        ) : rateError || (copEnabled && copRateError) ? (
                             <><AlertTriangle size={18} /> ERROR DE TASA</>
                         ) : isPaid ? (
                             casheaActive ? (

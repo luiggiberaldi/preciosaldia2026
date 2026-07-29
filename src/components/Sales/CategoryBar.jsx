@@ -87,9 +87,9 @@ export default function CategoryBar({
                     {/* Monto Libre Button */}
                     <button
                         onClick={() => { triggerHaptic && triggerHaptic(); onOpenCustomAmount && onOpenCustomAmount(); }}
-                        className="shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black transition-all active:scale-95 bg-brand-light dark:bg-surface-800/30 text-brand-dark dark:text-brand border border-surface-300 dark:border-surface-700 hover:bg-brand-light shadow-sm"
+                        className="shrink-0 flex items-center gap-1.5 px-3 py-2 min-h-[40px] rounded-lg text-xs font-black transition-all active:scale-95 bg-brand-light dark:bg-surface-800/30 text-brand-dark dark:text-brand border border-surface-300 dark:border-surface-700 hover:bg-brand-light shadow-sm"
                     >
-                        <Calculator size={11} />
+                        <Calculator size={14} />
                         Monto Libre
                     </button>
 
@@ -97,15 +97,15 @@ export default function CategoryBar({
                     {allowCashAdvance && (
                         <button
                             onClick={() => { triggerHaptic && triggerHaptic(); onOpenCashAdvance && onOpenCashAdvance(); }}
-                            className="shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black transition-all active:scale-95 bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40 hover:bg-amber-100/50 shadow-sm"
+                            className="shrink-0 flex items-center gap-1.5 px-3 py-2 min-h-[40px] rounded-lg text-xs font-black transition-all active:scale-95 bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40 hover:bg-amber-100/50 shadow-sm"
                         >
-                            <DollarSign size={11} />
+                            <DollarSign size={14} />
                             Avance Efectivo
                         </button>
                     )}
 
                     {/* Divider */}
-                    <div className="w-px h-5 bg-slate-200 dark:bg-slate-700 my-auto mx-0.5 rounded-full shrink-0" />
+                    <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 my-auto mx-0.5 rounded-full shrink-0" />
 
                     {/* Show categories with products */}
                     {activeCategories.map(cat => {
@@ -117,14 +117,14 @@ export default function CategoryBar({
                             <button
                                 key={cat.id}
                                 onClick={() => { triggerHaptic && triggerHaptic(); setSelectedCategory(isActive && cat.id !== 'todos' ? 'todos' : cat.id); }}
-                                className={`shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold transition-all active:scale-95 border ${
+                                className={`shrink-0 flex items-center gap-1.5 px-3 py-2 min-h-[40px] rounded-lg text-xs font-bold transition-all active:scale-95 border ${
                                     isActive
                                         ? `${catColorClass} shadow-sm border-transparent`
                                         : 'bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-brand'
                                 }`}
                             >
                                 {cat.label}
-                                <span className={`text-[8.5px] ${isActive ? 'opacity-90' : 'text-slate-400 dark:text-slate-500'}`}>
+                                <span className={`text-[10px] ${isActive ? 'opacity-90' : 'text-slate-400 dark:text-slate-500'}`}>
                                     · {count}
                                 </span>
                             </button>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { TrendingUp, Package, ShoppingBag, ArrowUpRight, Users, ChevronDown, ChevronUp, Key, LockIcon, CheckCircle2 } from 'lucide-react';
+import { TrendingUp, Package, ShoppingBag, ArrowUpRight, Users, ChevronDown, ChevronUp, Key, LockIcon, CheckCircle2, Wallet, Plus } from 'lucide-react';
 import { formatBs, formatCop } from '../../utils/calculatorUtils';
 import AnimatedCounter from '../AnimatedCounter';
 import CasheaIcon from '../CasheaIcon';
@@ -11,7 +11,7 @@ export default function DashboardStats({
     todayProfit, bcvRate,
     todayCashFlow,
     totalDeudas, showTopDeudas, setShowTopDeudas,
-    triggerHaptic, onDailyClose,
+    triggerHaptic, onDailyClose, onOpenGasto,
     copEnabled, copPrimary, tasaCop,
     onTasaClick,
 }) {
@@ -195,8 +195,8 @@ export default function DashboardStats({
                 )}
             </div>
 
-            {/* BOTON CERRAR CAJA */}
-            <div className="col-span-2 lg:col-span-4">
+            {/* BOTON CERRAR CAJA Y REGISTRAR GASTO */}
+            <div className="col-span-2 lg:col-span-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {(todayCashFlow.length > 0 || todaySales.length > 0) ? (
                     <button
                         onClick={onDailyClose}
@@ -226,6 +226,26 @@ export default function DashboardStats({
                         </div>
                     </div>
                 )}
+
+                {/* Botón Registrar Gasto Prominente */}
+                <button
+                    type="button"
+                    onClick={() => { triggerHaptic && triggerHaptic(); onOpenGasto && onOpenGasto(); }}
+                    className="w-full bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200/70 dark:border-rose-900/50 rounded-2xl p-4 shadow-sm active:scale-[0.98] transition-all flex items-center justify-between group"
+                >
+                    <div className="flex items-center gap-3">
+                        <div className="w-11 h-11 bg-rose-100 dark:bg-rose-900/40 rounded-xl flex items-center justify-center shadow-inner">
+                            <Wallet size={22} className="text-rose-600 dark:text-rose-400" />
+                        </div>
+                        <div className="text-left">
+                            <p className="text-sm font-black">Registrar Gasto</p>
+                            <p className="text-[11px] text-rose-500/80 font-bold">Abonos, compras e insumos</p>
+                        </div>
+                    </div>
+                    <div className="w-8 h-8 bg-rose-100 dark:bg-rose-900/40 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                        <Plus size={18} className="text-rose-600 dark:text-rose-400" />
+                    </div>
+                </button>
             </div>
 
             {/* Deudas Pendientes */}

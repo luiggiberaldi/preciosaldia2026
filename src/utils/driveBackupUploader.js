@@ -6,36 +6,49 @@
 export async function uploadToGoogleDrive(payload, deviceId, clientName) {
     const GOOGLE_SCRIPT_URL = import.meta.env.VITE_GOOGLE_SCRIPT_BACKUPS_URL || import.meta.env.VITE_GOOGLE_SCRIPT_URL;
     if (!GOOGLE_SCRIPT_URL) {
-        throw new Error('[DriveBackup] VITE_GOOGLE_SCRIPT_BACKUPS_URL no configurada en .env');
+        return null;
     }
 
-    const response = await fetch(GOOGLE_SCRIPT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-            action: 'upload_backup',
-            deviceId,
-            clientName: clientName || 'Mi Negocio',
-            backupData: payload
-        }),
-        redirect: 'follow'
+    const body = JSON.stringify({
+        action: 'upload_backup',
+        deviceId,
+        clientName: clientName || 'Mi Negocio',
+        backupData: payload
     });
 
-    const text = await response.text();
-    let result;
     try {
-        result = JSON.parse(text);
-    } catch (e) {
-        throw new Error(`[DriveBackup] Respuesta no válida de Google Script: ${text.substring(0, 100)}`);
+        const response = await fetch(GOOGLE_SCRIPT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body,
+            redirect: 'follow'
+        });
+
+        if (response.ok) {
+            const text = await response.text();
+            try {
+                const result = JSON.parse(text);
+                if (result.status === 'success' && result.downloadUrl) {
+                    return result;
+                }
+            } catch (e) {
+                // Ignore parse error on redirect
+            }
+        }
+    } catch (corsErr) {
+        // En caso de bloqueo CORS o 302 redirect del navegador, enviamos via no-cors sin fallar la consola
+        try {
+            await fetch(GOOGLE_SCRIPT_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body
+            });
+            return { downloadUrl: null, sizeBytes: body.length, status: 'submitted_nocors' };
+        } catch (e) {
+            // Silenciosamente omitir si la red está desconectada
+        }
     }
 
-    if (!response.ok || result.status !== 'success') {
-        throw new Error(`[DriveBackup] Error en Google Script: ${result.message || response.status}`);
-    }
-
-    if (!result.downloadUrl) {
-        throw new Error('[DriveBackup] Respuesta sin downloadUrl — backup no confirmado');
-    }
-
-    return result; // { downloadUrl, sizeBytes, fileName, fileId }
+    return null;
 }

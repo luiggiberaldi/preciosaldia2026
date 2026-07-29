@@ -25,10 +25,10 @@ export default function PaginationBar({
                 <button
                     onClick={onPrev}
                     disabled={!hasPrev}
-                    className="p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-surface-600 dark:text-surface-300"
+                    className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg hover:bg-surface-100 dark:hover:bg-surface-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-surface-600 dark:text-surface-300"
                     aria-label="Página anterior"
                 >
-                    <ChevronLeft size={16} />
+                    <ChevronLeft size={20} />
                 </button>
                 <span className="text-xs font-medium px-2 text-surface-600 dark:text-surface-300">
                     {currentPage} / {totalPages}
@@ -36,10 +36,10 @@ export default function PaginationBar({
                 <button
                     onClick={onNext}
                     disabled={!hasNext}
-                    className="p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-surface-600 dark:text-surface-300"
+                    className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg hover:bg-surface-100 dark:hover:bg-surface-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-surface-600 dark:text-surface-300"
                     aria-label="Siguiente página"
                 >
-                    <ChevronRight size={16} />
+                    <ChevronRight size={20} />
                 </button>
             </div>
         </div>

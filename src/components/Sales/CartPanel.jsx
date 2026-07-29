@@ -85,17 +85,18 @@ export default function CartPanel({
                             const isSelected = cartSelectedIndex === idx;
 
                             return (
-                                <div key={item.id} className={`group rounded-xl sm:rounded-2xl p-2 pr-6 sm:p-3 sm:pr-10 border flex items-center justify-between gap-2 transition-colors relative ${
+                                <div key={item.id} className={`group rounded-2xl p-2.5 lg:p-2 border flex flex-col gap-1.5 lg:gap-1.5 transition-colors relative ${
                                     isCashAdvance
                                         ? (isSelected
                                             ? 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-500 ring-2 ring-amber-500/20 dark:border-amber-400 dark:ring-amber-400/20'
                                             : 'bg-amber-50/30 dark:bg-amber-950/10 border-amber-200/50 dark:border-amber-900/40 hover:border-amber-400')
                                         : (isSelected 
                                             ? 'bg-white dark:bg-slate-900 border-emerald-500 ring-2 ring-emerald-500/20 dark:border-emerald-400 dark:ring-emerald-400/20' 
-                                            : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800/80 hover:border-emerald-200 dark:hover:border-emerald-800')
+                                            : 'bg-white dark:bg-slate-900 border-slate-200/70 dark:border-slate-800/80 hover:border-emerald-200 dark:hover:border-emerald-800')
                                 }`}>
-                                    <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
-                                        <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl flex items-center justify-center shrink-0 overflow-hidden ${
+                                    {/* Fila 1: Imagen, Nombre y Precio Unitario */}
+                                    <div className="flex items-center gap-2.5 w-full min-w-0">
+                                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 overflow-hidden ${
                                             isCashAdvance 
                                                 ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400'
                                                 : isCustomProduct 
@@ -103,7 +104,7 @@ export default function CartPanel({
                                                 : 'bg-slate-50 dark:bg-slate-950'
                                         }`}>
                                             {isCashAdvance ? (
-                                                <DollarSign size={22} className="animate-pulse" />
+                                                <DollarSign size={18} className="animate-pulse" />
                                             ) : (
                                                 <SmartImage
                                                     src={item.image}
@@ -112,20 +113,20 @@ export default function CartPanel({
                                                     className="w-full h-full object-contain mix-blend-multiply dark:mix-blend-normal"
                                                     fallbackIcon={
                                                         isCustomProduct ? (
-                                                            <DollarSign size={20} className="sm:w-[22px] sm:h-[22px]" />
+                                                            <DollarSign size={18} />
                                                         ) : (
-                                                            <Package size={16} className="text-slate-300 sm:w-[18px] sm:h-[18px]" />
+                                                            <Package size={15} className="text-slate-300" />
                                                         )
                                                     }
                                                 />
                                             )}
                                         </div>
-                                        <div className="flex-1 min-w-0 pr-1">
-                                            <p className={`text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 leading-tight mb-0.5 sm:mb-1 ${isCashAdvance ? 'break-words' : 'truncate'}`}>{item.name}</p>
-                                            <div className={`flex items-center flex-wrap ${isCashAdvance ? 'gap-1.5' : 'gap-1 sm:gap-2'}`}>
+                                        <div className="flex-1 min-w-0">
+                                            <p className={`text-xs font-bold text-slate-800 dark:text-slate-100 leading-tight mb-0.5 ${isCashAdvance ? 'break-words' : 'truncate'}`}>{item.name}</p>
+                                            <div className={`flex items-center flex-wrap ${isCashAdvance ? 'gap-1' : 'gap-1'}`}>
                                                 {isCashAdvance ? (
                                                     <>
-                                                        <p className="text-[10px] sm:text-[11px] font-black text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded">
+                                                        <p className="text-[10px] font-black text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-1 py-0.2 rounded">
                                                             {item.currency === 'BS' ? `Bs ${formatBs(item.exactBs)}` : `$${formatUsd(item.priceUsd)}`}
                                                         </p>
                                                         <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">
@@ -136,21 +137,21 @@ export default function CartPanel({
                                                     copEnabled && tasaCop > 0 ? (
                                                         copPrimary ? (
                                                             <>
-                                                                <p className="text-[10px] sm:text-[11px] font-black text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-1 sm:px-1.5 rounded">{formatCop(getCop(item, tasaCop))} COP</p>
-                                                                <p className="text-[10px] sm:text-[11px] font-bold text-emerald-600">${formatUsd(item.priceUsd)}</p>
-                                                                <p className="text-[10px] sm:text-[11px] font-bold text-brand dark:text-brand">{item.exactBs != null ? formatBs(item.exactBs) : formatBs(mulR(item.priceUsd, effectiveRate))} Bs</p>
+                                                                <p className="text-[10px] font-black text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-1 py-0.2 rounded">{formatCop(getCop(item, tasaCop))} COP</p>
+                                                                <p className="text-[10px] font-bold text-emerald-600">${formatUsd(item.priceUsd)}</p>
+                                                                <p className="text-[10px] font-bold text-brand dark:text-brand">{item.exactBs != null ? formatBs(item.exactBs) : formatBs(mulR(item.priceUsd, effectiveRate))} Bs</p>
                                                             </>
                                                         ) : (
                                                             <>
-                                                                <p className="text-[10px] sm:text-[11px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 px-1 sm:px-1.5 rounded">${formatUsd(item.priceUsd)}</p>
-                                                                <p className="text-[10px] sm:text-[11px] font-bold text-amber-600 dark:text-amber-400">{formatCop(getCop(item, tasaCop))} COP</p>
-                                                                <p className="text-[10px] sm:text-[11px] font-bold text-brand dark:text-brand">{item.exactBs != null ? formatBs(item.exactBs) : formatBs(mulR(item.priceUsd, effectiveRate))} Bs</p>
+                                                                <p className="text-[10px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 px-1 py-0.2 rounded">${formatUsd(item.priceUsd)}</p>
+                                                                <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400">{formatCop(getCop(item, tasaCop))} COP</p>
+                                                                <p className="text-[10px] font-bold text-brand dark:text-brand">{item.exactBs != null ? formatBs(item.exactBs) : formatBs(mulR(item.priceUsd, effectiveRate))} Bs</p>
                                                             </>
                                                         )
                                                     ) : (
                                                         <>
-                                                            <p className="text-[10px] sm:text-[11px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 px-1 sm:px-1.5 rounded">${formatUsd(item.priceUsd)}</p>
-                                                            <p className="text-[10px] sm:text-[11px] font-medium text-slate-400">
+                                                            <p className="text-[10px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 px-1.5 py-0.5 rounded">${formatUsd(item.priceUsd)}</p>
+                                                            <p className="text-[10px] font-bold text-slate-400">
                                                                 {item.exactBs != null ? formatBs(item.exactBs) : formatBs(mulR(item.priceUsd, effectiveRate))} Bs
                                                             </p>
                                                         </>
@@ -159,78 +160,84 @@ export default function CartPanel({
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="flex flex-col items-end shrink-0 gap-1.5 sm:gap-2">
-                                        {isCashAdvance ? (
-                                            <>
-                                                <p className="text-sm sm:text-base font-black text-slate-800 dark:text-white">
-                                                    {item.currency === 'BS' ? `Bs ${formatBs(item.exactBs)}` : `$${formatUsd(item.priceUsd)}`}
-                                                </p>
-                                                <p className="text-[10px] font-medium text-slate-400 dark:text-slate-500 text-right leading-tight">
-                                                    {item.currency === 'BS' ? `Ref: $${formatUsd(item.priceUsd)}` : `Ref: Bs ${formatBs(mulR(item.priceUsd, effectiveRate))}`}
-                                                </p>
-                                            </>
-                                        ) : copEnabled && tasaCop > 0 && copPrimary ? (
-                                            <>
-                                                <p className="text-sm sm:text-base font-black text-amber-600 dark:text-amber-400">
-                                                    {formatCop(mulR(getCop(item, tasaCop), item.qty))} COP
-                                                </p>
-                                                <p className="text-[10px] font-medium text-right leading-tight">
-                                                    <span className="text-emerald-600 dark:text-emerald-400 font-bold">${formatUsd(mulR(item.priceUsd, item.qty))}</span>
-                                                    <span className="text-slate-300 mx-0.5">|</span>
-                                                    <span className="text-brand dark:text-brand font-bold">{formatBs(mulR(mulR(item.priceUsd, item.qty), effectiveRate))} Bs</span>
-                                                </p>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <p className="text-sm sm:text-base font-black text-slate-800 dark:text-white">
-                                                    ${formatUsd(mulR(item.priceUsd, item.qty))}
-                                                </p>
-                                                {copEnabled && tasaCop > 0 && (
-                                                    <p className="text-[10px] font-medium text-right leading-tight">
-                                                        <span className="text-amber-600 dark:text-amber-400 font-bold">{formatCop(mulR(getCop(item, tasaCop), item.qty))} COP</span>
-                                                        <span className="text-slate-300 mx-0.5">|</span>
-                                                        <span className="text-brand dark:text-brand font-bold">{formatBs(mulR(mulR(item.priceUsd, item.qty), effectiveRate))} Bs</span>
-                                                    </p>
-                                                )}
-                                            </>
-                                        )}
-                                        {isCashAdvance ? (
-                                            <div className="px-3 py-1 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 rounded-lg text-xs font-black select-none border border-amber-200/40">
-                                                Único
-                                            </div>
-                                        ) : (
-                                            <div className="flex items-center bg-slate-50 dark:bg-slate-800 rounded-lg p-0.5 border border-slate-100 dark:border-slate-700">
-                                                <button aria-label="Quitar uno" onClick={() => updateQty(item.id, item.isWeight ? -0.1 : -1)} className="w-7 sm:w-8 h-7 sm:h-8 flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors rounded-l-md active:bg-slate-200 dark:active:bg-slate-700"><Minus size={14} strokeWidth={3} /></button>
-                                                
-                                                {isEditing ? (
-                                                    <input
-                                                        ref={inputRef}
-                                                        type="number"
-                                                        value={tempQty}
-                                                        onChange={e => setTempQty(e.target.value)}
-                                                        onFocus={e => e.target.select()}
-                                                        onBlur={() => submitCustomQty(item)}
-                                                        onKeyDown={e => { if (e.key === 'Enter') submitCustomQty(item) }}
-                                                        placeholder={item.qty.toString()}
-                                                        className="w-12 sm:w-16 h-7 sm:h-8 text-center font-black text-slate-700 bg-white dark:bg-slate-900 dark:text-white border border-emerald-500 rounded text-xs outline-none"
-                                                        step={item.isWeight ? "0.01" : "1"}
-                                                    />
-                                                ) : (
-                                                    <span 
-                                                        onClick={() => handleQtyClick(item)} 
-                                                        className="w-10 sm:w-12 text-center font-black text-slate-700 dark:text-white text-[11px] sm:text-xs cursor-pointer hover:text-emerald-500 transition-colors"
-                                                    >
-                                                        {qtyDisplay}
-                                                    </span>
-                                                )}
 
-                                                <button aria-label="Agregar uno" onClick={() => updateQty(item.id, item.isWeight ? 0.1 : 1)} className="w-7 sm:w-8 h-7 sm:h-8 flex items-center justify-center text-slate-400 hover:text-emerald-500 transition-colors rounded-r-md active:bg-slate-200 dark:active:bg-slate-700"><Plus size={14} strokeWidth={3} /></button>
+                                    {/* Fila 2: Subtotal Dual ($ + Bs) si qty > 1, o Badge 1 un. si qty = 1 + Controles */}
+                                    <div className="flex items-center justify-between gap-1.5 w-full pt-1.5 border-t border-slate-100 dark:border-slate-800/60">
+                                        {item.qty > 1 ? (
+                                            <div className="flex items-center gap-1 flex-wrap min-w-0">
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0">SUBTOTAL:</span>
+                                                <span className="text-xs font-black text-slate-800 dark:text-white shrink-0">${formatUsd(mulR(item.priceUsd, item.qty))}</span>
+                                                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 truncate">
+                                                    ({formatBs(item.exactBs != null ? mulR(item.exactBs, item.qty) : mulR(mulR(item.priceUsd, item.qty), effectiveRate))} Bs)
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md">
+                                                    1 un.
+                                                </span>
                                             </div>
                                         )}
+
+                                        <div className="flex items-center gap-1.5 ml-auto shrink-0">
+                                            {isCashAdvance ? (
+                                                <div className="px-2.5 py-0.5 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 rounded-lg text-[11px] font-black select-none border border-amber-200/40">
+                                                    Único
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center bg-slate-50 dark:bg-slate-800 rounded-lg p-0.5 border border-slate-200/60 dark:border-slate-700">
+                                                    <button 
+                                                        type="button"
+                                                        aria-label="Quitar uno" 
+                                                        onClick={() => updateQty(item.id, item.isWeight ? -0.1 : -1)} 
+                                                        className="w-7 h-7 min-h-[36px] min-w-[36px] lg:min-h-[28px] lg:min-w-[28px] lg:w-7 lg:h-7 flex items-center justify-center text-slate-500 hover:text-red-500 transition-colors rounded-md active:bg-slate-200 dark:active:bg-slate-700"
+                                                    >
+                                                        <Minus size={14} strokeWidth={2.5} />
+                                                    </button>
+                                                    
+                                                    {isEditing ? (
+                                                        <input
+                                                            ref={inputRef}
+                                                            type="number"
+                                                            value={tempQty}
+                                                            onChange={e => setTempQty(e.target.value)}
+                                                            onFocus={e => e.target.select()}
+                                                            onBlur={() => submitCustomQty(item)}
+                                                            onKeyDown={e => { if (e.key === 'Enter') submitCustomQty(item) }}
+                                                            placeholder={item.qty.toString()}
+                                                            className="w-10 h-7 text-center font-black text-slate-700 bg-white dark:bg-slate-900 dark:text-white border border-emerald-500 rounded-md text-xs outline-none"
+                                                            step={item.isWeight ? "0.01" : "1"}
+                                                        />
+                                                    ) : (
+                                                        <span 
+                                                            onClick={() => handleQtyClick(item)} 
+                                                            className="w-7 text-center font-black text-slate-800 dark:text-white text-xs cursor-pointer hover:text-emerald-500 transition-colors"
+                                                        >
+                                                            {qtyDisplay}
+                                                        </span>
+                                                    )}
+
+                                                    <button 
+                                                        type="button"
+                                                        aria-label="Agregar uno" 
+                                                        onClick={() => updateQty(item.id, item.isWeight ? 0.1 : 1)} 
+                                                        className="w-7 h-7 min-h-[36px] min-w-[36px] lg:min-h-[28px] lg:min-w-[28px] lg:w-7 lg:h-7 flex items-center justify-center text-slate-500 hover:text-emerald-500 transition-colors rounded-md active:bg-slate-200 dark:active:bg-slate-700"
+                                                    >
+                                                        <Plus size={14} strokeWidth={2.5} />
+                                                    </button>
+                                                </div>
+                                            )}
+
+                                            <button 
+                                                type="button"
+                                                aria-label="Eliminar del carrito" 
+                                                onClick={() => removeFromCart(item.id)} 
+                                                className="w-7 h-7 min-w-[36px] min-h-[36px] lg:min-h-[28px] lg:min-w-[28px] lg:w-7 lg:h-7 flex items-center justify-center bg-rose-50 dark:bg-rose-950/30 text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-900/50 transition-colors rounded-lg shrink-0"
+                                            >
+                                                <X size={14} />
+                                            </button>
+                                        </div>
                                     </div>
-                                    <button aria-label="Eliminar del carrito" onClick={() => removeFromCart(item.id)} className="absolute -top-1 -right-1 sm:top-2 sm:right-2 p-1.5 bg-red-50 dark:bg-red-900/40 text-red-500 sm:bg-transparent sm:text-slate-300 sm:hover:text-red-500 opacity-80 sm:opacity-0 group-hover:opacity-100 transition-opacity rounded-full sm:rounded-lg">
-                                        <X size={12} className="sm:w-[14px] sm:h-[14px]" />
-                                    </button>
                                 </div>
                             );
                         })}
