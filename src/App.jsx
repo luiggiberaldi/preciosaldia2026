@@ -346,7 +346,7 @@ export default function App() {
       <ProductProvider>
         {/* OFFLINE-IMG: precalienta el cache del SW con TODAS las imágenes del inventario */}
         <ImagePrecacheRunner />
-        <main className={`flex-1 min-h-0 w-full max-w-full px-0 lg:px-6 xl:px-8 mx-auto relative ${isKeyboardOpen ? 'pb-4' : 'pb-24'} flex flex-col overflow-y-auto`}>
+        <main className={`flex-1 min-h-0 w-full max-w-full px-0 lg:px-6 xl:px-8 mx-auto relative ${isKeyboardOpen ? 'pb-2' : 'pb-16 lg:pb-1'} flex flex-col overflow-y-auto`}>
 
           {/* Hidden Admin Trigger Area */}
         <div
@@ -536,8 +536,8 @@ function BottomNav({
   }, [cart]);
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 px-2 sm:px-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-0 mb-2 sm:mb-3 max-w-lg mx-auto z-30 pointer-events-none animate-in slide-in-from-bottom-4 duration-300">
-      <div className="relative bg-slate-900/95 dark:bg-slate-950/95 backdrop-blur-2xl rounded-2xl px-2 py-2 flex justify-between items-center shadow-2xl shadow-black/40 border border-white/10 ring-1 ring-black/10 pointer-events-auto">
+    <div className="fixed bottom-1 left-0 right-0 lg:right-[400px] px-2 sm:px-6 pb-[max(0.25rem,env(safe-area-inset-bottom))] pt-0 max-w-lg lg:max-w-md mx-auto z-30 pointer-events-none animate-in slide-in-from-bottom-4 duration-300">
+      <div className="relative bg-slate-900/95 dark:bg-slate-950/95 backdrop-blur-2xl rounded-2xl px-2 py-1.5 flex justify-between items-center shadow-2xl shadow-black/40 border border-white/10 ring-1 ring-black/10 pointer-events-auto">
         {tabs.map(tab => {
           const isVender = tab.id === 'ventas';
           const isActive = activeTab === tab.id;
