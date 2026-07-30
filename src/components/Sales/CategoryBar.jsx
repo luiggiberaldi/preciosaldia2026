@@ -229,7 +229,7 @@ export default function CategoryBar({
                                             ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border-rose-200'
                                             : 'bg-emerald-100/90 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border-emerald-200/60'
                                     }`}>
-                                        {isOut ? 'AGOTADO' : `${p.isWeight ? p.stock.toFixed(2) : (p.stock ?? 0)} ${p.isWeight ? 'KG' : 'UNDS'}`}
+                                        {isOut ? 'AGOTADO' : `${p.isWeight ? (p.stock ?? 0).toFixed(2) : (p.stock ?? 0)} ${p.isWeight ? 'KG' : 'UNDS'}`}
                                     </span>
 
                                     {/* Contenedor de la Imagen con padding superior para no tapar la pill de stock */}
