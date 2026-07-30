@@ -49,17 +49,8 @@ export default function PaymentHeader({ modo, setModo, onClose, onSwitchToBasic,
                 </button>
             </div>
 
-            {/* Acciones: switch de modo + cerrar */}
+            {/* Acciones: cerrar */}
             <div className="flex items-center gap-2">
-                {onSwitchToBasic && (
-                    <button
-                        onClick={onSwitchToBasic}
-                        title="Cambiar al modo móvil / tablet"
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-slate-400 hover:text-brand hover:bg-brand/5 border border-slate-200 dark:border-slate-700 dark:hover:border-brand/30 transition-all"
-                    >
-                        <LayoutGrid size={12} /> Modo Móvil
-                    </button>
-                )}
                 <button
                     onClick={onClose}
                     className="w-9 h-9 bg-slate-50 dark:bg-slate-900 hover:bg-red-50 dark:hover:bg-red-950/20 hover:text-red-500 text-slate-400 rounded-xl transition-all flex items-center justify-center active:scale-90"

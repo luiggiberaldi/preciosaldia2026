@@ -118,13 +118,6 @@ export default function CheckoutModal({
                 </button>
                 <h2 className="text-base font-black text-slate-800 dark:text-white tracking-wide">COBRAR</h2>
                 <div className="flex items-center gap-2">
-                    <button
-                        onClick={() => setCheckoutMode('pos')}
-                        title="Cambiar al modo PC (Escritorio / 2 Columnas)"
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-slate-400 hover:text-brand hover:bg-brand/5 border border-slate-200 dark:border-slate-700 dark:hover:border-brand/30 transition-all"
-                    >
-                        <LayoutGrid size={12} /> Modo PC
-                    </button>
                     <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-900 px-2.5 py-1 rounded-lg">
                         {formatBs(effectiveRate)} Bs/$
                     </span>
