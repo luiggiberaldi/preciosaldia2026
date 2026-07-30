@@ -5,6 +5,19 @@ import { getLocalISODate } from '../utils/dateHelpers';
 
 export const SALES_KEY = 'bodega_sales_v1';
 
+function sanitizeCart(rawCart) {
+    if (!Array.isArray(rawCart)) return [];
+    return rawCart
+        .filter(item => item && typeof item === 'object')
+        .map((item, idx) => ({
+            ...item,
+            id: item.id ?? `legacy_cart_item_${idx}_${Date.now()}`,
+            name: item.name || 'Producto Sin Nombre',
+            qty: typeof item.qty === 'number' && !isNaN(item.qty) && item.qty > 0 ? item.qty : 1,
+            priceUsd: typeof item.priceUsd === 'number' && !isNaN(item.priceUsd) ? item.priceUsd : 0
+        }));
+}
+
 export function useSalesData({ setCart, cartRef, isActive }) {
     const [customers, setCustomers] = useState([]);
     const [paymentMethods, setPaymentMethods] = useState([]);
@@ -27,9 +40,10 @@ export function useSalesData({ setCart, cartRef, isActive }) {
                 setCustomers(savedCustomers);
                 setPaymentMethods(methods);
 
-                // Only set cart if it's currently empty (don't overwrite if user somehow added items before load)
-                if (savedCart && savedCart.length > 0 && cartRef.current.length === 0) {
-                    setCart(savedCart);
+                // Sanitizar el carrito de posibles ítems nulos o corruptos antes de cargarlo
+                const cleanCart = sanitizeCart(savedCart);
+                if (cleanCart.length > 0 && cartRef.current.length === 0) {
+                    setCart(cleanCart);
                 }
 
                 // Check Apertura (timezone-safe)

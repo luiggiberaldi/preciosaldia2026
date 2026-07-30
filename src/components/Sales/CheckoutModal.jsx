@@ -81,6 +81,8 @@ export default function CheckoutModal({
         cartTotalBs,
         triggerHaptic,
         onConfirmSale,
+        cart,
+        discountData,
     });
 
     const CASHEA_LEVEL_MAP = { 1: 60, 2: 50, 3: 40, 4: 30, 5: 20, 6: 10 };
@@ -117,10 +119,10 @@ export default function CheckoutModal({
                 <div className="flex items-center gap-2">
                     <button
                         onClick={() => setCheckoutMode('pos')}
-                        title="Cambiar al modo profesional (Listo POS)"
+                        title="Cambiar al modo PC (Escritorio / 2 Columnas)"
                         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-slate-400 hover:text-brand hover:bg-brand/5 border border-slate-200 dark:border-slate-700 dark:hover:border-brand/30 transition-all"
                     >
-                        <LayoutGrid size={12} /> POS
+                        <LayoutGrid size={12} /> Modo PC
                     </button>
                     <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-900 px-2.5 py-1 rounded-lg">
                         {formatBs(effectiveRate)} Bs/$

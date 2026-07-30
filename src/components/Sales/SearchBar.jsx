@@ -120,6 +120,11 @@ const SearchBar = forwardRef(function SearchBar({
                                                 {catInfo.label}
                                             </span>
                                         )}
+                                        {p.pricingMode === 'dual_usd' && p.priceBsUsdRef > 0 && (
+                                            <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-300/60 dark:border-emerald-800/60">
+                                                Doble $: ${p.priceUsdt || p.priceUsd} / ${p.priceBsUsdRef} Ref
+                                            </span>
+                                        )}
                                         <span className={`text-[10px] font-medium flex items-center gap-1
                                             ${isOutOfStock ? 'text-red-500' : isLowStock ? 'text-amber-500' : 'text-slate-400'}`}>
                                             {isLowStock && !isOutOfStock && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />}
@@ -139,11 +144,25 @@ const SearchBar = forwardRef(function SearchBar({
                                         </>
                                     ) : (
                                         <>
-                                            <p className="text-sm font-black text-emerald-600 dark:text-emerald-400">
-                                                ${getUsd(p, tasaCop).toFixed(2)}
-                                            </p>
+                                            <div className="flex items-center justify-end gap-1">
+                                                <p className="text-sm font-black text-emerald-600 dark:text-emerald-400">
+                                                    ${getUsd(p, tasaCop).toFixed(2)}
+                                                </p>
+                                                {p.pricingMode === 'dual_usd' && parseFloat(p.priceBsUsdRef) > 0 && (
+                                                    <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 px-1 py-0.5 rounded border border-emerald-200/60 leading-none">
+                                                        ${formatUsd(p.priceBsUsdRef)} Ref
+                                                    </span>
+                                                )}
+                                            </div>
                                             <p className="text-[10px] font-medium text-slate-400">
-                                                {copEnabled && tasaCop > 0 ? `${formatCop(getCop(p, tasaCop))} COP` : `${formatBs(p.priceUsdt * effectiveRate)} Bs`}
+                                                {copEnabled && tasaCop > 0
+                                                    ? `${formatCop(getCop(p, tasaCop))} COP`
+                                                    : `${formatBs(
+                                                        p.pricingMode === 'dual_usd' && parseFloat(p.priceBsUsdRef) > 0
+                                                            ? parseFloat(p.priceBsUsdRef) * effectiveRate
+                                                            : (p.priceUsdt || p.priceUsd || 0) * effectiveRate
+                                                    )} Bs ${p.pricingMode === 'dual_usd' && parseFloat(p.priceBsUsdRef) > 0 ? '(en Bs)' : ''}`
+                                                }
                                             </p>
                                         </>
                                     )}

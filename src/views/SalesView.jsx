@@ -43,7 +43,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
     const { notifyLowStock, notifySaleComplete } = useNotifications();
 
     // ── Global Context ──────────────────────────────────────
-    const { products, setProducts, isLoadingProducts, rateMode, setRateMode, useAutoRate, setUseAutoRate, customRate, setCustomRate, effectiveRate, rates, rateDiscrepancyWarning, copEnabled, copPrimary, tasaCop, autoCopEnabled, setAutoCopEnabled, tasaCopManual, setTasaCopManual, categories, checkoutMode, setCheckoutMode } = useProductContext();
+    const { products, setProducts, isLoadingProducts, rateMode, setRateMode, useAutoRate, setUseAutoRate, customRate, setCustomRate, effectiveRate, rates, rateDiscrepancyWarning, copEnabled, copPrimary, tasaCop, autoCopEnabled, setAutoCopEnabled, tasaCopManual, setTasaCopManual, categories, checkoutMode, effectiveCheckoutMode, setCheckoutMode } = useProductContext();
 
     // ── State ──────────────────────────────────────
     const [showConfetti, setShowConfetti] = useState(false);
@@ -939,6 +939,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
             {showCheckout && (() => {
                 const sharedProps = {
                     onClose: () => { setShowCheckout(false); setSelectedCustomerId(''); },
+                    cart,
                     cartSubtotalUsd, cartSubtotalBs: cartSubtotalUsd * effectiveRate,
                     cartTotalUsd, cartTotalBs, cartTotalCop,
                     discountData, effectiveRate,
@@ -952,7 +953,8 @@ export default function SalesView({ triggerHaptic, isActive }) {
                     onSwitchMode: setCheckoutMode,
                     isProcessing,
                 };
-                return checkoutMode === 'pos'
+                const activeMode = effectiveCheckoutMode || 'basic';
+                return activeMode === 'pos'
                     ? <CheckoutModalPOS {...sharedProps} />
                     : <CheckoutModal {...sharedProps} />;
             })()}

@@ -510,7 +510,7 @@ export default function ReportsMetricsTab({
                                 </h3>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[360px] overflow-y-auto pr-1 custom-scrollbar">
                                     {topProducts.map((p, i) => (
-                                        <div key={p.name} className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/45 rounded-xl p-2.5 border border-slate-100/50 dark:border-slate-800/50">
+                                        <div key={`${p.name}-${i}`} className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/45 rounded-xl p-2.5 border border-slate-100/50 dark:border-slate-800/50">
                                             <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0 ${
                                                 i < 3 ? 'bg-brand-light dark:bg-surface-800/30 text-brand-dark dark:text-brand' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
                                             }`}>{i + 1}</span>

@@ -29,9 +29,19 @@ class ErrorBoundary extends React.Component {
     console.error('🔴 App Error:', error, errorInfo);
   }
 
-  _handleRetry = () => {
-    // HOOK-026: reload garantiza estado limpio. Antes solo reseteabamos el flag
-    // y el error reaparecía en el siguiente render.
+  _handleRetry = async () => {
+    // Si el error está relacionado con llamadas a toString o al carrito, purgar la clave del carrito corrupto
+    const errMsg = (this.state.error?.message || '').toLowerCase();
+    if (errMsg.includes('tostring') || errMsg.includes('cart') || errMsg.includes('undefined')) {
+      try {
+        localStorage.removeItem('bodega_pending_cart_v1');
+        localStorage.removeItem('bodega_cart');
+        localforage.config({ name: 'BodegaApp', storeName: 'bodega_app_data' });
+        await localforage.removeItem('bodega_pending_cart_v1').catch(() => {});
+      } catch (e) {
+        console.error('[ErrorBoundary] Error limpiando carrito corrupto:', e);
+      }
+    }
     window.location.reload();
   };
 
@@ -40,8 +50,8 @@ class ErrorBoundary extends React.Component {
     // o OOM. NO tocar auth, ni flags de migración, ni settings.
     const confirm = typeof window !== 'undefined' && window.confirm
       ? window.confirm(
-          'Esto borrará SOLO los productos (bodega_products_v1) y el historial de ventas (bodega_sales_v1) ' +
-          'para intentar recuperar la app. NO se tocará la sesión, configuración ni otros datos. ¿Continuar?'
+          'Esto borrará los datos de la cesta (bodega_pending_cart_v1), productos (bodega_products_v1) y ventas (bodega_sales_v1) ' +
+          'para intentar recuperar la app. NO se tocará la sesión ni configuración. ¿Continuar?'
         )
       : true;
     if (!confirm) return;
@@ -52,9 +62,12 @@ class ErrorBoundary extends React.Component {
       localforage.config({ name: 'BodegaApp', storeName: 'bodega_app_data' });
       await localforage.removeItem('bodega_products_v1');
       await localforage.removeItem('bodega_sales_v1');
+      await localforage.removeItem('bodega_pending_cart_v1');
       // También purgar de localStorage por si estaban ahí como fallback.
       localStorage.removeItem('bodega_products_v1');
       localStorage.removeItem('bodega_sales_v1');
+      localStorage.removeItem('bodega_pending_cart_v1');
+      localStorage.removeItem('bodega_cart');
       this.setState({ clearMsg: 'Datos borrados. Recargando...' });
       setTimeout(() => window.location.reload(), 600);
     } catch (e) {

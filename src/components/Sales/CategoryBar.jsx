@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Package, Calculator, ChevronDown, Clock, HelpCircle, Trash2, X, DollarSign } from 'lucide-react';
 import { BODEGA_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../config/categories';
-import { formatCop, formatBs, getCop, getUsd } from '../../utils/calculatorUtils';
+import { formatCop, formatBs, formatUsd, getCop, getUsd } from '../../utils/calculatorUtils';
 import SmartImage from '../SmartImage';
 
 const PAGE_SIZE = 30;
@@ -219,52 +219,68 @@ export default function CategoryBar({
                             return (
                                 <button
                                     key={p.id}
-                                    onClick={() => addToCart(p)}
+                                    onClick={() => { triggerHaptic && triggerHaptic(); addToCart(p); }}
                                     disabled={isDisabled}
-                                    className={`relative bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-2.5 flex flex-col text-left transition-all active:scale-95 hover:border-brand/40 hover:shadow-md ${isDisabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+                                    className={`group relative flex flex-col justify-between p-3 bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-md transition-all text-left active:scale-[0.98] ${isDisabled ? 'opacity-40 cursor-not-allowed' : ''}`}
                                 >
-                                    {/* Badge de stock — esquina superior derecha */}
-                                    <span className={`absolute top-1.5 right-1.5 border rounded px-1 py-0.5 text-[8px] font-black leading-none
-                                        ${isOut
-                                            ? 'bg-red-50 text-red-700 border-red-100 dark:bg-red-950/20 dark:text-red-400 dark:border-red-900/50'
-                                            : 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800'
-                                        }`}
-                                    >
-                                        {isOut ? 'AGOT.' : `${p.stock ?? 0} UNDS`}
+                                    {/* Stock Badge flotante en la esquina superior derecha de la tarjeta (Pill) */}
+                                    <span className={`absolute top-2.5 right-2.5 text-[9px] font-extrabold px-2 py-0.5 rounded-full z-20 border shadow-2xs ${
+                                        isOut
+                                            ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border-rose-200'
+                                            : 'bg-emerald-100/90 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border-emerald-200/60'
+                                    }`}>
+                                        {isOut ? 'AGOTADO' : `${p.isWeight ? p.stock.toFixed(2) : (p.stock ?? 0)} ${p.isWeight ? 'KG' : 'UNDS'}`}
                                     </span>
 
-                                    {/* Imagen centrada con fallback local e icono inteligente */}
-                                    <div className="w-full aspect-square rounded-lg bg-slate-50 dark:bg-slate-950 flex items-center justify-center mb-2 overflow-hidden">
+                                    {/* Contenedor de la Imagen con padding superior para no tapar la pill de stock */}
+                                    <div className="w-full aspect-square bg-transparent flex items-center justify-center overflow-hidden pt-3 pb-1 mb-1 relative group-hover:scale-[1.03] transition-transform">
                                         <SmartImage
                                             src={p.image}
                                             product={p}
                                             alt={p.name}
-                                            fallbackIcon={<CatIcon size={22} className="text-slate-300 dark:text-slate-700" />}
+                                            className="w-full h-full object-contain"
+                                            fallbackIcon={<CatIcon size={26} className="text-slate-300 dark:text-slate-700" />}
                                         />
                                     </div>
 
                                     {/* Nombre: izquierda, 2 líneas */}
-                                    <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200 leading-tight line-clamp-2 mb-1.5 min-h-[2.4em]">{p.name}</p>
+                                    <p className="text-[12px] font-bold text-slate-800 dark:text-slate-100 leading-snug line-clamp-2 mt-1 mb-2 min-h-[2.4em]">{p.name}</p>
 
-                                    {/* Precio USD: grande */}
-                                    <p className="text-sm font-extrabold text-slate-900 dark:text-white leading-none">
-                                        ${getUsd(p, tasaCop).toFixed(2)}
-                                    </p>
+                                    {/* Sección de precios */}
+                                    <div className="mt-auto">
+                                        {/* Precio USD: grande con badge si es dual */}
+                                        <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                                            <p className="text-base font-black text-slate-900 dark:text-white leading-none">
+                                                ${getUsd(p, tasaCop).toFixed(2)}
+                                            </p>
+                                            {p.pricingMode === 'dual_usd' && parseFloat(p.priceBsUsdRef) > 0 && (
+                                                <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 px-1.5 py-0.5 rounded-md border border-emerald-200/60 leading-none">
+                                                    ${formatUsd(p.priceBsUsdRef)} Ref
+                                                </span>
+                                            )}
+                                        </div>
 
-                                    {/* Precio Bs: pequeño, color brand */}
-                                    <p className="text-[10px] font-bold text-brand dark:text-brand mt-0.5 leading-none">
-                                        Bs {formatBs(getUsd(p, tasaCop) * (effectiveRate || 0))}
-                                    </p>
+                                        {/* Precio Bs: pequeño, color teal / brand */}
+                                        <p className="text-[11px] font-bold text-teal-600 dark:text-teal-400 leading-none mt-0.5">
+                                            Bs {formatBs(
+                                                p.pricingMode === 'dual_usd' && parseFloat(p.priceBsUsdRef) > 0
+                                                    ? parseFloat(p.priceBsUsdRef) * (effectiveRate || 0)
+                                                    : getUsd(p, tasaCop) * (effectiveRate || 0)
+                                            )}
+                                            {p.pricingMode === 'dual_usd' && parseFloat(p.priceBsUsdRef) > 0 && (
+                                                <span className="text-[9px] text-slate-400 font-medium ml-0.5">(en Bs)</span>
+                                            )}
+                                        </p>
+                                    </div>
                                 </button>
                             );
                         })}
                     </div>
-
-                    {/* Load More button */}
-                    {hasMore && (
-                        <div className="flex justify-center mt-3">
+                    {/* Botón "Cargar Más" */}
+                    {visibleCount < filteredByCategory.length && (
+                        <div className="mt-4 flex justify-center">
                             <button
-                                onClick={() => { triggerHaptic && triggerHaptic(); setVisibleCount(prev => prev + PAGE_SIZE); }}
+                                onClick={() => setVisibleCount(prev => prev + 20)}
                                 className="flex items-center gap-1.5 px-5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:border-brand hover:text-brand-dark transition-all active:scale-95 shadow-sm"
                             >
                                 <ChevronDown size={14} />

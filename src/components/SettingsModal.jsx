@@ -445,51 +445,74 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
                             <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500 dark:text-slate-400 mb-3">
                                 🖥️ Experiencia de Cobro
                             </p>
-                            <div className="grid grid-cols-2 gap-2">
-                                {/* Card Básico */}
+                            <div className="grid grid-cols-3 gap-2">
+                                {/* Card Auto */}
                                 <button
-                                    onClick={() => { setCheckoutMode('basic'); showToast('Modo básico activado', 'success'); if (triggerHaptic) triggerHaptic(); }}
-                                    className={`p-3 rounded-xl border-2 text-left transition-all active:scale-95 ${
-                                        checkoutMode === 'basic' || !checkoutMode
+                                    onClick={() => { setCheckoutMode('auto'); showToast('Detección automática de dispositivo activada', 'success'); if (triggerHaptic) triggerHaptic(); }}
+                                    className={`p-2.5 rounded-xl border-2 text-left transition-all active:scale-95 ${
+                                        checkoutMode === 'auto' || !checkoutMode
                                             ? 'border-brand bg-brand/5 dark:bg-brand/10'
                                             : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
                                     }`}
                                 >
-                                    <div className="flex items-center gap-2 mb-1.5">
-                                        <span className="text-lg">📱</span>
+                                    <div className="flex items-center gap-1 mb-1">
+                                        <span className="text-base">⚡</span>
                                         <span className={`text-xs font-black ${
-                                            checkoutMode === 'basic' || !checkoutMode
+                                            checkoutMode === 'auto' || !checkoutMode
                                                 ? 'text-brand dark:text-brand'
                                                 : 'text-slate-700 dark:text-slate-300'
-                                        }`}>Básico</span>
-                                        {(checkoutMode === 'basic' || !checkoutMode) && (
-                                            <span className="ml-auto text-[8px] font-black bg-brand text-white px-1.5 py-0.5 rounded-full">ACTIVO</span>
+                                        }`}>Auto</span>
+                                        {(checkoutMode === 'auto' || !checkoutMode) && (
+                                            <span className="ml-auto text-[7px] font-black bg-brand text-white px-1 py-0.5 rounded-full">ACTIVO</span>
                                         )}
                                     </div>
-                                    <p className="text-[9px] text-slate-400 leading-tight">Barras rápidas scroll vertical. Optimizado para móvil.</p>
+                                    <p className="text-[8.5px] text-slate-400 leading-tight">Detecta Móvil o PC según pantalla.</p>
                                 </button>
 
-                                {/* Card Profesional */}
+                                {/* Card Móvil */}
                                 <button
-                                    onClick={() => { setCheckoutMode('pos'); showToast('Modo profesional (POS) activado', 'success'); if (triggerHaptic) triggerHaptic(); }}
-                                    className={`p-3 rounded-xl border-2 text-left transition-all active:scale-95 ${
+                                    onClick={() => { setCheckoutMode('basic'); showToast('Modo Móvil activado', 'success'); if (triggerHaptic) triggerHaptic(); }}
+                                    className={`p-2.5 rounded-xl border-2 text-left transition-all active:scale-95 ${
+                                        checkoutMode === 'basic'
+                                            ? 'border-brand bg-brand/5 dark:bg-brand/10'
+                                            : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-1 mb-1">
+                                        <span className="text-base">📱</span>
+                                        <span className={`text-xs font-black ${
+                                            checkoutMode === 'basic'
+                                                ? 'text-brand dark:text-brand'
+                                                : 'text-slate-700 dark:text-slate-300'
+                                        }`}>Móvil</span>
+                                        {checkoutMode === 'basic' && (
+                                            <span className="ml-auto text-[7px] font-black bg-brand text-white px-1 py-0.5 rounded-full">ACTIVO</span>
+                                        )}
+                                    </div>
+                                    <p className="text-[8.5px] text-slate-400 leading-tight">Formulario vertical 1 columna.</p>
+                                </button>
+
+                                {/* Card PC */}
+                                <button
+                                    onClick={() => { setCheckoutMode('pos'); showToast('Modo PC activado', 'success'); if (triggerHaptic) triggerHaptic(); }}
+                                    className={`p-2.5 rounded-xl border-2 text-left transition-all active:scale-95 ${
                                         checkoutMode === 'pos'
                                             ? 'border-brand bg-brand/5 dark:bg-brand/10'
                                             : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
                                     }`}
                                 >
-                                    <div className="flex items-center gap-2 mb-1.5">
-                                        <span className="text-lg">💼</span>
+                                    <div className="flex items-center gap-1 mb-1">
+                                        <span className="text-base">💻</span>
                                         <span className={`text-xs font-black ${
                                             checkoutMode === 'pos'
                                                 ? 'text-brand dark:text-brand'
                                                 : 'text-slate-700 dark:text-slate-300'
-                                        }`}>Profesional</span>
+                                        }`}>PC</span>
                                         {checkoutMode === 'pos' && (
-                                            <span className="ml-auto text-[8px] font-black bg-brand text-white px-1.5 py-0.5 rounded-full">ACTIVO</span>
+                                            <span className="ml-auto text-[7px] font-black bg-brand text-white px-1 py-0.5 rounded-full">ACTIVO</span>
                                         )}
                                     </div>
-                                    <p className="text-[9px] text-slate-400 leading-tight">2 columnas, Contado/Crédito, billetes. Estilo Listo POS.</p>
+                                    <p className="text-[8.5px] text-slate-400 leading-tight">Pantalla 2 columnas escritorio.</p>
                                 </button>
                             </div>
                         </div>

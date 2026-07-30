@@ -267,7 +267,13 @@ ${showSecondary ? `[PRECIO SECUNDARIO]
                                 <p className="text-lg lg:text-base font-black text-emerald-600 dark:text-emerald-400 leading-none">
                                     {formatUsd(effectiveUsd)} <span className="text-[10px] font-bold text-emerald-600/50 dark:text-emerald-400/50">USD {(p.unit === 'kg' || p.unit === 'litro') ? `/ ${unitInfo?.short || 'ud'}` : ''}</span>
                                 </p>
-                                <p className="text-[11px] font-bold text-slate-400 mt-1">{formatBs(valBs)} Bs</p>
+                                {p.pricingMode === 'dual_usd' && p.priceBsUsdRef > 0 ? (
+                                    <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 mt-1">
+                                        {formatBs(p.priceBsUsdRef * effectiveRate)} Bs <span className="text-[9px] font-normal text-slate-500 dark:text-slate-400">(${p.priceBsUsdRef} Ref Bs)</span>
+                                    </p>
+                                ) : (
+                                    <p className="text-[11px] font-bold text-slate-400 mt-1">{formatBs(valBs)} Bs</p>
+                                )}
                             </>
                         )}
                         {p.unit === 'paquete' && p.sellByUnit && (

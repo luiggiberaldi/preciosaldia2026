@@ -1,27 +1,23 @@
 import { useState, useCallback, useMemo, useRef } from 'react';
 import { round2, divR, mulR, subR, sumR } from '../utils/dinero';
 import { FINANCIAL_EPSILON } from '../utils/securityConstants';
-import { CurrencyService } from '../services/CurrencyService'; // FIN-016: safeParse en vez de parseFloat.
+import { CurrencyService } from '../services/CurrencyService';
+import { FinancialEngine } from '../core/FinancialEngine';
 
 /**
- * Hook de cálculos de checkout.
- *
- * FIN-009 / FIN-033: No más fallback mágico a `4150` ni a `1` para tasas inválidas.
- *   Si effectiveRate <= 0 o tasaCop <= 0 (con COP habilitado), se expone `rateError`
- *   para que la UI bloquee el cobro. Los cálculos que dependen de la tasa devuelven 0
- *   en lugar de multiplicar por un número mágico.
- * FIN-016: Reemplaza toFixed/raw mul/div por round2/mulR/divR.
- * FIN-023: Umbral de "pago completo" usa FINANCIAL_EPSILON.PAYMENT_ZERO.
+ * Hook de cálculos de checkout con soporte para Doble Precio dinámico.
  */
 export function useCheckoutCalculations({
     paymentMethods,
     effectiveRate,
     tasaCop,
     copEnabled = false,
-    cartTotalUsd,
-    cartTotalBs,
+    cartTotalUsd: baseCartTotalUsd,
+    cartTotalBs: baseCartTotalBs,
     triggerHaptic,
     onConfirmSale,
+    cart = [],
+    discountData = null,
 }) {
     const [barValues, setBarValues] = useState({});
     const [changeUsdGiven, setChangeUsdGiven] = useState('');
@@ -32,6 +28,29 @@ export function useCheckoutCalculations({
     // -- Cashea Hook Integration --
     const [casheaActive, setCasheaActive] = useState(false);
     const [casheaPercent, setCasheaPercent] = useState(60);
+
+    const safeRate = effectiveRate > 0 ? effectiveRate : 0;
+    const safeTasaCop = tasaCop > 0 ? tasaCop : 0;
+
+    // Detectar si el usuario está realizando un pago en Bolívares (o usando método BS)
+    const isBsPaymentActive = useMemo(() => {
+        if (!cart || cart.length === 0) return false;
+        const hasDualItem = cart.some(i => i.pricingMode === 'dual_usd' && parseFloat(i.priceBsUsdRef) > 0);
+        if (!hasDualItem) return false;
+        const bsMethods = paymentMethods.filter(m => m.currency === 'BS');
+        return bsMethods.some(m => CurrencyService.safeParse(barValues[m.id]) > 0);
+    }, [cart, paymentMethods, barValues]);
+
+    // Recalcular totales de carrito dinámicamente si el pago es en Bolívares
+    const cartTotals = useMemo(() => {
+        if (!cart || cart.length === 0 || !cart.some(i => i.pricingMode === 'dual_usd' && parseFloat(i.priceBsUsdRef) > 0)) {
+            return { totalUsd: baseCartTotalUsd, totalBs: baseCartTotalBs };
+        }
+        return FinancialEngine.buildCartTotals(cart, discountData, safeRate, safeTasaCop, isBsPaymentActive);
+    }, [cart, discountData, safeRate, safeTasaCop, isBsPaymentActive, baseCartTotalUsd, baseCartTotalBs]);
+
+    const cartTotalUsd = cartTotals.totalUsd;
+    const cartTotalBs = cartTotals.totalBs;
 
     const casheaEnabled = localStorage.getItem('cashea_enabled') === 'true';
     const casheaMinAmount = parseFloat(localStorage.getItem('cashea_min_amount') || '0') || 0;
@@ -44,9 +63,6 @@ export function useCheckoutCalculations({
     const copRateError = copEnabled && (tasaCop == null || tasaCop <= 0)
         ? 'Tasa COP no configurada. Configúrala antes de aceptar pagos en pesos.'
         : null;
-
-    const safeRate = effectiveRate > 0 ? effectiveRate : 0;
-    const safeTasaCop = tasaCop > 0 ? tasaCop : 0;
 
     const totalPaidUsd = useMemo(() => {
         return sumR(paymentMethods.map(m => {
@@ -80,7 +96,7 @@ export function useCheckoutCalculations({
     const remainingBs = Math.max(0, subR(cartTotalBs, totalPaidBs + mulR(casheaAmountUsd, safeRate)));
     const changeUsd = Math.max(0, subR(totalPaidWithCasheaUsd, cartTotalUsd));
     const changeBs = Math.max(0, subR(totalPaidBs + mulR(casheaAmountUsd, safeRate), cartTotalBs));
-    // FIN-023: umbral centralizado en securityConstants (antes `0.009` hardcodeado).
+    // FIN-023: umbral centralizado en securityConstants
     const isPaid = remainingUsd < FINANCIAL_EPSILON.PAYMENT_ZERO;
 
     const PAYMENT_TOLERANCE = 0.01;
@@ -96,21 +112,38 @@ export function useCheckoutCalculations({
 
     const fillBar = useCallback((methodId, currency) => {
         triggerHaptic && triggerHaptic();
+        let targetUsd = baseCartTotalUsd;
+        let targetBs = baseCartTotalBs;
+
+        if (currency === 'BS' && cart && cart.some(i => i.pricingMode === 'dual_usd' && parseFloat(i.priceBsUsdRef) > 0)) {
+            const bsTotals = FinancialEngine.buildCartTotals(cart, discountData, safeRate, safeTasaCop, true);
+            targetUsd = bsTotals.totalUsd;
+            targetBs = bsTotals.totalBs;
+        } else if (currency === 'USD' && cart && cart.some(i => i.pricingMode === 'dual_usd' && parseFloat(i.priceBsUsdRef) > 0)) {
+            const usdTotals = FinancialEngine.buildCartTotals(cart, discountData, safeRate, safeTasaCop, false);
+            targetUsd = usdTotals.totalUsd;
+            targetBs = usdTotals.totalBs;
+        }
+
         let val;
         if (currency === 'USD') {
-            // FIN-016: round2 en vez de Number(remainingUsd.toFixed(2)).
-            val = remainingUsd > 0 ? String(round2(remainingUsd)) : null;
+            const currentPaidUsd = totalPaidWithCasheaUsd;
+            const remUsd = Math.max(0, subR(targetUsd, currentPaidUsd));
+            val = remUsd > 0 ? String(round2(remUsd)) : null;
         } else if (currency === 'COP') {
-            // FIN-016: mulR en vez de (remainingUsd * safeTasaCop).toFixed(2).
-            const copVal = safeTasaCop > 0 ? mulR(remainingUsd, safeTasaCop) : 0;
-            val = remainingUsd > 0 ? String(round2(copVal)) : null;
+            const currentPaidUsd = totalPaidWithCasheaUsd;
+            const remUsd = Math.max(0, subR(targetUsd, currentPaidUsd));
+            const copVal = safeTasaCop > 0 ? mulR(remUsd, safeTasaCop) : 0;
+            val = remUsd > 0 ? String(round2(copVal)) : null;
         } else {
-            val = remainingBs > 0 ? String(round2(remainingBs)) : null;
+            const currentPaidBs = totalPaidBs;
+            const remBs = Math.max(0, subR(targetBs, currentPaidBs));
+            val = remBs > 0 ? String(round2(remBs)) : null;
         }
         if (val) {
             setBarValues(prev => ({ ...prev, [methodId]: val }));
         }
-    }, [remainingUsd, remainingBs, triggerHaptic, safeTasaCop]);
+    }, [baseCartTotalUsd, baseCartTotalBs, cart, discountData, safeRate, safeTasaCop, totalPaidWithCasheaUsd, totalPaidBs, triggerHaptic]);
 
     // ── Procesamiento final de la venta (sin validaciones) ────────────────────
     const _processPayments = useCallback(() => {

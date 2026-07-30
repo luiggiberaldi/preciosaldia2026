@@ -1,5 +1,5 @@
-import { formatBs, formatCop, formatUsd } from './calculatorUtils';
-import { mulR, divR } from './dinero';
+import { formatBs, formatCop, formatUsd } from './calculatorUtils.js';
+import { mulR, divR } from './dinero.js';
 
 function escapeHtml(str) {
     if (str === null || str === undefined) return '';
@@ -21,7 +21,7 @@ export function buildTicketHtml(sale, bcvRate, paperConfig, settings) {
         fDisclaimer, fTiny, fSmall, fBase, fTitle, fTotalU, fTotalB,
     } = paperConfig;
 
-    const receiptCurrencyMode = localStorage.getItem('receipt_currency_mode') || 'bs';
+    const receiptCurrencyMode = (typeof localStorage !== 'undefined' ? localStorage.getItem('receipt_currency_mode') : null) || 'bs';
     const rate = sale.rate || bcvRate || 1;
     const isCop = sale.copEnabled && sale.tasaCop > 0;
     // FIN-024: formatUsd en vez de parseFloat(v).toFixed(2).
@@ -32,32 +32,41 @@ export function buildTicketHtml(sale, bcvRate, paperConfig, settings) {
     const hora = d.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
     const hasFiado = sale.fiadoUsd > 0;
 
+    const isBsSale = (sale.payments || []).some(p => {
+        const isCop = p.currency === 'COP';
+        const isBs = !isCop && (p.currency ? p.currency !== 'USD' : (p.methodId?.includes('_bs') || p.methodId === 'pago_movil'));
+        return isBs && parseFloat(p.amountBs || 0) > 0;
+    });
+
     // Generar filas de productos
     const itemsHtml = (sale.items || []).map(item => {
+        const isDualBs = item.pricingMode === 'dual_usd' && parseFloat(item.priceBsUsdRef) > 0 && isBsSale;
+        const effectivePriceUsd = isDualBs ? parseFloat(item.priceBsUsdRef) : item.priceUsd;
+
         // FIN-024: formatUsd para qty peso, sin toFixed.
         const qty = item.isWeight ? formatUsd(item.qty) : String(item.qty);
         const unit = item.isWeight ? 'Kg' : 'u';
         // FIN-024: mulR en vez de multiplicación raw.
         const itemExactBs = item.exactBs ?? (item.isCashAdvance && item.currency === 'BS' ? (item.montoEfectivo + item.montoComision) : null);
-        const sub = itemExactBs != null ? (rate > 0 ? divR(itemExactBs, rate) : item.priceUsd) : mulR(item.priceUsd, item.qty);
+        const sub = itemExactBs != null ? (rate > 0 ? divR(itemExactBs, rate) : effectivePriceUsd) : mulR(effectivePriceUsd, item.qty);
         const subBs = itemExactBs != null ? mulR(itemExactBs, item.qty) : mulR(sub, rate);
         const name = escapeHtml(item.name);
-        const priceBs = itemExactBs != null ? itemExactBs : item.priceUsd * rate;
+        const priceBs = itemExactBs != null ? itemExactBs : mulR(effectivePriceUsd, rate);
 
         let totalStr = '';
         let unitPriceStr = '';
 
         if (receiptCurrencyMode === 'usd') {
             totalStr = fmtUsd(sub);
-            unitPriceStr = `$${formatUsd(item.priceUsd)}`;
+            unitPriceStr = `$${formatUsd(effectivePriceUsd)}`;
         } else if (receiptCurrencyMode === 'bs') {
             totalStr = 'Bs ' + formatBs(subBs);
             unitPriceStr = `Bs ${formatBs(priceBs)}`;
         } else {
             totalStr = fmtUsd(sub);
             unitPriceStr = isCop
-                ? 'USD ' + formatUsd(item.priceUsd) + ' (' + formatCop(item.priceCop || Math.round(item.priceUsd * sale.tasaCop)) + ' COP)'
-                : `$${formatUsd(item.priceUsd)}`;
+                ? 'USD ' + formatUsd(effectivePriceUsd) + ' (' + formatCop(item.priceCop || Math.round(effectivePriceUsd * sale.tasaCop)) + ' COP)'
+                : `$${formatUsd(effectivePriceUsd)}`;
         }
 
         return `

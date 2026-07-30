@@ -1,8 +1,8 @@
 // FIN-017: Reemplaza Math.round(raw/safeRate*100)/100 por divR + round2 de dinero.js.
 // FIN-030: Mantiene `priceUsdt` (typo histórico) pero añade alias `priceUsd` (mismo valor)
 //          para migración gradual hacia el nombre canónico.
-import { round2, divR, mulR } from './dinero';
-import { CurrencyService } from '../services/CurrencyService'; // FIN-017-pattern: safeParse en vez de parseFloat.
+import { round2, divR, mulR } from './dinero.js';
+import { CurrencyService } from '../services/CurrencyService.js'; // FIN-017-pattern: safeParse en vez de parseFloat.
 
 export function buildProductPayload(formData, effectiveRate) {
     const {
@@ -70,12 +70,28 @@ export function buildProductPayload(formData, effectiveRate) {
         finalStock = Math.round(parseFloat(stockInLotes) * parsedUnitsPerPkg);
     }
 
+    // Doble Precio y modalidad de precios (dual_usd / tasa_dia)
+    const rawPricingMode = formData.pricingMode || 'tasa_dia';
+    const rawBsUsdRef = formData.priceBsUsdRef;
+
+    const parsedBsUsdRef = (rawBsUsdRef && CurrencyService.safeParse(rawBsUsdRef) > 0)
+        ? round2(CurrencyService.safeParse(rawBsUsdRef))
+        : null;
+
+    const pricingMode = (rawPricingMode === 'dual_usd' && parsedBsUsdRef !== null)
+        ? 'dual_usd'
+        : 'tasa_dia';
+
+    const priceBsUsdRef = pricingMode === 'dual_usd' ? parsedBsUsdRef : null;
+
     return {
         name: formattedName,
         barcode: barcode ? barcode.trim() : null,
         // FIN-030: mantener `priceUsdt` (typo histórico) + alias `priceUsd` para migración gradual.
         priceUsdt: finalPriceUsd,
         priceUsd: finalPriceUsd,
+        pricingMode: pricingMode,
+        priceBsUsdRef: priceBsUsdRef,
         priceCop: finalPriceCop,
         costUsd: finalCostUsd,
         costBs: finalCostBs,

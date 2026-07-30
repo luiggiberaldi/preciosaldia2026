@@ -15,8 +15,8 @@
  *   - FIN-011: calculateSaleProfit acepta Map<id, product> opcional (4to arg).
  */
 
-import { round2, mulR, divR, subR, sumR } from '../utils/dinero';
-import { FINANCIAL_EPSILON } from '../utils/securityConstants';
+import { round2, mulR, divR, subR, sumR } from '../utils/dinero.js';
+import { FINANCIAL_EPSILON } from '../utils/securityConstants.js';
 
 // ── Labels de métodos de pago de fábrica (lookup puro, sin async) ──
 // Resuelve el nombre legible de un methodId sin necesitar el módulo async.
@@ -417,16 +417,24 @@ export class FinancialEngine {
      * @param {number} copRate - USD to COP Exchange rate
      * @returns {Object} Complete financial summary for the receipt.
      */
-    static buildCartTotals(cartItems, discountData, bcvRate, copRate = 0) {
+    static buildCartTotals(cartItems, discountData, bcvRate, copRate = 0, isBsPayment = false) {
         // Round each line item BEFORE summing to prevent IEEE 754 drift
-        const lineItemsUsd = cartItems.map(item => mulR(item.priceUsd, item.qty));
+        const lineItemsUsd = cartItems.map(item => {
+            const itemPriceUsd = (isBsPayment && item.pricingMode === 'dual_usd' && item.priceBsUsdRef > 0)
+                ? Number(item.priceBsUsdRef)
+                : item.priceUsd;
+            return mulR(itemPriceUsd, item.qty);
+        });
         const subtotalUsd = sumR(lineItemsUsd);
 
-        const lineItemsBs = cartItems.map(item => {
-            if (item.exactBs != null) {
+        const lineItemsBs = cartItems.map((item, idx) => {
+            if (isBsPayment && item.pricingMode === 'dual_usd' && parseFloat(item.priceBsUsdRef) > 0) {
+                return mulR(mulR(item.priceBsUsdRef, item.qty), bcvRate);
+            }
+            if (item.exactBs != null && !isBsPayment) {
                 return mulR(item.exactBs, item.qty);
             }
-            return mulR(mulR(item.priceUsd, item.qty), bcvRate);
+            return mulR(lineItemsUsd[idx], bcvRate);
         });
         const subtotalBs = sumR(lineItemsBs);
 

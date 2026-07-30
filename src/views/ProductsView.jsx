@@ -234,6 +234,8 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         barcode, setBarcode,
         priceUsd, setPriceUsd,
         priceBs, setPriceBs,
+        pricingMode, setPricingMode,
+        priceBsUsdRef, setPriceBsUsdRef,
         costUsd, setCostUsd,
         costBs, setCostBs,
         stock, setStock,
@@ -381,7 +383,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         }
 
         const productData = buildProductPayload({
-            name, barcode, priceUsd, priceBs, priceCop, costUsd, costBs, stock, stockInLotes,
+            name, barcode, priceUsd, priceBs, pricingMode, priceBsUsdRef, priceCop, costUsd, costBs, stock, stockInLotes,
             packagingType, unitsPerPackage, granelUnit, sellByUnit, unitPriceUsd, unitPriceCop,
             category, lowStockAlert
         }, effectiveRate);
@@ -901,6 +903,8 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 unit={unit} setUnit={setUnit}
                 priceUsd={priceUsd} handlePriceUsdChange={handlePriceUsdChange}
                 priceBs={priceBs} handlePriceBsChange={handlePriceBsChange}
+                pricingMode={pricingMode} setPricingMode={setPricingMode}
+                priceBsUsdRef={priceBsUsdRef} setPriceBsUsdRef={setPriceBsUsdRef}
                 handlePriceCopChange={handlePriceCopChange}
                 priceCop={priceCop}
                 costUsd={costUsd} handleCostUsdChange={handleCostUsdChange}

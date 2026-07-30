@@ -3,6 +3,7 @@ import { ShoppingCart, Plus, Minus, X, CheckCircle, Package, Trash2, DollarSign,
 import { formatBs, formatCop, getCop, formatUsd } from '../../utils/calculatorUtils';
 import { mulR } from '../../utils/dinero';
 import SmartImage from '../SmartImage';
+import { FinancialEngine } from '../../core/FinancialEngine';
 
 export default function CartPanel({
     cart,
@@ -28,6 +29,17 @@ export default function CartPanel({
     const [editingQtyId, setEditingQtyId] = React.useState(null);
     const [tempQty, setTempQty] = React.useState('');
     const inputRef = React.useRef(null);
+
+    // Calcular el total en Bolívares para mostrar en la cesta usando la tasa de referencia si hay Doble Precio
+    const displayCartTotalBs = React.useMemo(() => {
+        if (!cart || cart.length === 0) return 0;
+        const hasDualItem = cart.some(i => i.pricingMode === 'dual_usd' && parseFloat(i.priceBsUsdRef) > 0);
+        if (hasDualItem) {
+            const bsTotals = FinancialEngine.buildCartTotals(cart, discountData, effectiveRate, tasaCop, true);
+            return bsTotals.totalBs;
+        }
+        return cartTotalBs;
+    }, [cart, discountData, effectiveRate, tasaCop, cartTotalBs]);
 
     const handleQtyClick = (item) => {
         triggerHaptic && triggerHaptic();
@@ -78,14 +90,15 @@ export default function CartPanel({
                 ) : (
                     <div className="space-y-2">
                         {cart.map((item, idx) => {
-                            const qtyDisplay = item.isWeight ? `${item.qty.toFixed(3)} Kg` : item.qty;
-                            const isCustomProduct = item.id.toString().startsWith('custom_') || item.name === 'Venta Libre';
+                            if (!item) return null;
+                            const qtyDisplay = item.isWeight ? `${(item.qty || 0).toFixed(3)} Kg` : (item.qty ?? 1);
+                            const isCustomProduct = (item?.id?.toString() || '').startsWith('custom_') || item?.name === 'Venta Libre';
                             const isCashAdvance = item.isCashAdvance === true;
                             const isEditing = editingQtyId === item.id;
                             const isSelected = cartSelectedIndex === idx;
 
                             return (
-                                <div key={item.id} className={`group rounded-2xl p-2.5 lg:p-2 border flex flex-col gap-1.5 lg:gap-1.5 transition-colors relative ${
+                                <div key={item.id || `cart_item_${idx}`} className={`group rounded-2xl p-2.5 lg:p-2 border flex flex-col gap-1.5 lg:gap-1.5 transition-colors relative ${
                                     isCashAdvance
                                         ? (isSelected
                                             ? 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-500 ring-2 ring-amber-500/20 dark:border-amber-400 dark:ring-amber-400/20'
@@ -151,8 +164,11 @@ export default function CartPanel({
                                                     ) : (
                                                         <>
                                                             <p className="text-[10px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 px-1.5 py-0.5 rounded">${formatUsd(item.priceUsd)}</p>
-                                                            <p className="text-[10px] font-bold text-slate-400">
-                                                                {item.exactBs != null ? formatBs(item.exactBs) : formatBs(mulR(item.priceUsd, effectiveRate))} Bs
+                                                            <p className="text-[10px] font-bold text-brand dark:text-brand">
+                                                                {item.pricingMode === 'dual_usd' && parseFloat(item.priceBsUsdRef) > 0
+                                                                    ? `${formatBs(mulR(item.priceBsUsdRef, effectiveRate))} Bs`
+                                                                    : (item.exactBs != null ? formatBs(item.exactBs) : `${formatBs(mulR(item.priceUsd, effectiveRate))} Bs`)
+                                                                }
                                                             </p>
                                                         </>
                                                     )
@@ -168,7 +184,11 @@ export default function CartPanel({
                                                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0">SUBTOTAL:</span>
                                                 <span className="text-xs font-black text-slate-800 dark:text-white shrink-0">${formatUsd(mulR(item.priceUsd, item.qty))}</span>
                                                 <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 truncate">
-                                                    ({formatBs(item.exactBs != null ? mulR(item.exactBs, item.qty) : mulR(mulR(item.priceUsd, item.qty), effectiveRate))} Bs)
+                                                    ({formatBs(
+                                                        item.pricingMode === 'dual_usd' && parseFloat(item.priceBsUsdRef) > 0
+                                                            ? mulR(mulR(item.priceBsUsdRef, item.qty), effectiveRate)
+                                                            : (item.exactBs != null ? mulR(item.exactBs, item.qty) : mulR(mulR(item.priceUsd, item.qty), effectiveRate))
+                                                    )} Bs)
                                                 </span>
                                             </div>
                                         ) : (
@@ -306,7 +326,7 @@ export default function CartPanel({
                     <div className="flex-1 p-3 flex flex-col items-end">
                         <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 mb-0.5">BOLÍVARES</span>
                         <span className="text-xl sm:text-2xl font-black text-brand dark:text-brand leading-none">
-                            {formatBs(cartTotalBs)}
+                            {formatBs(displayCartTotalBs)}
                         </span>
                     </div>
                 </div>

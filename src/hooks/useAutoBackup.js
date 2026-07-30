@@ -149,16 +149,16 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                     // Fallback directo a Supabase en cloud_backups (con manejo de 401/RLS)
                     if (!apiSuccess && supabaseCloud) {
                         try {
-                            const { error: supErr } = await supabaseCloud.from('cloud_backups').upsert({
-                                device_id: devId,
-                                backup_data: metadataPayload,
-                                updated_at: new Date().toISOString()
-                            }, { onConflict: 'device_id' });
-                            if (supErr && import.meta.env?.DEV) {
-                                // Silencioso si no hay permisos de anon en RLS
+                            const sessionRes = await supabaseCloud.auth.getSession().catch(() => null);
+                            if (sessionRes?.data?.session) {
+                                await supabaseCloud.from('cloud_backups').upsert({
+                                    device_id: devId,
+                                    backup_data: metadataPayload,
+                                    updated_at: new Date().toISOString()
+                                }, { onConflict: 'device_id' });
                             }
                         } catch (sErr) {
-                            // Omitir silenciosamente errores de autorización 401
+                            // Omitir silenciosamente si no hay permisos/sesión activa
                         }
                     }
 

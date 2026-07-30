@@ -115,17 +115,26 @@ export async function generateTicketPDF(sale, bcvRate) {
     doc.text('IMPORTE', RIGHT, y, { align: 'right' });
     y += 5;
 
+    const isBsSale = (sale.payments || []).some(p => {
+        const isCop = p.currency === 'COP';
+        const isBs = !isCop && (p.currency ? p.currency !== 'USD' : (p.methodId?.includes('_bs') || p.methodId === 'pago_movil'));
+        return isBs && parseFloat(p.amountBs || 0) > 0;
+    });
+
     // ════════════════════════════════════
     //  PRODUCTOS
     // ════════════════════════════════════
     if (sale.items && sale.items.length > 0) {
         sale.items.forEach(item => {
+            const isDualBs = item.pricingMode === 'dual_usd' && parseFloat(item.priceBsUsdRef) > 0 && isBsSale;
+            const effectivePriceUsd = isDualBs ? parseFloat(item.priceBsUsdRef) : item.priceUsd;
+
             // FIN-024: formatUsd para cantidades peso (2 decimales), sin toFixed.
             const qty = item.isWeight ? formatUsd(item.qty) : String(item.qty);
             const unit = item.isWeight ? 'Kg' : 'u';
             // FIN-024: mulR en vez de multiplicación raw.
             const itemExactBs = item.exactBs ?? (item.isCashAdvance && item.currency === 'BS' ? (item.montoEfectivo + item.montoComision) : null);
-            const sub = itemExactBs != null ? (rate > 0 ? divR(itemExactBs, rate) : item.priceUsd) : mulR(item.priceUsd, item.qty);
+            const sub = itemExactBs != null ? (rate > 0 ? divR(itemExactBs, rate) : effectivePriceUsd) : mulR(effectivePriceUsd, item.qty);
             const subBs = itemExactBs != null ? mulR(itemExactBs, item.qty) : mulR(sub, rate);
 
             doc.setFont('helvetica', 'normal');
@@ -149,10 +158,10 @@ export async function generateTicketPDF(sale, bcvRate) {
             let detailLine = itemExactBs != null
                 ? 'Bs ' + formatBs(itemExactBs) + ' c/u'
                 : (isCop
-                    ? 'USD ' + formatUsd(item.priceUsd) + ' c/u  ·  ' + formatCop(item.priceCop ? mulR(item.priceCop, item.qty) : mulR(sub, sale.tasaCop)) + ' COP  ·  Bs ' + formatBs(subBs)
-                    : '$' + formatUsd(item.priceUsd) + ' c/u  ·  Bs ' + formatBs(subBs));
+                    ? 'USD ' + formatUsd(effectivePriceUsd) + ' c/u  ·  ' + formatCop(item.priceCop ? mulR(item.priceCop, item.qty) : mulR(sub, sale.tasaCop)) + ' COP  ·  Bs ' + formatBs(subBs)
+                    : '$' + formatUsd(effectivePriceUsd) + ' c/u  ·  Bs ' + formatBs(subBs));
             if (!isCop && sale.tasaCop > 0) {
-                const copUnit = (item.priceCop || mulR(item.priceUsd, sale.tasaCop)).toLocaleString('es-CO', { maximumFractionDigits: 0 });
+                const copUnit = (item.priceCop || mulR(effectivePriceUsd, sale.tasaCop)).toLocaleString('es-CO', { maximumFractionDigits: 0 });
                 detailLine += '  ·  ' + copUnit + ' COP';
             }
             doc.text(detailLine, M + 10, y);

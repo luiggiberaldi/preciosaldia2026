@@ -54,18 +54,28 @@ export function ProductProvider({ children }) {
         productsRef.current = products;
     }, [products]);
 
-    // CHECKOUT MODE — 'basic' (barras móviles) | 'pos' (2 columnas, estilo Listo POS)
+    // CHECKOUT MODE — 'auto' (Detección inteligente) | 'basic' (Móvil) | 'pos' (PC)
     const [checkoutMode, setCheckoutModeState] = useState(() => {
-        const saved = localStorage.getItem('checkout_mode');
-        if (saved) return saved;
-        // Detectar por defecto basado en viewport (PC/Escritorio: >= 1024px)
-        const isPC = typeof window !== 'undefined' && window.innerWidth >= 1024;
-        return isPC ? 'pos' : 'basic';
+        return localStorage.getItem('checkout_mode') || 'auto';
     });
     const setCheckoutMode = (mode) => {
         setCheckoutModeState(mode);
         localStorage.setItem('checkout_mode', mode);
     };
+
+    // Resuelve dinámicamente si el modal de cobro activo debe ser 'basic' (Móvil) o 'pos' (PC)
+    const effectiveCheckoutMode = useMemo(() => {
+        // Si el usuario eligió un modo explícito (tocando el botón o en Ajustes), se respeta al 100%
+        if (checkoutMode === 'basic') return 'basic';
+        if (checkoutMode === 'pos') return 'pos';
+
+        // Si está en 'auto' (modo por defecto de fábrica): detectar automáticamente según pantalla/dispositivo
+        const isMobileDevice = typeof window !== 'undefined' && (
+            window.innerWidth < 1024 ||
+            /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator?.userAgent || '')
+        );
+        return isMobileDevice ? 'basic' : 'pos';
+    }, [checkoutMode]);
 
     // Initial Load
     useEffect(() => {
@@ -214,6 +224,7 @@ export function ProductProvider({ children }) {
         setCategories,
         isLoadingProducts,
         checkoutMode,
+        effectiveCheckoutMode,
         setCheckoutMode,
         adjustStock
     }), [
@@ -222,6 +233,7 @@ export function ProductProvider({ children }) {
         categories,
         isLoadingProducts,
         checkoutMode,
+        effectiveCheckoutMode,
         adjustStock,
     ]);
 

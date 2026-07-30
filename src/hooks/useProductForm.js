@@ -18,6 +18,8 @@ const INITIAL_STATE = {
     barcode: '',
     priceUsd: '',
     priceBs: '',
+    pricingMode: 'tasa_dia',
+    priceBsUsdRef: '',
     costUsd: '',
     costBs: '',
     stock: '',
@@ -62,6 +64,8 @@ export function useProductForm() {
     const setBarcode = useCallback((v) => dispatch({ type: 'SET', field: 'barcode', value: v }), []);
     const setPriceUsd = useCallback((v) => dispatch({ type: 'SET', field: 'priceUsd', value: v }), []);
     const setPriceBs = useCallback((v) => dispatch({ type: 'SET', field: 'priceBs', value: v }), []);
+    const setPricingMode = useCallback((v) => dispatch({ type: 'SET', field: 'pricingMode', value: v }), []);
+    const setPriceBsUsdRef = useCallback((v) => dispatch({ type: 'SET', field: 'priceBsUsdRef', value: v }), []);
     const setCostUsd = useCallback((v) => dispatch({ type: 'SET', field: 'costUsd', value: v }), []);
     const setCostBs = useCallback((v) => dispatch({ type: 'SET', field: 'costBs', value: v }), []);
     const setStock = useCallback((v) => dispatch({ type: 'SET', field: 'stock', value: v }), []);
@@ -84,7 +88,7 @@ export function useProductForm() {
     const populateForm = useCallback((product, effectiveRate) => {
         // HOOK-029: usar PATCH para actualizar todos los campos en una sola
         // dispatch (un único re-render en vez de 17).
-        const currentPriceUsd = product.priceUsdt || 0;
+        const currentPriceUsd = product.priceUsdt || product.priceUsd || 0;
         const currentCostUsd = product.costUsd || (product.costBs ? product.costBs / effectiveRate : 0);
         const currentCostBs = product.costBs || (product.costUsd ? product.costUsd * effectiveRate : 0);
 
@@ -96,6 +100,8 @@ export function useProductForm() {
             barcode: product.barcode || '',
             priceUsd: currentPriceUsd > 0 ? currentPriceUsd.toString() : '',
             priceBs: currentPriceUsd > 0 ? (currentPriceUsd * effectiveRate).toFixed(2) : '',
+            pricingMode: product.pricingMode || (product.priceBsUsdRef > 0 ? 'dual_usd' : 'tasa_dia'),
+            priceBsUsdRef: product.priceBsUsdRef != null ? product.priceBsUsdRef.toString() : '',
             costUsd: currentCostUsd > 0 ? currentCostUsd.toFixed(2) : '',
             costBs: currentCostBs > 0 ? currentCostBs.toFixed(2) : '',
             stock: product.stock ?? '',
@@ -141,6 +147,8 @@ export function useProductForm() {
         barcode: state.barcode, setBarcode,
         priceUsd: state.priceUsd, setPriceUsd,
         priceBs: state.priceBs, setPriceBs,
+        pricingMode: state.pricingMode, setPricingMode,
+        priceBsUsdRef: state.priceBsUsdRef, setPriceBsUsdRef,
         costUsd: state.costUsd, setCostUsd,
         costBs: state.costBs, setCostBs,
         stock: state.stock, setStock,

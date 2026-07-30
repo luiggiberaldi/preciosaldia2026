@@ -1,7 +1,8 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { showToast } from '../../Toast';
 import { useProductContext } from '../../../context/ProductContext';
 import { round2, subR, mulR, divR } from '../../../utils/dinero';
+import { FinancialEngine } from '../../../core/FinancialEngine';
 
 // Hooks portados
 import { usePaymentState } from './hooks/usePaymentState';
@@ -17,21 +18,10 @@ import WalletSection from './components/WalletSection';
 
 /**
  * CheckoutModalPOS — Modo de cobro profesional (estilo Listo POS, dos columnas).
- * Recibe exactamente los mismos props que CheckoutModal (modo básico) para ser
- * intercambiable sin cambios en SalesView.
- *
- * Props idénticos a CheckoutModal:
- *   onClose, cartTotalUsd, cartTotalBs, discountData, effectiveRate,
- *   customers, selectedCustomerId, setSelectedCustomerId,
- *   paymentMethods, onConfirmSale, onCreateCustomer, triggerHaptic,
- *   copEnabled, copPrimary, tasaCop, onUseSaldoFavor,
- *   currentFloatUsd, currentFloatBs
- *
- * Adicionalmente:
- *   onSwitchMode — callback para cambiar al modo básico desde el header
  */
 export default function CheckoutModalPOS({
     onClose,
+    cart = [],
     cartSubtotalUsd,
     cartTotalUsd,
     cartTotalBs,
@@ -114,7 +104,6 @@ export default function CheckoutModalPOS({
     // Cashea
     const casheaEnabled = localStorage.getItem('cashea_enabled') === 'true';
     const casheaMinAmount = parseFloat(localStorage.getItem('cashea_min_amount') || '0') || 0;
-    const casheaMeetsMinimum = casheaMinAmount <= 0 || cartTotalUsd >= casheaMinAmount;
     const [casheaActive, setCasheaActive] = useState(false);
     const [casheaPercent, setCasheaPercent] = useState(60);
 
@@ -122,6 +111,26 @@ export default function CheckoutModalPOS({
     const [distVueltoUSD, setDistVueltoUSD] = useState('');
     const [distVueltoBS, setDistVueltoBS] = useState('');
     const [isChangeCredited, setIsChangeCredited] = useState(false);
+
+    // Detectar si hay pagos ingresados en Bolívares o si un input de Bolívares está seleccionado
+    const isBsPaymentActive = useMemo(() => {
+        if (!cart || cart.length === 0) return false;
+        const hasDualItem = cart.some(i => i.pricingMode === 'dual_usd' && parseFloat(i.priceBsUsdRef) > 0);
+        if (!hasDualItem) return false;
+        const isBsInputActive = metodosBsNorm.some(m => m.id === activeInputId);
+        const hasBsPayment = metodosBsNorm.some(m => val(m.id) > 0);
+        return isBsInputActive || hasBsPayment;
+    }, [cart, metodosBsNorm, val, activeInputId]);
+
+    // Recalcular totales dinámicos si el pago es en Bolívares
+    const dynamicCartTotals = useMemo(() => {
+        if (!cart || cart.length === 0 || !cart.some(i => i.pricingMode === 'dual_usd' && parseFloat(i.priceBsUsdRef) > 0)) {
+            return { totalUsd: cartTotalUsd, totalBs: cartTotalBs };
+        }
+        return FinancialEngine.buildCartTotals(cart, discountData, effectiveRate, tasaCop, isBsPaymentActive);
+    }, [cart, discountData, effectiveRate, tasaCop, isBsPaymentActive, cartTotalUsd, cartTotalBs]);
+
+    const casheaMeetsMinimum = casheaMinAmount <= 0 || dynamicCartTotals.totalUsd >= casheaMinAmount;
 
     // ─── CÁLCULOS ──────────────────────────────────────────
     const {
@@ -137,8 +146,8 @@ export default function CheckoutModalPOS({
         tasaSegura,
         casheaAmountUsd,
     } = usePaymentCalculations({
-        totalUSD: cartTotalUsd,
-        totalBS: cartTotalBs,
+        totalUSD: dynamicCartTotals.totalUsd,
+        totalBS: dynamicCartTotals.totalBs,
         pagos,
         tasa: effectiveRate,
         metodosActivos: metodosNormalizados,
@@ -207,9 +216,17 @@ export default function CheckoutModalPOS({
     const llenarSaldo = (id, moneda) => {
         const actual = parseFloat(pagos[id] || 0);
         let valorFinal = 0;
-        if (moneda === 'USD') valorFinal = round2(actual + faltaPorPagar);
-        if (moneda === 'BS') valorFinal = round2(actual + faltaPorPagarBS);
-        if (moneda === 'COP' && tasaCop > 0) valorFinal = round2(actual + (faltaPorPagar * tasaCop));
+        if (moneda === 'USD') {
+            const usdTotals = FinancialEngine.buildCartTotals(cart, discountData, effectiveRate, tasaCop, false);
+            const remUsd = Math.max(0, subR(usdTotals.totalUsd, totalPagadoGlobalUSD));
+            valorFinal = round2(actual + remUsd);
+        } else if (moneda === 'BS') {
+            const bsTotals = FinancialEngine.buildCartTotals(cart, discountData, effectiveRate, tasaCop, true);
+            const remBs = Math.max(0, subR(bsTotals.totalBs, totalPagadoBS));
+            valorFinal = round2(actual + remBs);
+        } else if (moneda === 'COP' && tasaCop > 0) {
+            valorFinal = round2(actual + (faltaPorPagar * tasaCop));
+        }
         setPagos(prev => ({ ...prev, [id]: valorFinal }));
     };
 
@@ -379,8 +396,8 @@ export default function CheckoutModalPOS({
                 <div className="flex flex-col lg:flex-row flex-1 overflow-y-auto lg:overflow-hidden">
                     {/* Columna Izquierda */}
                     <PaymentLeftColumn
-                        totalUSD={cartTotalUsd}
-                        totalBS={cartTotalBs}
+                        totalUSD={dynamicCartTotals.totalUsd}
+                        totalBS={dynamicCartTotals.totalBs}
                         discountData={discountData}
                         tasaSegura={tasaSegura}
                         clienteSeleccionado={clienteSeleccionado}

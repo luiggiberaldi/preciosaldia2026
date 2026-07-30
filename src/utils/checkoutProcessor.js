@@ -1,11 +1,12 @@
-import { storageService } from './storageService';
-import { procesarImpactoCliente } from './financialLogic';
-import { logEvent } from '../services/auditService';
-import { useAuthStore } from '../hooks/store/useAuthStore';
-import { round2, sumR, subR, divR, mulR } from './dinero';
-import { withLock } from './withLock';          // FIN-007: feature detection + fallback.
-import { deepFreeze } from './deepFreeze';      // FIN-008: deep freeze (no solo shallow).
-import { FINANCIAL_EPSILON } from './securityConstants';
+import { storageService } from './storageService.js';
+import { procesarImpactoCliente } from './financialLogic.js';
+import { logEvent } from '../services/auditService.js';
+import { useAuthStore } from '../hooks/store/useAuthStore.js';
+import { round2, sumR, subR, divR, mulR } from './dinero.js';
+import { withLock } from './withLock.js';          // FIN-007: feature detection + fallback.
+import { deepFreeze } from './deepFreeze.js';      // FIN-008: deep freeze (no solo shallow).
+import { FINANCIAL_EPSILON } from './securityConstants.js';
+import { FinancialEngine } from '../core/FinancialEngine.js';
 
 const SALES_KEY = 'bodega_sales_v1';
 const PRODUCTS_KEY = 'bodega_products_v1';
@@ -31,10 +32,23 @@ export async function processSaleTransaction({
 
     const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
 
-    if (isNaN(cartTotalUsd) || cartTotalUsd < 0 || isNaN(cartTotalBs) || cartTotalBs < 0) {
+    // Detectar si el pago recibido es en Bolívares y recalcular cartTotals dinámicamente si hay Doble Precio
+    const isBsPayment = payments && payments.some(p => p.currency === 'BS' && parseFloat(p.amountBs || 0) > 0);
+    const hasDualItem = cart && cart.some(i => i.pricingMode === 'dual_usd' && parseFloat(i.priceBsUsdRef) > 0);
+
+    let activeCartTotalUsd = cartTotalUsd;
+    let activeCartTotalBs = cartTotalBs;
+
+    if (hasDualItem) {
+        const computedTotals = FinancialEngine.buildCartTotals(cart, discountData, effectiveRate, copEnabled ? tasaCop : 0, isBsPayment);
+        activeCartTotalUsd = computedTotals.totalUsd;
+        activeCartTotalBs = computedTotals.totalBs;
+    }
+
+    if (isNaN(activeCartTotalUsd) || activeCartTotalUsd < 0 || isNaN(activeCartTotalBs) || activeCartTotalBs < 0) {
         return { success: false, error: 'Integridad matemática comprometida' };
     }
-    if (cartTotalUsd <= 0.01) {
+    if (activeCartTotalUsd <= 0.01) {
         return { success: false, error: 'No se pueden generar ventas de $0.00' };
     }
     if (!Array.isArray(payments) || payments.some(p => isNaN(p.amountUsd) || p.amountUsd < 0)) {
@@ -45,16 +59,16 @@ export async function processSaleTransaction({
     if (!effectiveRate || effectiveRate <= 0) {
         return { success: false, error: 'Tasa de cambio BCV inválida (<= 0). Configura la tasa antes de cobrar.' };
     }
-    const expectedBs = mulR(cartTotalUsd, effectiveRate);
-    const bsDrift = Math.abs(subR(cartTotalBs, expectedBs));
+    const expectedBs = mulR(activeCartTotalUsd, effectiveRate);
+    const bsDrift = Math.abs(subR(activeCartTotalBs, expectedBs));
     if (bsDrift > FINANCIAL_EPSILON.CASH_RECONCILE_TOLERANCE_BS) {
         return { success: false, error: `Inconsistencia USD/Bs: drift de ${round2(bsDrift)} Bs (tasa ${effectiveRate}).` };
     }
 
     // ── Aritmética precisa con dinero.js (elimina IEEE 754 drift) ──
     const totalPaidUsd = sumR(payments.map(p => p.amountUsd));
-    const remainingUsd = round2(Math.max(0, subR(cartTotalUsd, totalPaidUsd)));
-    const changeUsd    = round2(Math.max(0, subR(totalPaidUsd, cartTotalUsd)));
+    const remainingUsd = round2(Math.max(0, subR(activeCartTotalUsd, totalPaidUsd)));
+    const changeUsd    = round2(Math.max(0, subR(totalPaidUsd, activeCartTotalUsd)));
 
     const casheaPayment = payments.find(p => p.methodId === 'cashea');
     const casheaUsd = casheaPayment ? round2(casheaPayment.amountUsd) : 0;
@@ -93,6 +107,8 @@ export async function processSaleTransaction({
             name: i.name,
             qty: i.qty,
             priceUsd: i.priceUsd,
+            pricingMode: i.pricingMode || null,
+            priceBsUsdRef: i.priceBsUsdRef || null,
             priceCop: i.priceCop || null,
             costBs: i.costBs || 0,
             costUsd: i.costUsd || 0,
@@ -108,8 +124,8 @@ export async function processSaleTransaction({
         discountType:       discountData?.type      || null,
         discountValue:      discountData?.value     || 0,
         discountAmountUsd:  discountData?.amountUsd || 0,
-        totalUsd:  cartTotalUsd,
-        totalBs:   cartTotalBs,
+        totalUsd:  activeCartTotalUsd,
+        totalBs:   activeCartTotalBs,
         // FIN-010: totalCop ahora alineado con buildCartTotals (divR + round2).
         totalCop:  copEnabled && tasaCop > 0
             ? (cart.every(i => i.priceCop > 0)

@@ -11,7 +11,7 @@
 //   - `smartCashRounding` (definido abajo) se usa para ajustar montos de efectivo COP
 //     (siempre enteros) sin recurrir al hack `0.2001` original.
 
-import { round2, mulR, divR } from './dinero';
+import { round2, mulR, divR } from './dinero.js';
 
 // Formateadores
 export const formatBs = (val) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val || 0);
@@ -38,6 +38,39 @@ export const getUsd = (item, tasaCop) => {
         return divR(item.priceCop, tasaCop);
     }
     return item.priceUsdt ?? item.priceUsd ?? 0;
+};
+
+/**
+ * Resolves item price considering dual pricing mode (dual_usd).
+ * @param {object} item - product or cart item
+ * @param {boolean} isBsPayment - true if customer pays in Bolívares (Pago Móvil / Punto / Efectivo Bs)
+ * @param {number} effectiveRate - BCV / active rate
+ */
+export const resolveDualPrice = (item, isBsPayment = false, effectiveRate = 1) => {
+    if (!item) return { priceUsd: 0, priceBs: 0, isDual: false };
+    
+    const isDual = item.pricingMode === 'dual_usd' && (item.priceBsUsdRef > 0);
+    const baseUsd = item.priceUsdt ?? item.priceUsd ?? 0;
+    const safeRate = effectiveRate > 0 ? effectiveRate : 1;
+    
+    if (isDual && isBsPayment) {
+        const usdRef = Number(item.priceBsUsdRef);
+        const bsPrice = mulR(usdRef, safeRate);
+        return {
+            priceUsd: usdRef,
+            priceBs: bsPrice,
+            isDual: true,
+            originalPriceUsd: baseUsd
+        };
+    }
+    
+    const bsPrice = mulR(baseUsd, safeRate);
+    return {
+        priceUsd: baseUsd,
+        priceBs: bsPrice,
+        isDual: isDual,
+        originalPriceUsd: baseUsd
+    };
 };
 
 /**
@@ -79,7 +112,7 @@ export const smartCashRounding = (amount) => {
     return decimalPart <= (SMART_CASH_ROUNDING_THRESHOLD + Number.EPSILON) ? integerPart : integerPart + 1;
 };
 
-import { MessageService } from '../services/MessageService';
+import { MessageService } from '../services/MessageService.js';
 
 // Re-export deprecated function referencing the new service
 export const generatePaymentMessage = (params) => {

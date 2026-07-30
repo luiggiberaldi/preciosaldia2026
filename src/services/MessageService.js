@@ -1,4 +1,4 @@
-import { formatBs, formatUsd } from '../utils/calculatorUtils';
+import { formatBs, formatUsd } from '../utils/calculatorUtils.js';
 
 /**
  * Service responsible for constructing user-facing messages.

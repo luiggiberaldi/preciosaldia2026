@@ -3,6 +3,7 @@ import { Camera, X, AlertTriangle, Package, Tag, Scale, Droplets, ChevronDown, C
 import { useProductContext } from '../../context/ProductContext';
 import CustomSelect from '../CustomSelect';
 import { showToast } from '../Toast';
+import PricingModeSelector from './PricingModeSelector';
 
 const PACKAGING_TYPES = [
     { id: 'suelto', label: 'Suelto', Icon: Tag, desc: 'Unidad individual', color: 'emerald' },
@@ -17,6 +18,8 @@ export default function ProductFormQuick({
     category, setCategory,
     priceUsd, handlePriceUsdChange,
     priceBs, handlePriceBsChange,
+    pricingMode, setPricingMode,
+    priceBsUsdRef, setPriceBsUsdRef,
     handlePriceCopChange,
     priceCop,
     costUsd, handleCostUsdChange,
@@ -406,8 +409,8 @@ export default function ProductFormQuick({
                 )}
 
                 {/* ─── PRICE SECTION ─── */}
-                <div className="bg-emerald-500/5 dark:bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/15">
-                    <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest block mb-2 ml-1">
+                <div className="bg-emerald-500/5 dark:bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/15 space-y-2.5">
+                    <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest block ml-1">
                         Precio de Venta ({priceSuffix ? priceSuffix.replace(' / ', '') : 'Unidad'})
                     </span>
                     <div className="grid grid-cols-2 gap-3 items-center">
@@ -430,39 +433,82 @@ export default function ProductFormQuick({
                             )}
                         </div>
                     </div>
+
+                    {/* ─── OPCCIÓN LEGIBLE Y EXPLICATIVA: DOBLE PRECIO ─── */}
+                    <div className="pt-2 border-t border-emerald-500/20">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (pricingMode === 'dual_usd') {
+                                    setPricingMode('tasa_dia');
+                                    setPriceBsUsdRef('');
+                                } else {
+                                    setPricingMode('dual_usd');
+                                    if (!priceBsUsdRef && priceUsd) setPriceBsUsdRef(priceUsd);
+                                }
+                            }}
+                            className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer text-left ${
+                                pricingMode === 'dual_usd'
+                                    ? 'bg-emerald-500/15 border-emerald-500/40 ring-1 ring-emerald-500/30'
+                                    : 'bg-white/80 dark:bg-slate-900/80 border-slate-200 dark:border-slate-800 hover:border-emerald-400/50'
+                            }`}
+                        >
+                            <div className="flex items-center gap-2.5 pr-2">
+                                <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                                    pricingMode === 'dual_usd'
+                                        ? 'bg-emerald-500 border-emerald-500 text-white'
+                                        : 'border-slate-400 dark:border-slate-600 bg-transparent'
+                                }`}>
+                                    {pricingMode === 'dual_usd' && <span className="w-1.5 h-1.5 rounded-full bg-white block" />}
+                                </span>
+                                <div>
+                                    <span className="text-xs font-black text-slate-800 dark:text-slate-100 block leading-tight">
+                                        ¿Deseas cobrar un precio diferente si pagan en Bolívares?
+                                    </span>
+                                    <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 block mt-0.5 leading-tight">
+                                        Permite fijar un precio en $ para divisas/efectivo y un $ Ref para Pago Móvil / Punto
+                                    </span>
+                                </div>
+                            </div>
+                            <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg shrink-0 uppercase tracking-wider ${
+                                pricingMode === 'dual_usd'
+                                    ? 'bg-emerald-500 text-white shadow-sm'
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                            }`}>
+                                {pricingMode === 'dual_usd' ? 'ACTIVADO' : '+ ACTIVAR'}
+                            </span>
+                        </button>
+
+                        {pricingMode === 'dual_usd' && (
+                            <div className="mt-2.5 bg-white dark:bg-slate-900 p-3 rounded-xl border border-emerald-300 dark:border-emerald-800 space-y-2 animate-in fade-in slide-in-from-top-1 shadow-sm">
+                                <div className="flex justify-between items-center flex-wrap gap-1">
+                                    <label className="text-[11px] font-black text-emerald-900 dark:text-emerald-200 uppercase tracking-wider">
+                                        Precio Ref. en $ para pagos en Bolívares
+                                    </label>
+                                    {parseFloat(priceBsUsdRef) > 0 && (
+                                        <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/40 px-2 py-0.5 rounded-md">
+                                            = {(parseFloat(priceBsUsdRef) * effectiveRate).toFixed(2)} Bs
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-black text-emerald-600 dark:text-emerald-400">$</span>
+                                    <input
+                                        type="number"
+                                        inputMode="decimal"
+                                        value={priceBsUsdRef}
+                                        onChange={(e) => setPriceBsUsdRef(e.target.value)}
+                                        placeholder={priceUsd || "2.00"}
+                                        className="w-full bg-emerald-50/40 dark:bg-slate-950 p-2.5 pl-8 pr-3 rounded-xl font-black text-emerald-900 dark:text-emerald-100 outline-none border border-emerald-300 dark:border-emerald-700 text-xs focus:ring-2 focus:ring-emerald-500 transition-all"
+                                    />
+                                </div>
+                                <p className="text-[10px] text-emerald-700 dark:text-emerald-300 font-medium leading-relaxed bg-emerald-50/80 dark:bg-emerald-950/40 p-2 rounded-lg border border-emerald-200/50 dark:border-emerald-800/40">
+                                    💡 <strong>Ejemplo de Cobro:</strong> El cliente pagará <strong>${priceUsd || '0.00'}</strong> si entrega divisas/efectivo $, o <strong>${priceBsUsdRef || priceUsd || '0.00'}</strong> ({((parseFloat(priceBsUsdRef) || parseFloat(priceUsd) || 0) * effectiveRate).toFixed(2)} Bs) si paga por Pago Móvil, Punto o Efectivo Bs.
+                                </p>
+                            </div>
+                        )}
+                    </div>
                 </div>
-
-                {/* ─── COP CONFUSION WARNING ─── */}
-                {copEnabled && parsedPrice >= 100 && (
-                    <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 p-2.5 rounded-xl flex items-center gap-2 text-xs animate-in fade-in slide-in-from-top-1">
-                        <AlertTriangle size={16} className="text-red-500 shrink-0" />
-                        <span className="text-red-700 dark:text-red-400 font-medium">
-                            {parsedPrice >= 1000
-                                ? `¿Seguro que son $${parsedPrice.toLocaleString()} USD? Si es en pesos colombianos, usa el campo "Pesos COP" arriba.`
-                                : `Precio alto en USD ($${parsedPrice.toFixed(2)}). Si es en pesos colombianos, usa el campo "Pesos COP" arriba.`
-                            }
-                        </span>
-                    </div>
-                )}
-
-                {/* ─── COP PREVIEW ─── */}
-                {copEnabled && parsedPrice > 0 && (
-                    <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200/50 dark:border-amber-800/30 p-2.5 rounded-xl flex items-center justify-between text-sm animate-in fade-in slide-in-from-top-1">
-                        <span className="text-amber-800 dark:text-amber-500 font-bold flex items-center gap-1.5 text-xs uppercase tracking-wider hidden sm:flex">
-                            <Banknote size={16} /> Equivalente en COP
-                        </span>
-                        <span className="text-amber-800 dark:text-amber-500 font-bold flex items-center gap-1.5 text-xs uppercase tracking-wider sm:hidden">
-                            <Banknote size={16} /> COP
-                        </span>
-                        <span className="font-black text-amber-600 dark:text-amber-400 text-lg">
-                            {priceCop && parseFloat(priceCop) > 0
-                                ? Math.round(parseFloat(priceCop)).toLocaleString('es-CO')
-                                : Math.round(parsedPrice * tasaCop).toLocaleString('es-CO')}
-                        </span>
-                    </div>
-                )}
-
-                {/* ─── LOTE: Unit Price (Bimoneda) ─── */}
                 {isLote && sellByUnit && parsedUnits > 1 && (
                     <div className="bg-white dark:bg-slate-800/80 p-3 rounded-xl border border-surface-300 dark:border-surface-800/40 space-y-2 animate-in fade-in slide-in-from-top-1">
                         <div className="flex justify-between items-center">
