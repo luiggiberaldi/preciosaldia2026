@@ -14,6 +14,7 @@ import { useProductContext } from '../../context/ProductContext';
  */
 export default function CheckoutModal({
     onClose,
+    cart = [],
     cartSubtotalUsd,
     cartSubtotalBs,
     cartTotalUsd,
