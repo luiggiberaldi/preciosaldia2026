@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Download, AlertTriangle, Check, X, Database, Share2, Fingerprint, Copy, Store, LayoutGrid } from 'lucide-react';
+import { Upload, Download, AlertTriangle, Check, X, Database, Share2, Fingerprint, Copy, Store, LayoutGrid, Zap, Smartphone, Monitor } from 'lucide-react';
 import { storageService } from '../utils/storageService';
 import localforage from 'localforage';
 import { showToast } from '../components/Toast';
@@ -234,16 +234,36 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
                                 Modo de Cobro (Interfaz)
                             </h4>
                             <p className="text-[10px] text-slate-400 mt-0.5">
-                                Elige la pantalla de cobro preferida para esta caja. Al seleccionar Móvil o PC, la elección se guardará permanentemente.
+                                Selecciona la pantalla de pago activa para esta caja (Automática o fija).
                             </p>
                         </div>
-                        <div className="grid grid-cols-3 gap-2 pt-1">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
                             {[
-                                { id: 'auto', label: '⚡ Automático', desc: 'Auto por pantalla' },
-                                { id: 'basic', label: '📱 Modo Móvil', desc: '1 Columna' },
-                                { id: 'pos', label: '🖥️ Modo PC', desc: '2 Col. Listo POS' }
+                                { 
+                                    id: 'auto', 
+                                    label: 'Automático', 
+                                    desc: 'Auto por pantalla', 
+                                    icon: Zap, 
+                                    colorClass: 'text-amber-500 bg-amber-50 dark:bg-amber-950/40 border-amber-200/60',
+                                    badge: 'Auto'
+                                },
+                                { 
+                                    id: 'basic', 
+                                    label: 'Modo Móvil', 
+                                    desc: '1 columna apilada', 
+                                    icon: Smartphone, 
+                                    colorClass: 'text-teal-500 bg-teal-50 dark:bg-teal-950/40 border-teal-200/60' 
+                                },
+                                { 
+                                    id: 'pos', 
+                                    label: 'Modo PC', 
+                                    desc: '2 col. Listo POS', 
+                                    icon: Monitor, 
+                                    colorClass: 'text-indigo-500 bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200/60' 
+                                }
                             ].map(modeOpt => {
                                 const isSelected = checkoutMode === modeOpt.id;
+                                const IconComponent = modeOpt.icon;
                                 return (
                                     <button
                                         key={modeOpt.id}
@@ -254,16 +274,35 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
                                             showToast(`Modo de cobro: ${modeOpt.label}`, 'success');
                                             if (triggerHaptic) triggerHaptic();
                                         }}
-                                        className={`p-2.5 rounded-xl text-left transition-all border flex flex-col justify-between ${
+                                        className={`relative group p-3.5 rounded-2xl text-left transition-all border flex flex-col justify-between cursor-pointer active:scale-[0.98] ${
                                             isSelected
-                                                ? 'bg-brand text-white border-transparent shadow-sm ring-2 ring-brand/30'
-                                                : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-brand/40'
+                                                ? 'bg-teal-800 text-white dark:bg-teal-900 dark:text-white border-teal-700 dark:border-teal-700 shadow-md ring-2 ring-teal-500/30'
+                                                : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-teal-300 dark:hover:border-teal-700 hover:shadow-xs'
                                         }`}
                                     >
-                                        <span className="text-xs font-black">{modeOpt.label}</span>
-                                        <span className={`text-[9px] mt-1 ${isSelected ? 'text-white/80' : 'text-slate-400'}`}>
-                                            {modeOpt.desc}
-                                        </span>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center border ${
+                                                isSelected ? 'bg-white/20 text-white border-white/30' : modeOpt.colorClass
+                                            }`}>
+                                                <IconComponent size={15} />
+                                            </div>
+                                            {isSelected ? (
+                                                <span className="flex items-center gap-0.5 text-[9px] font-black bg-white text-teal-800 px-1.5 py-0.5 rounded-full shadow-xs">
+                                                    <Check size={9} strokeWidth={3} /> OK
+                                                </span>
+                                            ) : modeOpt.badge ? (
+                                                <span className="text-[9px] font-extrabold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 px-1.5 py-0.5 rounded-md">
+                                                    {modeOpt.badge}
+                                                </span>
+                                            ) : null}
+                                        </div>
+
+                                        <div>
+                                            <h4 className="text-xs font-black tracking-tight leading-snug">{modeOpt.label}</h4>
+                                            <p className={`text-[9px] mt-0.5 ${isSelected ? 'text-slate-300' : 'text-slate-400 dark:text-slate-500'}`}>
+                                                {modeOpt.desc}
+                                            </p>
+                                        </div>
                                     </button>
                                 );
                             })}
