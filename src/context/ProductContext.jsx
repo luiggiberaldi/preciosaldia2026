@@ -65,15 +65,18 @@ export function ProductProvider({ children }) {
 
     // Resuelve dinámicamente si el modal de cobro activo debe ser 'basic' (Móvil) o 'pos' (PC)
     const effectiveCheckoutMode = useMemo(() => {
+        // 1. Si el usuario seleccionó un modo permanente en Configuración ('basic' o 'pos'), se respeta al 100%
+        if (checkoutMode === 'basic') return 'basic';
+        if (checkoutMode === 'pos') return 'pos';
+
+        // 2. Modo 'auto' (Detección inteligente por pantalla/dispositivo)
         if (typeof window === 'undefined') return 'basic';
 
         const isMobile = window.innerWidth < 1024 ||
             /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator?.userAgent || '');
 
-        // Móvil (<1024px o User Agent móvil): SIEMPRE 'basic' (Modal Móvil 1 columna)
-        // PC (>=1024px de escritorio): SIEMPRE 'pos' (Modal POS 2 columnas)
         return isMobile ? 'basic' : 'pos';
-    }, []);
+    }, [checkoutMode]);
 
     // Initial Load
     useEffect(() => {

@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
-import { Package, CreditCard, FileText, DollarSign } from 'lucide-react';
+import { Package, CreditCard, FileText, DollarSign, LayoutGrid } from 'lucide-react';
 import { SectionCard, Toggle } from '../../SettingsShared';
 import PaymentMethodsManager from '../PaymentMethodsManager';
 import CasheaIcon from '../../CasheaIcon';
+import { useProductContext } from '../../../context/ProductContext';
 
 export default function SettingsTabVentas({
     allowNegativeStock, setAllowNegativeStock,
     forceHeartbeat, showToast, triggerHaptic
 }) {
+    const { checkoutMode, setCheckoutMode } = useProductContext();
     const [casheaEnabled, setCasheaEnabled] = useState(localStorage.getItem('cashea_enabled') === 'true');
     const [casheaMinAmount, setCasheaMinAmount] = useState(localStorage.getItem('cashea_min_amount') || '0');
     const [receiptCurrency, setReceiptCurrency] = useState(() => localStorage.getItem('receipt_currency_mode') || 'bs');
@@ -16,6 +18,45 @@ export default function SettingsTabVentas({
 
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
+            <SectionCard icon={LayoutGrid} title="Modo de Cobro" subtitle="Interfaz de caja preferida" iconColor="text-indigo-500">
+                <div className="space-y-3">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                        Elige la pantalla de cobro preferida para esta caja. Al seleccionar Móvil o PC, la elección se guardará permanentemente:
+                    </p>
+                    <div className="grid grid-cols-3 gap-2 pt-1">
+                        {[
+                            { id: 'auto', label: '⚡ Automático', desc: 'Auto por pantalla' },
+                            { id: 'basic', label: '📱 Móvil', desc: '1 columna' },
+                            { id: 'pos', label: '🖥️ Modo PC', desc: '2 columnas' }
+                        ].map(opt => {
+                            const isSelected = checkoutMode === opt.id;
+                            return (
+                                <button
+                                    key={opt.id}
+                                    type="button"
+                                    onClick={() => {
+                                        setCheckoutMode(opt.id);
+                                        forceHeartbeat();
+                                        showToast(`Modo de cobro configurado en: ${opt.label}`, 'success');
+                                        triggerHaptic?.();
+                                    }}
+                                    className={`p-2.5 rounded-xl text-left transition-all border flex flex-col justify-between ${
+                                        isSelected
+                                            ? 'bg-brand text-white border-transparent shadow-sm ring-2 ring-brand/30'
+                                            : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-brand/40'
+                                    }`}
+                                >
+                                    <span className="text-xs font-bold leading-tight">{opt.label}</span>
+                                    <span className={`text-[9px] mt-1 ${isSelected ? 'text-white/80' : 'text-slate-400'}`}>
+                                        {opt.desc}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            </SectionCard>
+
             <SectionCard icon={Package} title="Inventario" subtitle="Reglas de ventas" iconColor="text-emerald-500">
                 <div className="flex items-center justify-between">
                     <div>

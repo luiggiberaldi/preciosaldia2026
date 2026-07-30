@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Download, AlertTriangle, Check, X, Database, Share2, Fingerprint, Copy, Store } from 'lucide-react';
+import { Upload, Download, AlertTriangle, Check, X, Database, Share2, Fingerprint, Copy, Store, LayoutGrid } from 'lucide-react';
 import { storageService } from '../utils/storageService';
 import localforage from 'localforage';
 import { showToast } from '../components/Toast';
@@ -224,6 +224,50 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
                             <Check size={16} />
                             Aceptar Cambios
                         </button>
+                    </div>
+
+                    {/* Modo de Cobro (Interfaz) */}
+                    <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700/50 space-y-3">
+                        <div>
+                            <h4 className="font-bold text-sm text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                                <LayoutGrid size={16} className="text-brand dark:text-brand" />
+                                Modo de Cobro (Interfaz)
+                            </h4>
+                            <p className="text-[10px] text-slate-400 mt-0.5">
+                                Elige la pantalla de cobro preferida para esta caja. Al seleccionar Móvil o PC, la elección se guardará permanentemente.
+                            </p>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 pt-1">
+                            {[
+                                { id: 'auto', label: '⚡ Automático', desc: 'Auto por pantalla' },
+                                { id: 'basic', label: '📱 Modo Móvil', desc: '1 Columna' },
+                                { id: 'pos', label: '🖥️ Modo PC', desc: '2 Col. Listo POS' }
+                            ].map(modeOpt => {
+                                const isSelected = checkoutMode === modeOpt.id;
+                                return (
+                                    <button
+                                        key={modeOpt.id}
+                                        type="button"
+                                        onClick={() => {
+                                            setCheckoutMode(modeOpt.id);
+                                            forceHeartbeat();
+                                            showToast(`Modo de cobro: ${modeOpt.label}`, 'success');
+                                            if (triggerHaptic) triggerHaptic();
+                                        }}
+                                        className={`p-2.5 rounded-xl text-left transition-all border flex flex-col justify-between ${
+                                            isSelected
+                                                ? 'bg-brand text-white border-transparent shadow-sm ring-2 ring-brand/30'
+                                                : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-brand/40'
+                                        }`}
+                                    >
+                                        <span className="text-xs font-black">{modeOpt.label}</span>
+                                        <span className={`text-[9px] mt-1 ${isSelected ? 'text-white/80' : 'text-slate-400'}`}>
+                                            {modeOpt.desc}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
                     </div>
 
                     {/* Vender Sin Stock Toggle */}
