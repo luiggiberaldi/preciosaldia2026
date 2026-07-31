@@ -35,6 +35,7 @@ import { ImagePrecacheRunner } from './hooks/useImagePrecache';
 
 const OwnerMonitorView = lazy(() => import('./views/OwnerMonitorView'));
 import PairingScanScreen from './components/PairingScanScreen';
+import SplashScreenPlayer from './remotion/SplashScreenPlayer';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('inicio');
@@ -83,6 +84,31 @@ export default function App() {
   const [adminClicks, setAdminClicks] = useState(0);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showTester, setShowTester] = useState(false);
+  const [showRemotionSplash, setShowRemotionSplash] = useState(false);
+
+  // Splash Screen de apertura diaria (Primera vez del día)
+  const [showDailySplash, setShowDailySplash] = useState(() => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const lastSplash = localStorage.getItem('pda_last_splash_date');
+      if (lastSplash !== today) {
+        localStorage.setItem('pda_last_splash_date', today);
+        return true;
+      }
+    } catch (e) {
+      console.warn('[Splash] Error accediendo a localStorage:', e);
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    if (showDailySplash) {
+      const timer = setTimeout(() => {
+        setShowDailySplash(false);
+      }, 5500);
+      return () => clearTimeout(timer);
+    }
+  }, [showDailySplash]);
 
   
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
@@ -257,6 +283,7 @@ export default function App() {
           onInstall={handleInstall}
           showIOSButton={showIOSButton}
           onShowIOSInstall={() => setShowIOSInstall(true)}
+          onOpenRemotion={() => setShowRemotionSplash(true)}
         />
       )}
 
@@ -488,11 +515,42 @@ export default function App() {
         </div>
       )}
 
+      {/* Splash Screen Diaria (Primera Apertura del Día) */}
+      {showDailySplash && (
+        <div 
+          onClick={() => setShowDailySplash(false)}
+          className="fixed inset-0 z-[9999] bg-white flex flex-col items-center justify-center cursor-pointer transition-opacity duration-500 animate-in fade-in"
+          title="Toca para saltar"
+        >
+          <div className="w-full h-full max-w-xl max-h-[720px] flex items-center justify-center p-4">
+            <SplashScreenPlayer 
+              loop={false} 
+              onComplete={() => setShowDailySplash(false)} 
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Remotion Intro Animation Fullscreen Overlay */}
+      {showRemotionSplash && (
+        <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-md flex flex-col items-center justify-center p-4 animate-in fade-in duration-300">
+          <button
+            onClick={() => setShowRemotionSplash(false)}
+            className="absolute top-4 right-4 z-[310] px-4 py-2 bg-white text-slate-900 rounded-full text-xs font-black shadow-xl hover:bg-slate-100 active:scale-95 transition-all"
+          >
+            ✕ CERRAR PREVISUALIZACIÓN
+          </button>
+          <div className="w-[500px] h-[500px] max-w-[90vw] max-h-[75vh] aspect-square rounded-3xl overflow-hidden shadow-2xl bg-white border border-white/20">
+            <SplashScreenPlayer onComplete={() => console.log('Remotion Intro Completed!')} autoPlay={true} loop={true} />
+          </div>
+        </div>
+      )}
+
       {/* Admin Panel Modal */}
       {showAdminPanel && (
         <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-2xl p-6 shadow-2xl">
-            <div className="flex justify-between items-center mb-6">
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-2xl p-6 shadow-2xl space-y-3">
+            <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold text-white flex items-center gap-2">
                 <FlaskConical className="text-brand" /> Panel Dev
               </h2>
@@ -500,8 +558,15 @@ export default function App() {
             </div>
 
             <button
+              onClick={() => { triggerHaptic(); setShowRemotionSplash(true); setShowAdminPanel(false); }}
+              className="w-full bg-teal-600 hover:bg-teal-500 text-white font-bold py-3 rounded-xl text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg"
+            >
+              🎬 Ver Animación Remotion (5s Intro)
+            </button>
+
+            <button
               onClick={() => { triggerHaptic(); setShowTester(true); setShowAdminPanel(false); }}
-              className="w-full bg-brand-dark hover:bg-brand text-white font-bold py-3 rounded-lg text-sm uppercase tracking-wider transition-colors"
+              className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-xl text-xs uppercase tracking-wider transition-all"
             >
               🚀 Abrir Tester
             </button>

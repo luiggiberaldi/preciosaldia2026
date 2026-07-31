@@ -5,7 +5,7 @@ import UserCard from './UserCard';
 import LoginPinModal from './LoginPinModal';
 import EmergencyPinResetModal from './EmergencyPinResetModal';
 
-export default function LockScreen({ onOpenPairing, installPrompt, onInstall, showIOSButton, onShowIOSInstall }) {
+export default function LockScreen({ onOpenPairing, installPrompt, onInstall, showIOSButton, onShowIOSInstall, onOpenRemotion }) {
   const { usuarios, login, loginDirect, requireCajeroPin, requireAdminPin, resetPinEmergency } = useAuthStore();
   const [selectedUser, setSelectedUser] = useState(null);
   const [showEmergencyModal, setShowEmergencyModal] = useState(false);
@@ -95,9 +95,11 @@ export default function LockScreen({ onOpenPairing, installPrompt, onInstall, sh
         )}
       </div>
 
-      {/* Version Tag - Top Left (Perfect Balance with PWA Install Button & Zero Overlap) */}
-      <div className="absolute top-4 left-4 z-30 pointer-events-none select-none flex items-center gap-1.5 px-3 py-1.5 bg-slate-900/5 dark:bg-slate-100/10 border border-slate-900/10 dark:border-slate-100/10 rounded-xl backdrop-blur-md">
-        <span className="text-[11px] font-black text-slate-500 dark:text-slate-400 tracking-wider">v1.5.0</span>
+      {/* Version Tag - Top Left */}
+      <div className="absolute top-4 left-4 z-30 flex items-center gap-2">
+        <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-900/5 dark:bg-slate-100/10 border border-slate-900/10 dark:border-slate-100/10 rounded-xl backdrop-blur-md">
+          <span className="text-[11px] font-black text-slate-500 dark:text-slate-400 tracking-wider">v1.5.0</span>
+        </div>
       </div>
 
       <div className="relative z-10 flex flex-col items-center justify-center flex-1 p-6">

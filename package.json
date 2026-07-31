@@ -17,12 +17,17 @@
     "typecheck": "tsc --noEmit --allowJs --checkJs --skipLibCheck || true",
     "preview": "vite preview",
     "desktop:start": "cross-env ELECTRON_BUILD=true npm run build && cd desktop && npx electron .",
-    "desktop:build": "cross-env ELECTRON_BUILD=true npm run build && cd desktop && npx electron-builder"
+    "desktop:build": "cross-env ELECTRON_BUILD=true npm run build && cd desktop && npx electron-builder",
+    "remotion:preview": "remotion preview src/remotion/Root.jsx",
+    "remotion:render": "remotion render src/remotion/Root.jsx PreciosAlDíaLogoIntro out/intro.mp4"
   },
   "dependencies": {
     "@capacitor/android": "^8.2.0",
     "@capacitor/cli": "^8.2.0",
     "@capacitor/core": "^8.2.0",
+    "@remotion/cli": "^4.0.502",
+    "@remotion/google-fonts": "4.0.502",
+    "@remotion/player": "^4.0.502",
     "@supabase/supabase-js": "^2.97.0",
     "groq-sdk": "^0.37.0",
     "html2canvas": "^1.4.1",
@@ -33,6 +38,7 @@
     "qrcode": "^1.5.4",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "remotion": "^4.0.502",
     "vite-plugin-pwa": "^1.2.0",
     "zustand": "^5.0.11"
   },
