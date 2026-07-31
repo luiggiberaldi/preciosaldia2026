@@ -18,6 +18,7 @@ export default defineConfig(({ mode }) => {
     VitePWA({
       registerType: 'prompt', // SW prompt: no fuerza recargas abruptas durante operaciones POS (A-001/B-003).
       includeAssets: [
+        'transparent-splash-icon.png',
         'favicon.ico',
         'apple-touch-icon.png',
         'pwa-144x144.png',
@@ -89,7 +90,7 @@ export default defineConfig(({ mode }) => {
         name: 'Precios Al Día — Bodegas',
         short_name: 'PreciosAlDía Bodegas',
         description: 'Punto de venta bimoneda y gestor de inventario para bodegas de Venezuela',
-        theme_color: '#01696f',
+        theme_color: '#FFFFFF',
         background_color: '#FFFFFF',
         display: 'standalone',
         orientation: 'portrait',
@@ -98,6 +99,7 @@ export default defineConfig(({ mode }) => {
         categories: ['business', 'finance', 'shopping'],
         prefer_related_applications: false,
         icons: [
+          { src: 'transparent-splash-icon.png', sizes: '512x512', type: 'image/png' },
           { src: 'pwa-144x144.png', sizes: '144x144', type: 'image/png' },
           { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
           { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
