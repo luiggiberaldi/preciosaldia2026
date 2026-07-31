@@ -18,6 +18,7 @@ export default defineConfig(({ mode }) => {
     VitePWA({
       registerType: 'prompt', // SW prompt: no fuerza recargas abruptas durante operaciones POS (A-001/B-003).
       includeAssets: [
+        'pwa-splash-transparent-512.png',
         'transparent-splash-icon.png',
         'favicon.ico',
         'apple-touch-icon.png',
@@ -99,7 +100,7 @@ export default defineConfig(({ mode }) => {
         categories: ['business', 'finance', 'shopping'],
         prefer_related_applications: false,
         icons: [
-          { src: 'transparent-splash-icon.png', sizes: '512x512', type: 'image/png' },
+          { src: 'pwa-splash-transparent-512.png', sizes: '512x512', type: 'image/png' },
           { src: 'pwa-144x144.png', sizes: '144x144', type: 'image/png' },
           { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
           { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
