@@ -1,7 +1,7 @@
 {
   "name": "tasas-al-dia-base",
   "private": true,
-  "version": "1.5.3",
+  "version": "1.5.4",
   "type": "module",
   "packageManager": "bun@1.1.0",
   "scripts": {

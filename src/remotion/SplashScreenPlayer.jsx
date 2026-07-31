@@ -10,10 +10,11 @@ import { StandaloneLogoAnimation } from './StandaloneLogoAnimation';
 export default function SplashScreenPlayer({
     onComplete,
     loop = true,
+    mode = 'full',
 }) {
     return (
         <div className="w-full h-full flex items-center justify-center bg-white overflow-hidden rounded-3xl relative shadow-inner">
-            <StandaloneLogoAnimation onComplete={onComplete} loop={loop} />
+            <StandaloneLogoAnimation onComplete={onComplete} loop={loop} mode={mode} />
         </div>
     );
 }

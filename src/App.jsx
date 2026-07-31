@@ -86,29 +86,31 @@ export default function App() {
   const [showTester, setShowTester] = useState(false);
   const [showRemotionSplash, setShowRemotionSplash] = useState(false);
 
-  // Splash Screen de apertura diaria (Primera vez del día)
-  const [showDailySplash, setShowDailySplash] = useState(() => {
+  // Splash Screen Modo Híbrido Rápido (5s en primera apertura del día, 1.5s en aperturas posteriores)
+  const [splashState, setSplashState] = useState(() => {
     try {
       const today = new Date().toISOString().split('T')[0];
       const lastSplash = localStorage.getItem('pda_last_splash_date');
       if (lastSplash !== today) {
         localStorage.setItem('pda_last_splash_date', today);
-        return true;
+        return { show: true, mode: 'full' };
       }
+      return { show: true, mode: 'express' };
     } catch (e) {
       console.warn('[Splash] Error accediendo a localStorage:', e);
     }
-    return false;
+    return { show: true, mode: 'express' };
   });
 
   useEffect(() => {
-    if (showDailySplash) {
+    if (splashState.show) {
+      const timeoutMs = splashState.mode === 'express' ? 1800 : 5500;
       const timer = setTimeout(() => {
-        setShowDailySplash(false);
-      }, 5500);
+        setSplashState(prev => ({ ...prev, show: false }));
+      }, timeoutMs);
       return () => clearTimeout(timer);
     }
-  }, [showDailySplash]);
+  }, [splashState.show, splashState.mode]);
 
   
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
@@ -515,17 +517,18 @@ export default function App() {
         </div>
       )}
 
-      {/* Splash Screen Diaria (Primera Apertura del Día) */}
-      {showDailySplash && (
+      {/* Splash Screen Modo Híbrido (5s primera vez, 1.5s apertura posterior) */}
+      {splashState.show && (
         <div 
-          onClick={() => setShowDailySplash(false)}
-          className="fixed inset-0 z-[9999] bg-white flex flex-col items-center justify-center cursor-pointer transition-opacity duration-500 animate-in fade-in"
+          onClick={() => setSplashState(prev => ({ ...prev, show: false }))}
+          className="fixed inset-0 z-[9999] bg-white flex flex-col items-center justify-center cursor-pointer transition-opacity duration-300 animate-in fade-in"
           title="Toca para saltar"
         >
           <div className="w-full h-full max-w-xl max-h-[720px] flex items-center justify-center p-4">
             <SplashScreenPlayer 
               loop={false} 
-              onComplete={() => setShowDailySplash(false)} 
+              mode={splashState.mode}
+              onComplete={() => setSplashState(prev => ({ ...prev, show: false }))} 
             />
           </div>
         </div>

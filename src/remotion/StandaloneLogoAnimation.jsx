@@ -16,12 +16,14 @@ export const StandaloneLogoAnimation = ({
     subtitle = 'PUNTO DE VENTA & INVENTARIO',
     onComplete,
     loop = true,
+    mode = 'full', // 'full' (5.0s) | 'express' (1.5s)
 }) => {
     const [frame, setFrame] = useState(0);
     const animRef = useRef(null);
     const startTimeRef = useRef(null);
 
-    const DURATION_FRAMES = 150;
+    const isExpress = mode === 'express';
+    const DURATION_FRAMES = isExpress ? 45 : 150;
     const FPS = 30;
 
     useEffect(() => {
@@ -48,48 +50,48 @@ export const StandaloneLogoAnimation = ({
         return () => {
             if (animRef.current) cancelAnimationFrame(animRef.current);
         };
-    }, [loop, onComplete]);
+    }, [loop, onComplete, DURATION_FRAMES]);
 
     // ── CURVAS DE ANIMACIÓN ──
     const clamp = (val, min = 0, max = 1) => Math.min(max, Math.max(min, val));
     const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
     const easeOutQuart = (t) => 1 - Math.pow(1 - t, 4);
 
-    // Capa 1: Revelado de la "D" (frame 0 a 24)
-    const progressD = clamp(frame / 24);
+    // Capa 1: Revelado de la "D"
+    const progressD = clamp(frame / (isExpress ? 10 : 24));
     const strokeDashoffset = (1 - easeOutCubic(progressD)) * 1400;
     const outerOpacity = clamp(0.4 + progressD * 0.6);
     const outerScale = clamp(0.95 + easeOutCubic(progressD) * 0.05);
 
-    // Capa 2: Barra 1 (frame 24 a 46)
-    const progressBar1 = clamp((frame - 24) / 22);
+    // Capa 2: Barra 1
+    const progressBar1 = clamp((frame - (isExpress ? 6 : 24)) / (isExpress ? 12 : 22));
     const bar1ScaleY = easeOutQuart(progressBar1);
 
-    // Capa 3: Barra 2 (frame 34 a 56)
-    const progressBar2 = clamp((frame - 34) / 22);
+    // Capa 3: Barra 2
+    const progressBar2 = clamp((frame - (isExpress ? 10 : 34)) / (isExpress ? 12 : 22));
     const bar2ScaleY = easeOutQuart(progressBar2);
 
-    // Capa 4: Flecha Principal (frame 44 a 68)
-    const progressArrow = clamp((frame - 44) / 24);
+    // Capa 4: Flecha Principal
+    const progressArrow = clamp((frame - (isExpress ? 14 : 44)) / (isExpress ? 12 : 24));
     const arrowScaleY = easeOutQuart(progressArrow);
-    const arrowOpacity = easeOutCubic(clamp((frame - 44) / 16));
+    const arrowOpacity = easeOutCubic(clamp((frame - (isExpress ? 14 : 44)) / (isExpress ? 8 : 16)));
 
-    // Capa 5: Título "PRECIOS AL DÍA" (Revelado Cinematográfico)
-    const progressTitle = clamp((frame - 62) / 24);
+    // Capa 5: Título "PRECIOS AL DÍA"
+    const progressTitle = clamp((frame - (isExpress ? 18 : 62)) / (isExpress ? 14 : 24));
     const titleOpacity = easeOutCubic(progressTitle);
     const titleTranslateY = (1 - easeOutCubic(progressTitle)) * 18;
     const titleBlur = (1 - titleOpacity) * 8;
     const titleTracking = 0.14 + (1 - titleOpacity) * 0.08;
 
     // Capa 6: Subtítulo "PUNTO DE VENTA & INVENTARIO"
-    const progressSub = clamp((frame - 76) / 22);
+    const progressSub = clamp((frame - (isExpress ? 22 : 76)) / (isExpress ? 14 : 22));
     const subOpacity = easeOutCubic(progressSub);
     const subTranslateY = (1 - easeOutCubic(progressSub)) * 12;
     const subBlur = (1 - subOpacity) * 5;
     const subTracking = 0.28 + (1 - subOpacity) * 0.1;
 
     // Pulso suave de marca
-    const progressPulse = clamp((frame - 100) / 35);
+    const progressPulse = clamp((frame - (isExpress ? 28 : 100)) / (isExpress ? 15 : 35));
     const pulseScale = 1 + Math.sin(progressPulse * Math.PI) * 0.025;
     const glowOpacity = Math.sin(progressPulse * Math.PI) * 0.18;
 
