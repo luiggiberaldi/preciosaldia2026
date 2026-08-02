@@ -13,7 +13,7 @@ export default function SplashScreenPlayer({
     mode = 'full',
 }) {
     return (
-        <div className="w-full h-full flex items-center justify-center bg-white overflow-hidden rounded-3xl relative shadow-inner">
+        <div className="w-full h-full flex items-center justify-center bg-white dark:bg-[#1a1917] overflow-hidden relative">
             <StandaloneLogoAnimation onComplete={onComplete} loop={loop} mode={mode} />
         </div>
     );

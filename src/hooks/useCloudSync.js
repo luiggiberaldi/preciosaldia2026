@@ -266,7 +266,8 @@ export function useCloudSync(deviceId) {
                 const backupImported = localStorage.getItem('pda_backup_imported_flag') === 'true';
                 
                 if (backupImported) {
-                    console.log('[CloudSync] Detectado backup importado localmente. Subiendo datos locales a la nube...');
+                    console.log('[CloudSync] Detectado backup importado localmente. Subiendo incondicionalmente a la nube...');
+                    isCloudSyncActive = true;
                     const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
                     const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_accounts_v2'];
                     for (const key of criticalKeys) {
@@ -277,8 +278,9 @@ export function useCloudSync(deviceId) {
                             localStorage.setItem(hashKey, quickHash(localValue));
                         }
                     }
+                    localStorage.setItem('cloud_sync_ts', new Date().toISOString());
                     localStorage.removeItem('pda_backup_imported_flag');
-                    console.log('[CloudSync] Sincronización de importación completada.');
+                    console.log('[CloudSync] Sincronización incondicional de importación completada.');
                 } else {
                     const { data: docs } = await supabaseCloud
                         .from('sync_documents')

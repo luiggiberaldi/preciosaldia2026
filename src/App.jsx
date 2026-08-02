@@ -36,6 +36,7 @@ import { ImagePrecacheRunner } from './hooks/useImagePrecache';
 const OwnerMonitorView = lazy(() => import('./views/OwnerMonitorView'));
 import PairingScanScreen from './components/PairingScanScreen';
 import SplashScreenPlayer from './remotion/SplashScreenPlayer';
+import { getLocalISODate } from './utils/dateHelpers';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('inicio');
@@ -86,13 +87,12 @@ export default function App() {
   const [showTester, setShowTester] = useState(false);
   const [showRemotionSplash, setShowRemotionSplash] = useState(false);
 
-  // Splash Screen Modo Híbrido Rápido (5s en primera apertura del día, 1.5s en aperturas posteriores)
+  // Splash Screen Modo Híbrido Rápido (2.5s en primera apertura del día, 500ms en aperturas posteriores)
   const [splashState, setSplashState] = useState(() => {
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getLocalISODate();
       const lastSplash = localStorage.getItem('pda_last_splash_date');
       if (lastSplash !== today) {
-        localStorage.setItem('pda_last_splash_date', today);
         return { show: true, mode: 'full' };
       }
       return { show: true, mode: 'express' };
@@ -102,15 +102,37 @@ export default function App() {
     return { show: true, mode: 'express' };
   });
 
+  // Mover el registro de fecha a un useEffect para evitar side-effects en render (D2 fix)
+  useEffect(() => {
+    if (splashState.show && splashState.mode === 'full') {
+      try {
+        localStorage.setItem('pda_last_splash_date', getLocalISODate());
+      } catch (e) {}
+    }
+  }, [splashState.show, splashState.mode]);
+
   useEffect(() => {
     if (splashState.show) {
-      const timeoutMs = splashState.mode === 'express' ? 1800 : 5500;
+      // Safety net fallback: da tiempo a que la animación complete naturalmente vía onComplete
+      const timeoutMs = splashState.mode === 'express' ? 1400 : 2800;
       const timer = setTimeout(() => {
         setSplashState(prev => ({ ...prev, show: false }));
       }, timeoutMs);
       return () => clearTimeout(timer);
     }
   }, [splashState.show, splashState.mode]);
+
+  // Manejador de la tecla Escape para saltar el splash screen
+  useEffect(() => {
+    if (!splashState.show) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setSplashState(prev => ({ ...prev, show: false }));
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [splashState.show]);
 
   
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
@@ -517,12 +539,14 @@ export default function App() {
         </div>
       )}
 
-      {/* Splash Screen Modo Híbrido (5s primera vez, 1.5s apertura posterior) */}
+      {/* Splash Screen Modo Híbrido (2.5s primera vez, 500ms apertura posterior) */}
       {splashState.show && (
         <div 
           onClick={() => setSplashState(prev => ({ ...prev, show: false }))}
-          className="fixed inset-0 z-[9999] bg-white flex flex-col items-center justify-center cursor-pointer transition-opacity duration-300 animate-in fade-in"
-          title="Toca para saltar"
+          className="fixed inset-0 z-[9999] bg-white dark:bg-[#1a1917] flex flex-col items-center justify-center cursor-pointer transition-opacity duration-300 animate-in fade-in"
+          role="status"
+          aria-label="Cargando Precios Al Día"
+          title="Toca o presiona Esc para saltar"
         >
           <div className="w-full h-full max-w-xl max-h-[720px] flex items-center justify-center p-4">
             <SplashScreenPlayer 
@@ -531,6 +555,9 @@ export default function App() {
               onComplete={() => setSplashState(prev => ({ ...prev, show: false }))} 
             />
           </div>
+          <span className="absolute bottom-6 text-[11px] font-semibold tracking-wider text-slate-400 dark:text-slate-500 uppercase select-none pointer-events-none opacity-75">
+            Toca o presiona Esc para saltar
+          </span>
         </div>
       )}
 
@@ -544,7 +571,7 @@ export default function App() {
             ✕ CERRAR PREVISUALIZACIÓN
           </button>
           <div className="w-[500px] h-[500px] max-w-[90vw] max-h-[75vh] aspect-square rounded-3xl overflow-hidden shadow-2xl bg-white border border-white/20">
-            <SplashScreenPlayer onComplete={() => console.log('Remotion Intro Completed!')} autoPlay={true} loop={true} />
+            <SplashScreenPlayer onComplete={() => console.log('Remotion Intro Completed!')} loop={true} />
           </div>
         </div>
       )}

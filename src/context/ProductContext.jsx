@@ -1,8 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { storageService } from '../utils/storageService';
+import { shadowBackupService } from '../utils/shadowBackupService';
 import { BODEGA_CATEGORIES } from '../config/categories';
 import { pushLocalSync, pushCloudSync } from '../hooks/useCloudSync';
 import { useRateContext } from './RateContext';
+import { showToast } from '../components/Toast';
+import { Modal } from '../components/Modal';
+import { AlertTriangle, ShieldAlert, RotateCcw } from 'lucide-react';
 
 const ProductContext = createContext();
 
@@ -45,6 +49,7 @@ export function ProductProvider({ children }) {
         });
     }, []);
     const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+    const [circuitBreakerWarning, setCircuitBreakerWarning] = useState(null);
 
     // Guard ref: prevents infinite loop when auto-save fires app_storage_update
     const savingRef = useRef(false);
@@ -65,11 +70,8 @@ export function ProductProvider({ children }) {
 
     // Resuelve dinámicamente si el modal de cobro activo debe ser 'basic' (Móvil) o 'pos' (PC)
     const effectiveCheckoutMode = useMemo(() => {
-        // 1. Si el usuario seleccionó un modo permanente en Configuración ('basic' o 'pos'), se respeta al 100%
         if (checkoutMode === 'basic') return 'basic';
         if (checkoutMode === 'pos') return 'pos';
-
-        // 2. Modo 'auto' (Detección inteligente por pantalla/dispositivo)
         if (typeof window === 'undefined') return 'basic';
 
         const isMobile = window.innerWidth < 1024 ||
@@ -144,7 +146,11 @@ export function ProductProvider({ children }) {
             if (products.length > 0) {
                 savePromises.push(storageService.setItem('bodega_products_v1', products));
             } else {
-                savePromises.push(storageService.removeItem('bodega_products_v1'));
+                // VUL-003 Guard: Solo borrar si hay confirmación explícita de admin
+                const isConfirmed = localStorage.getItem('confirm_bulk_delete_catalog_flag') === 'true';
+                if (isConfirmed) {
+                    savePromises.push(storageService.removeItem('bodega_products_v1'));
+                }
             }
             savePromises.push(storageService.setItem('my_categories_v1', categories));
             Promise.all(savePromises).finally(() => {
@@ -157,8 +163,13 @@ export function ProductProvider({ children }) {
         };
     }, [products, categories, isLoadingProducts]);
 
-    // Listener para actualizar productos/categorías si cambian en otra pestaña/componente
+    // Listener para actualizar productos/categorías y detectar el disyuntor Circuit Breaker
     useEffect(() => {
+        const handleCircuitBreaker = (e) => {
+            const detail = e.detail;
+            setCircuitBreakerWarning(detail);
+        };
+
         const handleStorageChange = (e) => {
             if (e.key === 'bodega_products_v1') {
                 storageService.getItem('bodega_products_v1', []).then(updatedProducts => {
@@ -189,16 +200,32 @@ export function ProductProvider({ children }) {
             }
         };
 
+        window.addEventListener('circuit_breaker_triggered', handleCircuitBreaker);
         window.addEventListener('storage', handleStorageChange);
         window.addEventListener('app_storage_update', handleAppStorageUpdate);
         return () => {
+            window.removeEventListener('circuit_breaker_triggered', handleCircuitBreaker);
             window.removeEventListener('storage', handleStorageChange);
             window.removeEventListener('app_storage_update', handleAppStorageUpdate);
         };
     }, []);
 
-    // HOOK-005: Memoizar adjustStock para que el objeto `value` del Provider
-    // sea estable entre renders cuando los productos no cambian.
+    // Restauración de Copia de Sombra (Shadow Snapshot Restore)
+    const restoreShadowBackup = useCallback(async () => {
+        try {
+            const restored = await shadowBackupService.restoreShadow('bodega_products_v1', storageService);
+            if (restored && restored.data) {
+                setProducts(restored.data);
+                setCircuitBreakerWarning(null);
+                showToast(`¡Catálogo restaurado desde copia de sombra! (${restored.count} productos)`, 'success');
+                return true;
+            }
+        } catch (e) {
+            showToast('No se pudo restaurar la copia de sombra', 'error');
+        }
+        return false;
+    }, []);
+
     const adjustStock = useCallback((productId, delta) => {
         setProducts(prevProducts => {
             const updated = prevProducts.map(p => {
@@ -214,9 +241,6 @@ export function ProductProvider({ children }) {
         });
     }, []);
 
-    // HOOK-005: Envolver `value` en useMemo con deps correctas para evitar que
-    // TODOS los consumidores se re-rendericen en cada render del Provider.
-    // Las setters de useState son estables y no necesitan estar en deps.
     const value = useMemo(() => ({
         ...rateState,
         products,
@@ -227,7 +251,8 @@ export function ProductProvider({ children }) {
         checkoutMode,
         effectiveCheckoutMode,
         setCheckoutMode,
-        adjustStock
+        adjustStock,
+        restoreShadowBackup
     }), [
         rateState,
         products,
@@ -236,11 +261,52 @@ export function ProductProvider({ children }) {
         checkoutMode,
         effectiveCheckoutMode,
         adjustStock,
+        restoreShadowBackup
     ]);
 
     return (
         <ProductContext.Provider value={value}>
             {children}
+
+            {/* Modal de Advertencia del Circuit Breaker en UI */}
+            {circuitBreakerWarning && (
+                <Modal
+                    isOpen={true}
+                    onClose={() => setCircuitBreakerWarning(null)}
+                    title="⚠️ Intento de Sobrescritura Anómala Bloqueado"
+                >
+                    <div className="space-y-4 p-2">
+                        <div className="flex items-center gap-3 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-600 dark:text-red-400">
+                            <ShieldAlert className="shrink-0" size={32} />
+                            <div>
+                                <h4 className="font-black text-sm uppercase tracking-wide">Circuit Breaker Activado</h4>
+                                <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                                    Se detectó un intento de reducir el inventario de <strong>{circuitBreakerWarning.currentCount}</strong> a <strong>{circuitBreakerWarning.incomingCount}</strong> productos (&lt;10% del total).
+                                </p>
+                            </div>
+                        </div>
+
+                        <p className="text-xs text-slate-600 dark:text-slate-400">
+                            Por la seguridad de tus datos, la operación fue bloqueada automáticamente para evitar el vaciado accidental de tu catálogo.
+                        </p>
+
+                        <div className="flex gap-3 pt-2">
+                            <button
+                                onClick={() => setCircuitBreakerWarning(null)}
+                                className="flex-1 py-3 bg-surface-200 dark:bg-surface-800 text-surface-800 dark:text-white font-bold rounded-xl active:scale-95 transition-all text-xs"
+                            >
+                                Entendido, Mantener Actual
+                            </button>
+                            <button
+                                onClick={restoreShadowBackup}
+                                className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl active:scale-95 transition-all flex items-center justify-center gap-2 text-xs"
+                            >
+                                <RotateCcw size={16} /> Restaurar Copia de Sombra
+                            </button>
+                        </div>
+                    </div>
+                </Modal>
+            )}
         </ProductContext.Provider>
     );
 }

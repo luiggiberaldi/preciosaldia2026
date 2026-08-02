@@ -78,6 +78,16 @@ function AppRouter() {
   // HOOK-033: wheel listener con cleanup correcto.
   useEffect(() => _attachWheelGuard(), []);
 
+  // Retirar el splash nativo HTML en cuanto React se hidrata y monta en el DOM
+  useEffect(() => {
+    const initialSplash = document.getElementById('initial-splash-overlay');
+    if (initialSplash) {
+      initialSplash.style.opacity = '0';
+      const timer = setTimeout(() => initialSplash.remove(), 250);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
   useEffect(() => {
     if (!supabaseCloud) return;
     const { data: { subscription } } = supabaseCloud.auth.onAuthStateChange((event) => {

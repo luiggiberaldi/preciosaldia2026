@@ -1,7 +1,7 @@
 {
   "name": "tasas-al-dia-base",
   "private": true,
-  "version": "1.5.4",
+  "version": "1.5.5",
   "type": "module",
   "packageManager": "bun@1.1.0",
   "scripts": {
@@ -19,7 +19,7 @@
     "desktop:start": "cross-env ELECTRON_BUILD=true npm run build && cd desktop && npx electron .",
     "desktop:build": "cross-env ELECTRON_BUILD=true npm run build && cd desktop && npx electron-builder",
     "remotion:preview": "remotion preview src/remotion/Root.jsx",
-    "remotion:render": "remotion render src/remotion/Root.jsx PreciosAlDíaLogoIntro out/intro.mp4"
+    "remotion:render": "remotion render src/remotion/Root.jsx PreciosAlDiaLogoIntro out/intro.mp4"
   },
   "dependencies": {
     "@capacitor/android": "^8.2.0",

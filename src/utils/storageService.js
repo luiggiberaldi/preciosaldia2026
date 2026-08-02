@@ -1,47 +1,19 @@
 import localforage from 'localforage';
 import { queueCloudSync } from '../hooks/useCloudSync';
+import { shadowBackupService } from './shadowBackupService';
+
 localforage.config({
     name: 'BodegaApp',
     storeName: 'bodega_app_data',
     description: 'Almacenamiento local optimizado para PWA de Bodega'
 });
 
-/**
- * Cola de reintentos para operaciones que fallaron por QuotaExceededError.
- * Se procesa cuando el dispositivo recupera espacio (ej: tras clearAllData)
- * o mediante un flush manual del caller.
- * @type {Array<{ key: string, value: any, attempts: number }>}
- */
 const _retryQueue = [];
-
 const QUOTA_RETRY_MAX = 3;
 
-/**
- * Servicio de almacenamiento que previene el límite de 5MB de localStorage
- * Migrando los datos pesados a IndexedDB a través de localforage.
- *
- * ── HOOK-004 (lock para writes críticos) ─────────────────────────────────
- * IMPORTANTE: los callers que realicen read-modify-write sobre claves críticas
- * (ventas, audit log, cuentas, stock) DEBEN envolver la operación completa en
- * `withLock` para evitar race conditions entre tabs y entre ráfagas de writes.
- * Ejemplo:
- *
- *   import { withLock } from '../utils/withLock';
- *   await withLock('pos_write_lock', async () => {
- *       const sales = await storageService.getItem(SALES_KEY, []);
- *       sales.push(newSale);
- *       await storageService.setItem(SALES_KEY, sales);
- *   });
- *
- * `storageService.setItem` por sí solo NO toma el lock — solo garantiza la
- * escritura atómica en IndexedDB/localStorage, no la coherencia read-write con
- * otros writers concurrentes.
- *
- * ── HOOK-007 (QuotaExceededError) ─────────────────────────────────────────
- * Cuando IndexedDB y localStorage están llenos, disparamos el evento global
- * `quota_exceeded` para que la UI avise al usuario y ofrezca limpieza. La
- * operación fallida se encola para reintento automático cuando haya espacio.
- */
+/** Umbral del Circuit Breaker: si la reducción es < 10% del catálogo actual (>5 ítems), bloquea */
+const CIRCUIT_BREAKER_MIN_RATIO = 0.1;
+
 export const storageService = {
     /**
      * Obtiene un item de IndexedDB.
@@ -86,30 +58,22 @@ export const storageService = {
             // 2. Si no existe, revisar LocalStorage (Migración al vuelo)
             const fallbackValue = localStorage.getItem(key);
             if (fallbackValue !== null) {
-                // Migración silenciosa de localStorage a IndexedDB
-
                 let parsedValue;
                 try {
                     parsedValue = JSON.parse(fallbackValue);
                 } catch (e) {
-                    parsedValue = fallbackValue; // A veces guardamos strings directos
+                    parsedValue = fallbackValue;
                 }
 
-                // Guardar en la nueva base de datos
                 await localforage.setItem(key, parsedValue);
-
-                // Borrar el viejo para liberar el preciado espacio de 5MB
                 localStorage.removeItem(key);
-
                 return parsedValue;
             }
 
-            // 3. No existe en ningún lado
             return defaultValue;
 
         } catch (error) {
             console.error(`[Storage Error] Leyendo ${key}:`, error);
-            // Fallback drástico en caso de que el navegador bloquee IndexedDB por privacidad extrema
             const backup = localStorage.getItem(key);
             if (backup) {
                 try { return JSON.parse(backup); } catch (e) { return backup; }
@@ -121,25 +85,55 @@ export const storageService = {
     /**
      * Guarda un item directamente en IndexedDB
      *
-     * HOOK-007: detecta QuotaExceededError y dispara evento global.
+     * TRIPLE-LOCK VAULT:
+     * 1. Storage Circuit Breaker: bloquea vaciados o reducciones drásticas (>5 ítems → <10%).
+     * 2. Shadow Snapshots: guarda una copia espejo en IndexedDB antes de cada sobrescritura.
      */
     async setItem(key, value) {
         try {
+            // 🧱 CAPA 1: DISYUNTOR DE ALMACENAMIENTO (Circuit Breaker para Catálogo)
+            if (key === 'bodega_products_v1') {
+                const currentCatalog = await localforage.getItem(key);
+                if (Array.isArray(currentCatalog) && currentCatalog.length > 5) {
+                    const incomingCount = Array.isArray(value) ? value.length : 0;
+                    const ratio = incomingCount / currentCatalog.length;
+
+                    if (ratio < CIRCUIT_BREAKER_MIN_RATIO) {
+                        const confirmed = localStorage.getItem('confirm_bulk_delete_catalog_flag') === 'true';
+                        if (confirmed) {
+                            localStorage.removeItem('confirm_bulk_delete_catalog_flag');
+                            // Guardar copia de sombra del catálogo completo antes del borrado intencional
+                            await shadowBackupService.saveShadow(key, currentCatalog);
+                        } else {
+                            if (typeof window !== 'undefined') {
+                                window.dispatchEvent(new CustomEvent('circuit_breaker_triggered', {
+                                    detail: { key, currentCount: currentCatalog.length, incomingCount, ratio }
+                                }));
+                            }
+                            throw new Error(`[CircuitBreaker] Sobrescritura anómala bloqueada: el nuevo catálogo (${incomingCount}) es menor al 10% del catálogo actual (${currentCatalog.length}).`);
+                        }
+                    } else {
+                        // Guardar copia de sombra previa a la modificación válida
+                        await shadowBackupService.saveShadow(key, currentCatalog);
+                    }
+                }
+            }
+
             await localforage.setItem(key, value);
-            // Anti-zombie: purgar localStorage para que el fallback nunca resucite datos viejos
             localStorage.removeItem(key);
             if (typeof window !== "undefined") {
                 window.dispatchEvent(new CustomEvent("app_storage_update", { detail: { key } }));
             }
-            // Emitir a la nube silenciosamente de fondo (EGRESS-FIX: debounced,
-            // ruta única — antes push directo que se duplicaba con el listener
-            // de useCloudSync y no agrupaba ráfagas de ediciones).
             queueCloudSync(key, value);
         } catch (error) {
+            // RE-LANZAR CircuitBreaker obligatoriamente para evitar que el catch general escriba en localStorage
+            if (error?.message?.includes('[CircuitBreaker]')) {
+                console.warn(error.message);
+                throw error;
+            }
+
             if (_isQuotaError(error)) {
-                // HOOK-007: IndexedDB lleno. Avisar a la UI y encolar para reintento.
                 _dispatchQuotaExceeded(key, value, error);
-                // Última esperanza: intentar localStorage (puede que IDB esté lleno pero LS no).
                 try {
                     localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
                     if (typeof window !== "undefined") {
@@ -156,7 +150,6 @@ export const storageService = {
                 }
             }
             console.error(`[Storage Error] Guardando ${key}:`, error);
-            // Fallback de emergencia a localStorage si falla algo catastrófico
             try {
                 localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
                 if (typeof window !== "undefined") {

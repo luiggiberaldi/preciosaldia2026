@@ -72,7 +72,41 @@
   </script>
 </head>
 
-<body class="bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-100 font-sans transition-colors duration-300">
+  <!-- Native HTML Initial Splash Background & Mobile Icon (First Paint - 0ms Delay) -->
+  <div id="initial-splash-overlay" style="position:fixed;inset:0;z-index:99999;background:#FFFFFF;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity 0.25s ease;padding:16px;box-sizing:border-box;">
+    <!-- Icono estático responsive de marca cargado a 0ms SOLO en dispositivos móviles (< 768px) -->
+    <div id="mobile-splash-logo" style="display:none;flex-direction:column;align-items:center;justify-content:center;width:100%;max-width:min(320px, 62vw);max-height:45vh;">
+      <svg style="width:100%;height:auto;max-height:45vh;" viewBox="0 0 500 500" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="initTeal" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#01696f" />
+            <stop offset="100%" stop-color="#004D53" />
+          </linearGradient>
+        </defs>
+        <path d="M 90 70 H 250 A 180 180 0 0 1 250 430 H 90 V 70 Z M 250 390 A 140 140 0 1 0 250 110 A 140 140 0 0 0 250 390 Z" fill="url(#initTeal)" fill-rule="evenodd" />
+        <rect x="168" y="305" width="36" height="85" rx="3" fill="url(#initTeal)" />
+        <rect x="228" y="225" width="36" height="165" rx="3" fill="url(#initTeal)" />
+        <rect x="288" y="195" width="36" height="195" rx="3" fill="url(#initTeal)" />
+        <path d="M 306 128 L 352 205 H 260 Z" fill="url(#initTeal)" />
+      </svg>
+    </div>
+  </div>
+  <script>
+    (function() {
+      try {
+        var t = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        var splash = document.getElementById('initial-splash-overlay');
+        if (splash && t === 'dark') { splash.style.background = '#1a1917'; }
+
+        // Activar el logo de 0ms ÚNICAMENTE en pantallas móviles (< 768px)
+        if (window.innerWidth < 768) {
+          var mobileLogo = document.getElementById('mobile-splash-logo');
+          if (mobileLogo) mobileLogo.style.display = 'flex';
+        }
+      } catch(e) {}
+    })();
+  </script>
+
   <div id="root"></div>
   <script type="module" src="/src/main.jsx"></script>
 </body>

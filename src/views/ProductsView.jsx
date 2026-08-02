@@ -1041,6 +1041,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                         onClick={() => {
                             triggerHaptic && triggerHaptic();
                             if (deleteAllConfirmText.trim().toUpperCase() === 'BORRAR') {
+                                localStorage.setItem('confirm_bulk_delete_catalog_flag', 'true');
                                 setProducts([]);
                                 storageService.removeItem('bodega_products_v1');
                                 setIsDeleteAllModalOpen(false);
