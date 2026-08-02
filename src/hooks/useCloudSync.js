@@ -81,7 +81,7 @@ function _debouncePush(key, value) {
     }, delay);
 }
 
-export const pushCloudSync = async (key, value) => {
+export const pushCloudSync = async (key, value, forceUnconditional = false) => {
     if (!supabaseCloud) return;
     if (isSyncingFromCloud) return;          // Nunca re-emitir lo que llegó de la nube
     if (!isCloudSyncActive) return;          // Omitir si la sesión cloud no está activa
@@ -90,6 +90,14 @@ export const pushCloudSync = async (key, value) => {
 
     // SEC-002: jamás empujar `abasto-auth-storage` aunque accidentalmente lo pidan.
     if (key === 'abasto-auth-storage') return;
+
+    // EGRESS & REQUEST SAVER:
+    // Si el valor a enviar es idéntico al último enviado con éxito a la nube, abortar antes del POST HTTP salvo que sea forceUnconditional
+    const hashKey = LAST_PUSH_HASH_PREFIX + key;
+    const currentHash = quickHash(value);
+    if (!forceUnconditional && localStorage.getItem(hashKey) === currentHash) {
+        return;
+    }
 
     try {
         const collectionType = LOCAL_KEYS.includes(key) ? 'local' : 'store';
@@ -103,8 +111,7 @@ export const pushCloudSync = async (key, value) => {
         }, { onConflict: 'device_id,collection,doc_id' });
 
         // Update local hash to prevent periodic push from re-uploading
-        const hashKey = LAST_PUSH_HASH_PREFIX + key;
-        localStorage.setItem(hashKey, quickHash(value));
+        localStorage.setItem(hashKey, currentHash);
 
     } catch (e) {
         // Silencioso en producción
@@ -306,7 +313,7 @@ export function useCloudSync(deviceId) {
                 isInitialized.current = true;
 
                 // Sincronizar automáticamente todos los datos del POS a la nube en segundo plano (Patrón Donde Juancho)
-                forceSyncAllPOSData(deviceId).catch(() => {});
+                forceSyncAllPOSData(deviceId, true).catch(() => {});
 
                 // ── Pull Inicial / Sincronización de Importación ──
                 const backupImported = localStorage.getItem('pda_backup_imported_flag') === 'true';

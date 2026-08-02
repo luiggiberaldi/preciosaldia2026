@@ -96,6 +96,25 @@ export function ProductProvider({ children }) {
         return () => { isMounted = false; };
     }, []);
 
+    // Escuchar actualizaciones remotas del almacén de datos (ej. useMonitorSync en Modo Supervisor)
+    useEffect(() => {
+        const handleStorageUpdate = async (e) => {
+            if (savingRef.current) return;
+            const updatedKey = e?.detail?.key || e?.key;
+            if (!updatedKey || updatedKey === 'bodega_products_v1') {
+                const refreshedProducts = await storageService.getItem('bodega_products_v1', []);
+                setProducts(refreshedProducts);
+            }
+        };
+
+        window.addEventListener('app_storage_update', handleStorageUpdate);
+        window.addEventListener('storage', handleStorageUpdate);
+        return () => {
+            window.removeEventListener('app_storage_update', handleStorageUpdate);
+            window.removeEventListener('storage', handleStorageUpdate);
+        };
+    }, []);
+
     // One-time migration: assign priceCop to existing products that don't have it
     useEffect(() => {
         if (isLoadingProducts || products.length === 0) return;
