@@ -8,12 +8,16 @@ import {
     TrendingUp, Package, Coins, Users, LogOut, 
     RefreshCw, Wifi, WifiOff, Clock, FileText, DollarSign,
     Wallet, CreditCard, Smartphone, Banknote, ArrowDownRight,
-    ShieldCheck, Hash, AlertTriangle, Search, X, ChevronLeft, ChevronRight
+    ShieldCheck, Hash, AlertTriangle, Search, X, ChevronLeft, ChevronRight,
+    Plus, Pencil, Trash2
 } from 'lucide-react';
 import { formatBs, formatCop } from '../utils/calculatorUtils';
 import { getLocalISODate } from '../utils/dateHelpers';
 import { getPaymentLabel, toTitleCase } from '../config/paymentMethods';
 import DevicesManager from '../components/Settings/DevicesManager';
+import SupervisorRateModal from '../components/Monitor/SupervisorRateModal';
+import RemoteProductFormModal from '../components/Monitor/RemoteProductFormModal';
+import RemoteUsersManager from '../components/Monitor/RemoteUsersManager';
 
 // Helper: icon por método de pago
 const PAYMENT_METHOD_ICONS = {
@@ -44,6 +48,9 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
     const [selectedCierreId, setSelectedCierreId] = useState(null);
     const [searchTermInventario, setSearchTermInventario] = useState('');
     const [filterStockInventario, setFilterStockInventario] = useState('todos'); // 'todos', 'bajo', 'agotado'
+    const [showRateModal, setShowRateModal] = useState(false);
+    const [showProductFormModal, setShowProductFormModal] = useState(false);
+    const [productToEditRemote, setProductToEditRemote] = useState(null);
 
     const filteredProducts = useMemo(() => {
         if (!products) return [];
@@ -477,6 +484,15 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                     </button>
 
                     <button 
+                        onClick={() => { triggerHaptic?.(); setShowRateModal(true); }}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-900/40 dark:text-emerald-300 hover:bg-emerald-100 transition-all shadow-sm active:scale-95"
+                        title="Ajustar Tasa Remota"
+                    >
+                        <TrendingUp size={14} />
+                        <span>Ajustar Tasa</span>
+                    </button>
+
+                    <button 
                         onClick={() => { triggerHaptic?.(); setShowDisconnectConfirm(true); }}
                         className="p-2.5 rounded-2xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 dark:hover:text-rose-400 transition-colors"
                         title="Desvincular Dispositivo"
@@ -539,6 +555,16 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                         }`}
                     >
                         Terminales
+                    </button>
+                    <button
+                        onClick={() => { triggerHaptic?.(); setViewTab('cajeros'); }}
+                        className={`flex-1 py-2 px-2 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap ${
+                            viewTab === 'cajeros' 
+                                ? 'bg-white dark:bg-slate-800 text-slate-850 dark:text-white shadow-sm' 
+                                : 'text-slate-400 hover:text-slate-650 dark:hover:text-slate-200'
+                        }`}
+                    >
+                        Cajeros
                     </button>
                 </div>
 
@@ -1134,6 +1160,19 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                                 )}
                             </div>
 
+                            {/* Botón Crear Producto Remoto */}
+                            <button
+                                onClick={() => {
+                                    triggerHaptic?.();
+                                    setProductToEditRemote(null);
+                                    setShowProductFormModal(true);
+                                }}
+                                className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-2xl shadow-md transition-all shrink-0 active:scale-95"
+                            >
+                                <Plus size={16} />
+                                <span>Nuevo Producto</span>
+                            </button>
+
                             {/* Filtro de Segmentación de Stock */}
                             <div className="flex bg-slate-100 dark:bg-slate-950 p-1 rounded-2xl border border-slate-200/60 dark:border-slate-850 self-start md:self-auto shrink-0 shadow-inner">
                                 <button
@@ -1253,6 +1292,44 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                                                             {p.isWeight ? `${stock.toFixed(3)} Kg` : `${stock} u`}
                                                         </span>
                                                     </div>
+
+                                                    {/* Acciones Remotas */}
+                                                    <div className="flex items-center gap-1">
+                                                        <button
+                                                            onClick={() => {
+                                                                triggerHaptic?.();
+                                                                setProductToEditRemote(p);
+                                                                setShowProductFormModal(true);
+                                                            }}
+                                                            className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-blue-600 rounded-xl transition-colors"
+                                                            title="Editar Producto Remotamente"
+                                                        >
+                                                            <Pencil size={15} />
+                                                        </button>
+                                                        <button
+                                                            onClick={async () => {
+                                                                if (!window.confirm(`¿Eliminar remotamente "${p.name}" de la caja?`)) return;
+                                                                triggerHaptic?.();
+                                                                try {
+                                                                    const channel = supabaseCloud.channel('system_commands');
+                                                                    await channel.subscribe();
+                                                                    await channel.send({
+                                                                        type: 'broadcast',
+                                                                        event: 'supervisor_product_update',
+                                                                        payload: { targetDeviceId: pairedDeviceId, action: 'delete', productId: p.id }
+                                                                    });
+                                                                    supabaseCloud.removeChannel(channel).catch(() => {});
+                                                                    showToast?.(`Eliminando "${p.name}" en caja...`, 'info');
+                                                                } catch (e) {
+                                                                    showToast?.('Error al eliminar producto', 'error');
+                                                                }
+                                                            }}
+                                                            className="p-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-400 hover:text-rose-600 rounded-xl transition-colors"
+                                                            title="Eliminar Producto Remotamente"
+                                                        >
+                                                            <Trash2 size={15} />
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         );
@@ -1307,7 +1384,32 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                         <DevicesManager triggerHaptic={triggerHaptic} currentDeviceId={localStorage.getItem('pda_device_id')} />
                     </div>
                 )}
+
+                {/* ── SECCIÓN 5: CAJEROS Y USUARIOS ── */}
+                {viewTab === 'cajeros' && (
+                    <RemoteUsersManager targetDeviceId={pairedDeviceId} />
+                )}
             </main>
+
+            {/* Modal Ajustar Tasa Remota */}
+            <SupervisorRateModal
+                isOpen={showRateModal}
+                onClose={() => setShowRateModal(false)}
+                targetDeviceId={pairedDeviceId}
+                currentRateMode={localStorage.getItem('bodega_rate_mode')}
+                currentCustomRate={localStorage.getItem('bodega_custom_rate')}
+            />
+
+            {/* Modal Editar / Crear Producto Remoto */}
+            <RemoteProductFormModal
+                isOpen={showProductFormModal}
+                onClose={() => {
+                    setShowProductFormModal(false);
+                    setProductToEditRemote(null);
+                }}
+                targetDeviceId={pairedDeviceId}
+                productToEdit={productToEditRemote}
+            />
 
             {/* Modal de Confirmación de Desvinculación */}
             {showDisconnectConfirm && (
