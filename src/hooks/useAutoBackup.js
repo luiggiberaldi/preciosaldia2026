@@ -85,8 +85,8 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                 await storageService.setItem(BACKUP_KEY, fullBackup);
 
                 // Subir a la nube solo si hay conexión, deviceId y emparejamiento/licencia cloud activa
-                // GUARDA-RAIL LICENCIA: los equipos en modo demo NO suben respaldos a Drive ni a la nube
-                if (demo) return;
+                // GUARDA-RAIL LICENCIA: los equipos en modo demo NO suben respaldos periódicos a Drive ni a la nube, salvo que sea una solicitud forzada
+                if (demo && !forceUpload) return;
 
                 const hasCloudPairing = localStorage.getItem('pda_cloud_session') || localStorage.getItem('pda_paired_device') || premium;
                 const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
