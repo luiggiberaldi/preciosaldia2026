@@ -9,10 +9,17 @@ export async function uploadToGoogleDrive(payload, deviceId, clientName) {
         return null;
     }
 
+    // GUARDA-RAIL: validación post-sanitización en el punto de envío (defensa en profundidad)
+    const sanitizedClientName = (() => {
+        const name = typeof clientName === 'string' ? clientName.trim() : '';
+        const valid = name.length >= 2 && !/^\d+$/.test(name);
+        return valid ? name : `Bodega_${(deviceId || 'Unknown').substring(0, 8)}`;
+    })();
+
     const body = JSON.stringify({
         action: 'upload_backup',
         deviceId,
-        clientName: clientName || 'Mi Negocio',
+        clientName: sanitizedClientName,
         backupData: payload
     });
 

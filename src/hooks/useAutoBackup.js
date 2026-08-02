@@ -21,10 +21,31 @@ function quickHash(obj) {
     return `${str.length}_${h >>> 0}`;
 }
 
+/** Obtiene y sanitiza el nombre del negocio para el nombre del archivo en Drive */
+function getClientName(deviceId) {
+    const raw = localStorage.getItem('business_name')
+        || localStorage.getItem('restaurant_name')
+        || '';
+
+    if (raw.trim().length > 0 && !/^\d+$/.test(raw.trim())) {
+        const sanitized = raw.trim()
+            .replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ\s_-]/g, '')
+            .replace(/\s+/g, '_')
+            .trim();
+
+        if (sanitized.length >= 2) return sanitized;
+    }
+
+    return `Bodega_${(deviceId || 'Unknown').substring(0, 8)}`;
+}
+
 export function useAutoBackup(isPremium, isDemo, deviceId) {
     const intervalRef = useRef(null);
     const initialTimerRef = useRef(null);
     const performBackupRef = useRef(null);
+    const isRunningRef = useRef(false);
+    const runningTimeoutRef = useRef(null);
+    const processedIdsRef = useRef(new Set());
 
     const configRef = useRef({ isPremium, isDemo, deviceId });
     useEffect(() => {
@@ -64,6 +85,9 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                 await storageService.setItem(BACKUP_KEY, fullBackup);
 
                 // Subir a la nube solo si hay conexión, deviceId y emparejamiento/licencia cloud activa
+                // GUARDA-RAIL LICENCIA: los equipos en modo demo NO suben respaldos a Drive ni a la nube
+                if (demo) return;
+
                 const hasCloudPairing = localStorage.getItem('pda_cloud_session') || localStorage.getItem('pda_paired_device') || premium;
                 const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
@@ -107,7 +131,7 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                     const customerCount = Array.isArray(idbData.bodega_customers_v1) ? idbData.bodega_customers_v1.length : 0;
                     const sizeBytes = JSON.stringify(payloadToUpload).length;
 
-                    const clientName = localStorage.getItem('business_name') || 'Mi Negocio';
+                    const clientName = getClientName(devId);
                     let driveResult = null;
                     try {
                         driveResult = await uploadToGoogleDrive(payloadToUpload, devId, clientName);
@@ -193,31 +217,66 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
     // socket abierto — evita gastar cupo de conexiones Realtime en instalaciones
     // sin licencia (free/demo vencida) que nunca usarán el backup remoto forzado.
     useEffect(() => {
-        // Garantizar que cualquier dispositivo con deviceId activo escuche solicitudes remotas de la Estación Maestra
-        if (!deviceId || !supabaseCloud) return;
+        // Solo dispositivos con licencia activa (no demo) escuchan solicitudes remotas de la Estación Maestra.
+        // Los demos no tienen acceso a backup remoto en Drive.
+        const { isDemo: demoActive } = configRef.current;
+        if (!deviceId || !supabaseCloud || demoActive) return;
 
         let channel = null;
 
         const checkPendingRequests = async () => {
+            // GUARDA-RAIL: semáforo anti-doble-ejecución (poll + realtime)
+            if (isRunningRef.current) return;
+            isRunningRef.current = true;
+
+            // ARNES V1: auto-liberar semáforo si la subida cuelga por >2 minutos
+            runningTimeoutRef.current = setTimeout(() => {
+                isRunningRef.current = false;
+                console.warn('[AutoBackup] Semáforo de backup liberado por timeout (2min)');
+            }, 2 * 60 * 1000);
+
             try {
                 const { data } = await supabaseCloud
                     .from('backup_requests')
-                    .select('status')
+                    .select('id, status, created_at')
                     .eq('device_id', deviceId)
                     .eq('status', 'pending')
+                    .order('created_at', { ascending: false })
                     .maybeSingle();
 
-                if (data) {
-                    console.log('[AutoBackup] Solicitud de backup pendiente detectada. Ejecutando...');
-                    await performBackupRef.current?.(true);
-                    await supabaseCloud.from('backup_requests').update({
-                        status: 'completed',
-                        completed_at: new Date().toISOString()
-                    }).eq('device_id', deviceId);
-                    console.log('[AutoBackup] Backup pendiente procesado exitosamente.');
+                if (data?.id) {
+                    // GUARDA-RAIL V4: usar sessionStorage para persistir IDs entre reloads en la misma pestaña
+                    const sessionKey = `backup_processed_${data.id}`;
+                    if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(sessionKey)) return;
+
+                    // ARNES V2: pruning del Set (máx 100 IDs en memoria)
+                    if (processedIdsRef.current.size > 100) processedIdsRef.current.clear();
+                    if (processedIdsRef.current.has(data.id)) return;
+
+                    try {
+                        console.log(`[AutoBackup] Solicitud de backup pendiente detectada (${data.id}). Ejecutando...`);
+                        await performBackupRef.current?.(true);
+
+                        // ARNES V3: marcar como procesado SOLO después de éxito
+                        processedIdsRef.current.add(data.id);
+                        if (typeof sessionStorage !== 'undefined') {
+                            try { sessionStorage.setItem(sessionKey, '1'); } catch {}
+                        }
+
+                        await supabaseCloud.from('backup_requests').update({
+                            status: 'completed',
+                            completed_at: new Date().toISOString()
+                        }).eq('id', data.id);
+                        console.log('[AutoBackup] Backup pendiente procesado exitosamente.');
+                    } catch (backupErr) {
+                        console.error('[AutoBackup] Backup falló, se reintentará:', backupErr);
+                    }
                 }
             } catch (err) {
                 console.error('[AutoBackup] Error al procesar solicitud pendiente:', err);
+            } finally {
+                if (runningTimeoutRef.current) clearTimeout(runningTimeoutRef.current);
+                isRunningRef.current = false;
             }
         };
 
@@ -236,7 +295,7 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
             }, async (payload) => {
                 if (payload.new?.status === 'pending') {
                     console.log('[AutoBackup] Solicitud de backup recibida en tiempo real. Ejecutando...');
-                    await performBackupRef.current?.(true); // forzar subida
+                    await checkPendingRequests(); // Usar checkPendingRequests para pasar por los semáforos
                 }
             })
             .subscribe();

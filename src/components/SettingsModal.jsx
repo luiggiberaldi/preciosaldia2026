@@ -7,6 +7,7 @@ import PaymentMethodsManager from './Settings/PaymentMethodsManager';
 
 import { useSecurity } from '../hooks/useSecurity';
 import { useProductContext } from '../context/ProductContext';
+import { decompressString } from '../utils/compression';
 
 export default function SettingsModal({ isOpen, onClose, products, onImport, triggerHaptic }) {
     const { 
@@ -109,44 +110,71 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
             try {
                 setImportStatus('loading');
                 setStatusMessage('Restaurando datos...');
-                const json = JSON.parse(e.target.result);
+                let json = JSON.parse(e.target.result);
 
-                if (!json.data || (!json.data.bodega_products_v1 && !json.data.bodega_accounts_v2)) {
-                    throw new Error('Formato de archivo inválido.');
+                // 1. Si es formato v2.0 comprimido (Gzip Base64), descomprimir la clave data
+                if (json && json.compressed === true && typeof json.data === 'string') {
+                    const decompressedStr = await decompressString(json.data);
+                    const decompressedObj = JSON.parse(decompressedStr);
+                    json = decompressedObj;
                 }
 
-                // Bypass storageService completely to prevent app_storage_update events from firing.
-                // If events fire, ProductContext updates state and triggers its auto-save, which might overwrite our imported data before reload finishes.
+                // 2. Extraer mapas de IndexedDB y localStorage según la versión del esquema
+                let idbMap = {};
+                let lsMap = {};
+
+                if (json.data && (json.data.idb || json.data.ls)) {
+                    // Formato v2.0: { timestamp, version: "2.0", data: { idb: {...}, ls: {...} } }
+                    idbMap = json.data.idb || {};
+                    lsMap = json.data.ls || {};
+                } else if (json.idb || json.ls) {
+                    // Formato directo { idb: {...}, ls: {...} }
+                    idbMap = json.idb || {};
+                    lsMap = json.ls || {};
+                } else if (json.data && (json.data.bodega_products_v1 || json.data.bodega_accounts_v2 || json.data.my_categories_v1)) {
+                    // Formato v1.0 legado: { timestamp, version: "1.0", data: { bodega_products_v1: "...", ... } }
+                    idbMap = json.data;
+                } else if (Array.isArray(json)) {
+                    // Array directo de productos
+                    idbMap = { bodega_products_v1: json };
+                } else if (json.bodega_products_v1) {
+                    idbMap = json;
+                } else {
+                    throw new Error('El archivo no contiene una estructura de respaldo reconocida.');
+                }
+
                 const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
 
-                if (json.data.bodega_products_v1) {
-                    await lf.setItem('bodega_products_v1', typeof json.data.bodega_products_v1 === 'string' ? JSON.parse(json.data.bodega_products_v1) : json.data.bodega_products_v1);
-                }
-                if (json.data.bodega_accounts_v2) {
-                    await lf.setItem('bodega_accounts_v2', typeof json.data.bodega_accounts_v2 === 'string' ? JSON.parse(json.data.bodega_accounts_v2) : json.data.bodega_accounts_v2);
+                // 3. Escribir todas las claves de IndexedDB
+                let restoredCount = 0;
+                for (const [key, val] of Object.entries(idbMap)) {
+                    if (val !== null && val !== undefined) {
+                        const parsedVal = typeof val === 'string' ? JSON.parse(val) : val;
+                        await lf.setItem(key, parsedVal);
+                        if (key === 'bodega_products_v1' && Array.isArray(parsedVal)) {
+                            restoredCount = parsedVal.length;
+                        }
+                    }
                 }
 
-                if (json.data.street_rate_bs) localStorage.setItem('street_rate_bs', json.data.street_rate_bs);
-                if (json.data.catalog_use_auto_usdt) localStorage.setItem('catalog_use_auto_usdt', json.data.catalog_use_auto_usdt);
-                if (json.data.catalog_custom_usdt_price) localStorage.setItem('catalog_custom_usdt_price', json.data.catalog_custom_usdt_price);
-                if (json.data.catalog_show_cash_price) localStorage.setItem('catalog_show_cash_price', json.data.catalog_show_cash_price);
-                if (json.data.monitor_rates_v12) localStorage.setItem('monitor_rates_v12', json.data.monitor_rates_v12);
-                if (json.data.business_name) localStorage.setItem('business_name', json.data.business_name);
-                if (json.data.business_rif) localStorage.setItem('business_rif', json.data.business_rif);
-
-                if (json.data.my_categories_v1) {
-                    const cats = typeof json.data.my_categories_v1 === 'string' ? JSON.parse(json.data.my_categories_v1) : json.data.my_categories_v1;
-                    await lf.setItem('my_categories_v1', cats);
+                // 4. Escribir todas las claves de localStorage
+                for (const [key, val] of Object.entries(lsMap)) {
+                    if (val !== null && val !== undefined) {
+                        localStorage.setItem(key, typeof val === 'object' ? JSON.stringify(val) : val);
+                    }
                 }
+
+                // Forzar sincronización incondicional post-importación
+                localStorage.setItem('pda_cloud_sync_pending', 'true');
 
                 setImportStatus('success');
-                setStatusMessage('Datos restaurados. Recargando...');
+                setStatusMessage(`¡Respaldo restaurado! (${restoredCount} productos). Recargando...`);
                 setTimeout(() => window.location.reload(), 1200);
 
             } catch (error) {
-                console.error(error);
+                console.error('[ImportBackup Error]', error);
                 setImportStatus('error');
-                setStatusMessage('Error: El archivo no es válido.');
+                setStatusMessage('Error: ' + (error.message || 'El archivo no es válido.'));
             }
         };
         reader.readAsText(file);
