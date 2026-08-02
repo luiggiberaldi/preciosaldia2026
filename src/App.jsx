@@ -281,12 +281,14 @@ export default function App() {
   if (isMonitorMode) {
     return (
       <ErrorBoundary>
-        <ProductProvider rates={rates} rateDiscrepancyWarning={rateDiscrepancyWarning}>
-          <ImagePrecacheRunner />
-          <Suspense fallback={<div className="flex-1 flex items-center justify-center p-6 text-slate-500 font-bold">Cargando monitor...</div>}>
-            <OwnerMonitorView theme={theme} toggleTheme={toggleTheme} triggerHaptic={triggerHaptic} />
-          </Suspense>
-        </ProductProvider>
+        <RateProvider rates={rates} rateDiscrepancyWarning={rateDiscrepancyWarning}>
+          <ProductProvider rates={rates} rateDiscrepancyWarning={rateDiscrepancyWarning}>
+            <ImagePrecacheRunner />
+            <Suspense fallback={<div className="flex-1 flex items-center justify-center p-6 text-slate-500 font-bold">Cargando monitor...</div>}>
+              <OwnerMonitorView theme={theme} toggleTheme={toggleTheme} triggerHaptic={triggerHaptic} />
+            </Suspense>
+          </ProductProvider>
+        </RateProvider>
       </ErrorBoundary>
     );
   }
