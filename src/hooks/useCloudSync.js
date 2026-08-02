@@ -145,6 +145,34 @@ export const queueCloudSync = (key, value) => {
     _debouncePush(key, value);
 };
 
+/**
+ * Empuja de forma forzada TODOS los datos del punto de venta a la nube Supabase.
+ * Se invoca al iniciar la app o al vincular el dispositivo.
+ */
+export const forceSyncAllPOSData = async (overrideDeviceId, forceUnconditional = false) => {
+    if (!supabaseCloud) return;
+    const isMonitor = localStorage.getItem('pda_pairing_mode') === 'monitor';
+    if (isMonitor) return;
+
+    const activeDeviceId = overrideDeviceId || _currentDeviceId || localStorage.getItem('pda_device_id');
+    if (!activeDeviceId) return;
+
+    isCloudSyncActive = true;
+
+    try {
+        const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
+        const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_accounts_v2'];
+        for (const key of criticalKeys) {
+            const val = await lf.getItem(key);
+            if (val !== null) {
+                await pushCloudSync(key, val, forceUnconditional);
+            }
+        }
+    } catch (e) {
+        console.warn('[CloudSync] Error en sincronización forzada POS:', e);
+    }
+};
+
 // ─── Validación de Esquema para Sincronización Remota (DATA-001) ─────────────
 const STORE_SCHEMAS = {
     'bodega_products_v1': (data) => Array.isArray(data),
@@ -276,6 +304,9 @@ export function useCloudSync(deviceId) {
 
                 isCloudSyncActive = true;
                 isInitialized.current = true;
+
+                // Sincronizar automáticamente todos los datos del POS a la nube en segundo plano (Patrón Donde Juancho)
+                forceSyncAllPOSData(deviceId).catch(() => {});
 
                 // ── Pull Inicial / Sincronización de Importación ──
                 const backupImported = localStorage.getItem('pda_backup_imported_flag') === 'true';
