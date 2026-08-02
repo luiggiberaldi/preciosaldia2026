@@ -254,7 +254,22 @@ export function useCloudSync(deviceId) {
 
                     if (pairingErr || !pairing) {
                         isCloudSyncActive = false;
-                        console.log('[CloudSync] Omitiendo sincronización: sin sesión cloud ni emparejamiento activo.');
+                        console.log('[CloudSync] Omitiendo sincronización: sin sesión cloud ni emparejamiento activo. Escuchando emparejamientos...');
+                        if (!globalSubscription) {
+                            globalSubscription = supabaseCloud
+                                .channel(`device_pairings:${deviceId}`)
+                                .on('postgres_changes', {
+                                    event: '*',
+                                    schema: 'public',
+                                    table: 'device_pairings',
+                                    filter: `primary_device_id=eq.${deviceId}`
+                                }, () => {
+                                    console.log('[CloudSync] ¡Emparejamiento detectado en tiempo real! Activando sincronización...');
+                                    isInitialized.current = false;
+                                    initSync();
+                                })
+                                .subscribe();
+                        }
                         return;
                     }
                 }
@@ -304,18 +319,18 @@ export function useCloudSync(deviceId) {
                 }
 
                 // ── Auto-recuperación: Purgar/subir datos locales que no llegaron a enviarse debido al bug anterior ──
-                // Solo si cambiaron desde el último push (mismo hash-guard que forcePushLocalData,
-                // para no re-subir todo en cada arranque/reconexión sin necesidad).
                 try {
                     const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
                     const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_accounts_v2'];
+                    const existingCloudKeys = new Set((docs || []).map(d => d.doc_id));
+
                     for (const key of criticalKeys) {
                         const localValue = await lf.getItem(key);
                         if (!localValue) continue;
 
                         const hashKey = LAST_PUSH_HASH_PREFIX + key;
                         const currentHash = quickHash(localValue);
-                        if (localStorage.getItem(hashKey) === currentHash) continue;
+                        if (existingCloudKeys.has(key) && localStorage.getItem(hashKey) === currentHash) continue;
 
                         // Subimos los datos locales a la base de datos para sincronizar el historial
                         await pushCloudSync(key, localValue);
