@@ -144,10 +144,17 @@ export async function processVoidSale(sale, currentSales, currentProducts) {
 
         // FIN-032: era console.log — movido a logEvent para auditoría.
         const user = useAuthStore.getState().usuarioActivo;
+        // TIP-003 (D9): si la venta tenía propina donada, el monto queda registrado
+        // en la auditoría. NO se revierte dinero automáticamente: el efectivo físico
+        // lo resuelve el operador. Los reportes ya excluyen las ventas ANULADA.
+        const tipDonadaUsd = round2(sale.tipDonated?.amountUsd || 0);
         logEvent('VENTA', 'VENTA_ANULADA',
-            `Venta #${sale.saleNumber || '?'} anulada - $${round2(sale.totalUsd || 0)}`,
+            `Venta #${sale.saleNumber || '?'} anulada - $${round2(sale.totalUsd || 0)}`
+            + (tipDonadaUsd > 0
+                ? ` - ATENCION: incluia propina donada de $${tipDonadaUsd}. Verifica el efectivo en caja.`
+                : ''),
             user,
-            { saleId: sale.id, tipo: sale.tipo, totalUsd: sale.totalUsd }
+            { saleId: sale.id, tipo: sale.tipo, totalUsd: sale.totalUsd, tipDonatedUsd: tipDonadaUsd }
         );
 
         return { updatedSales, updatedProducts, updatedCustomers };

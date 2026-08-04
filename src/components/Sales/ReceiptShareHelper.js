@@ -88,6 +88,13 @@ export function buildReceiptWhatsAppUrl(receipt, currentRate) {
             : `\nVUELTO: ${fmtUsd(r.changeUsd)} / Bs ${formatBs(r.changeBs)}`
         : '';
 
+    // TIP-007: propina donada
+    const tipLine = (r.tipDonated && r.tipDonated.amountUsd > 0.005)
+        ? (r.tipDonated.currency === 'BS'
+            ? `\nCLIENTE DEJO EL CAMBIO: Bs ${formatBs(r.tipDonated.amountBs)}`
+            : `\nCLIENTE DEJO EL CAMBIO: ${fmtUsd(r.tipDonated.amountUsd)}`)
+        : '';
+
     // Fiado
     const fiadoRate = currentRate || r.rate || 1;
     const fiadoLine = r.fiadoUsd > 0.005
@@ -135,6 +142,7 @@ export function buildReceiptWhatsAppUrl(receipt, currentRate) {
         totalLine,
         paymentsLines ? `\nPAGOS:\n${paymentsLines}` : '',
         changeLines,
+        tipLine,
         fiadoLine,
         sep,
         r.tasaCop > 0 ? `Tasa COP: ${r.tasaCop.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` : '',

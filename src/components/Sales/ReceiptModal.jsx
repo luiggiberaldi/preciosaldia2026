@@ -280,6 +280,19 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                                     </div>
                                 )}
 
+                                {/* TIP-007: constancia de la propina donada. */}
+                                {receipt.tipDonated && receipt.tipDonated.amountUsd > 0 && (
+                                    <div className="flex justify-between text-emerald-700 font-bold mt-2 pt-2 border-t border-slate-200">
+                                        <span>Cliente dejó el cambio:</span>
+                                        <span>
+                                            {receipt.tipDonated.currency === 'BS'
+                                                ? `Bs ${formatBs(receipt.tipDonated.amountBs)}`
+                                                : `$${receipt.tipDonated.amountUsd.toFixed(2)}`
+                                            }
+                                        </span>
+                                    </div>
+                                )}
+
                                 {receipt.fiadoUsd > 0 && (
                                     <div className="flex justify-between text-amber-600 font-bold mt-2 pt-2 border-t border-slate-200">
                                         <span>Pendiente (Fiado):</span>

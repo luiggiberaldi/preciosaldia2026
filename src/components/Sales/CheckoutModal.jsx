@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { X, Users, Receipt, ArrowLeftRight, AlertTriangle, Smartphone, Lock, LayoutGrid } from 'lucide-react';
+import { X, Users, Receipt, ArrowLeftRight, AlertTriangle, Smartphone, Lock, LayoutGrid, HandCoins, CheckCircle } from 'lucide-react';
 import CasheaIcon from '../CasheaIcon';
 import { formatBs, formatCop } from '../../utils/calculatorUtils';
 import { mulR, divR, subR, round2 } from '../../utils/dinero';
@@ -59,6 +59,11 @@ export default function CheckoutModal({
         paymentWarning,
         confirmWarning,
         dismissWarning,
+        // TIP: propina donada.
+        isTipDonated,
+        toggleTipDonated,
+        tipConfirmPending,
+        tipCurrency,
         // Cashea outputs
         casheaActive,
         setCasheaActive,
@@ -364,6 +369,30 @@ export default function CheckoutModal({
                     {/* DESGLOSE DE VUELTO COMPACTO CON BOTONES INTEGRADOS */}
                     {isPaid && changeUsd > 0.009 && (
                         <div className="mt-1.5 pt-1.5 border-t border-emerald-200/50 dark:border-emerald-800/30 flex flex-col gap-1">
+                            {/* TIP: el cliente deja el cambio. Paridad con el modo POS. */}
+                            <button
+                                type="button"
+                                onClick={toggleTipDonated}
+                                className={`w-full py-2 px-2.5 rounded-lg font-black text-[10px] flex items-center justify-center gap-1.5 transition-all active:scale-[0.97] ${
+                                    isTipDonated
+                                        ? 'bg-emerald-600 text-white shadow shadow-emerald-500/30'
+                                        : tipConfirmPending
+                                            ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-2 border-amber-400 animate-pulse'
+                                            : 'bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
+                                }`}
+                            >
+                                <HandCoins size={13} className="shrink-0" />
+                                <span className="truncate">
+                                    {isTipDonated
+                                        ? `Deja el cambio (${tipCurrency === 'BS' ? `Bs ${formatBs(changeBs)}` : `$${changeUsd.toFixed(2)}`})`
+                                        : tipConfirmPending
+                                            ? `Confirmar: donar $${changeUsd.toFixed(2)}`
+                                            : 'Cliente deja el cambio (Donar a Caja)'}
+                                </span>
+                                {isTipDonated && <CheckCircle size={12} className="text-white shrink-0" />}
+                            </button>
+
+                            {!isTipDonated && (<>
                             <div className="flex items-center gap-2">
                                 <div className="relative flex-1">
                                     <input
@@ -424,6 +453,7 @@ export default function CheckoutModal({
                                     </div>
                                 </div>
                             )}
+                            </>)}
                         </div>
                     )}
                 </div>

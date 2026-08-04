@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { Banknote, CreditCard } from 'lucide-react';
+import { Banknote, CreditCard, HandCoins, CheckCircle } from 'lucide-react';
 import { round2 } from '../../../../utils/dinero';
 import TransactionSummary from './TransactionSummary';
 import CheckoutCustomerPicker from '../../CheckoutCustomerPicker';
@@ -30,6 +30,10 @@ const PaymentLeftColumn = ({
     isChangeCredited,
     handleCreditChange,
     setIsChangeCredited,
+    isTipDonated,
+    toggleTipDonated,
+    tipConfirmPending,
+    tipCurrency,
     deudaCliente,
     isVueltoValido,
     casheaActive,
@@ -141,13 +145,39 @@ const PaymentLeftColumn = ({
 
                     {/* Vuelto */}
                     {isPaid && cambioUSD > 0.009 && (
-                        <div className="flex flex-col justify-center items-center text-center p-5 rounded-xl border-2 border-emerald-200 dark:border-emerald-800/40 bg-emerald-50 dark:bg-emerald-950/20 shadow-sm transition-all">
-                            <p className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-700 dark:text-emerald-400">Vuelto</p>
+                        <div className={`flex flex-col justify-center items-center text-center p-5 rounded-xl border-2 bg-emerald-50 dark:bg-emerald-950/20 shadow-sm transition-all ${isTipDonated ? 'border-emerald-500 ring-2 ring-emerald-400/50' : 'border-emerald-200 dark:border-emerald-800/40'}`}>
+                            <p className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-700 dark:text-emerald-400">{isTipDonated ? 'Vuelto Dejado En Caja (Propina)' : 'Vuelto'}</p>
                             <p className="text-4xl lg:text-5xl font-black text-emerald-700 dark:text-emerald-400 my-2">${cambioUSD.toFixed(2)}</p>
                             <div className="text-lg font-black text-emerald-600 dark:text-emerald-300">
                                 Bs {round2(cambioUSD * tasaSegura).toLocaleString('es-VE', { minimumFractionDigits: 2 })}
                             </div>
-                            {/* Distribución de vuelto */}
+
+                            {/* TIP: el cliente deja el cambio. Donarlo y repartirlo a la vez
+                                es contradictorio, así que el reparto se oculta al activarlo. */}
+                            <button
+                                type="button"
+                                onClick={toggleTipDonated}
+                                className={`w-full mt-3 py-2.5 px-3 rounded-lg font-black text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.97] ${
+                                    isTipDonated
+                                        ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/30'
+                                        : tipConfirmPending
+                                            ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-2 border-amber-400 animate-pulse'
+                                            : 'bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100 dark:hover:bg-slate-700'
+                                }`}
+                            >
+                                <HandCoins size={16} className="shrink-0" />
+                                <span className="truncate">
+                                    {isTipDonated
+                                        ? `Deja el cambio (${tipCurrency === 'BS' ? `Bs ${Math.round(cambioUSD * tasaSegura).toLocaleString('es-VE')}` : `$${cambioUSD.toFixed(2)}`})`
+                                        : tipConfirmPending
+                                            ? `Confirmar: donar $${cambioUSD.toFixed(2)}`
+                                            : 'Cliente deja el cambio (Donar a Caja)'}
+                                </span>
+                                {isTipDonated && <CheckCircle size={14} className="text-white shrink-0" />}
+                            </button>
+
+                            {/* Distribución de vuelto — oculta si el cliente dona el cambio */}
+                            {!isTipDonated && (
                             <div className="w-full mt-3 pt-3 border-t border-emerald-200/60 dark:border-emerald-800/30 flex gap-2">
                                 <div className="flex-1">
                                     <label className="text-[9px] font-black text-emerald-700 dark:text-emerald-500 uppercase block mb-1">En $ USD</label>
@@ -200,6 +230,7 @@ const PaymentLeftColumn = ({
                                     </div>
                                 </div>
                             </div>
+                            )}
                         </div>
                     )}
 

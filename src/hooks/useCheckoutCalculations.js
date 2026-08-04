@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { round2, divR, mulR, subR, sumR } from '../utils/dinero';
 import { FINANCIAL_EPSILON } from '../utils/securityConstants';
 import { CurrencyService } from '../services/CurrencyService';
@@ -22,6 +22,9 @@ export function useCheckoutCalculations({
     const [barValues, setBarValues] = useState({});
     const [changeUsdGiven, setChangeUsdGiven] = useState('');
     const [changeBsGiven, setChangeBsGiven] = useState('');
+    // TIP: propina donada ("cliente deja el cambio"). Paridad con CheckoutModalPOS.
+    const [isTipDonated, setIsTipDonated] = useState(false);
+    const [tipConfirmPending, setTipConfirmPending] = useState(false);
     const [paymentWarning, setPaymentWarning] = useState(null);
     const pendingConfirmRef = useRef(null);
 
@@ -147,6 +150,50 @@ export function useCheckoutCalculations({
         }
     }, [baseCartTotalUsd, baseCartTotalBs, cart, discountData, safeRate, safeTasaCop, totalPaidWithCasheaUsd, totalPaidBs, casheaAmountUsd, triggerHaptic]);
 
+    // ── TIP-004 (D7): moneda de la propina según la composición real del efectivo.
+    // Mismo criterio que CheckoutModalPOS: se comparan magnitudes en Bs, no el
+    // orden de los métodos. Solo efectivo: un pago móvil no da vuelto físico.
+    const tipCurrency = useMemo(() => {
+        const efectivoBs = paymentMethods
+            .filter(m => m.currency === 'BS' && String(m.id).startsWith('efectivo'))
+            .reduce((s, m) => sumR(s, CurrencyService.safeParse(barValues[m.id])), 0);
+        const efectivoUsdEnBs = mulR(
+            paymentMethods
+                .filter(m => m.currency === 'USD' && String(m.id).startsWith('efectivo'))
+                .reduce((s, m) => sumR(s, CurrencyService.safeParse(barValues[m.id])), 0),
+            safeRate
+        );
+        return efectivoBs > efectivoUsdEnBs ? 'BS' : 'USD';
+    }, [paymentMethods, barValues, safeRate]);
+
+    // ── TIP-002 (D6): propinas por encima del umbral exigen doble pulsación.
+    const toggleTipDonated = useCallback(() => {
+        if (isTipDonated) {
+            setIsTipDonated(false);
+            setTipConfirmPending(false);
+            return;
+        }
+        if (changeUsd > FINANCIAL_EPSILON.TIP_MAX_AUTO_USD && !tipConfirmPending) {
+            setTipConfirmPending(true);
+            return;
+        }
+        setChangeUsdGiven('');
+        setChangeBsGiven('');
+        setTipConfirmPending(false);
+        setIsTipDonated(true);
+        triggerHaptic && triggerHaptic();
+    }, [isTipDonated, tipConfirmPending, changeUsd, triggerHaptic]);
+
+    // TIP (T-5): apagar la propina si el vuelto desaparece, y caducar cualquier
+    // confirmación pendiente cuando el monto cambia. Sin esto el flag sobrevive
+    // a una corrección del pago y la propina se re-arma sola.
+    useEffect(() => {
+        setTipConfirmPending(false);
+        if (changeUsd <= FINANCIAL_EPSILON.PAYMENT_ZERO) {
+            setIsTipDonated(false);
+        }
+    }, [changeUsd]);
+
     // ── Procesamiento final de la venta (sin validaciones) ────────────────────
     const _processPayments = useCallback(() => {
         const payments = paymentMethods
@@ -191,11 +238,19 @@ export function useCheckoutCalculations({
         const hasExplicitSplit = Boolean(changeUsdGiven) || Boolean(changeBsGiven);
         const splitUsd = hasExplicitSplit ? round2(CurrencyService.safeParse(changeUsdGiven)) : changeUsd;
         const splitBs  = hasExplicitSplit ? round2(CurrencyService.safeParse(changeBsGiven))  : 0;
+        // TIP-002 (D3): propina donada ⟹ no se entrega vuelto. El umbral usa
+        // FINANCIAL_EPSILON.PAYMENT_ZERO, no `> 0`: un residuo de redondeo no es
+        // una propina (T-6).
+        const tipEfectiva = isTipDonated && changeUsd > FINANCIAL_EPSILON.PAYMENT_ZERO;
         onConfirmSale(payments, {
-            changeUsdGiven: Math.min(splitUsd, changeUsd),
-            changeBsGiven: Math.min(splitBs, changeBs),
+            changeUsdGiven: tipEfectiva ? 0 : Math.min(splitUsd, changeUsd),
+            changeBsGiven: tipEfectiva ? 0 : Math.min(splitBs, changeBs),
+            // TIP-001: una sola moneda canónica; amountBs lo recalcula el procesador.
+            tipDonated: tipEfectiva
+                ? { amountUsd: round2(changeUsd), amountBs: 0, currency: tipCurrency }
+                : null,
         });
-    }, [barValues, paymentMethods, onConfirmSale, changeUsdGiven, changeBsGiven, changeUsd, changeBs, safeRate, safeTasaCop, casheaActive, casheaAmountUsd, casheaPercent]);
+    }, [barValues, paymentMethods, onConfirmSale, changeUsdGiven, changeBsGiven, changeUsd, changeBs, safeRate, safeTasaCop, casheaActive, casheaAmountUsd, casheaPercent, isTipDonated, tipCurrency]);
 
     // ── Detección inteligente de errores de entrada ───────────────────────────
     const _detectWarning = useCallback(() => {
@@ -309,6 +364,11 @@ export function useCheckoutCalculations({
         paymentWarning,
         confirmWarning,
         dismissWarning,
+        // TIP: propina donada (modo básico).
+        isTipDonated,
+        toggleTipDonated,
+        tipConfirmPending,
+        tipCurrency,
         safeRate,
         // A-4: totales recalculados (doble precio + pago en Bs). La UI debe mostrar
         // ESTOS, no los props crudos, o el operador ve un total distinto al que se cobra.

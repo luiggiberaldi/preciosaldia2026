@@ -3,6 +3,7 @@ import { showToast } from '../../Toast';
 import { useProductContext } from '../../../context/ProductContext';
 import { round2, subR, mulR, divR, sumR } from '../../../utils/dinero';
 import { FinancialEngine } from '../../../core/FinancialEngine';
+import { FINANCIAL_EPSILON } from '../../../utils/securityConstants';
 
 // Hooks portados
 import { usePaymentState } from './hooks/usePaymentState';
@@ -111,6 +112,10 @@ export default function CheckoutModalPOS({
     const [distVueltoUSD, setDistVueltoUSD] = useState('');
     const [distVueltoBS, setDistVueltoBS] = useState('');
     const [isChangeCredited, setIsChangeCredited] = useState(false);
+    // TIP: propina donada ("cliente deja el cambio").
+    const [isTipDonated, setIsTipDonated] = useState(false);
+    // TIP-002 (D6): propinas grandes exigen una segunda pulsación.
+    const [tipConfirmPending, setTipConfirmPending] = useState(false);
 
     // Detectar si hay pagos ingresados en Bolívares o si un input de Bolívares está seleccionado
     const isBsPaymentActive = useMemo(() => {
@@ -200,12 +205,70 @@ export default function CheckoutModalPOS({
         setIsChangeCredited(true);
     };
 
+    // ── TIP-004 (D7): la moneda de la propina se deriva de la composición REAL
+    // del efectivo en la gaveta, comparando magnitudes en una misma unidad (Bs).
+    // No del orden de los métodos: $1 junto a Bs 5.000 no hace la propina "USD".
+    // Solo cuenta EFECTIVO: un pago móvil no puede producir vuelto físico.
+    // D8: no hay camino COP para la propina; el fallback es USD.
+    const tipCurrency = useMemo(() => {
+        const efectivoBs = metodosNormalizados
+            .filter(m => m.tipo === 'BS' && String(m.id).startsWith('efectivo'))
+            .reduce((s, m) => sumR(s, val(m.id)), 0);
+        const efectivoUsdEnBs = mulR(
+            metodosNormalizados
+                .filter(m => m.tipo === 'DIVISA' && String(m.id).startsWith('efectivo'))
+                .reduce((s, m) => sumR(s, val(m.id)), 0),
+            tasaSegura
+        );
+        return efectivoBs > efectivoUsdEnBs ? 'BS' : 'USD';
+    }, [metodosNormalizados, val, tasaSegura]);
+
+    // ── TIP-002 (D6): propinas por encima del umbral exigen doble pulsación.
+    const toggleTipDonated = () => {
+        if (isTipDonated) {
+            setIsTipDonated(false);
+            setTipConfirmPending(false);
+            return;
+        }
+        if (cambioUSD > FINANCIAL_EPSILON.TIP_MAX_AUTO_USD && !tipConfirmPending) {
+            setTipConfirmPending(true);
+            showToast(
+                `Propina de $${cambioUSD.toFixed(2)}. Pulsa de nuevo para confirmar.`,
+                'warning'
+            );
+            return;
+        }
+        // Donar el vuelto y repartirlo a la vez es contradictorio: se limpia.
+        setDistVueltoUSD('');
+        setDistVueltoBS('');
+        setIsChangeCredited(false);
+        setTipConfirmPending(false);
+        setIsTipDonated(true);
+        triggerHaptic && triggerHaptic();
+    };
+
     // Limpiar vuelto cuando baja
     useEffect(() => {
         if (cambioUSD <= 0) {
             setDistVueltoUSD('');
             setDistVueltoBS('');
         }
+    }, [cambioUSD]);
+
+    // TIP-005 (T-5): apagar la propina si el vuelto desaparece. Sin esto el flag
+    // sobrevive a una corrección del pago y la propina se re-arma sola cuando el
+    // vuelto vuelve a subir, sin que el operador la reconfirme.
+    useEffect(() => {
+        if (cambioUSD <= FINANCIAL_EPSILON.PAYMENT_ZERO) {
+            setIsTipDonated(false);
+            setTipConfirmPending(false);
+        }
+    }, [cambioUSD]);
+
+    // Si el monto del vuelto cambia, caduca cualquier confirmación pendiente:
+    // el operador debe volver a ver la cifra antes de donarla.
+    useEffect(() => {
+        setTipConfirmPending(false);
     }, [cambioUSD]);
 
     // ─── WALLET ─────────────────────────────────────────────
@@ -357,16 +420,24 @@ export default function CheckoutModalPOS({
             }
 
             const hasExplicitSplit = distVueltoUSD !== '' || distVueltoBS !== '';
+            // TIP-002 (D3): propina donada ⟹ no se entrega vuelto. El procesador
+            // lo vuelve a forzar, pero se manda coherente desde aquí.
+            const tipEfectiva = isTipDonated && cambioUSD > FINANCIAL_EPSILON.PAYMENT_ZERO;
             onConfirmSale(payments, {
                 // FIN-034: si el operador tocó cualquiera de los dos campos de desglose,
                 // se respetan tal cual (el vacío vale 0). El botón "Todo" del campo Bs deja
                 // distVueltoUSD en '' — leerlo como "no especificado" duplicaba el vuelto.
-                changeUsdGiven: hasExplicitSplit ? (parseFloat(distVueltoUSD) || 0) : cambioUSD,
-                changeBsGiven: hasExplicitSplit ? (parseFloat(distVueltoBS) || 0) : 0,
+                changeUsdGiven: tipEfectiva ? 0 : (hasExplicitSplit ? (parseFloat(distVueltoUSD) || 0) : cambioUSD),
+                changeBsGiven: tipEfectiva ? 0 : (hasExplicitSplit ? (parseFloat(distVueltoBS) || 0) : 0),
                 esCredito: modo === 'credito',
                 clienteId: clienteSeleccionado || null,
                 esCashea: casheaActive,
                 vueltoCredito: isChangeCredited,
+                // TIP-001: una sola moneda canónica. amountUsd es el monto real;
+                // amountBs lo recalcula el procesador si la moneda nativa es Bs.
+                tipDonated: tipEfectiva
+                    ? { amountUsd: round2(cambioUSD), amountBs: 0, currency: tipCurrency }
+                    : null,
             }, imprimir);
 
             triggerHaptic && triggerHaptic();
@@ -377,7 +448,8 @@ export default function CheckoutModalPOS({
     };
 
     const deudaCliente = modo === 'credito' ? faltaPorPagar : 0;
-    const isVueltoValido = cambioUSD < 0.001 || (
+    // TIP: si el cliente dona el vuelto, no hay nada que repartir → siempre válido.
+    const isVueltoValido = cambioUSD < 0.001 || isTipDonated || (
         parseFloat(distVueltoUSD || 0) + parseFloat(distVueltoBS || 0) / tasaSegura <= cambioUSD + 0.001
     );
 
@@ -436,6 +508,10 @@ export default function CheckoutModalPOS({
                         isChangeCredited={isChangeCredited}
                         handleCreditChange={handleCreditChange}
                         setIsChangeCredited={setIsChangeCredited}
+                        isTipDonated={isTipDonated}
+                        toggleTipDonated={toggleTipDonated}
+                        tipConfirmPending={tipConfirmPending}
+                        tipCurrency={tipCurrency}
                         deudaCliente={deudaCliente}
                         isVueltoValido={isVueltoValido}
                         casheaEnabled={casheaEnabled}
