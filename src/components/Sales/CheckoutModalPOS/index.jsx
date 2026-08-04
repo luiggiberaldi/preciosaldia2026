@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { showToast } from '../../Toast';
 import { useProductContext } from '../../../context/ProductContext';
-import { round2, subR, mulR, divR } from '../../../utils/dinero';
+import { round2, subR, mulR, divR, sumR } from '../../../utils/dinero';
 import { FinancialEngine } from '../../../core/FinancialEngine';
 
 // Hooks portados
@@ -222,7 +222,14 @@ export default function CheckoutModalPOS({
             valorFinal = round2(actual + remUsd);
         } else if (moneda === 'BS') {
             const bsTotals = FinancialEngine.buildCartTotals(cart, discountData, effectiveRate, tasaCop, true);
-            const remBs = Math.max(0, subR(bsTotals.totalBs, totalPagadoBS));
+            // FIN-038: descontar también Cashea y el saldo a favor aplicado,
+            // que ya cubren parte del total pero no están en totalPagadoBS.
+            const cubiertoBs = sumR([
+                totalPagadoBS,
+                mulR(casheaAmountUsd, tasaSegura),
+                mulR(parseFloat(pagoSaldoFavor) || 0, tasaSegura),
+            ]);
+            const remBs = Math.max(0, subR(bsTotals.totalBs, cubiertoBs));
             valorFinal = round2(actual + remBs);
         } else if (moneda === 'COP' && tasaCop > 0) {
             valorFinal = round2(actual + (faltaPorPagar * tasaCop));
@@ -340,9 +347,13 @@ export default function CheckoutModalPOS({
                 });
             }
 
+            const hasExplicitSplit = distVueltoUSD !== '' || distVueltoBS !== '';
             onConfirmSale(payments, {
-                changeUsdGiven: distVueltoUSD ? parseFloat(distVueltoUSD) : cambioUSD,
-                changeBsGiven: distVueltoBS ? parseFloat(distVueltoBS) : 0,
+                // FIN-034: si el operador tocó cualquiera de los dos campos de desglose,
+                // se respetan tal cual (el vacío vale 0). El botón "Todo" del campo Bs deja
+                // distVueltoUSD en '' — leerlo como "no especificado" duplicaba el vuelto.
+                changeUsdGiven: hasExplicitSplit ? (parseFloat(distVueltoUSD) || 0) : cambioUSD,
+                changeBsGiven: hasExplicitSplit ? (parseFloat(distVueltoBS) || 0) : 0,
                 esCredito: modo === 'credito',
                 clienteId: clienteSeleccionado || null,
                 esCashea: casheaActive,

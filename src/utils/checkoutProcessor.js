@@ -70,6 +70,21 @@ export async function processSaleTransaction({
     const remainingUsd = round2(Math.max(0, subR(activeCartTotalUsd, totalPaidUsd)));
     const changeUsd    = round2(Math.max(0, subR(totalPaidUsd, activeCartTotalUsd)));
 
+    // FIN-034: Normalizar el vuelto declarado por la UI.
+    // La UI podía enviar el MISMO vuelto duplicado en USD y en Bs (ej: {10, 400} a tasa 40
+    // para un vuelto real de $10), y el FinancialEngine sumaba ambos → $20 de vuelto.
+    // `changeUsd` (el vuelto real calculated aquí) es el techo absoluto: nunca se entrega más.
+    // Se prioriza el tramo en Bs porque es el que el operador escribe explícitamente.
+    // NOTA: effectiveRate ya fue validado > 0 arriba (FIN-022), así que divR es seguro.
+    const rawChangeUsdGiven = round2(Math.max(0, Number(changeBreakdown?.changeUsdGiven) || 0));
+    const rawChangeBsGiven  = round2(Math.max(0, Number(changeBreakdown?.changeBsGiven)  || 0));
+    const bsGivenAsUsd      = round2(divR(rawChangeBsGiven, effectiveRate));
+    const givenChangeBsUsd  = Math.min(bsGivenAsUsd, changeUsd);
+    const givenChangeBs     = givenChangeBsUsd === bsGivenAsUsd
+        ? rawChangeBsGiven
+        : round2(mulR(givenChangeBsUsd, effectiveRate));
+    const givenChangeUsd    = round2(Math.min(rawChangeUsdGiven, Math.max(0, subR(changeUsd, givenChangeBsUsd))));
+
     const casheaPayment = payments.find(p => p.methodId === 'cashea');
     const casheaUsd = casheaPayment ? round2(casheaPayment.amountUsd) : 0;
 
@@ -78,11 +93,11 @@ export async function processSaleTransaction({
     }
 
     // FIN-005: Bloquear ventas con anomalía de vuelto (changeUsd > total * 5).
-    const changeAnomalyThresholdUsd = mulR(cartTotalUsd, FINANCIAL_EPSILON.CHANGE_ANOMALY_MULTIPLIER);
+    const changeAnomalyThresholdUsd = mulR(activeCartTotalUsd, FINANCIAL_EPSILON.CHANGE_ANOMALY_MULTIPLIER);
     if (changeUsd > FINANCIAL_EPSILON.CHANGE_ANOMALY_MIN_USD && changeUsd > changeAnomalyThresholdUsd) {
         return {
             success: false,
-            error: `Vuelto anómalo detectado: $${round2(changeUsd)} para una venta de $${round2(cartTotalUsd)}. Verifica los montos ingresados.`
+            error: `Vuelto anómalo detectado: $${round2(changeUsd)} para una venta de $${round2(activeCartTotalUsd)}. Verifica los montos ingresados.`
         };
     }
 
@@ -133,7 +148,7 @@ export async function processSaleTransaction({
                     cart.reduce((s, i) => sumR(s, mulR(i.priceCop, i.qty)), 0),
                     subR(1, divR(discountData?.amountUsd || 0, cartSubtotalUsd || 1))
                 ))
-                : mulR(cartTotalUsd, tasaCop))
+                : mulR(activeCartTotalUsd, tasaCop))
             : 0,
         payments:  normalizedPayments,          // ← Con currency + methodLabel
         rate:      effectiveRate,
@@ -141,8 +156,11 @@ export async function processSaleTransaction({
         copEnabled: copEnabled,
         rateSource: useAutoRate ? 'BCV Auto' : 'Manual',
         timestamp: new Date().toISOString(),
-        changeUsd: tipoVenta !== 'VENTA' ? 0 : round2(changeBreakdown?.changeUsdGiven || 0),
-        changeBs:  tipoVenta !== 'VENTA' ? 0 : round2(changeBreakdown?.changeBsGiven  || 0),
+        // FIN-034 + FIN-035: vuelto normalizado (nunca supera el vuelto real).
+        // Solo la VENTA_FIADA no puede tener vuelto (no hay sobrepago, hay saldo pendiente).
+        // Una VENTA_CASHEA sí puede: el vuelto de la cuota inicial es efectivo real que salió de caja.
+        changeUsd: tipoVenta === 'VENTA_FIADA' ? 0 : givenChangeUsd,
+        changeBs:  tipoVenta === 'VENTA_FIADA' ? 0 : givenChangeBs,
         // FIN-012: Guardar vueltoParaMonedero para revertir al anular.
         // Por ahora el flujo de checkout no enruta vuelto a favor (siempre 0),
         // pero dejamos el campo para ventas futuras y abonos manuales.
@@ -171,9 +189,10 @@ export async function processSaleTransaction({
         const user = useAuthStore.getState().usuarioActivo;
         const tipo = casheaUsd > 0 ? 'VENTA_CASHEA' : (fiadoAmountUsd > 0 ? 'VENTA_FIADA' : 'VENTA_COMPLETADA');
         logEvent('VENTA', tipo,
-            `Venta #${saleNumber} - $${round2(cartTotalUsd)} - ${cart.length} items - ${selectedCustomer?.name || 'Consumidor Final'}`,
+            // FIN-036: usar el total dinámico, el mismo que se persiste en la venta.
+            `Venta #${saleNumber} - $${round2(activeCartTotalUsd)} - ${cart.length} items - ${selectedCustomer?.name || 'Consumidor Final'}`,
             user,
-            { saleId: finalPersistedSale.id, total: cartTotalUsd, items: cart.length }
+            { saleId: finalPersistedSale.id, total: activeCartTotalUsd, items: cart.length }
         );
 
         // ── Deducir stock con precisión ──
@@ -236,8 +255,14 @@ export async function processSaleTransaction({
                 esCashea:         casheaUsd > 0
             };
 
-            updatedCustomer  = procesarImpactoCliente(selectedCustomer, transaccionOpts);
-            updatedCustomers = customers.map(c => c.id === selectedCustomer.id ? updatedCustomer : c);
+            // FIN-037: releer clientes frescos DENTRO del lock (mismo patrón que freshProducts).
+            // El prop `customers` viene del render de React y puede estar obsoleto:
+            // aplicar el impacto sobre él sobrescribe abonos o deudas registrados en el medio.
+            const freshCustomers = await storageService.getItem(CUSTOMERS_KEY, customers);
+            const freshSelected  = freshCustomers.find(c => c.id === selectedCustomer.id) || selectedCustomer;
+
+            updatedCustomer  = procesarImpactoCliente(freshSelected, transaccionOpts);
+            updatedCustomers = freshCustomers.map(c => c.id === freshSelected.id ? updatedCustomer : c);
 
             await storageService.setItem(CUSTOMERS_KEY, updatedCustomers);
             // FIN-008: deep-freeze customers antes de retornar.

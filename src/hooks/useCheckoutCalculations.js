@@ -136,14 +136,16 @@ export function useCheckoutCalculations({
             const copVal = safeTasaCop > 0 ? mulR(remUsd, safeTasaCop) : 0;
             val = remUsd > 0 ? String(round2(copVal)) : null;
         } else {
-            const currentPaidBs = totalPaidBs;
+            // FIN-038: la rama Bs debe descontar Cashea igual que la rama USD,
+            // o el botón "Todo" pedirá de más cuando haya remesa Cashea activa.
+            const currentPaidBs = sumR([totalPaidBs, mulR(casheaAmountUsd, safeRate)]);
             const remBs = Math.max(0, subR(targetBs, currentPaidBs));
             val = remBs > 0 ? String(round2(remBs)) : null;
         }
         if (val) {
             setBarValues(prev => ({ ...prev, [methodId]: val }));
         }
-    }, [baseCartTotalUsd, baseCartTotalBs, cart, discountData, safeRate, safeTasaCop, totalPaidWithCasheaUsd, totalPaidBs, triggerHaptic]);
+    }, [baseCartTotalUsd, baseCartTotalBs, cart, discountData, safeRate, safeTasaCop, totalPaidWithCasheaUsd, totalPaidBs, casheaAmountUsd, triggerHaptic]);
 
     // ── Procesamiento final de la venta (sin validaciones) ────────────────────
     const _processPayments = useCallback(() => {
@@ -183,11 +185,15 @@ export function useCheckoutCalculations({
             });
         }
 
-        const defaultUsdChange = (!changeUsdGiven && !changeBsGiven) ? changeUsd : round2(CurrencyService.safeParse(changeUsdGiven));
-        const defaultBsChange  = (!changeUsdGiven && !changeBsGiven) ? changeBs  : round2(CurrencyService.safeParse(changeBsGiven));
+        // FIN-034: `changeUsd` y `changeBs` son el MISMO vuelto expresado en dos monedas.
+        // Declarar ambos duplicaba el vuelto en el FinancialEngine.
+        // Sin desglose explícito del operador → todo el vuelto se declara en USD y el tramo Bs es 0.
+        const hasExplicitSplit = Boolean(changeUsdGiven) || Boolean(changeBsGiven);
+        const splitUsd = hasExplicitSplit ? round2(CurrencyService.safeParse(changeUsdGiven)) : changeUsd;
+        const splitBs  = hasExplicitSplit ? round2(CurrencyService.safeParse(changeBsGiven))  : 0;
         onConfirmSale(payments, {
-            changeUsdGiven: Math.min(defaultUsdChange, changeUsd),
-            changeBsGiven: Math.min(defaultBsChange, changeBs),
+            changeUsdGiven: Math.min(splitUsd, changeUsd),
+            changeBsGiven: Math.min(splitBs, changeBs),
         });
     }, [barValues, paymentMethods, onConfirmSale, changeUsdGiven, changeBsGiven, changeUsd, changeBs, safeRate, safeTasaCop, casheaActive, casheaAmountUsd, casheaPercent]);
 
