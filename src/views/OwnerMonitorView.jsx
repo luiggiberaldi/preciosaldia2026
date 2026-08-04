@@ -12,7 +12,7 @@ import {
     Plus, Pencil, Trash2
 } from 'lucide-react';
 import { formatBs, formatCop } from '../utils/calculatorUtils';
-import { getLocalISODate } from '../utils/dateHelpers';
+import { getLocalISODate, getDateRange } from '../utils/dateHelpers';
 import { getPaymentLabel, toTitleCase } from '../config/paymentMethods';
 import DevicesManager from '../components/Settings/DevicesManager';
 import SupervisorRateModal from '../components/Monitor/SupervisorRateModal';
@@ -51,6 +51,9 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
     const [showRateModal, setShowRateModal] = useState(false);
     const [showProductFormModal, setShowProductFormModal] = useState(false);
     const [productToEditRemote, setProductToEditRemote] = useState(null);
+    const [cierresDateRange, setCierresDateRange] = useState('all'); // 'all', 'today', 'yesterday', 'week', 'month'
+    const [shiftActionConfirmModal, setShiftActionConfirmModal] = useState(null); // 'close' | 'reopen' | null
+    const [sendingShiftAction, setSendingShiftAction] = useState(false);
 
     const filteredProducts = useMemo(() => {
         if (!products) return [];
@@ -315,7 +318,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
             const salesForStats = g.sales.filter(s => s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA');
             const salesForCashFlow = g.sales.filter(s => {
                 if (s.tipo === 'PAGO_PROVEEDOR' && s.afectaCaja === false) return false;
-                return s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA' || s.tipo === 'COBRO_DEUDA' || s.tipo === 'PAGO_PROVEEDOR' || s.tipo === 'GASTO_INTERNO';
+                return s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA' || s.tipo === 'COBRO_DEUDA' || s.tipo === 'COBRO_CASHEA' || s.tipo === 'PAGO_PROVEEDOR' || s.tipo === 'GASTO_INTERNO';
             });
             
             const totalUsd = salesForStats.reduce((sum, s) => sum + (s.totalUsd || 0), 0);
@@ -375,12 +378,56 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
         }).sort((a, b) => b.cierreId - a.cierreId);
     }, [sales]);
 
+    // Filtro de cierres por rango de fechas
+    const filteredRegisterCloses = useMemo(() => {
+        if (cierresDateRange === 'all') return registerCloses;
+        const { from, to } = getDateRange(cierresDateRange);
+        return registerCloses.filter(c => {
+            const d = getLocalISODate(new Date(Number(c.cierreId)));
+            return d >= from && d <= to;
+        });
+    }, [registerCloses, cierresDateRange]);
+
     // Establecer primer cierre por defecto si cambia la lista
     useEffect(() => {
-        if (registerCloses.length > 0 && !selectedCierreId) {
-            setSelectedCierreId(registerCloses[0].cierreId);
+        if (filteredRegisterCloses.length > 0) {
+            const exists = filteredRegisterCloses.some(c => c.cierreId === selectedCierreId);
+            if (!exists) {
+                setSelectedCierreId(filteredRegisterCloses[0].cierreId);
+            }
+        } else {
+            setSelectedCierreId(null);
         }
-    }, [registerCloses, selectedCierreId]);
+    }, [filteredRegisterCloses, selectedCierreId]);
+
+    // Emite Broadcast para cierre o reapertura remota de turno
+    const handleSendShiftActionRemote = async (action) => {
+        if (!supabaseCloud || !pairedDeviceId) {
+            showToast('Dispositivo no vinculado a la nube', 'error');
+            return;
+        }
+        setSendingShiftAction(true);
+        try {
+            const channel = supabaseCloud.channel('system_commands');
+            await channel.send({
+                type: 'broadcast',
+                event: 'supervisor_shift_action',
+                payload: { targetDeviceId: pairedDeviceId, action }
+            });
+            showToast(
+                action === 'close'
+                    ? '🔒 Solicitud de cierre enviada a la caja'
+                    : '🔓 Solicitud de reapertura enviada a la caja',
+                'success'
+            );
+            setShiftActionConfirmModal(null);
+        } catch (e) {
+            console.error('[OwnerMonitorView] Error al enviar supervisor_shift_action:', e);
+            showToast('Error al enviar la solicitud', 'error');
+        } finally {
+            setSendingShiftAction(false);
+        }
+    };
 
 
     // ── COMPONENTES GENERALES ──
@@ -571,6 +618,39 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                 {/* ── SECCIÓN 1: TURNO ACTIVO ── */}
                 {viewTab === 'activo' && (
                     <div className="space-y-6">
+                        {/* Barra de Estado de Turno y Acciones Remotas */}
+                        <div className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                                <div className={`w-3 h-3 rounded-full ${isShiftActive ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                                <div>
+                                    <span className="text-xs font-black text-slate-800 dark:text-white block">
+                                        {isShiftActive ? 'Turno Activo en Caja' : 'Caja Inactiva / Sin Turno Abierto'}
+                                    </span>
+                                    <span className="text-[10px] text-slate-400 font-medium block">
+                                        Cajero: {activeCashier.nombre} {activeShiftApertura?.timestamp ? `• Abierto a las ${formatTime(activeShiftApertura.timestamp)}` : ''}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {isShiftActive ? (
+                                <button
+                                    onClick={() => { triggerHaptic?.(); setShiftActionConfirmModal('close'); }}
+                                    className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/30 dark:hover:bg-rose-950/50 dark:text-rose-400 border border-rose-200 dark:border-rose-900/40 rounded-2xl text-xs font-black transition-all flex items-center gap-2 shadow-sm"
+                                >
+                                    <Clock size={14} />
+                                    <span>Cerrar Turno Remotamente</span>
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={() => { triggerHaptic?.(); setShiftActionConfirmModal('reopen'); }}
+                                    className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:hover:bg-amber-950/50 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40 rounded-2xl text-xs font-black transition-all flex items-center gap-2 shadow-sm"
+                                >
+                                    <RefreshCw size={14} />
+                                    <span>Reabrir Último Turno Remotamente</span>
+                                </button>
+                            )}
+                        </div>
+
                         {/* Fila 1: Tarjetas de Métricas de Turno Activo */}
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                             {/* Ventas Turno USD */}
@@ -865,16 +945,43 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
 
                 {/* ── SECCIÓN 2: CIERRES DE CAJA (HISTORIAL + DETALLE ARQUEO) ── */}
                 {viewTab === 'cierres' && (
-                    <div>
-                        {registerCloses.length === 0 ? (
+                    <div className="space-y-4">
+                        {/* Selector de Rango de Fechas para Cierres */}
+                        <div className="flex bg-slate-200/60 dark:bg-slate-900/60 p-1 rounded-2xl w-full max-w-lg shadow-sm overflow-x-auto">
+                            {[
+                                { id: 'all', label: 'Todos' },
+                                { id: 'today', label: 'Hoy' },
+                                { id: 'yesterday', label: 'Ayer' },
+                                { id: 'week', label: 'Esta Semana' },
+                                { id: 'month', label: 'Este Mes' }
+                            ].map(range => (
+                                <button
+                                    key={range.id}
+                                    onClick={() => { triggerHaptic?.(); setCierresDateRange(range.id); }}
+                                    className={`flex-1 py-1.5 px-3 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap ${
+                                        cierresDateRange === range.id
+                                            ? 'bg-white dark:bg-slate-800 text-slate-850 dark:text-white shadow-sm'
+                                            : 'text-slate-400 hover:text-slate-650 dark:hover:text-slate-200'
+                                    }`}
+                                >
+                                    {range.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        {filteredRegisterCloses.length === 0 ? (
                             <div className="py-16 px-6 text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm space-y-4 max-w-lg mx-auto flex flex-col items-center">
                                 <div className="p-4 bg-slate-50 dark:bg-slate-800/50 text-slate-450 rounded-full">
                                     <ShieldCheck size={42} />
                                 </div>
                                 <div className="space-y-1">
-                                    <h4 className="text-sm font-black text-slate-800 dark:text-white">Sin cierres registrados</h4>
+                                    <h4 className="text-sm font-black text-slate-800 dark:text-white">
+                                        {cierresDateRange === 'all' ? 'Sin cierres registrados' : 'Sin cierres en este período'}
+                                    </h4>
                                     <p className="text-xs text-slate-400 leading-relaxed px-4">
-                                        Cuando el cajero complete un cierre de caja en el dispositivo principal, aparecerá el arqueo detallado, reporte contable y discrepancias aquí.
+                                        {cierresDateRange === 'all' 
+                                            ? 'Cuando el cajero complete un cierre de caja en el dispositivo principal, aparecerá el arqueo detallado aquí.' 
+                                            : 'No se encontraron registros de cierre para la fecha seleccionada. Intenta cambiar el filtro.'}
                                     </p>
                                 </div>
                             </div>
@@ -882,11 +989,11 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                                 {/* Selector / Lista de Cierres */}
                                 <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 rounded-3xl p-5 shadow-sm h-fit space-y-4">
-                                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Historial de Cierres</span>
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Historial de Cierres ({filteredRegisterCloses.length})</span>
                                     <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
-                                        {registerCloses.map(c => {
+                                        {filteredRegisterCloses.map(c => {
                                             const dateObj = new Date(c.cierreId);
-                                            const isSelected = selectedCierreId === c.cierreId || (!selectedCierreId && registerCloses[0].cierreId === c.cierreId);
+                                            const isSelected = selectedCierreId === c.cierreId || (!selectedCierreId && filteredRegisterCloses[0].cierreId === c.cierreId);
                                             return (
                                                 <button
                                                     key={c.cierreId}
@@ -1439,6 +1546,51 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                                 className="flex-1 py-3 px-4 bg-rose-500 hover:bg-rose-600 text-white font-black text-xs rounded-2xl shadow-lg shadow-rose-500/20 transition-colors"
                             >
                                 Desvincular
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Confirmación Cierre / Reapertura Remota de Turno */}
+            {shiftActionConfirmModal && (
+                <div className="fixed inset-0 z-[999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 max-w-sm w-full shadow-2xl space-y-5 animate-scale-in">
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mx-auto ${
+                            shiftActionConfirmModal === 'close' 
+                                ? 'bg-rose-50 dark:bg-rose-950/20 text-rose-500' 
+                                : 'bg-amber-50 dark:bg-amber-950/20 text-amber-500'
+                        }`}>
+                            {shiftActionConfirmModal === 'close' ? <Clock size={22} /> : <RefreshCw size={22} />}
+                        </div>
+                        <div className="space-y-1.5 text-center">
+                            <h4 className="text-base font-black text-slate-800 dark:text-white">
+                                {shiftActionConfirmModal === 'close' ? 'Cerrar Turno Remotamente' : 'Reabrir Último Turno'}
+                            </h4>
+                            <p className="text-xs font-semibold text-slate-500 leading-relaxed">
+                                {shiftActionConfirmModal === 'close'
+                                    ? 'Esta acción marcará las ventas actuales como cerradas en la caja principal y registrará un cierre remoto.'
+                                    : 'Esta acción deshará el último cierre registrado y reactivará el turno anterior en la caja principal.'}
+                            </p>
+                        </div>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => { triggerHaptic?.(); setShiftActionConfirmModal(null); }}
+                                disabled={sendingShiftAction}
+                                className="flex-1 py-3 px-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-350 font-black text-xs rounded-2xl border border-slate-200 dark:border-slate-700 transition-colors disabled:opacity-50"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={() => handleSendShiftActionRemote(shiftActionConfirmModal)}
+                                disabled={sendingShiftAction}
+                                className={`flex-1 py-3 px-4 font-black text-xs rounded-2xl shadow-lg transition-colors flex items-center justify-center gap-2 text-white ${
+                                    shiftActionConfirmModal === 'close'
+                                        ? 'bg-rose-500 hover:bg-rose-600 shadow-rose-500/20'
+                                        : 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20'
+                                } disabled:opacity-50`}
+                            >
+                                {sendingShiftAction ? <RefreshCw className="animate-spin" size={14} /> : (shiftActionConfirmModal === 'close' ? 'Confirmar Cierre' : 'Confirmar Reapertura')}
                             </button>
                         </div>
                     </div>

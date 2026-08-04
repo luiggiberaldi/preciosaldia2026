@@ -352,10 +352,12 @@ export default function ReportsMetricsTab({
                         const allEntries = Object.entries(paymentBreakdown).filter(([, d]) => d.total > 0);
                         // Paridad literal con DashboardPaymentBreakdown.jsx: Cashea es una
                         // cuenta por cobrar (Cashea le remesa a la bodega), nunca ingreso USD.
-                        const fiadoMethods = allEntries.filter(([method, d]) => (d.currency === 'FIADO' || method === 'cashea') && !d.isChange);
-                        const bsMethods    = allEntries.filter(([, d]) => (d.currency === 'BS' || (!d.currency)) && !d.isChange);
-                        const usdMethods   = allEntries.filter(([method, d]) => d.currency === 'USD' && method !== 'cashea' && !d.isChange);
-                        const copMethods   = allEntries.filter(([, d]) => d.currency === 'COP' && !d.isChange);
+                        // TIP-005 (D1): la propina no es un método de pago. Ver
+                        // DashboardPaymentBreakdown.jsx para el razonamiento completo.
+                        const fiadoMethods = allEntries.filter(([method, d]) => (d.currency === 'FIADO' || method === 'cashea') && !d.isChange && !d.isTip);
+                        const bsMethods    = allEntries.filter(([, d]) => (d.currency === 'BS' || (!d.currency)) && !d.isChange && !d.isTip);
+                        const usdMethods   = allEntries.filter(([method, d]) => d.currency === 'USD' && method !== 'cashea' && !d.isChange && !d.isTip);
+                        const copMethods   = allEntries.filter(([, d]) => d.currency === 'COP' && !d.isChange && !d.isTip);
                         const vueltoBs     = allEntries.filter(([, d]) => d.isChange && d.currency === 'BS');
                         const vueltoUsd    = allEntries.filter(([, d]) => d.isChange && d.currency === 'USD');
                         const fmtCop = (v) => v.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -375,7 +377,7 @@ export default function ReportsMetricsTab({
                         };
 
                         const grandTotalBsEquiv = allEntries
-                            .filter(([, d]) => !d.isChange)
+                            .filter(([, d]) => !d.isChange && !d.isTip)
                             .reduce((s, [, d]) => s + toBsEquiv(d), 0);
 
                         const renderMethod = ([method, data]) => {

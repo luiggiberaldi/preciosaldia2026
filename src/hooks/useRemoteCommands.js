@@ -117,6 +117,62 @@ export function useRemoteCommands(deviceId) {
                     console.error('[RemoteCommands] Error procesando supervisor_user_update:', e);
                 }
             })
+
+            // ── 5. Orden de cierre / reapertura remota de turno ──
+            .on('broadcast', { event: 'supervisor_shift_action' }, async (payload) => {
+                const { targetDeviceId, action } = payload.payload || {};
+                if (targetDeviceId && targetDeviceId !== deviceId) return;
+
+                console.log('[RemoteCommands] Procesando acción remota de turno:', { action });
+
+                try {
+                    await withLock('pos_write_lock', async () => {
+                        const sales = (await storageService.getItem('bodega_sales_v1', [])) || [];
+
+                        if (action === 'close') {
+                            const cierreId = Date.now();
+                            const updated = sales.map(s => {
+                                if (!s.cajaCerrada) return { ...s, cajaCerrada: true, cierreId };
+                                return s;
+                            });
+                            updated.push({
+                                id: `cierre_${cierreId}`,
+                                tipo: 'REGISTRO_CIERRE',
+                                cierreId,
+                                cajaCerrada: true,
+                                timestamp: new Date().toISOString(),
+                                summary: { cashier: { nombre: 'Supervisor (Remoto)', rol: 'DUEÑO' } }
+                            });
+                            await storageService.setItem('bodega_sales_v1', updated);
+                            await pushCloudSync('bodega_sales_v1', updated, true);
+                            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_sales_v1' } }));
+                            showToast('🔒 Turno cerrado remotamente por el Supervisor', 'info');
+
+                        } else if (action === 'reopen') {
+                            const lastCierre = [...sales]
+                                .filter(s => s.cajaCerrada && s.cierreId)
+                                .sort((a, b) => b.cierreId - a.cierreId)[0];
+
+                            if (!lastCierre) {
+                                showToast('No se encontró ningún cierre previo para reabrir', 'error');
+                                return;
+                            }
+                            const targetCierreId = lastCierre.cierreId;
+
+                            const updated = sales
+                                .filter(s => !(s.tipo === 'REGISTRO_CIERRE' && s.cierreId === targetCierreId))
+                                .map(s => s.cierreId === targetCierreId ? { ...s, cajaCerrada: false, cierreId: undefined } : s);
+
+                            await storageService.setItem('bodega_sales_v1', updated);
+                            await pushCloudSync('bodega_sales_v1', updated, true);
+                            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_sales_v1' } }));
+                            showToast('🔓 Turno reabierto remotamente por el Supervisor', 'info');
+                        }
+                    });
+                } catch (e) {
+                    console.error('[RemoteCommands] Error procesando supervisor_shift_action:', e);
+                }
+            })
             .subscribe();
 
         return () => {

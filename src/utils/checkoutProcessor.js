@@ -104,6 +104,28 @@ export async function processSaleTransaction({
     const fiadoAmountUsd = remainingUsd > 0.01 ? remainingUsd : 0;
     const tipoVenta = casheaUsd > 0 ? 'VENTA_CASHEA' : (fiadoAmountUsd > 0 ? 'VENTA_FIADA' : 'VENTA');
 
+    // ── TIP-001 / TIP-003 / TIP-004: propina donada ("cliente deja el cambio") ──
+    // `changeUsd` es el techo absoluto: no se puede donar más vuelto del que existe.
+    // Se guarda UNA sola moneda canónica: `amountUsd` siempre, `amountBs` solo si
+    // la moneda nativa es Bs (y recalculado aquí, sin confiar en el input de la UI).
+    // Una VENTA_FIADA no genera sobrepago, así que no admite propina (D4).
+    // Una VENTA_CASHEA sí: el vuelto de la cuota inicial es efectivo real (D5).
+    const rawTip = changeBreakdown?.tipDonated || null;
+    const tipUsd = round2(Math.min(
+        Math.max(0, Number(rawTip?.amountUsd) || 0),
+        changeUsd
+    ));
+    const tipIsBs = rawTip?.currency === 'BS';
+    const tipDonated = (rawTip
+        && tipUsd > FINANCIAL_EPSILON.PAYMENT_ZERO
+        && tipoVenta !== 'VENTA_FIADA')
+        ? {
+            amountUsd: tipUsd,
+            amountBs: tipIsBs ? round2(mulR(tipUsd, effectiveRate)) : 0,
+            currency: tipIsBs ? 'BS' : 'USD',
+        }
+        : null;
+
     // ── Normalizar payments: asegurar currency y methodLabel ──
     // Esto permite que el FinancialEngine calcule el breakdown correctamente
     // sin depender de campos que podían llegar undefined en versiones anteriores.
@@ -159,8 +181,11 @@ export async function processSaleTransaction({
         // FIN-034 + FIN-035: vuelto normalizado (nunca supera el vuelto real).
         // Solo la VENTA_FIADA no puede tener vuelto (no hay sobrepago, hay saldo pendiente).
         // Una VENTA_CASHEA sí puede: el vuelto de la cuota inicial es efectivo real que salió de caja.
-        changeUsd: tipoVenta === 'VENTA_FIADA' ? 0 : givenChangeUsd,
-        changeBs:  tipoVenta === 'VENTA_FIADA' ? 0 : givenChangeBs,
+        // TIP-002 (D3): propina donada ⟹ vuelto entregado 0, sin excepción.
+        // Se fuerza aquí y no solo en la UI: si un modo de checkout manda ambos,
+        // el dinero se contaría dos veces (una donado, una entregado).
+        changeUsd: (tipoVenta === 'VENTA_FIADA' || tipDonated) ? 0 : givenChangeUsd,
+        changeBs:  (tipoVenta === 'VENTA_FIADA' || tipDonated) ? 0 : givenChangeBs,
         // FIN-012: Guardar vueltoParaMonedero para revertir al anular.
         // Por ahora el flujo de checkout no enruta vuelto a favor (siempre 0),
         // pero dejamos el campo para ventas futuras y abonos manuales.
@@ -170,7 +195,9 @@ export async function processSaleTransaction({
         customerDocument: selectedCustomer?.documentId || null,
         customerPhone:    selectedCustomer?.phone      || null,
         fiadoUsd: fiadoAmountUsd,
-        casheaUsd: casheaUsd
+        casheaUsd: casheaUsd,
+        // TIP-001: propina donada, ya normalizada a una sola moneda canónica.
+        tipDonated: tipDonated
     };
 
     // FIN-008: deepFreeze en lugar de Object.freeze (congela items[] y payments[]).

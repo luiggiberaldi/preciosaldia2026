@@ -132,6 +132,10 @@ export default function CheckoutModalPOS({
 
     const casheaMeetsMinimum = casheaMinAmount <= 0 || dynamicCartTotals.totalUsd >= casheaMinAmount;
 
+    // M-2: paridad con el modo básico — bloquear el cobro si la tasa BCV es inválida.
+    // Sin esto el POS deja armar todo el pago y el rechazo llega recién en el procesador.
+    const rateError = !effectiveRate || effectiveRate <= 0;
+
     // ─── CÁLCULOS ──────────────────────────────────────────
     const {
         totalPagadoUSD,
@@ -268,6 +272,11 @@ export default function CheckoutModalPOS({
     const procesarPago = (imprimir = false) => {
         try {
             // Validaciones
+            // M-2: la tasa se valida PRIMERO — sin tasa válida nada de lo demás tiene sentido.
+            if (rateError) {
+                showToast('Tasa BCV inválida. Configúrala antes de cobrar.', 'error');
+                return;
+            }
             if (modo === 'contado' && faltaPorPagar > 0.01) {
                 showToast(`Faltan $${faltaPorPagar.toFixed(2)} por cobrar`, 'error');
                 return;
@@ -447,7 +456,8 @@ export default function CheckoutModalPOS({
                                 cliente={selectedCustomer}
                                 totalPagadoUSD={totalPagadoUSD}
                                 tasaSegura={tasaSegura}
-                                totalConIGTF={cartTotalUsd}
+                                totalConIGTF={dynamicCartTotals.totalUsd}
+                                casheaAmountUsd={casheaAmountUsd}
                                 pagoSaldoFavor={pagoSaldoFavor}
                                 setPagoSaldoFavor={setPagoSaldoFavor}
                             />
@@ -482,6 +492,7 @@ export default function CheckoutModalPOS({
                             totalPagadoGlobalUSD={totalPagadoGlobalUSD}
                             onProcesar={procesarPago}
                             isProcessing={isProcessing}
+                            rateError={rateError}
                         />
                     </div>
                 </div>

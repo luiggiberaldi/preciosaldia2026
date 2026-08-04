@@ -11,12 +11,14 @@ export default function PaymentFooter({
     totalPagadoGlobalUSD,
     onProcesar,
     isProcessing = false,
+    rateError = false,
 }) {
     const canPay = modo === 'contado'
         ? faltaPorPagar <= 0.01
         : (clienteSeleccionado && faltaPorPagar <= 0.01) || (clienteSeleccionado);
 
-    const disabled = isProcessing || (modo === 'contado'
+    // M-2: sin tasa BCV válida no se cobra (paridad con el modo básico).
+    const disabled = isProcessing || rateError || (modo === 'contado'
         ? faltaPorPagar > 0.01
         : !clienteSeleccionado);
 

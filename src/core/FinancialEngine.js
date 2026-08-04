@@ -374,6 +374,31 @@ export class FinancialEngine {
                 breakdown['_vuelto_bs'].total = round2(breakdown['_vuelto_bs'].total + safeChangeBs);
             }
 
+            // ── TIP-001 / TIP-005: propina donada ("cliente deja el cambio") ──
+            // El dinero YA está contado en el bucket de efectivo y no se restó
+            // como vuelto, así que el ingreso neto ya lo incluye. Este bucket es
+            // SOLO informativo: `isTip: true` obliga a los consumidores a
+            // excluirlo de métodos de pago y porcentajes (ver D1).
+            // Una propina tiene UNA sola moneda: se crea un único bucket.
+            if (sale.tipDonated) {
+                const tipIsBs = sale.tipDonated.currency === 'BS';
+                const tipTotal = round2(tipIsBs
+                    ? (Number(sale.tipDonated.amountBs) || 0)
+                    : (Number(sale.tipDonated.amountUsd) || 0));
+                if (tipTotal > FINANCIAL_EPSILON.PAYMENT_ZERO) {
+                    const tipKey = tipIsBs ? '_propina_bs' : '_propina_usd';
+                    if (!breakdown[tipKey]) {
+                        breakdown[tipKey] = {
+                            total: 0,
+                            currency: tipIsBs ? 'BS' : 'USD',
+                            label: tipIsBs ? 'Propina Dejada En Bs' : 'Propina Dejada En $',
+                            isTip: true,
+                        };
+                    }
+                    breakdown[tipKey].total = round2(breakdown[tipKey].total + tipTotal);
+                }
+            }
+
             // Si la venta tiene algún ítem de tipo avance de efectivo, ajustamos el efectivo físico y registramos la comisión.
             if (sale.items && sale.items.length > 0) {
                 sale.items.forEach(item => {

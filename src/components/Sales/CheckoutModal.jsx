@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { X, Users, Receipt, Wallet, ArrowLeftRight, AlertTriangle, Smartphone, Lock, LayoutGrid } from 'lucide-react';
+import { X, Users, Receipt, ArrowLeftRight, AlertTriangle, Smartphone, Lock, LayoutGrid } from 'lucide-react';
 import CasheaIcon from '../CasheaIcon';
 import { formatBs, formatCop } from '../../utils/calculatorUtils';
 import { mulR, divR, subR, round2 } from '../../utils/dinero';
@@ -17,8 +17,8 @@ export default function CheckoutModal({
     cart = [],
     cartSubtotalUsd,
     cartSubtotalBs,
-    cartTotalUsd,
-    cartTotalBs,
+    cartTotalUsd: baseCartTotalUsd,
+    cartTotalBs: baseCartTotalBs,
     cartTotalCop,
     discountData,
     effectiveRate,
@@ -27,7 +27,6 @@ export default function CheckoutModal({
     setSelectedCustomerId,
     paymentMethods,
     onConfirmSale,
-    onUseSaldoFavor,
     triggerHaptic,
     onCreateCustomer,
     copEnabled,
@@ -73,13 +72,15 @@ export default function CheckoutModal({
         rateError,
         copRateError,
         safeRate,
+        cartTotalUsd,
+        cartTotalBs,
     } = useCheckoutCalculations({
         paymentMethods,
         effectiveRate,
         tasaCop,
         copEnabled,
-        cartTotalUsd,
-        cartTotalBs,
+        cartTotalUsd: baseCartTotalUsd,
+        cartTotalBs: baseCartTotalBs,
         triggerHaptic,
         onConfirmSale,
         cart,
@@ -92,7 +93,10 @@ export default function CheckoutModal({
         if (casheaEnabled && selectedCustomer) {
             if (selectedCustomer.casheaLevel && CASHEA_LEVEL_MAP[selectedCustomer.casheaLevel] !== undefined) {
                 if (casheaMeetsMinimum) {
-                    setCasheaActive(true);
+                    // M-1: NO autoactivar Cashea. Seleccionar un cliente con nivel Cashea
+                    // no significa que la venta sea financiada — el operador decide.
+                    // Solo se pre-carga el porcentaje que le corresponde a su nivel.
+                    // (El modo POS ya se comporta así; esto alinea ambos modos.)
                     setCasheaPercent(CASHEA_LEVEL_MAP[selectedCustomer.casheaLevel]);
                 }
             } else {
@@ -103,10 +107,7 @@ export default function CheckoutModal({
         }
     }, [selectedCustomerId, selectedCustomer, casheaEnabled, casheaMeetsMinimum, setCasheaActive, setCasheaPercent]);
 
-    const handleSaldoFavor = useCallback(() => {
-        triggerHaptic && triggerHaptic();
-        if (onUseSaldoFavor) onUseSaldoFavor();
-    }, [onUseSaldoFavor, triggerHaptic]);
+
 
     return (
         <div className="fixed inset-0 z-50 bg-white dark:bg-slate-950 flex flex-col overflow-hidden">
@@ -304,17 +305,10 @@ export default function CheckoutModal({
                     onCreateCustomer={onCreateCustomer}
                 />
 
-                {/* Saldo a Favor */}
-                {selectedCustomer?.deuda < -0.01 && remainingUsd > 0.01 && (
-                    <div className="px-3 py-1">
-                        <button
-                            onClick={handleSaldoFavor}
-                            className="w-full py-2.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200 font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-2"
-                        >
-                            <Wallet size={16} /> Usar Saldo a Favor ({copEnabled && tasaCop > 0 ? (copPrimary ? `${formatCop(Math.abs(selectedCustomer.deuda) * tasaCop)} COP / $${Math.abs(selectedCustomer.deuda).toFixed(2)}` : `$${Math.abs(selectedCustomer.deuda).toFixed(2)} / ${formatCop(Math.abs(selectedCustomer.deuda) * tasaCop)} COP`) : `$${Math.abs(selectedCustomer.deuda).toFixed(2)}`})
-                        </button>
-                    </div>
-                )}
+                {/* A-2: el botón "Usar Saldo a Favor" fue eliminado. Llamaba a onUseSaldoFavor,
+                    un prop que SalesView nunca pasó (no está en sharedProps), así que fallaba
+                    en silencio; y su condición leía `deuda` en vez de `favor`.
+                    El modo POS sí tiene la funcionalidad (WalletSection) si hay que reimplementarla. */}
             </div>
 
             {/* --- COMPACT STICKY FOOTER --- */}

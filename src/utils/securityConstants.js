@@ -75,6 +75,12 @@ export const FINANCIAL_EPSILON = Object.freeze({
   CHANGE_ANOMALY_MULTIPLIER: 5,
   CHANGE_ANOMALY_MIN_USD: 100,
   CHANGE_ANOMALY_MIN_BS_FACTOR: 100,
+  /**
+   * TIP-002: propina donada por encima de este monto (USD) exige doble
+   * pulsación del botón. Un tap accidental sobre un vuelto anómalo no puede
+   * donar cientos de dólares en silencio.
+   */
+  TIP_MAX_AUTO_USD: 20,
 });
 
 /** Configuración de licencias (SEC-001). */

@@ -310,6 +310,10 @@ export function useCheckoutCalculations({
         confirmWarning,
         dismissWarning,
         safeRate,
+        // A-4: totales recalculados (doble precio + pago en Bs). La UI debe mostrar
+        // ESTOS, no los props crudos, o el operador ve un total distinto al que se cobra.
+        cartTotalUsd,
+        cartTotalBs,
         safeTasaCop,
         // FIN-009 / FIN-033: exponer errores de tasa para que la UI bloquee el cobro.
         rateError,

@@ -10,17 +10,22 @@ export default function WalletSection({
     totalPagadoUSD,
     tasaSegura,
     totalConIGTF,
+    casheaAmountUsd = 0,
     pagoSaldoFavor,
     setPagoSaldoFavor,
 }) {
     const saldoDisponible = parseFloat(cliente?.favor) || 0;
     if (saldoDisponible <= 0.01) return null;
 
-    const pagadoOtros = totalPagadoUSD;
+    // C-2: Cashea también cubre parte del total. Sin descontarlo, faltaSinSaldo
+    // queda inflado y el tope del saldo a favor permite fugas de efectivo.
+    const pagadoOtros = totalPagadoUSD + (parseFloat(casheaAmountUsd) || 0);
     const faltaSinSaldo = Math.max(0, totalConIGTF - pagadoOtros);
+    // C-2 (D1): el saldo a favor solo cubre lo que se debe. NO se convierte en efectivo.
+    const maxAplicable = Math.min(saldoDisponible, faltaSinSaldo);
 
     const handleUsarTodo = () => {
-        const aUsar = Math.min(saldoDisponible, faltaSinSaldo);
+        const aUsar = maxAplicable;
         setPagoSaldoFavor(aUsar.toFixed(2));
     };
 
@@ -44,7 +49,8 @@ export default function WalletSection({
                         value={pagoSaldoFavor}
                         onChange={(e) => {
                             const v = parseFloat(e.target.value);
-                            if (e.target.value === '' || (v >= 0 && v <= saldoDisponible)) {
+                            // C-2 (D1): el tope es maxAplicable, no saldoDisponible.
+                            if (e.target.value === '' || (v >= 0 && v <= maxAplicable)) {
                                 setPagoSaldoFavor(e.target.value);
                             }
                         }}
