@@ -9,6 +9,8 @@ import { procesarImpactoCliente } from '../utils/financialLogic';
 import TransactionModal from '../components/Customers/TransactionModal';
 import { processCustomerTransaction } from '../utils/customerTransactionProcessor';
 import { DEFAULT_PAYMENT_METHODS } from '../config/paymentMethods';
+import { processCasheaRemittance } from '../utils/casheaRemittanceProcessor';
+import CasheaRemittanceModal from '../components/Customers/CasheaRemittanceModal';
 import ConfirmModal from '../components/ConfirmModal';
 import EmptyState from '../components/EmptyState';
 import SwipeableItem from '../components/SwipeableItem';
@@ -39,6 +41,7 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
 
     // Modal de Abono / Crédito
     const [transactionModal, setTransactionModal] = useState({ isOpen: false, type: null, customer: null }); // type: 'ABONO' | 'CREDITO'
+    const [casheaModalCustomer, setCasheaModalCustomer] = useState(null);
     const [transactionAmount, setTransactionAmount] = useState('');
     const [currencyMode, setCurrencyMode] = useState('BS'); // 'BS' | 'USD'
     const [paymentMethod, setPaymentMethod] = useState('efectivo_bs');
@@ -161,7 +164,9 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
         const customer = resetBalanceCustomer;
         if (!customer) return;
 
-        const updatedCustomer = { ...customer, deuda: 0, favor: 0, casheaDeuda: 0 };
+        // casheaDeuda NO se toca: es una cuenta por cobrar A CASHEA, no saldo del
+        // cliente. Se cancela registrando la remesa, no condonando al cliente.
+        const updatedCustomer = { ...customer, deuda: 0, favor: 0 };
         const newCustomers = customers.map(c => c.id === customer.id ? updatedCustomer : c);
         await saveCustomers(newCustomers);
         showToast(`Saldo reiniciado a cero para ${customer.name}`, 'success');
@@ -169,14 +174,33 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
         setResetBalanceCustomer(null);
     };
 
-    const handleSaldarCashea = async (customer) => {
+    // Registra la REMESA que Cashea envía a la bodega. Antes esto solo ponía
+    // casheaDeuda en 0 sin registrar dinero, sin monto en auditoría y sin parciales
+    // — y además nunca llegó a cablearse a ningún botón.
+    const handleCasheaRemittance = async ({ transactionAmount, currencyMode, paymentMethod: metodo }) => {
         triggerHaptic();
-        if (!customer || (customer.casheaDeuda || 0) <= 0) return;
-        const updatedCustomer = { ...customer, casheaDeuda: 0 };
-        const newCustomers = customers.map(c => c.id === customer.id ? updatedCustomer : c);
-        await saveCustomers(newCustomers);
-        showToast(`Deuda de Cashea saldada para ${customer.name}`, 'success');
-        auditLog('CLIENTE', 'SALDAR_CASHEA', `Deuda Cashea saldada para ${customer.name}`);
+        const target = casheaModalCustomer;
+        if (!target) return;
+
+        const res = await processCasheaRemittance({
+            transactionAmount,
+            currencyMode,
+            customer: target,
+            paymentMethod: metodo,
+            bcvRate,
+            tasaCop,
+            copEnabled,
+        });
+
+        if (res?.error) {
+            showToast(res.error, 'error');
+            return;
+        }
+
+        await saveCustomers(res.newCustomers);
+        showToast(`Remesa Cashea de $${res.aplicado.toFixed(2)} registrada para ${target.name}`, 'success');
+        auditLog('CLIENTE', 'REMESA_CASHEA', `Remesa Cashea de $${res.aplicado.toFixed(2)} recibida por ${target.name}`);
+        setCasheaModalCustomer(null);
     };
 
     const handleTransaction = async () => {
@@ -462,6 +486,14 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                 )
             }
 
+            <CasheaRemittanceModal
+                isOpen={!!casheaModalCustomer}
+                customer={casheaModalCustomer}
+                onClose={() => setCasheaModalCustomer(null)}
+                onConfirm={handleCasheaRemittance}
+                activePaymentMethods={activePaymentMethods}
+            />
+
             {/* Modal Unificado: Ajustar Cuenta */}
             <TransactionModal
                 transactionModal={transactionModal}
@@ -499,7 +531,7 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                     setSelectedCustomer(null);
                 }}
                 onSaldarCashea={(c) => {
-                    handleSaldarCashea(c);
+                    setCasheaModalCustomer(c);
                     setSelectedCustomer(null);
                 }}
                 onEdit={() => {
@@ -510,6 +542,7 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                     const deuda = selectedCustomer?.deuda || 0;
                     const saldo = selectedCustomer?.saldoFavor || 0;
                     const casheaDeuda = selectedCustomer?.casheaDeuda || 0;
+
                     if (deuda > 0.005) {
                         showToast(`No se puede eliminar: ${selectedCustomer.name} tiene una deuda de $${deuda.toFixed(2)} pendiente.`, 'error');
                         return;
@@ -519,7 +552,7 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                         return;
                     }
                     if (casheaDeuda > 0.005) {
-                        showToast(`No se puede eliminar: ${selectedCustomer.name} tiene una deuda Cashea de $${casheaDeuda.toFixed(2)} pendiente.`, 'error');
+                        showToast(`No se puede eliminar: hay $${casheaDeuda.toFixed(2)} por cobrar a Cashea vinculados a ${selectedCustomer.name}.`, 'error');
                         return;
                     }
                     setDeleteCustomerTarget(selectedCustomer);
@@ -710,8 +743,10 @@ function buildCustomerStatementWhatsAppUrl(customer, sales, bcvRate) {
         msg += `*Estado:* Al día [Activo]\n`;
     }
 
+    // Cashea le remesa a la bodega: el cliente NO debe este monto. Se informa
+    // como referencia de su financiamiento, nunca como deuda con la bodega.
     if (casheaDeuda > 0) {
-        msg += `*Financiamiento Cashea:* Debe *$${formatUsd(casheaDeuda)}*\n`;
+        msg += `*Financiamiento Cashea:* $${formatUsd(casheaDeuda)} (lo paga Cashea, no usted)\n`;
     }
 
     msg += `\n*ÚLTIMAS TRANSACCIONES:*\n`;
@@ -858,14 +893,24 @@ function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, on
                         </div>
                     )}
 
-                    {/* Deuda Cashea (Si Aplica) */}
+                    {/* Por Cobrar a Cashea (Si Aplica) — NO es deuda del cliente:
+                        Cashea le remesa a la bodega. */}
                     {casheaDeuda > 0 && (
-                        <div className="bg-purple-50/60 dark:bg-purple-950/20 border border-purple-200/60 dark:border-purple-900/40 rounded-[2rem] p-4 text-center shadow-sm flex items-center justify-between px-6">
-                            <div className="flex items-center gap-2">
-                                <CasheaIcon size={18} />
-                                <span className="text-xs font-black uppercase tracking-wider text-purple-600 dark:text-purple-400">Deuda Cashea</span>
+                        <div className="bg-purple-50/60 dark:bg-purple-950/20 border border-purple-200/60 dark:border-purple-900/40 rounded-[2rem] p-4 shadow-sm space-y-3">
+                            <div className="flex items-center justify-between px-2">
+                                <div className="flex items-center gap-2">
+                                    <CasheaIcon size={18} />
+                                    <span className="text-xs font-black uppercase tracking-wider text-purple-600 dark:text-purple-400">Por cobrar a Cashea</span>
+                                </div>
+                                <span className="text-xl font-black text-purple-600 dark:text-purple-400">${formatUsd(casheaDeuda)}</span>
                             </div>
-                            <span className="text-xl font-black text-purple-600 dark:text-purple-400">-${formatUsd(casheaDeuda)}</span>
+                            <button
+                                onClick={() => onSaldarCashea(customer)}
+                                className="w-full bg-purple-600 hover:bg-purple-700 text-white rounded-[1.5rem] py-3 min-h-[48px] flex items-center justify-center gap-2 font-bold text-sm shadow-md active:scale-95 transition-all"
+                            >
+                                <CasheaIcon size={16} />
+                                <span>Registrar remesa recibida</span>
+                            </button>
                         </div>
                     )}
 

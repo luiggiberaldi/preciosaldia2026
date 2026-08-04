@@ -13,7 +13,7 @@ export function calculateReportsData(allSales, from, to, bcvRate, products) {
     // Flujo de Dinero (para Desglose de Pagos, incluye pagos de deudas y avances de efectivo)
     const salesForCashFlow = allSales.filter(s => {
         if (s.status === 'ANULADA') return false;
-        if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'VENTA_CASHEA' && s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'PAGO_PROVEEDOR' && s.tipo !== 'GASTO_INTERNO' && s.tipo !== 'AVANCE_EFECTIVO') return false;
+        if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'VENTA_CASHEA' && s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'COBRO_CASHEA' && s.tipo !== 'PAGO_PROVEEDOR' && s.tipo !== 'GASTO_INTERNO' && s.tipo !== 'AVANCE_EFECTIVO') return false;
         if (s.tipo === 'PAGO_PROVEEDOR' && s.afectaCaja === false) return false;
         const dateStr = getLocalISODate(new Date(s.timestamp));
         return dateStr >= from && dateStr <= to;
@@ -120,7 +120,7 @@ export function groupSalesByCierreId(allSales, from, to) {
 
             // Filtrar para métricas generales (stats) y flujo de caja (cashflow)
             const salesForStats = c.sales.filter(s => s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA');
-            const salesForCashFlow = c.sales.filter(s => s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA' || s.tipo === 'COBRO_DEUDA' || s.tipo === 'PAGO_PROVEEDOR' || s.tipo === 'GASTO_INTERNO' || s.tipo === 'AVANCE_EFECTIVO');
+            const salesForCashFlow = c.sales.filter(s => s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA' || s.tipo === 'COBRO_DEUDA' || s.tipo === 'COBRO_CASHEA' || s.tipo === 'PAGO_PROVEEDOR' || s.tipo === 'GASTO_INTERNO' || s.tipo === 'AVANCE_EFECTIVO');
 
             const totalUsd = sumR(salesForStats.map(s => s.totalUsd || 0));
             const totalBs = sumR(salesForStats.map(s => s.totalBs || 0));

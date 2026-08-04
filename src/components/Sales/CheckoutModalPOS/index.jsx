@@ -319,7 +319,7 @@ export default function CheckoutModalPOS({
                     amountInput: casheaAmountUsd,
                     amountInputCurrency: 'USD',
                     amountUsd: casheaAmountUsd,
-                    amountBs: casheaAmountUsd * tasaSegura,
+                    amountBs: mulR(casheaAmountUsd, tasaSegura),
                     isCashea: true,
                     casheaPercent: 100 - casheaPercent,
                 });

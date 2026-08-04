@@ -224,7 +224,9 @@ export async function processSaleTransaction({
                 .filter(p => p.methodId === 'saldo_favor')
                 .map(p => p.amountUsd));
 
-            const deudaParaCliente = casheaUsd > 0 ? casheaUsd : fiadoAmountUsd;
+            // Cashea y fiado son deudas de contrapartes distintas y coexisten:
+            // el ternario anterior descartaba silenciosamente la porción fiada.
+            const deudaParaCliente = sumR(casheaUsd, fiadoAmountUsd);
 
             const transaccionOpts = {
                 usaSaldoFavor:    amount_favor_used,

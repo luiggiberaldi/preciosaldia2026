@@ -26,7 +26,7 @@ export function useInventoryVelocity(productsTrigger) {
 
                 const recentSales = allSales.filter(s =>
                     s.timestamp && new Date(s.timestamp) >= fourteenDaysAgo &&
-                    s.tipo !== 'COBRO_DEUDA' && s.status !== 'ANULADA'
+                    s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'COBRO_CASHEA' && s.status !== 'ANULADA'
                 );
 
                 // Contar ventas por producto

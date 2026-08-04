@@ -313,7 +313,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         const currentCierreId = new Date().getTime();
         const existingCloses = sales.filter(s => s.tipo === 'REGISTRO_CIERRE');
         const cierreNumber = existingCloses.reduce((mx, s) => Math.max(mx, s.cierreNumber || 0), 0) + 1;
-        const validTiposParaCerrar = ['VENTA', 'VENTA_FIADA', 'VENTA_CASHEA', 'COBRO_DEUDA', 'PAGO_PROVEEDOR', 'GASTO_INTERNO', 'APERTURA_CAJA', 'AVANCE_EFECTIVO'];
+        const validTiposParaCerrar = ['VENTA', 'VENTA_FIADA', 'VENTA_CASHEA', 'COBRO_DEUDA', 'COBRO_CASHEA', 'PAGO_PROVEEDOR', 'GASTO_INTERNO', 'APERTURA_CAJA', 'AVANCE_EFECTIVO'];
         
         // Registrar el cierre formalmente en el log de transacciones para sincronización con el supervisor
         let registroCierre = null;

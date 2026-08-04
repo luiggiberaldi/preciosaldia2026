@@ -243,6 +243,16 @@ export class FinancialEngine {
                 // Continue execution below to register the actual cash/transfer received
             }
 
+            // La remesa recibida de Cashea reduce la cuenta por cobrar del período.
+            // Espeja exactamente el tratamiento de COBRO_DEUDA sobre 'fiado'.
+            if (sale.tipo === 'COBRO_CASHEA') {
+                if (!breakdown['cashea']) {
+                    breakdown['cashea'] = { total: 0, currency: 'FIADO', label: 'Cashea (Por Cobrar)', isReceivable: true };
+                }
+                breakdown['cashea'].total = round2(breakdown['cashea'].total - round2(sale.totalUsd || 0));
+                // Continúa abajo para registrar el dinero realmente recibido.
+            }
+
             if (!sale.payments || sale.payments.length === 0) {
                 // V1 Legacy Sales & Cobro Deudas
                 const method = sale.paymentMethod || 'efectivo_bs';
@@ -271,10 +281,16 @@ export class FinancialEngine {
                             ? p.methodLabel
                             : _resolveMethodLabel(p.methodId);
 
+                        // CASHEA: el financiador remesa a la bodega. El monto financiado
+                        // es una CUENTA POR COBRAR, no dinero cobrado. Se marca con
+                        // currency 'FIADO' + isReceivable para que ningún consumidor que
+                        // filtre por `currency` lo sume como ingreso USD del período.
+                        const isCasheaBucket = p.methodId === 'cashea';
                         breakdown[p.methodId] = {
                             total: 0,
-                            currency: p.currency || 'BS',
-                            label: resolvedLabel
+                            currency: isCasheaBucket ? 'FIADO' : (p.currency || 'BS'),
+                            label: isCasheaBucket ? 'Cashea (Por Cobrar)' : resolvedLabel,
+                            ...(isCasheaBucket && { isReceivable: true })
                         };
                     }
 

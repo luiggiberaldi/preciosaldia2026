@@ -350,9 +350,11 @@ export default function ReportsMetricsTab({
                     {/* Medios de Pago */}
                     {Object.keys(paymentBreakdown).length > 0 && (() => {
                         const allEntries = Object.entries(paymentBreakdown).filter(([, d]) => d.total > 0);
-                        const fiadoMethods = allEntries.filter(([, d]) => d.currency === 'FIADO' && !d.isChange);
+                        // Paridad literal con DashboardPaymentBreakdown.jsx: Cashea es una
+                        // cuenta por cobrar (Cashea le remesa a la bodega), nunca ingreso USD.
+                        const fiadoMethods = allEntries.filter(([method, d]) => (d.currency === 'FIADO' || method === 'cashea') && !d.isChange);
                         const bsMethods    = allEntries.filter(([, d]) => (d.currency === 'BS' || (!d.currency)) && !d.isChange);
-                        const usdMethods   = allEntries.filter(([, d]) => d.currency === 'USD' && !d.isChange);
+                        const usdMethods   = allEntries.filter(([method, d]) => d.currency === 'USD' && method !== 'cashea' && !d.isChange);
                         const copMethods   = allEntries.filter(([, d]) => d.currency === 'COP' && !d.isChange);
                         const vueltoBs     = allEntries.filter(([, d]) => d.isChange && d.currency === 'BS');
                         const vueltoUsd    = allEntries.filter(([, d]) => d.isChange && d.currency === 'USD');

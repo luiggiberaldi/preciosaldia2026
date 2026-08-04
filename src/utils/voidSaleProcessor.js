@@ -72,8 +72,15 @@ export async function processVoidSale(sale, currentSales, currentProducts) {
         const isCobroDeuda = sale.tipo === 'COBRO_DEUDA';
         const cobroAmount = isCobroDeuda ? round2(sale.totalUsd || 0) : 0;
 
+        // CASHEA: anular la VENTA cancela la cuenta por cobrar a Cashea;
+        // anular la REMESA la vuelve a abrir. Sin esto, la casheaDeuda quedaba viva
+        // para siempre tras anular la venta que la originó.
+        const casheaVentaUsd  = sale.tipo === 'VENTA_CASHEA'  ? round2(sale.casheaUsd || 0) : 0;
+        const casheaRemesaUsd = sale.tipo === 'COBRO_CASHEA' ? round2(sale.totalUsd || 0) : 0;
+
         const shouldTouchCustomer = sale.customerId
-            && (fiadoAmountUsd > 0 || favorUsed > 0 || vueltoParaMonedero > 0 || cobroAmount > 0);
+            && (fiadoAmountUsd > 0 || favorUsed > 0 || vueltoParaMonedero > 0 || cobroAmount > 0
+                || casheaVentaUsd > 0 || casheaRemesaUsd > 0);
 
         if (shouldTouchCustomer) {
             updatedCustomers = savedCustomers.map(c => {
@@ -111,11 +118,18 @@ export async function processVoidSale(sale, currentSales, currentProducts) {
                     }
                 }
 
+                // CASHEA: se revierte fuera del if/else de arriba porque es un
+                // bucket independiente de deuda/favor (contraparte distinta).
+                let newCasheaDeuda = round2(c.casheaDeuda || 0);
+                if (casheaVentaUsd > 0)  newCasheaDeuda = subR(newCasheaDeuda, casheaVentaUsd);
+                if (casheaRemesaUsd > 0) newCasheaDeuda = sumR(newCasheaDeuda, casheaRemesaUsd);
+
                 // Normalización: no permitir negativos.
                 if (newDeuda < 0) newDeuda = 0;
                 if (newFavor < 0) newFavor = 0;
+                if (newCasheaDeuda < 0) newCasheaDeuda = 0;
 
-                return { ...c, deuda: newDeuda, favor: newFavor };
+                return { ...c, deuda: newDeuda, favor: newFavor, casheaDeuda: newCasheaDeuda };
             });
         }
 

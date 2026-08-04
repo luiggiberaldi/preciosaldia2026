@@ -37,7 +37,7 @@ export function useDashboardMetrics(sales, customers, products, bcvRate) {
     const todayCashFlow = useMemo(() =>
         salesWithLocalDate.filter(s => {
             if (s.status === 'ANULADA') return false;
-            if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'VENTA_CASHEA' && s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'PAGO_PROVEEDOR' && s.tipo !== 'GASTO_INTERNO' && s.tipo !== 'APERTURA_CAJA') return false;
+            if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'VENTA_CASHEA' && s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'COBRO_CASHEA' && s.tipo !== 'PAGO_PROVEEDOR' && s.tipo !== 'GASTO_INTERNO' && s.tipo !== 'APERTURA_CAJA') return false;
             if ((s.tipo === 'PAGO_PROVEEDOR' || s.tipo === 'GASTO_INTERNO') && s.afectaCaja === false) return false;
             if (s.cajaCerrada === true) return false;
             return s.localDate === today;
@@ -124,10 +124,18 @@ export function useDashboardMetrics(sales, customers, products, bcvRate) {
     // FIN-019: usar sumR en vez de reduce raw.
     const totalDeudas = useMemo(() => {
         const deudores = customers.filter(c => (c.deuda || 0) > 0.01 || (c.casheaDeuda || 0) > 0.01);
-        const totalUsd = sumR(deudores.map(c => sumR(c.deuda || 0, c.casheaDeuda || 0)));
+        // Dos contrapartes distintas: los clientes deben `deuda`; Cashea (el
+        // financiador) debe `casheaDeuda`. `totalUsd` se conserva como el agregado
+        // histórico para no romper consumidores existentes, pero se exponen ambos
+        // desglosados para poder mostrarlos por separado.
+        const totalClientesUsd = sumR(deudores.map(c => c.deuda || 0));
+        const totalCasheaUsd   = sumR(deudores.map(c => c.casheaDeuda || 0));
+        const totalUsd = sumR(totalClientesUsd, totalCasheaUsd);
         return {
             count: deudores.length,
             totalUsd,
+            totalClientesUsd,
+            totalCasheaUsd,
             top5: [...deudores].sort((a, b) => {
                 const totalA = sumR(a.deuda || 0, a.casheaDeuda || 0);
                 const totalB = sumR(b.deuda || 0, b.casheaDeuda || 0);
@@ -140,7 +148,7 @@ export function useDashboardMetrics(sales, customers, products, bcvRate) {
     // FIN-019: usar mulR + round2 en vez de multiplicación raw.
     const topProducts = useMemo(() => {
         const productSalesMap = {};
-        sales.filter(s => s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'AJUSTE_ENTRADA' && s.tipo !== 'AJUSTE_SALIDA' && s.status !== 'ANULADA').forEach(s => {
+        sales.filter(s => s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'COBRO_CASHEA' && s.tipo !== 'AJUSTE_ENTRADA' && s.tipo !== 'AJUSTE_SALIDA' && s.status !== 'ANULADA').forEach(s => {
             if (s.items) {
                 s.items.forEach(item => {
                     if (!productSalesMap[item.name]) productSalesMap[item.name] = { name: item.name, qty: 0, revenue: 0 };
