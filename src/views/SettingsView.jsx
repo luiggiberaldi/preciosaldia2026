@@ -368,7 +368,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
 
                         {/* Version footer */}
                         <div className="text-center py-4">
-                            <p className="text-[10px] text-slate-400 dark:text-slate-600 font-bold">PreciosAlDía Bodegas v1.5.0</p>
+                            <p className="text-[10px] text-slate-400 dark:text-slate-600 font-bold">PreciosAlDía Bodegas v1.6.0</p>
                         </div>
                     </div>
                 </div>
