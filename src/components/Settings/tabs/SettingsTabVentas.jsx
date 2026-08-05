@@ -42,6 +42,13 @@ export default function SettingsTabVentas({
         }
     };
 
+    const handleCasheaMinAmountFocus = (e) => {
+        e.target.select();
+        if (casheaMinAmount === '0' || parseFloat(casheaMinAmount || '0') === 0) {
+            setCasheaMinAmount('');
+        }
+    };
+
     const handleCashAdvancePctChange = (e) => {
         let val = e.target.value.replace('-', '');
         setCashAdvancePct(val);
@@ -49,6 +56,13 @@ export default function SettingsTabVentas({
         const safeVal = isNaN(parsed) || parsed < 0 ? 0 : parsed;
         localStorage.setItem('cash_advance_default_pct', safeVal.toString());
         forceHeartbeat();
+    };
+
+    const handleCashAdvancePctFocus = (e) => {
+        e.target.select();
+        if (cashAdvancePct === '0' || parseFloat(cashAdvancePct || '0') === 0) {
+            setCashAdvancePct('');
+        }
     };
 
     const handleCashAdvancePctBlur = () => {
@@ -260,6 +274,7 @@ export default function SettingsTabVentas({
                                                 inputMode="decimal"
                                                 placeholder="0.00"
                                                 value={casheaMinAmount}
+                                                onFocus={handleCasheaMinAmountFocus}
                                                 onChange={handleCasheaMinAmountChange}
                                                 onBlur={handleCasheaMinAmountBlur}
                                                 className="w-28 text-right font-black text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-xl pl-6 pr-3 py-2 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all shadow-inner"
@@ -311,6 +326,7 @@ export default function SettingsTabVentas({
                                             inputMode="decimal"
                                             placeholder="10"
                                             value={cashAdvancePct}
+                                            onFocus={handleCashAdvancePctFocus}
                                             onChange={handleCashAdvancePctChange}
                                             onBlur={handleCashAdvancePctBlur}
                                             className="w-24 text-right font-black text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-xl pl-3 pr-7 py-2 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 transition-all shadow-inner"
