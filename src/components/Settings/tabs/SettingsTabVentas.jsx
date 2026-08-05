@@ -11,10 +11,56 @@ export default function SettingsTabVentas({
 }) {
     const { checkoutMode, setCheckoutMode } = useProductContext();
     const [casheaEnabled, setCasheaEnabled] = useState(localStorage.getItem('cashea_enabled') === 'true');
-    const [casheaMinAmount, setCasheaMinAmount] = useState(localStorage.getItem('cashea_min_amount') || '0');
+    const [casheaMinAmount, setCasheaMinAmount] = useState(() => {
+        const stored = parseFloat(localStorage.getItem('cashea_min_amount') || '0');
+        return isNaN(stored) || stored < 0 ? '0' : stored.toString();
+    });
     const [receiptCurrency, setReceiptCurrency] = useState(() => localStorage.getItem('receipt_currency_mode') || 'bs');
     const [cashAdvanceEnabled, setCashAdvanceEnabled] = useState(() => localStorage.getItem('allow_cash_advance') === 'true');
-    const [cashAdvancePct, setCashAdvancePct] = useState(() => localStorage.getItem('cash_advance_default_pct') || '10');
+    const [cashAdvancePct, setCashAdvancePct] = useState(() => {
+        const stored = parseFloat(localStorage.getItem('cash_advance_default_pct') || '10');
+        return isNaN(stored) || stored < 0 ? '10' : stored.toString();
+    });
+
+    const handleCasheaMinAmountChange = (e) => {
+        let val = e.target.value.replace('-', '');
+        setCasheaMinAmount(val);
+        const parsed = parseFloat(val);
+        const safeVal = isNaN(parsed) || parsed < 0 ? 0 : parsed;
+        localStorage.setItem('cashea_min_amount', safeVal.toString());
+        forceHeartbeat();
+    };
+
+    const handleCasheaMinAmountBlur = () => {
+        const parsed = parseFloat(casheaMinAmount);
+        if (isNaN(parsed) || parsed < 0) {
+            setCasheaMinAmount('0');
+            localStorage.setItem('cashea_min_amount', '0');
+        } else {
+            setCasheaMinAmount(parsed.toString());
+            localStorage.setItem('cashea_min_amount', parsed.toString());
+        }
+    };
+
+    const handleCashAdvancePctChange = (e) => {
+        let val = e.target.value.replace('-', '');
+        setCashAdvancePct(val);
+        const parsed = parseFloat(val);
+        const safeVal = isNaN(parsed) || parsed < 0 ? 0 : parsed;
+        localStorage.setItem('cash_advance_default_pct', safeVal.toString());
+        forceHeartbeat();
+    };
+
+    const handleCashAdvancePctBlur = () => {
+        const parsed = parseFloat(cashAdvancePct);
+        if (isNaN(parsed) || parsed < 0) {
+            setCashAdvancePct('10');
+            localStorage.setItem('cash_advance_default_pct', '10');
+        } else {
+            setCashAdvancePct(parsed.toString());
+            localStorage.setItem('cash_advance_default_pct', parsed.toString());
+        }
+    };
 
     return (
         <div className="space-y-6">
@@ -199,23 +245,32 @@ export default function SettingsTabVentas({
                             </div>
 
                             {casheaEnabled && (
-                                <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 animate-in fade-in">
-                                    <div>
-                                        <p className="text-xs font-bold text-slate-700 dark:text-slate-200">Mínimo ($)</p>
-                                        <p className="text-[10px] text-slate-500 dark:text-slate-400">Monto para habilitar</p>
+                                <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 animate-in fade-in space-y-2">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div>
+                                            <p className="text-xs font-extrabold text-slate-700 dark:text-slate-200">Monto Mínimo de Compra</p>
+                                            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Límite en USD para habilitar Cashea</p>
+                                        </div>
+                                        <div className="relative flex items-center shrink-0">
+                                            <span className="absolute left-2.5 text-xs font-black text-purple-600 dark:text-purple-400 pointer-events-none">$</span>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                step="0.01"
+                                                inputMode="decimal"
+                                                placeholder="0.00"
+                                                value={casheaMinAmount}
+                                                onChange={handleCasheaMinAmountChange}
+                                                onBlur={handleCasheaMinAmountBlur}
+                                                className="w-28 text-right font-black text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-xl pl-6 pr-3 py-2 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all shadow-inner"
+                                            />
+                                        </div>
                                     </div>
-                                    <input
-                                        type="number"
-                                        placeholder="0.00"
-                                        value={casheaMinAmount}
-                                        onChange={(e) => {
-                                            const val = e.target.value;
-                                            setCasheaMinAmount(val);
-                                            localStorage.setItem('cashea_min_amount', val);
-                                            forceHeartbeat();
-                                        }}
-                                        className="w-20 text-right font-bold text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1 text-slate-700 dark:text-white outline-none focus:ring-1 focus:ring-purple-500"
-                                    />
+                                    {parseFloat(casheaMinAmount || '0') > 0 && (
+                                        <p className="text-[10px] font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-2.5 py-1 rounded-lg border border-purple-100 dark:border-purple-900/30 flex items-center gap-1">
+                                            <span>💡</span> Solo compras de <strong>${parseFloat(casheaMinAmount).toFixed(2)} USD</strong> o más mostrarán Cashea.
+                                        </p>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -243,23 +298,25 @@ export default function SettingsTabVentas({
                             </div>
 
                             {cashAdvanceEnabled && (
-                                <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 animate-in fade-in">
+                                <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800/80 animate-in fade-in gap-3">
                                     <div>
-                                        <p className="text-xs font-bold text-slate-700 dark:text-slate-200">Comisión (%)</p>
-                                        <p className="text-[10px] text-slate-500 dark:text-slate-400">% recargo servicio</p>
+                                        <p className="text-xs font-extrabold text-slate-700 dark:text-slate-200">Comisión de Avance</p>
+                                        <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">% recargo por servicio de caja</p>
                                     </div>
-                                    <input
-                                        type="number"
-                                        placeholder="10"
-                                        value={cashAdvancePct}
-                                        onChange={(e) => {
-                                            const val = e.target.value;
-                                            setCashAdvancePct(val);
-                                            localStorage.setItem('cash_advance_default_pct', val);
-                                            forceHeartbeat();
-                                        }}
-                                        className="w-16 text-right font-bold text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1 text-slate-700 dark:text-white outline-none focus:ring-1 focus:ring-amber-500"
-                                    />
+                                    <div className="relative flex items-center shrink-0">
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="0.1"
+                                            inputMode="decimal"
+                                            placeholder="10"
+                                            value={cashAdvancePct}
+                                            onChange={handleCashAdvancePctChange}
+                                            onBlur={handleCashAdvancePctBlur}
+                                            className="w-24 text-right font-black text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-xl pl-3 pr-7 py-2 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 transition-all shadow-inner"
+                                        />
+                                        <span className="absolute right-2.5 text-xs font-black text-amber-600 dark:text-amber-400 pointer-events-none">%</span>
+                                    </div>
                                 </div>
                             )}
                         </div>

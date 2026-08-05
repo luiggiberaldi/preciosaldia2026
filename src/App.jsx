@@ -270,7 +270,7 @@ export default function App() {
     { id: 'inicio', label: 'Inicio', icon: Home },
     { id: 'ventas', label: 'Vender', icon: ShoppingCart },
     { id: 'catalogo', label: 'Inventario', icon: Store, premiumOnly: true },
-    { id: 'clientes', label: 'Contactos', icon: Users },
+    { id: 'clientes', label: 'Clientes', icon: Users },
     { id: 'reportes', label: 'Reportes', icon: BarChart3, adminOnly: true },
     { id: 'ajustes', label: 'Ajustes', icon: Settings, adminOnly: true },
   ];
@@ -633,8 +633,8 @@ function BottomNav({
   }, [cart]);
 
   return (
-    <div className="fixed bottom-1 left-0 right-0 lg:right-[400px] px-2 sm:px-6 pb-[max(0.25rem,env(safe-area-inset-bottom))] pt-0 max-w-lg lg:max-w-md mx-auto z-30 pointer-events-none animate-in slide-in-from-bottom-4 duration-300">
-      <div className="relative bg-slate-900/95 dark:bg-slate-950/95 backdrop-blur-2xl rounded-2xl px-2 py-1.5 flex justify-between items-center shadow-2xl shadow-black/40 border border-white/10 ring-1 ring-black/10 pointer-events-auto">
+    <div className="fixed bottom-1 left-0 right-0 lg:right-[400px] px-1 sm:px-6 pb-[max(0.25rem,env(safe-area-inset-bottom))] pt-0 max-w-xl lg:max-w-lg mx-auto z-30 pointer-events-none animate-in slide-in-from-bottom-4 duration-300">
+      <div className="relative bg-slate-900/95 dark:bg-slate-950/95 backdrop-blur-2xl rounded-2xl px-1 sm:px-2 py-1.5 flex justify-between items-center shadow-2xl shadow-black/40 border border-white/10 ring-1 ring-black/10 pointer-events-auto">
         {tabs.map(tab => {
           const isVender = tab.id === 'ventas';
           const isActive = activeTab === tab.id;
@@ -700,7 +700,7 @@ function TabButton({ id, icon, label, isActive, isHero, badgeCount, onClick, 'da
             </span>
           )}
         </div>
-        <span className={`w-full max-w-full truncate text-center text-[10px] sm:text-xs font-black leading-tight transition-colors duration-200 ${
+        <span className={`w-full max-w-full truncate text-center text-[9px] xs:text-[10px] sm:text-xs tracking-tight xs:tracking-normal font-black leading-tight transition-colors duration-200 ${
           isActive ? 'text-emerald-400' : 'text-emerald-500/90 group-hover:text-emerald-400'
         }`}>
           {label}
@@ -722,7 +722,7 @@ function TabButton({ id, icon, label, isActive, isHero, badgeCount, onClick, 'da
       }`}>
         {icon}
       </span>
-      <span className={`w-full max-w-full truncate text-center text-[10px] sm:text-xs font-medium leading-tight transition-colors duration-200 ${
+      <span className={`w-full max-w-full truncate text-center text-[9px] xs:text-[10px] sm:text-xs tracking-tight xs:tracking-normal font-medium leading-tight transition-colors duration-200 ${
         isActive ? 'text-white font-bold' : 'text-slate-400 group-hover:text-slate-200'
       }`}>
         {label}
