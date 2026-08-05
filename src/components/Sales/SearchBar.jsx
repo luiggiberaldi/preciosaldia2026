@@ -1,7 +1,7 @@
 import { forwardRef } from 'react';
 import { Search, Mic, Package, X, Box } from 'lucide-react';
 import { BODEGA_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../config/categories';
-import { formatCop, getCop, getUsd } from '../../utils/calculatorUtils';
+import { formatCop, formatUsd, getCop, getUsd } from '../../utils/calculatorUtils';
 import SmartImage from '../SmartImage';
 
 const formatBs = (n) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
