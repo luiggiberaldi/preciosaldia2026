@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Clock, Send, Ban, ChevronDown, ChevronUp, Trash2, Shuffle, Recycle, Receipt, Printer, LockIcon, CornerDownLeft, Smartphone, DollarSign } from 'lucide-react';
+import { Clock, Send, Ban, ChevronDown, ChevronUp, Trash2, Shuffle, Recycle, Receipt, Printer, LockIcon, CornerDownLeft, Smartphone, DollarSign, HandCoins } from 'lucide-react';
 import { formatBs, formatCop } from '../../utils/calculatorUtils';
 import { getPaymentLabel, getPaymentMethod, PAYMENT_ICONS, toTitleCase, getPaymentIcon } from '../../config/paymentMethods';
 import EmptyState from '../EmptyState';
@@ -292,6 +292,12 @@ export default function SalesHistory({
                                                         ? <><span>−{formatCop(s.changeUsd * tasaCop)} COP</span><span className="font-normal opacity-75">/ −${s.changeUsd.toFixed(2)} / −{formatBs(s.changeBs || s.changeUsd * (s.rate || bcvRate))} Bs</span></>
                                                         : <><span>−${s.changeUsd.toFixed(2)}</span><span className="font-normal opacity-75">/ −{formatCop(s.changeUsd * tasaCop)} COP / −{formatBs(s.changeBs || s.changeUsd * (s.rate || bcvRate))} Bs</span></>
                                                     : <><span>−${s.changeUsd.toFixed(2)}</span><span className="font-normal opacity-75">/ −{formatBs(s.changeBs || s.changeUsd * (s.rate || bcvRate))} Bs</span></>}
+                                            </div>
+                                        )}
+                                        {s.tipDonated && s.tipDonated.amountUsd > 0 && (
+                                            <div className="flex items-center gap-1 self-start mt-0.5 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 font-bold px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800/40 text-[10px]">
+                                                <HandCoins size={11} className="text-emerald-600 shrink-0" />
+                                                <span>Cliente dejó el cambio: {s.tipDonated.currency === 'BS' ? `Bs ${formatBs(s.tipDonated.amountBs)}` : `$${s.tipDonated.amountUsd.toFixed(2)}`}</span>
                                             </div>
                                         )}
                                     </div>
