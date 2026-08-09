@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Package, Calculator, ChevronDown, Clock, HelpCircle, Trash2, X, DollarSign } from 'lucide-react';
+import { Package, Calculator, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Clock, HelpCircle, Trash2, X, DollarSign, Grid } from 'lucide-react';
 import { BODEGA_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../config/categories';
 import { formatCop, formatBs, formatUsd, getCop, getUsd } from '../../utils/calculatorUtils';
 import SmartImage from '../SmartImage';
@@ -38,6 +38,18 @@ export default function CategoryBar({
     const [holdNote, setHoldNote] = useState('');
     const [imgErrorMap, setImgErrorMap] = useState({});
 
+    // PC / Desktop optimization states
+    const [canScrollLeft, setCanScrollLeft] = useState(false);
+    const [canScrollRight, setCanScrollRight] = useState(false);
+    const [isExpanded, setIsExpanded] = useState(false);
+
+    const checkScrollState = () => {
+        const el = categoryScrollRef.current;
+        if (!el) return;
+        setCanScrollLeft(el.scrollLeft > 4);
+        setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+    };
+
     const handleConfirmHold = () => {
         if (onHoldCart) {
             onHoldCart(holdNote);
@@ -51,19 +63,36 @@ export default function CategoryBar({
         setVisibleCount(PAGE_SIZE);
     }, [selectedCategory]);
 
-    // Wheel → scroll horizontal sin advertencia de evento pasivo
+    // Wheel → scroll horizontal sin advertencia de evento pasivo + scroll checks
     useEffect(() => {
         const el = categoryScrollRef.current;
         if (!el) return;
+
+        checkScrollState();
         const handler = (e) => {
             if (e.deltaY !== 0) {
                 e.preventDefault();
                 el.scrollLeft += e.deltaY;
+                checkScrollState();
             }
         };
         el.addEventListener('wheel', handler, { passive: false });
-        return () => el.removeEventListener('wheel', handler);
+        el.addEventListener('scroll', checkScrollState);
+        window.addEventListener('resize', checkScrollState);
+
+        return () => {
+            el.removeEventListener('wheel', handler);
+            el.removeEventListener('scroll', checkScrollState);
+            window.removeEventListener('resize', checkScrollState);
+        };
     }, []);
+
+    const scrollByAmount = (amount) => {
+        if (categoryScrollRef.current) {
+            categoryScrollRef.current.scrollBy({ left: amount, behavior: 'smooth' });
+            setTimeout(checkScrollState, 250);
+        }
+    };
 
     const visibleProducts = filteredByCategory.slice(0, visibleCount);
     const hasMore = filteredByCategory.length > visibleCount;
@@ -78,11 +107,27 @@ export default function CategoryBar({
     return (
         <div className={`relative ${searchTerm.length === 0 ? 'lg:flex-1 lg:overflow-hidden lg:flex lg:flex-col lg:min-h-0' : ''}`}>
             
-            {/* Category Chips Container with Mask */}
-            <div className="relative horizontal-scroll-mask mb-1.5 shrink-0">
+            {/* Category Chips Container (Optimized for PC: Smooth scroll buttons & optional multiline wrap) */}
+            <div className="relative mb-1.5 shrink-0 flex items-center gap-1">
+                
+                {/* Scroll Left Button (PC Only) */}
+                {canScrollLeft && !isExpanded && (
+                    <button
+                        onClick={() => { triggerHaptic && triggerHaptic(); scrollByAmount(-260); }}
+                        className="hidden md:flex shrink-0 items-center justify-center w-8 h-8 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-md text-slate-600 dark:text-slate-300 hover:text-brand hover:border-brand transition-all active:scale-95 z-10"
+                        title="Desplazar a la izquierda"
+                    >
+                        <ChevronLeft size={16} />
+                    </button>
+                )}
+
                 <div
                     ref={categoryScrollRef}
-                    className="shrink-0 flex gap-1 overflow-x-auto pb-1.5 pt-1 pl-0.5 pr-12 scrollbar-hide"
+                    className={`flex-1 flex gap-1 ${
+                        isExpanded
+                            ? 'flex-wrap py-1.5 px-0.5 max-h-48 overflow-y-auto'
+                            : 'overflow-x-auto py-1.5 px-0.5 scrollbar-hide flex-nowrap'
+                    }`}
                 >
                     {/* Monto Libre Button */}
                     <button
@@ -120,7 +165,7 @@ export default function CategoryBar({
                                 className={`shrink-0 flex items-center gap-1.5 px-3 py-2 min-h-[40px] rounded-lg text-xs font-bold transition-all active:scale-95 border ${
                                     isActive
                                         ? `${catColorClass} shadow-sm border-transparent`
-                                        : 'bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-brand'
+                                        : 'bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-brand hover:text-brand'
                                 }`}
                             >
                                 {cat.label}
@@ -130,9 +175,30 @@ export default function CategoryBar({
                             </button>
                         );
                     })}
-                    {/* Spacer to prevent clipping on scroll */}
-                    <div className="shrink-0 w-10 h-px" />
                 </div>
+
+                {/* Scroll Right Button (PC Only) */}
+                {canScrollRight && !isExpanded && (
+                    <button
+                        onClick={() => { triggerHaptic && triggerHaptic(); scrollByAmount(260); }}
+                        className="hidden md:flex shrink-0 items-center justify-center w-8 h-8 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-md text-slate-600 dark:text-slate-300 hover:text-brand hover:border-brand transition-all active:scale-95 z-10"
+                        title="Desplazar a la derecha"
+                    >
+                        <ChevronRight size={16} />
+                    </button>
+                )}
+
+                {/* PC Expand / Wrap Toggle Button */}
+                {activeCategories.length > 5 && (
+                    <button
+                        onClick={() => { setIsExpanded(!isExpanded); triggerHaptic && triggerHaptic(); }}
+                        className="hidden md:flex shrink-0 items-center gap-1 px-2.5 py-2 min-h-[40px] rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all active:scale-95 shadow-sm"
+                        title={isExpanded ? "Vista carrusel" : "Mostrar todas las categorías"}
+                    >
+                        {isExpanded ? <ChevronUp size={14} /> : <Grid size={14} />}
+                        <span>{isExpanded ? "Plegar" : "Ver todas"}</span>
+                    </button>
+                )}
             </div>
 
             {/* ── BARRA DE ACCIONES RÁPIDAS (Listo POS 2026 Style) ── */}
