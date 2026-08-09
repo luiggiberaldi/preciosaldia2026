@@ -568,10 +568,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 bcvRate={bcvRate}
                 copEnabled={copEnabled}
                 copPrimary={copPrimary}
-                tasaCop={tasaCop}
-            />
-
-            {/* Gráfica semanal */}
+                     {/* Gráfica semanal */}
             <SalesChart
                 weekData={weekData}
                 selectedDate={selectedChartDate}
@@ -586,6 +583,32 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                         window.scrollBy({ top: 150, behavior: 'smooth' });
                     }, 50);
                 }}
+            />
+
+            {/* Historial de ventas — integrado en la columna izquierda para eliminar espacios vacíos */}
+            <SalesHistory
+                sales={sales}
+                recentSales={recentSales}
+                bcvRate={bcvRate}
+                totalSalesCount={sales.filter(s => s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA').length}
+                isAdmin={!isCajero}
+                onVoidSale={handleVoidSale}
+                onShareWhatsApp={handleShareWhatsApp}
+                onDownloadPDF={handleDownloadPDF}
+                onOpenDeleteModal={() => setIsDeleteModalOpen(true)}
+                onRequestClientForTicket={(sale) => {
+                    triggerHaptic && triggerHaptic();
+                    setTicketPendingSale(sale);
+                }}
+                onRecycleSale={(sale) => {
+                    triggerHaptic && triggerHaptic();
+                    loadCart(sale.items);
+                    if (onNavigate) onNavigate('ventas');
+                }}
+                onPrintTicket={handlePrintTicket}
+                copEnabled={copEnabled}
+                copPrimary={copPrimary}
+                tasaCop={tasaCop}
             />
 
             </div>{/* end LEFT column */}
@@ -715,7 +738,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                                             {copPrimary
                                                 ? `$${p.revenue.toFixed(2)} · ${formatBs(p.revenue * bcvRate)} Bs`
                                                 : `${formatCop(p.revenue * tasaCop)} COP · ${formatBs(p.revenue * bcvRate)} Bs`}
-                                          </p>
+                                           </p>
                                         : <p className="text-[10px] text-accent-600 dark:text-accent-400">{formatBs(p.revenue * bcvRate)} Bs</p>
                                     }
                                 </div>
@@ -726,33 +749,8 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             )}
 
             </div>{/* end RIGHT column */}
-            </div>/* end two-col grid */
+            </div>{/* end two-col grid */}
             )}{/* end isCajero conditional */}
-
-            <SalesHistory
-                sales={sales}
-                recentSales={recentSales}
-                bcvRate={bcvRate}
-                totalSalesCount={sales.filter(s => s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA').length}
-                isAdmin={!isCajero}
-                onVoidSale={handleVoidSale}
-                onShareWhatsApp={handleShareWhatsApp}
-                onDownloadPDF={handleDownloadPDF}
-                onOpenDeleteModal={() => setIsDeleteModalOpen(true)}
-                onRequestClientForTicket={(sale) => {
-                    triggerHaptic && triggerHaptic();
-                    setTicketPendingSale(sale);
-                }}
-                onRecycleSale={(sale) => {
-                    triggerHaptic && triggerHaptic();
-                    loadCart(sale.items);
-                    if (onNavigate) onNavigate('ventas');
-                }}
-                onPrintTicket={handlePrintTicket}
-                copEnabled={copEnabled}
-                copPrimary={copPrimary}
-                tasaCop={tasaCop}
-            />
 
             {/* Empty state */}
             {sales.length === 0 && (
