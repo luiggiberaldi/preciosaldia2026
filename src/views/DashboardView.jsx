@@ -528,8 +528,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                     </div>
                 </div>
             ) : (
-            /* ── ADMIN: layout completo ── */
-            <div className={`${(outOfStockProducts.length > 0 || lowStockProducts.length > 0 || topProducts.length > 0) ? 'lg:grid lg:grid-cols-[1fr_300px] xl:grid-cols-[1fr_340px] lg:gap-6 lg:items-start' : ''}`}>
+                <div className={`${(outOfStockProducts.length > 0 || lowStockProducts.length > 0 || topProducts.length > 0) ? 'lg:grid lg:grid-cols-[1fr_300px] xl:grid-cols-[1fr_340px] lg:gap-6 lg:items-start' : ''}`}>
 
             {/* LEFT: Stats + Payment + Chart */}
             <div>
@@ -568,7 +567,10 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 bcvRate={bcvRate}
                 copEnabled={copEnabled}
                 copPrimary={copPrimary}
-                     {/* Gráfica semanal */}
+                tasaCop={tasaCop}
+            />
+
+            {/* Gráfica semanal */}
             <SalesChart
                 weekData={weekData}
                 selectedDate={selectedChartDate}
@@ -748,9 +750,9 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 </div>
             )}
 
-            </div>{/* end RIGHT column */}
-            </div>{/* end two-col grid */}
-            )}{/* end isCajero conditional */}
+            </div>
+            </div>
+            )}
 
             {/* Empty state */}
             {sales.length === 0 && (
