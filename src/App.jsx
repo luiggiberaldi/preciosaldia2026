@@ -644,10 +644,9 @@ function BottomNav({
             <TabButton
               key={tab.id}
               id={tab.id}
-              icon={<tab.icon size={isVender ? 20 : 18} strokeWidth={isActive ? 2.5 : 2} />}
+              icon={<tab.icon size={18} strokeWidth={isActive ? 2.5 : 2} />}
               label={tab.label}
               isActive={isActive}
-              isHero={isVender}
               badgeCount={badgeCount}
               onClick={() => { triggerHaptic(); setActiveTab(tab.id); }}
               data-tour={`tab-${tab.id}`}
@@ -679,51 +678,27 @@ function BottomNav({
   );
 }
 
-function TabButton({ id, icon, label, isActive, isHero, badgeCount, onClick, 'data-tour': dataTour }) {
-  if (isHero) {
-    return (
-      <button
-        data-tour={dataTour}
-        onClick={onClick}
-        className="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-1 min-h-[44px] group relative transition-transform active:scale-95 px-0.5 overflow-visible"
-        title="Ir al Punto de Venta (Vender)"
-      >
-        <div className={`relative flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 rounded-full transition-all duration-300 shadow-lg shrink-0 ${
-          isActive 
-            ? 'bg-gradient-to-tr from-emerald-500 via-teal-500 to-cyan-400 text-white shadow-emerald-500/40 ring-2 ring-emerald-400/50 scale-105' 
-            : 'bg-emerald-600/90 hover:bg-emerald-500 text-white shadow-emerald-900/50 hover:scale-105'
-        }`}>
-          {icon}
-          {badgeCount > 0 && (
-            <span className="absolute -top-1 -right-1 bg-rose-500 text-white font-black text-[10px] min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center border-2 border-slate-900 shadow-md animate-bounce">
-              {badgeCount > 99 ? '99+' : badgeCount}
-            </span>
-          )}
-        </div>
-        <span className={`w-full max-w-full truncate text-center text-[9px] xs:text-[10px] sm:text-xs tracking-tight xs:tracking-normal font-black leading-tight transition-colors duration-200 ${
-          isActive ? 'text-emerald-400' : 'text-emerald-500/90 group-hover:text-emerald-400'
-        }`}>
-          {label}
-        </span>
-      </button>
-    );
-  }
-
+function TabButton({ id, icon, label, isActive, badgeCount, onClick, 'data-tour': dataTour }) {
   return (
     <button
       data-tour={dataTour}
       onClick={onClick}
-      className="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-1 min-h-[44px] group transition-all duration-200 active:scale-95 px-0.5 overflow-hidden"
+      className="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-1 min-h-[44px] group relative transition-all duration-200 active:scale-95 px-0.5 overflow-visible"
     >
-      <span className={`flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full transition-all duration-200 shrink-0 ${
+      <div className={`relative flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full transition-all duration-300 shrink-0 ${
         isActive 
-          ? 'bg-white/10 text-white shadow-sm ring-1 ring-white/15' 
-          : 'text-slate-400 hover:text-white hover:bg-white/5'
+          ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/40 ring-2 ring-emerald-400/50 scale-105' 
+          : 'bg-white/5 text-slate-400 hover:text-white hover:bg-white/10'
       }`}>
         {icon}
-      </span>
-      <span className={`w-full max-w-full truncate text-center text-[9px] xs:text-[10px] sm:text-xs tracking-tight xs:tracking-normal font-medium leading-tight transition-colors duration-200 ${
-        isActive ? 'text-white font-bold' : 'text-slate-400 group-hover:text-slate-200'
+        {badgeCount > 0 && (
+          <span className="absolute -top-1 -right-1 bg-rose-500 text-white font-black text-[10px] min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center border-2 border-slate-900 shadow-md animate-bounce">
+            {badgeCount > 99 ? '99+' : badgeCount}
+          </span>
+        )}
+      </div>
+      <span className={`w-full max-w-full truncate text-center text-[9px] xs:text-[10px] sm:text-xs tracking-tight xs:tracking-normal leading-tight transition-colors duration-200 ${
+        isActive ? 'text-white font-bold' : 'text-slate-400 group-hover:text-slate-200 font-medium'
       }`}>
         {label}
       </span>

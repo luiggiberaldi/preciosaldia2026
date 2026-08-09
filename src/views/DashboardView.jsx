@@ -147,8 +147,8 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         today, todaySales, todayCashFlow, todayApertura,
         todayTotalBs, todayTotalUsd, todayTotalCop, todayItemsSold,
         todayExpenses, todayExpensesUsd, todayGastos, todayGastosUsd, todayProfit,
-        getRecentSales, weekData, lowStockProducts,
-        totalDeudas, topProducts, paymentBreakdown, todayTopProducts,
+        getRecentSales, weekData, outOfStockProducts, lowStockProducts,
+        totalDeudas, topProducts, paymentBreakdown, todayTopProducts, inventoryMetrics,
     } = useDashboardMetrics(sales, customers, products, bcvRate);
 
     // Gastos Internos
@@ -529,7 +529,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 </div>
             ) : (
             /* ── ADMIN: layout completo ── */
-            <div className={`${(lowStockProducts.length > 0 || topProducts.length > 0) ? 'lg:grid lg:grid-cols-[1fr_300px] xl:grid-cols-[1fr_340px] lg:gap-6 lg:items-start' : ''}`}>
+            <div className={`${(outOfStockProducts.length > 0 || lowStockProducts.length > 0 || topProducts.length > 0) ? 'lg:grid lg:grid-cols-[1fr_300px] xl:grid-cols-[1fr_340px] lg:gap-6 lg:items-start' : ''}`}>
 
             {/* LEFT: Stats + Payment + Chart */}
             <div>
@@ -590,13 +590,85 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
 
             </div>{/* end LEFT column */}
 
-            {/* RIGHT: Low stock + Top products */}
+            {/* RIGHT: Inventory Valuation + Out of stock + Low stock + Top products */}
             <div>
-            {/* Bajo Stock — v1.2.0: reveal + shadow-tone-sm */}
+            {/* Valoración del Inventario — Tarjeta Ejecutiva */}
+            {inventoryMetrics && inventoryMetrics.totalRetailUsd > 0 && (
+                <div className="bg-surface dark:bg-surface-100 rounded-2xl p-4 border border-emerald-200 dark:border-emerald-800/30 shadow-tone-sm mb-5 relative overflow-hidden">
+                    <div className="absolute -right-4 -top-4 w-16 h-16 bg-emerald-50 dark:bg-emerald-900/10 rounded-full blur-2xl"></div>
+                    <div className="flex items-center justify-between mb-2 relative z-10">
+                        <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-black">
+                                $
+                            </div>
+                            <div>
+                                <h3 className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase">Capital en Inventario</h3>
+                                <p className="text-[10px] text-slate-400">Valoración total a PVP</p>
+                            </div>
+                        </div>
+                        <span className="text-[10px] font-extrabold bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-full">
+                            {inventoryMetrics.marginPct.toFixed(1)}% Margen
+                        </span>
+                    </div>
+
+                    <div className="mt-3 relative z-10">
+                        <p className="text-2xl font-outfit font-black text-slate-800 dark:text-white">
+                            ${inventoryMetrics.totalRetailUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                        {copEnabled && tasaCop > 0 ? (
+                            <p className="text-[10px] text-slate-400 mt-0.5">
+                                {formatCop(inventoryMetrics.totalRetailUsd * tasaCop)} COP · {formatBs(inventoryMetrics.totalRetailUsd * bcvRate)} Bs
+                            </p>
+                        ) : (
+                            <p className="text-[10px] text-slate-400 mt-0.5">{formatBs(inventoryMetrics.totalRetailUsd * bcvRate)} Bs</p>
+                        )}
+
+                        <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 grid grid-cols-2 gap-2 text-[10px]">
+                            <div>
+                                <span className="text-slate-400 font-medium block">Costo Inversión:</span>
+                                <span className="font-bold text-slate-600 dark:text-slate-300">
+                                    ${inventoryMetrics.totalCostUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                            </div>
+                            <div>
+                                <span className="text-emerald-500 font-medium block">Ganancia Proyectada:</span>
+                                <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                                    +${inventoryMetrics.totalProfitUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Sin Stock — Tarjeta Roja */}
+            {outOfStockProducts.length > 0 && (
+                <div className="bg-surface dark:bg-surface-100 rounded-2xl p-4 border border-red-200 dark:border-red-800/30 shadow-tone-sm mb-5">
+                    <h3 className="text-xs font-bold text-red-500 uppercase mb-3 flex items-center gap-1">
+                        <AlertTriangle size={12} className="text-red-500" /> Sin Stock ({outOfStockProducts.length})
+                    </h3>
+                    <div className="space-y-2">
+                        {outOfStockProducts.map(p => (
+                            <div key={p.id} className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 overflow-hidden">
+                                    {p.image ? <img src={p.image} className="w-full h-full object-contain" /> : <Package size={14} className="text-slate-400" />}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{p.name}</p>
+                                </div>
+                                <span className="text-xs font-black px-2 py-0.5 rounded-full bg-red-100 text-red-600 dark:bg-red-900/20 dark:text-red-400">
+                                    {p.stock ?? 0} {p.unit === 'kg' ? 'kg' : p.unit === 'litro' ? 'lt' : 'ud'}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Bajo Stock — Tarjeta Ámbar */}
             {lowStockProducts.length > 0 && (
                 <div className="bg-surface dark:bg-surface-100 rounded-2xl p-4 border border-amber-200 dark:border-amber-800/30 shadow-tone-sm mb-5">
                     <h3 className="text-xs font-bold text-amber-500 uppercase mb-3 flex items-center gap-1">
-                        <AlertTriangle size={12} /> Bajo Stock ({lowStockProducts.length})
+                        <AlertTriangle size={12} className="text-amber-500" /> Bajo Stock ({lowStockProducts.length})
                     </h3>
                     <div className="space-y-2">
                         {lowStockProducts.map(p => (
@@ -607,8 +679,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                                 <div className="flex-1 min-w-0">
                                     <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{p.name}</p>
                                 </div>
-                                <span className={`text-xs font-black px-2 py-0.5 rounded-full ${(p.stock ?? 0) === 0 ? 'bg-red-100 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'bg-amber-100 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400'
-                                    }`}>
+                                <span className="text-xs font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400">
                                     {p.stock ?? 0} {p.unit === 'kg' ? 'kg' : p.unit === 'litro' ? 'lt' : 'ud'}
                                 </span>
                             </div>

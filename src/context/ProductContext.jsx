@@ -260,6 +260,40 @@ export function ProductProvider({ children }) {
         });
     }, []);
 
+    // Métricas Financieras del Inventario (Valor Total Venta $, Costo de Inversión $, Ganancia $, Margen %)
+    const inventoryFinancials = useMemo(() => {
+        let totalRetailUsd = 0;
+        let totalCostUsd = 0;
+        let totalUnits = 0;
+
+        products.forEach(p => {
+            const stockQty = p.stock ?? 0;
+            if (stockQty <= 0) return;
+
+            const retailPrice = (p.sellByUnit && p.unitPriceUsd > 0) ? p.unitPriceUsd : (p.priceUsdt || p.priceUsd || 0);
+            const unitsCount = (p.sellByUnit && p.unitsPerPackage > 1) ? (stockQty * p.unitsPerPackage) : stockQty;
+
+            totalRetailUsd += (retailPrice * unitsCount);
+            totalUnits += stockQty;
+
+            const cost = p.costUsd || 0;
+            totalCostUsd += (cost * stockQty);
+        });
+
+        const totalProfitUsd = totalRetailUsd - totalCostUsd;
+        const marginPct = totalRetailUsd > 0 ? (totalProfitUsd / totalRetailUsd) * 100 : 0;
+        const markupPct = totalCostUsd > 0 ? (totalProfitUsd / totalCostUsd) * 100 : 0;
+
+        return {
+            totalRetailUsd,
+            totalCostUsd,
+            totalProfitUsd,
+            marginPct,
+            markupPct,
+            totalUnits
+        };
+    }, [products]);
+
     const value = useMemo(() => ({
         ...rateState,
         products,
@@ -271,7 +305,8 @@ export function ProductProvider({ children }) {
         effectiveCheckoutMode,
         setCheckoutMode,
         adjustStock,
-        restoreShadowBackup
+        restoreShadowBackup,
+        inventoryFinancials
     }), [
         rateState,
         products,
@@ -280,7 +315,8 @@ export function ProductProvider({ children }) {
         checkoutMode,
         effectiveCheckoutMode,
         adjustStock,
-        restoreShadowBackup
+        restoreShadowBackup,
+        inventoryFinancials
     ]);
 
     return (

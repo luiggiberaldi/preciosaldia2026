@@ -113,9 +113,16 @@ export function useDashboardMetrics(sales, customers, products, bcvRate) {
         return { date: dateStr, total: sumR(daySales.map(s => s.totalUsd || 0)), count: daySales.length };
     }), [salesWithLocalDate]);
 
-    // Productos bajo stock
+    // Productos sin stock (stock <= 0)
+    const outOfStockProducts = useMemo(() =>
+        products.filter(p => (p.stock ?? 0) <= 0)
+            .sort((a, b) => (a.stock ?? 0) - (b.stock ?? 0)).slice(0, 6),
+        [products]
+    );
+
+    // Productos bajo stock (stock > 0 y <= lowStockAlert)
     const lowStockProducts = useMemo(() =>
-        products.filter(p => (p.stock ?? 0) <= (p.lowStockAlert ?? 5))
+        products.filter(p => (p.stock ?? 0) > 0 && (p.stock ?? 0) <= (p.lowStockAlert ?? 5))
             .sort((a, b) => (a.stock ?? 0) - (b.stock ?? 0)).slice(0, 6),
         [products]
     );
@@ -144,13 +151,15 @@ export function useDashboardMetrics(sales, customers, products, bcvRate) {
         };
     }, [customers]);
 
-    // Top productos vendidos (todas las ventas netas)
+    // Top productos vendidos (todas las ventas netas — excluye Venta Libre / ítems personalizados)
     // FIN-019: usar mulR + round2 en vez de multiplicación raw.
     const topProducts = useMemo(() => {
         const productSalesMap = {};
         sales.filter(s => s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'COBRO_CASHEA' && s.tipo !== 'AJUSTE_ENTRADA' && s.tipo !== 'AJUSTE_SALIDA' && s.status !== 'ANULADA').forEach(s => {
             if (s.items) {
                 s.items.forEach(item => {
+                    const isCustom = item.isCustom || String(item.id || '').startsWith('custom_') || item.name?.toLowerCase()?.trim() === 'venta libre' || item.name?.toLowerCase()?.startsWith('venta libre');
+                    if (isCustom) return;
                     if (!productSalesMap[item.name]) productSalesMap[item.name] = { name: item.name, qty: 0, revenue: 0 };
                     productSalesMap[item.name].qty += item.qty;
                     productSalesMap[item.name].revenue = sumR(productSalesMap[item.name].revenue, mulR(item.priceUsd, item.qty));
@@ -165,13 +174,15 @@ export function useDashboardMetrics(sales, customers, products, bcvRate) {
         return FinancialEngine.calculatePaymentBreakdown(todayCashFlow);
     }, [todayCashFlow]);
 
-    // Top productos vendidos HOY (para cierre del día)
+    // Top productos vendidos HOY (para cierre del día — excluye Venta Libre)
     // FIN-019: usar mulR + round2 en vez de multiplicación raw.
     const todayTopProducts = useMemo(() => {
         const todayProductMap = {};
         todaySales.forEach(s => {
             if (s.items) {
                 s.items.forEach(item => {
+                    const isCustom = item.isCustom || String(item.id || '').startsWith('custom_') || item.name?.toLowerCase()?.trim() === 'venta libre' || item.name?.toLowerCase()?.startsWith('venta libre');
+                    if (isCustom) return;
                     if (!todayProductMap[item.name]) todayProductMap[item.name] = { name: item.name, qty: 0, revenue: 0 };
                     todayProductMap[item.name].qty += item.qty;
                     todayProductMap[item.name].revenue = sumR(todayProductMap[item.name].revenue, mulR(item.priceUsd, item.qty));
@@ -180,6 +191,35 @@ export function useDashboardMetrics(sales, customers, products, bcvRate) {
         });
         return Object.values(todayProductMap).sort((a, b) => b.qty - a.qty).slice(0, 10);
     }, [todaySales]);
+
+    // Métricas financieras del inventario en stock
+    const inventoryMetrics = useMemo(() => {
+        let totalRetailUsd = 0;
+        let totalCostUsd = 0;
+
+        products.forEach(p => {
+            const qty = p.stock ?? 0;
+            if (qty <= 0) return;
+            const retailPrice = (p.sellByUnit && p.unitPriceUsd > 0) ? p.unitPriceUsd : (p.priceUsdt || p.priceUsd || 0);
+            const actualQty = (p.sellByUnit && p.unitsPerPackage > 1) ? (qty * p.unitsPerPackage) : qty;
+
+            totalRetailUsd += (retailPrice * actualQty);
+            const unitCost = p.costUsd || 0;
+            totalCostUsd += (unitCost * qty);
+        });
+
+        const totalProfitUsd = totalRetailUsd - totalCostUsd;
+        const marginPct = totalRetailUsd > 0 ? (totalProfitUsd / totalRetailUsd) * 100 : 0;
+        const markupPct = totalCostUsd > 0 ? (totalProfitUsd / totalCostUsd) * 100 : 0;
+
+        return {
+            totalRetailUsd,
+            totalCostUsd,
+            totalProfitUsd,
+            marginPct,
+            markupPct
+        };
+    }, [products]);
 
     return {
         today,
@@ -197,10 +237,12 @@ export function useDashboardMetrics(sales, customers, products, bcvRate) {
         todayProfit,
         getRecentSales,
         weekData,
+        outOfStockProducts,
         lowStockProducts,
         totalDeudas,
         topProducts,
         paymentBreakdown,
         todayTopProducts,
+        inventoryMetrics,
     };
 }

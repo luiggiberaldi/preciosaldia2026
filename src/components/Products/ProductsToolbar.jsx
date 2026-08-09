@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Store, Plus, Trash2, Pencil, Search, LayoutGrid, List, Percent, CheckSquare, Boxes } from 'lucide-react';
+import { Store, Plus, Trash2, Pencil, Search, LayoutGrid, List, Percent, CheckSquare, Boxes, TrendingUp, DollarSign, PieChart, ChevronDown, ChevronUp } from 'lucide-react';
 import { CATEGORY_COLORS } from '../../config/categories';
+import { useProductContext } from '../../context/ProductContext';
+import { formatBs, formatCop } from '../../utils/calculatorUtils';
 
 const ProductsToolbar = ({
     products,
@@ -26,6 +28,16 @@ const ProductsToolbar = ({
     onSelectAllToast,
 }) => {
     const [showLeftFade, setShowLeftFade] = useState(false);
+    const { inventoryFinancials, effectiveRate, copEnabled, tasaCop } = useProductContext();
+    const [showFinancials, setShowFinancials] = useState(false);
+
+    const {
+        totalRetailUsd = 0,
+        totalCostUsd = 0,
+        totalProfitUsd = 0,
+        marginPct = 0,
+        markupPct = 0
+    } = inventoryFinancials || {};
 
     const handleScroll = (e) => {
         setShowLeftFade(e.target.scrollLeft > 4);
@@ -149,7 +161,7 @@ const ProductsToolbar = ({
                 </div>
             </div>
 
-            {/* Row 2: Select All & Low Stock Toggles */}
+            {/* Row 2: Select All & Low Stock & Financial Summary Toggles */}
             <div className="flex items-center gap-1.5 flex-wrap shrink-0">
                 <button
                     onClick={() => { triggerHaptic && triggerHaptic(); setSelectedIds(new Set(products.map(p => p.id))); onSelectAllToast && onSelectAllToast(); }}
@@ -157,6 +169,19 @@ const ProductsToolbar = ({
                 >
                     <CheckSquare size={10} /> <span>Seleccionar todo</span>
                 </button>
+                {!isCajero && (
+                    <button
+                        onClick={() => { setShowFinancials(!showFinancials); triggerHaptic && triggerHaptic(); }}
+                        className={`text-[9px] font-bold px-2 py-1 rounded-md flex items-center gap-1 cursor-pointer transition-colors active:scale-95 ${
+                            showFinancials
+                                ? 'bg-emerald-600 text-white shadow-sm'
+                                : 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/30'
+                        }`}
+                    >
+                        <TrendingUp size={10} /> <span>Valoración: ${totalRetailUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        {showFinancials ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                    </button>
+                )}
                 {lowStockCount > 0 && (
                     <button
                         onClick={() => { handleSetActiveCategory('bajo-stock'); triggerHaptic && triggerHaptic(); }}
@@ -165,6 +190,55 @@ const ProductsToolbar = ({
                     </button>
                 )}
             </div>
+
+            {/* Financial Summary Cards Banner */}
+            {showFinancials && !isCajero && (
+                <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-3 shadow-sm my-2 grid grid-cols-2 lg:grid-cols-4 gap-2 animate-in fade-in duration-200">
+                    <div className="bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
+                        <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Valor Total (PVP)</span>
+                        <p className="text-lg font-outfit font-bold text-slate-800 dark:text-white mt-0.5">
+                            ${totalRetailUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                        {copEnabled && tasaCop > 0 ? (
+                            <p className="text-[9.5px] font-semibold text-slate-400 truncate">{formatCop(totalRetailUsd * tasaCop)} COP · {formatBs(totalRetailUsd * effectiveRate)} Bs</p>
+                        ) : (
+                            <p className="text-[9.5px] font-semibold text-slate-400 truncate">{formatBs(totalRetailUsd * effectiveRate)} Bs</p>
+                        )}
+                    </div>
+
+                    <div className="bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
+                        <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Inversión (Costo)</span>
+                        <p className="text-lg font-outfit font-bold text-slate-700 dark:text-slate-200 mt-0.5">
+                            ${totalCostUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                        {copEnabled && tasaCop > 0 ? (
+                            <p className="text-[9.5px] font-semibold text-slate-400 truncate">{formatCop(totalCostUsd * tasaCop)} COP · {formatBs(totalCostUsd * effectiveRate)} Bs</p>
+                        ) : (
+                            <p className="text-[9.5px] font-semibold text-slate-400 truncate">{formatBs(totalCostUsd * effectiveRate)} Bs</p>
+                        )}
+                    </div>
+
+                    <div className="bg-emerald-50/50 dark:bg-emerald-900/10 p-2.5 rounded-xl border border-emerald-100 dark:border-emerald-800/30">
+                        <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider block">Ganancia Proyectada</span>
+                        <p className="text-lg font-outfit font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                            +${totalProfitUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                        {copEnabled && tasaCop > 0 ? (
+                            <p className="text-[9.5px] font-semibold text-emerald-500/80 truncate">+{formatCop(totalProfitUsd * tasaCop)} COP · {formatBs(totalProfitUsd * effectiveRate)} Bs</p>
+                        ) : (
+                            <p className="text-[9.5px] font-semibold text-emerald-500/80 truncate">+{formatBs(totalProfitUsd * effectiveRate)} Bs</p>
+                        )}
+                    </div>
+
+                    <div className="bg-cyan-50/50 dark:bg-cyan-900/10 p-2.5 rounded-xl border border-cyan-100 dark:border-cyan-800/30">
+                        <span className="text-[10px] font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider block">Margen de Ganancia</span>
+                        <p className="text-lg font-outfit font-bold text-cyan-600 dark:text-cyan-400 mt-0.5">
+                            {marginPct.toFixed(1)}% <span className="text-xs font-bold text-slate-400">Margen</span>
+                        </p>
+                        <p className="text-[9.5px] font-semibold text-cyan-500/80 truncate">{markupPct.toFixed(1)}% Markup sobre costo</p>
+                    </div>
+                </div>
+            )}
 
             {/* Row 3: Category Filter Pills — horizontal scroll with left/right fade */}
             <div className="relative w-full py-0.5 pr-8">
