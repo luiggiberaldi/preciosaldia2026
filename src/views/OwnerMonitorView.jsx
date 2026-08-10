@@ -56,7 +56,7 @@ function getMethodIcon(methodId) {
     return PAYMENT_METHOD_ICONS[methodId] || Wallet;
 }
 
-export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) {
+export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, rates }) {
     const pairedDeviceId = localStorage.getItem('pda_paired_device_id');
     const { products, effectiveRate: bcvRate, copEnabled, tasaCop } = useProductContext();
     const {
@@ -1725,6 +1725,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                 targetDeviceId={pairedDeviceId}
                 currentRateMode={localStorage.getItem('bodega_rate_mode')}
                 currentCustomRate={localStorage.getItem('bodega_custom_rate')}
+                rates={rates}
                 remoteAvailable={remoteActionsAvailable}
             />
 

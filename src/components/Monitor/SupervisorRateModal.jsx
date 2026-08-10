@@ -4,10 +4,21 @@ import { showToast } from '../Toast';
 import { SUPERVISOR_REMOTE_MUTATIONS_ENABLED, SUPERVISOR_REMOTE_RATE_ENABLED } from '../../config/supervisorPolicy';
 import { sendSupervisorCommand } from '../../services/supervisorCommandService';
 
-export default function SupervisorRateModal({ isOpen, onClose, targetDeviceId, currentRateMode, currentCustomRate, remoteAvailable = true }) {
+export default function SupervisorRateModal({ isOpen, onClose, targetDeviceId, currentRateMode, currentCustomRate, rates = {}, remoteAvailable = true }) {
     const [rateMode, setRateMode] = useState(currentRateMode || 'bcv');
     const [customRate, setCustomRate] = useState(currentCustomRate || '');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const rateValues = {
+        bcv: rates?.bcv?.price,
+        euro: rates?.euro?.price,
+        usdt: rates?.usdt?.price,
+        manual: currentCustomRate,
+    };
+    const formatRate = (value, suffix = 'Bs') => {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed) || parsed <= 0) return 'N/D';
+        return `${parsed.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${suffix}`;
+    };
 
     if (!isOpen) return null;
 
@@ -111,15 +122,18 @@ export default function SupervisorRateModal({ isOpen, onClose, targetDeviceId, c
                                     key={mode.id}
                                     type="button"
                                     onClick={() => setRateMode(mode.id)}
-                                    className={`flex items-center gap-2 p-3 rounded-xl border text-xs font-bold transition-all ${
+                                    className={`flex min-h-[58px] items-center gap-2 p-3 rounded-xl border text-xs font-bold transition-all ${
                                         isSelected 
                                             ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 text-emerald-600 dark:text-emerald-400 shadow-sm' 
                                             : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300'
                                     }`}
                                 >
                                     <Icon className="w-4 h-4" />
-                                    <span>{mode.label}</span>
-                                    {isSelected && <Check className="w-4 h-4 ml-auto text-emerald-500" />}
+                                    <span className="flex min-w-0 flex-1 flex-col items-start leading-tight">
+                                        <span>{mode.label}</span>
+                                        <span className="text-[10px] font-black opacity-70">{formatRate(rateValues[mode.id], mode.id === 'euro' ? 'Bs/€' : mode.id === 'usdt' ? 'Bs/₮' : 'Bs/$')}</span>
+                                    </span>
+                                    {isSelected && <Check className="w-4 h-4 ml-auto shrink-0 text-emerald-500" />}
                                 </button>
                             );
                         })}

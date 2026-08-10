@@ -295,7 +295,7 @@ export default function App() {
           <ProductProvider rates={rates} rateDiscrepancyWarning={rateDiscrepancyWarning}>
             <ImagePrecacheRunner />
             <Suspense fallback={<div className="flex-1 flex items-center justify-center p-6 text-slate-500 font-bold">Cargando monitor...</div>}>
-              <OwnerMonitorView theme={theme} toggleTheme={toggleTheme} triggerHaptic={triggerHaptic} />
+              <OwnerMonitorView theme={theme} toggleTheme={toggleTheme} triggerHaptic={triggerHaptic} rates={rates} />
             </Suspense>
           </ProductProvider>
         </RateProvider>

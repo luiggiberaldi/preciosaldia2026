@@ -5,6 +5,7 @@ const ownerMonitor = readFileSync('src/views/OwnerMonitorView.jsx', 'utf8');
 const remoteUsers = readFileSync('src/components/Monitor/RemoteUsersManager.jsx', 'utf8');
 const supervisorSelect = readFileSync('src/components/Monitor/SupervisorSelect.jsx', 'utf8');
 const inventoryBatchModal = readFileSync('src/components/Monitor/SupervisorInventoryBatchModal.jsx', 'utf8');
+const rateModal = readFileSync('src/components/Monitor/SupervisorRateModal.jsx', 'utf8');
 
 describe('Supervisor responsive controls', () => {
     it('no deja selects nativos cuadrados en las vistas del Supervisor', () => {
@@ -21,6 +22,14 @@ describe('Supervisor responsive controls', () => {
         expect(supervisorSelect).toContain('role="listbox"');
         expect(supervisorSelect).toContain('role="option"');
         expect(supervisorSelect).toContain("event.key === 'Escape'");
+    });
+
+    it('muestra el valor actual de cada tasa en el selector remoto', () => {
+        expect(rateModal).toContain('rateValues');
+        expect(rateModal).toContain('formatRate');
+        expect(rateModal).toContain('Bs/$');
+        expect(rateModal).toContain('Bs/€');
+        expect(rateModal).toContain('Bs/₮');
     });
 
     it('mantiene el ajuste por lote detrás de ACK, motivo y flags separados', () => {
