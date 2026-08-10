@@ -423,8 +423,12 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
     return (
         <div data-testid="supervisor-panel" className="min-h-screen w-full min-w-0 bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 font-sans pb-12 transition-colors duration-300 overflow-x-hidden">
             {/* Header del Monitor */}
-            <header data-testid="supervisor-header" className="sticky top-0 z-50 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-3 sm:px-4 py-2.5 sm:py-3 flex flex-wrap items-center justify-between gap-2 shadow-sm">
-                <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+            <header
+                data-testid="supervisor-header"
+                style={{ paddingTop: 'max(0.625rem, env(safe-area-inset-top))' }}
+                className="sticky top-0 z-50 flex flex-col items-stretch justify-between gap-2 border-b border-slate-200 bg-white/95 px-3 pb-2.5 shadow-sm backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/95 sm:flex-row sm:items-center sm:px-4 sm:py-3"
+            >
+                <div className="flex min-w-0 w-full items-center gap-2.5 sm:flex-1 sm:gap-3">
                     <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/20 text-white font-bold shrink-0">
                         <ShieldCheck size={18} className="sm:hidden" />
                         <ShieldCheck size={20} className="hidden sm:block" />
@@ -435,7 +439,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                     </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-1.5 sm:gap-3 shrink-0">
+                <div className="flex w-full shrink-0 items-center justify-end gap-1.5 sm:w-auto sm:gap-3 sm:pl-3">
                     {/* Status Badge */}
                     <div data-testid="supervisor-connection-status" className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-[9px] sm:text-[10px] font-black tracking-wider uppercase shadow-sm transition-colors duration-300 ${
                         isConnected 
@@ -475,7 +479,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                         onClick={() => { triggerHaptic?.(); setShowRateModal(true); }}
                         disabled={!remoteActionsAvailable}
 
-                        className="min-h-11 flex items-center justify-center gap-1.5 px-2 sm:px-3 py-2 rounded-2xl text-[10px] sm:text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-900/40 dark:text-emerald-300 hover:bg-emerald-100 transition-all shadow-sm active:scale-95"
+                        className="min-h-11 flex flex-1 items-center justify-center gap-1.5 rounded-2xl border border-emerald-200 bg-emerald-50 px-2 py-2 text-[10px] font-bold text-emerald-700 shadow-sm transition-all hover:bg-emerald-100 active:scale-95 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-300 sm:flex-none sm:px-3 sm:text-xs"
                         title="Ajustar Tasa Remota"
                     >
                         <TrendingUp size={14} />

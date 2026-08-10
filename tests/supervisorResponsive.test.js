@@ -8,6 +8,14 @@ const inventoryBatchModal = readFileSync('src/components/Monitor/SupervisorInven
 const rateModal = readFileSync('src/components/Monitor/SupervisorRateModal.jsx', 'utf8');
 
 describe('Supervisor responsive controls', () => {
+    it('mantiene el header sticky y preparado para móviles con safe-area', () => {
+        expect(ownerMonitor).toContain('sticky top-0');
+        expect(ownerMonitor).toContain('safe-area-inset-top');
+        expect(ownerMonitor).toContain('flex-col');
+        expect(ownerMonitor).toContain('sm:flex-row');
+        expect(ownerMonitor).toContain('w-full sm:w-auto');
+    });
+
     it('no deja selects nativos cuadrados en las vistas del Supervisor', () => {
         expect(ownerMonitor).not.toContain('<select');
         expect(remoteUsers).not.toContain('<select');
