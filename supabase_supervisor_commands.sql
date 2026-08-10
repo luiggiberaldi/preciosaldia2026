@@ -183,10 +183,14 @@ BEGIN
         END IF;
     END IF;
 
+    -- Validar la duración contra issued_at, no contra now()+60s:
+    -- la petición tarda algunos milisegundos en llegar y la comparación
+    -- anterior rechazaba comandos legítimos en el límite del TTL.
     IF p_issued_at < now() - interval '2 minutes'
        OR p_issued_at > now() + interval '2 minutes'
        OR p_expires_at <= p_issued_at
-       OR p_expires_at > now() + interval '60 seconds' THEN
+       OR p_expires_at - p_issued_at > interval '60 seconds'
+       OR p_expires_at <= now() THEN
         RAISE EXCEPTION 'Ventana temporal inválida';
     END IF;
 

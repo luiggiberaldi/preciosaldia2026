@@ -20,6 +20,7 @@ describe('Supervisor SQL guardrails', () => {
         expect(sql).toContain('token_hash text');
         expect((sql.match(/SET search_path = public, extensions/g) || []).length).toBe(3);
         expect(sql).toContain('token_used_at IS NULL');
+        expect(sql).toContain('OR revoked_at IS NOT NULL');
         expect(sql).not.toMatch(/CREATE POLICY\s+"sync_documents_anon_access"/i);
     });
 
@@ -33,6 +34,8 @@ describe('Supervisor SQL guardrails', () => {
         expect(commandSql).toContain('schema_version');
         expect(commandSql).toContain('last_seen_at');
         expect(commandSql).toContain("p_payload->>'cierreId'");
+        expect(commandSql).toContain("p_expires_at - p_issued_at > interval '60 seconds'");
+        expect(commandSql).not.toContain("p_expires_at > now() + interval '60 seconds'");
         expect(commandReceiver).toContain('targetCierreId');
         expect(commandReceiver).toContain('Turno activo no encontrado');
         expect(commandReceiver).toContain('APPLIED_COMMANDS_KEY');

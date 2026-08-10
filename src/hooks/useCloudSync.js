@@ -248,14 +248,14 @@ async function _applyFromCloud(docId, collection, data) {
                 newValue: stringPayload,
                 storageArea: localStorage
             }));
-            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: docId } }));
+            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: docId, source: 'remote' } }));
         } else {
             // Colección 'store' → IndexedDB directo, sin pasar por storageService.setItem
             const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
             await lf.setItem(docId, payload);
 
             // Notificar a los componentes React que lean este store
-            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: docId } }));
+            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: docId, source: 'remote' } }));
         }
 
         // Update local hash to prevent periodic push from re-uploading what we just downloaded

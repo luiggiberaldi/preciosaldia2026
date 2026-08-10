@@ -155,7 +155,13 @@ BEGIN
         revoked_at = NULL,
         owner_auth_id = v_owner
     WHERE primary_device_id = trim(p_device_id)
-      AND (owner_auth_id IS NULL OR owner_auth_id = v_owner);
+      AND (
+          owner_auth_id IS NULL
+          OR owner_auth_id = v_owner
+          -- Un vínculo revocado puede ser reclamado por la sesión actual
+          -- para volver a vincular físicamente la misma caja.
+          OR revoked_at IS NOT NULL
+      );
 
     GET DIAGNOSTICS v_updated = ROW_COUNT;
 

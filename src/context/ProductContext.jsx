@@ -99,7 +99,7 @@ export function ProductProvider({ children }) {
     // Escuchar actualizaciones remotas del almacén de datos (ej. useMonitorSync en Modo Supervisor)
     useEffect(() => {
         const handleStorageUpdate = async (e) => {
-            if (savingRef.current) return;
+            if (savingRef.current && e?.detail?.source !== 'remote') return;
             const updatedKey = e?.detail?.key || e?.key;
             if (!updatedKey || updatedKey === 'bodega_products_v1') {
                 const refreshedProducts = await storageService.getItem('bodega_products_v1', []);
@@ -203,7 +203,7 @@ export function ProductProvider({ children }) {
         };
 
         const handleAppStorageUpdate = async (e) => {
-            if (savingRef.current) return;
+            if (savingRef.current && e?.detail?.source !== 'remote') return;
             const key = e.detail?.key;
             if (!key) return;
 

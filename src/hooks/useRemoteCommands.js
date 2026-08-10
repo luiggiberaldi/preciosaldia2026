@@ -81,8 +81,8 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 pushLocalSync('bodega_custom_rate', String(customRate));
             }
 
-            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_rate_mode' } }));
-            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_custom_rate' } }));
+            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_rate_mode', source: 'remote' } }));
+            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_custom_rate', source: 'remote' } }));
         };
 
         const applyProductCommand = async (payload) => {
@@ -109,7 +109,7 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 await storageService.setItem('bodega_products_v1', updatedProducts);
                 const pushResult = await pushCloudSync('bodega_products_v1', updatedProducts, true);
                 if (!pushResult.ok && !pushResult.skipped) throw new Error(pushResult.error);
-                window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_products_v1' } }));
+                window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_products_v1', source: 'remote' } }));
             });
         };
 
@@ -123,8 +123,8 @@ export function useRemoteCommands(deviceId, enabled = true) {
                     commandId,
                 });
 
-                window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_products_v1' } }));
-                window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_sales_v1' } }));
+                window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_products_v1', source: 'remote' } }));
+                window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_sales_v1', source: 'remote' } }));
             });
 
             return {
@@ -204,7 +204,7 @@ export function useRemoteCommands(deviceId, enabled = true) {
                     if (!pushResult.ok && !pushResult.skipped) throw new Error(pushResult.error);
                 }
 
-                window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_sales_v1' } }));
+                window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_sales_v1', source: 'remote' } }));
             });
         };
 

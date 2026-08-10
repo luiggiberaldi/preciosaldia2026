@@ -106,10 +106,10 @@ export function useMonitorSync(pairedDeviceId) {
                     newValue: stringPayload,
                     storageArea: localStorage,
                 }));
-                window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: docId } }));
+                window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: docId, source: 'remote' } }));
             } else {
                 await localforage.setItem(docId, envelope.payload);
-                window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: docId } }));
+                window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: docId, source: 'remote' } }));
             }
         });
 
