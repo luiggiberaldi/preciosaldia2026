@@ -77,6 +77,13 @@ export default defineConfig([
       ],
     },
   },
+  // Backend Vercel y Electron usan globals Node; no deben evaluarse como browser.
+  {
+    files: ['api/**/*.js', 'desktop/**/*.js', 'scripts/**/*.js'],
+    languageOptions: {
+      globals: { ...globals.node },
+    },
+  },
   // ── Guardrails financieros: prohíbe Math.round/toFixed/parseFloat en utils/core ──
   {
     files: ['src/utils/**/*.js', 'src/core/**/*.js', 'src/hooks/useCheckout*.js', 'src/hooks/useDashboard*.js', 'src/hooks/useCalculator*.js', 'src/hooks/useSales*.js', 'src/hooks/useWallet*.js'],

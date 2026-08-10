@@ -32,6 +32,10 @@ import { purgeOldEntries } from './services/auditService';
 import { UpdateBanner } from './components/UpdateBanner';
 import { useCloudSync } from './hooks/useCloudSync';
 import { ImagePrecacheRunner } from './hooks/useImagePrecache';
+import {
+  SUPERVISOR_REMOTE_MUTATIONS_ENABLED,
+  SUPERVISOR_REMOTE_INCOME_ENABLED,
+} from './config/supervisorPolicy';
 
 const OwnerMonitorView = lazy(() => import('./views/OwnerMonitorView'));
 import PairingScanScreen from './components/PairingScanScreen';
@@ -53,7 +57,12 @@ export default function App() {
   const { isPremium, isDemo, demoTimeLeft, demoExpiredMsg, dismissExpiredMsg, deviceId, isMonthlyGracePeriod, monthlyGraceDaysLeft, forceHeartbeat } = useSecurity();
   const { isOnline, cacheRates } = useOfflineQueue();
   useAutoBackup(isPremium, isDemo, deviceId);
-  useRemoteCommands(deviceId);
+  // El monitor no debe montar listeners de la caja. Las mutaciones remotas
+  // permanecen deshabilitadas hasta completar el hardening server-side.
+  useRemoteCommands(
+    isMonitorMode ? null : deviceId,
+    SUPERVISOR_REMOTE_MUTATIONS_ENABLED || SUPERVISOR_REMOTE_INCOME_ENABLED
+  );
 
   const { usuarioActivo, requireLogin } = useAuthStore();
   const { logout } = useAuthStore();

@@ -68,6 +68,7 @@ vi.mock('localforage', () => {
 // Solo exportamos `pushCloudSync` como spy.
 vi.mock('../src/hooks/useCloudSync', () => ({
   pushCloudSync: _pushCloudSyncSpy,
+  queueCloudSync: _pushCloudSyncSpy,
   useCloudSync: vi.fn(),
 }));
 

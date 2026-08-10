@@ -583,6 +583,7 @@ export default defineConfig(({ mode }) => {
     environment: 'jsdom',
     setupFiles: ['./tests/setup.js'],
     include: ['tests/**/*.{test,spec}.{js,jsx}'],
+    exclude: ['tests/e2e/**'],
     coverage: {
       reporter: ['text', 'html', 'lcov'],
       include: ['src/utils/**', 'src/core/**'],

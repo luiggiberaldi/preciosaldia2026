@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Users, UserPlus, KeyRound, Shield, ShoppingCart, Trash2, Edit2, Check, X } from 'lucide-react';
 import { storageService } from '../../utils/storageService';
-import { supabaseCloud } from '../../config/supabaseCloud';
 import { showToast } from '../Toast';
+import { SUPERVISOR_REMOTE_MUTATIONS_ENABLED } from '../../config/supervisorPolicy';
+import { sendSupervisorCommand } from '../../services/supervisorCommandService';
+import SupervisorSelect from './SupervisorSelect';
 
 export default function RemoteUsersManager({ targetDeviceId }) {
     const [users, setUsers] = useState([]);
@@ -48,29 +50,56 @@ export default function RemoteUsersManager({ targetDeviceId }) {
     }, []);
 
     const sendUserCommand = async (payload) => {
-        if (!supabaseCloud || !targetDeviceId) {
+        if (!SUPERVISOR_REMOTE_MUTATIONS_ENABLED) {
+            showToast('Las mutaciones remotas están temporalmente deshabilitadas por seguridad', 'warning');
+            return false;
+        }
+
+        if (!targetDeviceId) {
             showToast('No hay conexión con la caja registradora', 'error');
             return;
         }
 
         try {
-            const channel = supabaseCloud.channel('system_commands');
-            await channel.subscribe();
+            const typeByAction = {
+                add: 'supervisor.user.create',
+                change_pin: 'supervisor.user.pin.change',
+                edit: 'supervisor.user.update',
+                delete: 'supervisor.user.delete',
+            };
+            const type = typeByAction[payload.action];
+            if (!type) {
+                showToast('Acción de usuario no permitida', 'error');
+                return false;
+            }
 
-            await channel.send({
-                type: 'broadcast',
-                event: 'supervisor_user_update',
+            const result = await sendSupervisorCommand({
+                type,
+                targetDeviceId,
                 payload: {
-                    targetDeviceId,
-                    ...payload
-                }
+                    ...payload,
+                    patch: payload.action === 'edit'
+                        ? { nombre: payload.nombre, rol: payload.rol, bypassPin: payload.bypassPin }
+                        : undefined,
+                },
             });
+            if (!result.ok) {
+                showToast(result.error, result.status === 'disabled' ? 'warning' : 'error');
+                return false;
+            }
 
-            supabaseCloud.removeChannel(channel).catch(() => {});
-            showToast('👤 Orden de actualización de usuario enviada a la caja', 'success');
+            const ack = await result.ackPromise;
+            if (!ack?.ok) {
+                showToast(ack?.error || 'La caja no confirmó la orden de usuario', 'error');
+                return false;
+            }
+
+            showToast('👤 Orden de usuario confirmada en la caja', 'success');
+            return true;
         } catch (e) {
             console.error('[RemoteUsersManager] Error enviando orden:', e);
             showToast('Error enviando orden a la caja', 'error');
+            return false;
         }
     };
 
@@ -212,17 +241,16 @@ export default function RemoteUsersManager({ targetDeviceId }) {
                                     className="w-full mt-1 p-3 bg-slate-50 dark:bg-slate-800 border rounded-xl font-bold text-sm"
                                 />
                             </div>
-                            <div>
-                                <label className="text-xs font-bold text-slate-400">Rol</label>
-                                <select
-                                    value={formUser.rol}
-                                    onChange={e => setFormUser({ ...formUser, rol: e.target.value })}
-                                    className="w-full mt-1 p-3 bg-slate-50 dark:bg-slate-800 border rounded-xl font-bold text-sm"
-                                >
-                                    <option value="CAJERO">Cajero</option>
-                                    <option value="ADMIN">Administrador</option>
-                                </select>
-                            </div>
+                            <SupervisorSelect
+                                label="Rol"
+                                ariaLabel="Seleccionar rol del usuario"
+                                value={formUser.rol}
+                                onChange={(rol) => setFormUser({ ...formUser, rol })}
+                                options={[
+                                    { value: 'CAJERO', label: 'Cajero' },
+                                    { value: 'ADMIN', label: 'Administrador' },
+                                ]}
+                            />
                             <div>
                                 <label className="text-xs font-bold text-slate-400">PIN Inicial (4-6 dígitos)</label>
                                 <input

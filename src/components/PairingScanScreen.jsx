@@ -2,7 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { showToast } from './Toast';
+import { ensureSupervisorSession } from '../services/supervisorAuth';
 import { ArrowLeft, Camera, ShieldAlert, KeyRound, Loader2, ArrowRight, SwitchCamera } from 'lucide-react';
+
+const PAIRING_TOKEN_LENGTH = 24;
 
 export default function PairingScanScreen({ onCancel, triggerHaptic }) {
     const [scanMethod, setScanMethod] = useState('camera'); // 'camera' o 'manual'
@@ -13,6 +16,19 @@ export default function PairingScanScreen({ onCancel, triggerHaptic }) {
     const [cameras, setCameras] = useState([]);
     const [activeCamera, setActiveCamera] = useState(null); // Puede ser 'environment', 'user' o un ID de cámara string
     const scannerRef = useRef(null);
+    const scanInFlightRef = useRef(false);
+    const restartTimerRef = useRef(null);
+    const startPromiseRef = useRef(null);
+    const stopPromiseRef = useRef(null);
+    const mountedRef = useRef(true);
+
+    useEffect(() => () => {
+        mountedRef.current = false;
+        scanInFlightRef.current = false;
+        if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+        restartTimerRef.current = null;
+        stopScanning();
+    }, []);
 
     // 1. Cargar cámaras disponibles e inicializar la cámara por defecto
     useEffect(() => {
@@ -67,10 +83,14 @@ export default function PairingScanScreen({ onCancel, triggerHaptic }) {
     }, [scanMethod, activeCamera]);
 
     const startScanning = async () => {
-        setCameraState('requesting');
-        setErrorMsg('');
+        if (!mountedRef.current || scanMethod !== 'camera' || activeCamera === null) return;
+        if (startPromiseRef.current) return startPromiseRef.current;
 
-        try {
+        const startPromise = (async () => {
+            setCameraState('requesting');
+            setErrorMsg('');
+
+            try {
             // Esperar un tick de render para asegurar que el DOM de qr-reader-container exista
             await new Promise(resolve => setTimeout(resolve, 50));
             const container = document.getElementById('qr-reader-container');
@@ -84,7 +104,8 @@ export default function PairingScanScreen({ onCancel, triggerHaptic }) {
             scannerRef.current = html5QrCode;
 
             const onScanSuccess = async (decodedText) => {
-                if (loading) return;
+                if (scanInFlightRef.current || loading || !mountedRef.current) return;
+                scanInFlightRef.current = true;
                 triggerHaptic?.();
                 
                 // Detener scanner
@@ -93,13 +114,16 @@ export default function PairingScanScreen({ onCancel, triggerHaptic }) {
                 } catch (e) {}
                 
                 const cleanToken = decodedText.trim().toUpperCase();
-                if (cleanToken.length === 6) {
+                if (cleanToken.length === PAIRING_TOKEN_LENGTH) {
                     await executePairing(cleanToken);
+                    scanInFlightRef.current = false;
                 } else {
                     showToast('Formato de código QR inválido', 'error');
-                    // Reiniciar escaneo después de unos segundos
-                    setTimeout(() => {
-                        startScanning();
+                    scanInFlightRef.current = false;
+                    if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+                    restartTimerRef.current = setTimeout(() => {
+                        restartTimerRef.current = null;
+                        if (mountedRef.current) startScanning();
                     }, 2000);
                 }
             };
@@ -129,33 +153,49 @@ export default function PairingScanScreen({ onCancel, triggerHaptic }) {
                 );
             }
 
-            setCameraState('active');
-        } catch (err) {
-            console.error('[PairingScanScreen] Error al iniciar cámara:', err);
-            const errStr = String(err).toLowerCase();
-            const isPermissionError = errStr.includes('permission') || 
-                                     errStr.includes('notallowederror') || 
-                                     errStr.includes('denied');
-            if (isPermissionError) {
-                setCameraState('permission_denied');
-            } else {
-                setCameraState('error');
-                setErrorMsg('No se pudo acceder a la cámara. Revisa tu conexión o usa el código manual.');
+                if (mountedRef.current) setCameraState('active');
+            } catch (err) {
+                if (!mountedRef.current) return;
+                console.error('[PairingScanScreen] Error al iniciar cámara:', err);
+                const errStr = String(err).toLowerCase();
+                const isPermissionError = errStr.includes('permission') ||
+                                         errStr.includes('notallowederror') ||
+                                         errStr.includes('denied');
+                if (isPermissionError) {
+                    setCameraState('permission_denied');
+                } else {
+                    setCameraState('error');
+                    setErrorMsg('No se pudo acceder a la cámara. Revisa tu conexión o usa el código manual.');
+                }
+            } finally {
+                startPromiseRef.current = null;
             }
-        }
+        })();
+
+        startPromiseRef.current = startPromise;
+        return startPromise;
     };
 
     const stopScanning = async () => {
-        if (scannerRef.current) {
+        if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+        restartTimerRef.current = null;
+        if (stopPromiseRef.current) return stopPromiseRef.current;
+
+        const scanner = scannerRef.current;
+        scannerRef.current = null;
+        if (!scanner) return;
+
+        const stopPromise = (async () => {
             try {
-                if (scannerRef.current.isScanning) {
-                    await scannerRef.current.stop();
-                }
+                if (scanner.isScanning) await scanner.stop();
             } catch (e) {
-                console.warn('Error al detener scanner:', e);
+                console.warn('[PairingScanScreen] Error al detener scanner:', e);
+            } finally {
+                stopPromiseRef.current = null;
             }
-            scannerRef.current = null;
-        }
+        })();
+        stopPromiseRef.current = stopPromise;
+        return stopPromise;
     };
 
     const handleSwitchCamera = () => {
@@ -177,16 +217,21 @@ export default function PairingScanScreen({ onCancel, triggerHaptic }) {
 
     // Ejecutar el emparejamiento con el token
     const executePairing = async (token) => {
+        if (loading) return;
         if (!supabaseCloud) {
             showToast('Sin conexión a la nube', 'error');
+            scanInFlightRef.current = false;
             return;
         }
-
         setLoading(true);
+
         setErrorMsg('');
 
         try {
-            // Obtener el device_id local para registrarlo como monitor
+            const { session, error: sessionError } = await ensureSupervisorSession();
+            if (sessionError || !session) throw sessionError || new Error('No hay sesión segura del dispositivo');
+
+            // Obtener el device_id local para mostrarlo en la relación del monitor.
             let monitorId = localStorage.getItem('pda_device_id');
             if (!monitorId) {
                 // Generar uno de respaldo si por algún motivo no existe
@@ -222,13 +267,14 @@ export default function PairingScanScreen({ onCancel, triggerHaptic }) {
             startScanning(); // Volver a habilitar cámara
         } finally {
             setLoading(false);
+            scanInFlightRef.current = false;
         }
     };
 
     const handleManualSubmit = (e) => {
         e.preventDefault();
-        if (manualCode.length !== 6) {
-            setErrorMsg('El código debe tener exactamente 6 caracteres.');
+        if (manualCode.length !== PAIRING_TOKEN_LENGTH) {
+            setErrorMsg(`El código debe tener exactamente ${PAIRING_TOKEN_LENGTH} caracteres.`);
             return;
         }
         executePairing(manualCode);
@@ -277,7 +323,7 @@ export default function PairingScanScreen({ onCancel, triggerHaptic }) {
                                 : 'text-slate-400 hover:text-slate-600'
                         }`}
                     >
-                        Código de 6 letras
+                        Código de vinculación
                     </button>
                 </div>
 
@@ -353,10 +399,10 @@ export default function PairingScanScreen({ onCancel, triggerHaptic }) {
                             <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Código de vinculación</label>
                             <input 
                                 type="text"
-                                maxLength={6}
+                                maxLength={PAIRING_TOKEN_LENGTH}
                                 value={manualCode}
                                 onChange={(e) => setManualCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-                                placeholder="Escribe el código de 6 letras"
+                                placeholder="Escribe el código de vinculación"
                                 className={`w-full py-3.5 px-4 border border-slate-200 dark:border-slate-700/60 dark:bg-slate-800 rounded-2xl text-center focus:outline-none focus:border-emerald-500 transition-all ${
                                     manualCode 
                                         ? 'text-xl font-black uppercase tracking-widest text-slate-800 dark:text-white' 
@@ -368,7 +414,7 @@ export default function PairingScanScreen({ onCancel, triggerHaptic }) {
 
                         <button 
                             type="submit" 
-                            disabled={loading || manualCode.length !== 6}
+                            disabled={loading || manualCode.length !== PAIRING_TOKEN_LENGTH}
                             className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-600 text-white font-black text-xs rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 disabled:opacity-50 disabled:shadow-none transition-all"
                         >
                             {loading ? (
@@ -400,7 +446,7 @@ export default function PairingScanScreen({ onCancel, triggerHaptic }) {
             {/* Footer */}
             <div className="text-center max-w-xs mx-auto">
                 <p className="text-[10px] text-slate-400 leading-relaxed font-medium">
-                    El código de vinculación de 6 letras se muestra en el dispositivo principal debajo del código QR de emparejamiento.
+                    El código de vinculación se muestra en el dispositivo principal debajo del código QR de emparejamiento y expira en pocos minutos.
                 </p>
             </div>
         </div>

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
 import { supabaseCloud } from '../../config/supabaseCloud';
 import { showToast } from '../Toast';
+import { ensureSupervisorSession } from '../../services/supervisorAuth';
 import { 
     QrCode, Trash2, KeyRound, Loader2, CheckCircle2, 
     Smartphone, ShieldAlert, RefreshCw, X 
@@ -18,39 +19,106 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
     const canvasRef = useRef(null);
     const timerRef = useRef(null);
     const pollRef = useRef(null);
+    const pairingSubscriptionRef = useRef(null);
+    const pairingStateRef = useRef('idle');
+    const pollingFailuresRef = useRef(0);
+
+    useEffect(() => {
+        pairingStateRef.current = pairingState;
+    }, [pairingState]);
 
     // 1. Verificar estado de vinculación inicial
     const checkCurrentPairing = async () => {
-        if (!supabaseCloud || !deviceId) return;
+        if (!supabaseCloud || !deviceId) return false;
         setCheckingStatus(true);
         try {
+            const { session, error: sessionError } = await ensureSupervisorSession();
+            if (sessionError || !session) {
+                setPairedDevice(null);
+                setPairingState('idle');
+                return false;
+            }
+
             const { data, error } = await supabaseCloud
                 .from('device_pairings')
-                .select('*')
+                .select('monitor_device_id, monitor_auth_id, paired_at, revoked_at, token_expires_at')
                 .eq('primary_device_id', deviceId)
                 .maybeSingle();
 
             if (error) throw error;
 
-            if (data && data.monitor_device_id) {
+            if (data && data.monitor_device_id && data.monitor_auth_id && !data.revoked_at) {
                 setPairedDevice(data.monitor_device_id);
                 setPairingState('paired');
-            } else {
-                setPairedDevice(null);
-                setPairingState('idle');
+                return true;
             }
+
+            setPairedDevice(null);
+            setPairingState('idle');
+            return false;
         } catch (err) {
             console.warn('[PairingManager] Fallo al verificar vinculación:', err);
+            return false;
         } finally {
             setCheckingStatus(false);
         }
     };
 
     useEffect(() => {
-        checkCurrentPairing();
+        let disposed = false;
+
+        const initializePairingStatus = async () => {
+            await checkCurrentPairing();
+            if (disposed || !supabaseCloud || !deviceId) return;
+
+            const { session, error: sessionError } = await ensureSupervisorSession();
+            if (sessionError || !session) return;
+
+            const channel = supabaseCloud
+                .channel(`pairing-status:${deviceId}`)
+                .on('postgres_changes', {
+                    event: '*',
+                    schema: 'public',
+                    table: 'device_pairings',
+                    filter: `primary_device_id=eq.${deviceId}`
+                }, (payload) => {
+                    const row = payload.new || payload.old;
+                    const hasMonitor = payload.eventType !== 'DELETE'
+                        && Boolean(row?.monitor_device_id || row?.monitor_auth_id)
+                        && !row?.revoked_at;
+
+                    if (hasMonitor) {
+                        setPairedDevice(row.monitor_device_id || 'monitor');
+                        setPairingState('paired');
+                        return;
+                    }
+
+                    // Si el QR está abierto, conservarlo; si estaba vinculado,
+                    // reflejar inmediatamente la desvinculación remota.
+                    if (pairingStateRef.current === 'paired') {
+                        setPairedDevice(null);
+                        setToken('');
+                        setPairingState('idle');
+                    }
+                })
+                .subscribe((status) => {
+                    if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                        pairingSubscriptionRef.current = null;
+                    }
+                });
+
+            pairingSubscriptionRef.current = channel;
+        };
+
+        initializePairingStatus();
+
         return () => {
+            disposed = true;
             clearInterval(timerRef.current);
             clearInterval(pollRef.current);
+            const channel = pairingSubscriptionRef.current;
+            pairingSubscriptionRef.current = null;
+            if (channel) supabaseCloud.removeChannel(channel).catch(() => {});
         };
     }, [deviceId]);
 
@@ -65,6 +133,9 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
         setPairingState('generating');
 
         try {
+            const { session, error: sessionError } = await ensureSupervisorSession();
+            if (sessionError || !session) throw sessionError || new Error('No hay sesión segura del dispositivo');
+
             const { data: generatedToken, error } = await supabaseCloud.rpc('generate_pairing_token', {
                 p_device_id: deviceId
             });
@@ -74,6 +145,7 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
             setToken(generatedToken);
             setPairingState('show_qr');
             setTimeLeft(300); // 5 minutos (300 segundos)
+            pollingFailuresRef.current = 0;
 
             // Temporizador de expiración
             clearInterval(timerRef.current);
@@ -97,19 +169,37 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
                 try {
                     const { data, error: pollError } = await supabaseCloud
                         .from('device_pairings')
-                        .select('monitor_device_id')
+                        .select('monitor_device_id, monitor_auth_id, paired_at, revoked_at')
                         .eq('primary_device_id', deviceId)
                         .maybeSingle();
 
-                    if (!pollError && data && data.monitor_device_id) {
+                    if (pollError) {
+                        pollingFailuresRef.current += 1;
+                        if (pollingFailuresRef.current >= 3) {
+                            clearInterval(pollRef.current);
+                            pollRef.current = null;
+                            showToast('No se pudo confirmar el vínculo. Revisa la conexión e inténtalo de nuevo.', 'error');
+                        }
+                        return;
+                    }
+
+                    pollingFailuresRef.current = 0;
+                    if (data?.monitor_device_id && data?.monitor_auth_id && !data.revoked_at) {
                         clearInterval(timerRef.current);
                         clearInterval(pollRef.current);
+                        pollRef.current = null;
                         triggerHaptic?.();
                         setPairedDevice(data.monitor_device_id);
                         setPairingState('paired');
                         showToast('¡Celular del supervisor vinculado con éxito!', 'success');
                     }
-                } catch (e) {}
+                } catch (e) {
+                    pollingFailuresRef.current += 1;
+                    if (pollingFailuresRef.current >= 3) {
+                        clearInterval(pollRef.current);
+                        pollRef.current = null;
+                    }
+                }
             }, 3000);
 
         } catch (err) {
@@ -161,18 +251,28 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
         setCheckingStatus(true);
 
         try {
+            const { session, error: sessionError } = await ensureSupervisorSession();
+            if (sessionError || !session) throw sessionError || new Error('No hay sesión segura del dispositivo');
+
             const { error } = await supabaseCloud.rpc('unpair_monitor', {
                 p_device_id: deviceId
             });
 
             if (error) throw error;
 
+            const stillPaired = await checkCurrentPairing();
+            if (stillPaired) {
+                throw new Error('El servidor aún reporta el vínculo activo');
+            }
             setPairedDevice(null);
             setPairingState('idle');
+            setToken('');
             showToast('Dispositivo desvinculado con éxito', 'success');
         } catch (err) {
             console.error('[PairingManager] Error al desvincular:', err);
-            showToast('Error al desvincular el dispositivo', 'error');
+            // Reconsultar el servidor para no dejar un estado visual obsoleto.
+            await checkCurrentPairing();
+            showToast('No se pudo confirmar la desvinculación', 'error');
         } finally {
             setCheckingStatus(false);
         }

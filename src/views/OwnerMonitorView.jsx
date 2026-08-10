@@ -5,7 +5,7 @@ import { storageService } from '../utils/storageService';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { showToast } from '../components/Toast';
 import { 
-    TrendingUp, Package, Coins, Users, LogOut, 
+    TrendingUp, Package, Coins, Users, LogOut, Download,
     RefreshCw, Wifi, WifiOff, Clock, FileText, DollarSign,
     Wallet, CreditCard, Smartphone, Banknote, ArrowDownRight,
     ShieldCheck, Hash, AlertTriangle, Search, X, ChevronLeft, ChevronRight,
@@ -13,11 +13,32 @@ import {
 } from 'lucide-react';
 import { formatBs, formatCop } from '../utils/calculatorUtils';
 import { getLocalISODate, getDateRange } from '../utils/dateHelpers';
-import { getPaymentLabel, toTitleCase } from '../config/paymentMethods';
+import { toTitleCase } from '../config/paymentMethods';
 import DevicesManager from '../components/Settings/DevicesManager';
 import SupervisorRateModal from '../components/Monitor/SupervisorRateModal';
 import RemoteProductFormModal from '../components/Monitor/RemoteProductFormModal';
+import SupervisorInventoryBatchModal from '../components/Monitor/SupervisorInventoryBatchModal';
 import RemoteUsersManager from '../components/Monitor/RemoteUsersManager';
+import SupervisorSelect from '../components/Monitor/SupervisorSelect';
+import {
+    SUPERVISOR_REMOTE_MUTATIONS_ENABLED,
+    SUPERVISOR_REMOTE_INCOME_ENABLED,
+} from '../config/supervisorPolicy';
+import { calculateInventoryMetrics, calculateSalesProfit } from '../services/supervisorMetrics';
+import { buildSupervisorRegisterCloses, calculateSupervisorPaymentBreakdown } from '../services/supervisorFinancials';
+import { ensureSupervisorSession } from '../services/supervisorAuth';
+import { SUPERVISOR_SYNC_STATES } from '../services/supervisorSyncService';
+import { sendSupervisorCommand } from '../services/supervisorCommandService';
+import {
+    calculateSupervisorCashSummary,
+    buildSupervisorExpenseReport,
+    buildSupervisorInventoryMovements,
+    filterSupervisorInventoryMovements,
+    buildSupervisorProductReport,
+    buildSupervisorCloseCashSummary,
+    filterSupervisorRecords,
+    shouldShowSupervisorCop,
+} from '../services/supervisorReportData';
 
 // Helper: icon por método de pago
 const PAYMENT_METHOD_ICONS = {
@@ -38,7 +59,15 @@ function getMethodIcon(methodId) {
 export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) {
     const pairedDeviceId = localStorage.getItem('pda_paired_device_id');
     const { products, effectiveRate: bcvRate, copEnabled, tasaCop } = useProductContext();
-    const { isConnected, lastSync, loading: syncLoading, triggerRefresh } = useMonitorSync(pairedDeviceId);
+    const {
+        isConnected,
+        lastSync,
+        loading: syncLoading,
+        syncState,
+        syncError,
+        triggerRefresh,
+    } = useMonitorSync(pairedDeviceId);
+    const remoteActionsAvailable = Boolean(isConnected && pairedDeviceId);
 
     const [sales, setSales] = useState([]);
     const [activeCashier, setActiveCashier] = useState({ nombre: 'Ninguno', rol: '' });
@@ -51,9 +80,14 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
     const [showRateModal, setShowRateModal] = useState(false);
     const [showProductFormModal, setShowProductFormModal] = useState(false);
     const [productToEditRemote, setProductToEditRemote] = useState(null);
+    const [inventoryBatchProduct, setInventoryBatchProduct] = useState(null);
     const [cierresDateRange, setCierresDateRange] = useState('all'); // 'all', 'today', 'yesterday', 'week', 'month'
     const [shiftActionConfirmModal, setShiftActionConfirmModal] = useState(null); // 'close' | 'reopen' | null
     const [sendingShiftAction, setSendingShiftAction] = useState(false);
+    const [reportsDateRange, setReportsDateRange] = useState('all');
+    const [reportsCierreId, setReportsCierreId] = useState('all');
+    const [inventoryMovementFilter, setInventoryMovementFilter] = useState('todos');
+    const [inventoryMovementSearch, setInventoryMovementSearch] = useState('');
 
     const filteredProducts = useMemo(() => {
         if (!products) return [];
@@ -87,45 +121,22 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
         return filteredProducts.slice(start, start + ITEMS_PER_PAGE_INVENTARIO);
     }, [filteredProducts, currentPageInventario]);
 
-    const inventoryMetrics = useMemo(() => {
-        if (!products) {
-            return { totalCost: 0, totalRetail: 0, totalQty: 0, lowStockCount: 0, outOfStockCount: 0, expectedProfit: 0, count: 0 };
-        }
-        let totalCost = 0;
-        let totalRetail = 0;
-        let totalQty = 0;
-        let lowStockCount = 0;
-        let outOfStockCount = 0;
-
-        products.forEach(p => {
-            const stock = p.stock || 0;
-            const cost = p.costPrice || 0;
-            const retail = p.priceUsd || 0;
-            const minStock = p.minStock || 5;
-
-            totalCost += cost * stock;
-            totalRetail += retail * stock;
-            totalQty += stock;
-
-            if (stock <= 0) {
-                outOfStockCount++;
-            } else if (stock <= minStock) {
-                lowStockCount++;
-            }
-        });
-
-        const expectedProfit = Math.max(0, totalRetail - totalCost);
-
-        return {
-            totalCost,
-            totalRetail,
-            totalQty,
-            lowStockCount,
-            outOfStockCount,
-            expectedProfit,
-            count: products.length
-        };
-    }, [products]);
+    const inventoryMetrics = useMemo(() => calculateInventoryMetrics(products), [products]);
+    const shouldShowCop = shouldShowSupervisorCop(copEnabled);
+    const reportRecords = useMemo(() => filterSupervisorRecords(sales, {
+        range: reportsDateRange,
+        cierreId: reportsCierreId,
+    }), [sales, reportsDateRange, reportsCierreId]);
+    const supervisorReportData = useMemo(() => ({
+        cash: calculateSupervisorCashSummary(reportRecords, bcvRate),
+        inventoryMovements: buildSupervisorInventoryMovements(reportRecords),
+        productsSold: buildSupervisorProductReport(reportRecords),
+        expenses: buildSupervisorExpenseReport(reportRecords),
+    }), [reportRecords, bcvRate]);
+    const visibleInventoryMovements = useMemo(() => filterSupervisorInventoryMovements(
+        supervisorReportData.inventoryMovements,
+        { direction: inventoryMovementFilter, search: inventoryMovementSearch }
+    ), [supervisorReportData.inventoryMovements, inventoryMovementFilter, inventoryMovementSearch]);
 
     const today = getLocalISODate();
 
@@ -196,90 +207,23 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
 
     // Métricas del turno activo
     const activeShiftMetrics = useMemo(() => {
-        let usd = 0;
-        let bs = 0;
-        activeShiftSales.forEach(s => {
-            usd += s.totalUsd || 0;
-            bs += s.totalBs || 0;
-        });
-
-        // Calcular ganancia estimada si los productos tienen costo
-        let costSum = 0;
-        activeShiftSales.forEach(s => {
-            if (!s.items) return;
-            s.items.forEach(item => {
-                const prod = products.find(p => p.id === item.productId || p.id === item.id);
-                if (prod && prod.costPrice) {
-                    costSum += prod.costPrice * item.qty;
-                }
-            });
-        });
-
-        const profitUsd = Math.max(0, usd - costSum);
-
+        const metrics = calculateSalesProfit(activeShiftSales, products, bcvRate);
         return {
-            totalUsd: usd,
-            totalBs: bs,
-            profitUsd,
-            count: activeShiftSales.length
+            totalUsd: metrics.revenueUsd,
+            totalBs: metrics.revenueBs,
+            profitUsd: metrics.profitUsd,
+            count: metrics.count,
         };
-    }, [activeShiftSales, products]);
+    }, [activeShiftSales, products, bcvRate]);
 
-    // Desglose por método de pago del turno activo
+    // El desglose del monitor usa el mismo contrato de pagos que la caja.
     const activeShiftPaymentBreakdown = useMemo(() => {
-        const breakdown = {};
-        // Incluye ventas, cobros de deuda, y pagos de proveedor en el flujo de caja
-        const activeFlow = sales.filter(s => {
-            if (s.status === 'ANULADA') return false;
-            if (s.cajaCerrada) return false;
-            
-            // Restringir a transacciones posteriores a la última apertura activa si existe
-            if (activeShiftApertura) {
-                return new Date(s.timestamp) >= new Date(activeShiftApertura.timestamp);
-            }
-            return true;
+        const activeFlow = sales.filter(sale => {
+            if (sale.status === 'ANULADA' || sale.cajaCerrada) return false;
+            return !activeShiftApertura || new Date(sale.timestamp) >= new Date(activeShiftApertura.timestamp);
         });
-
-        activeFlow.forEach(sale => {
-            if (sale.tipo === 'VENTA_FIADA') {
-                if (!breakdown['fiado']) {
-                    breakdown['fiado'] = { totalUsd: 0, totalBs: 0, count: 0, label: 'Fiado (Por Cobrar)', currency: 'FIADO' };
-                }
-                breakdown['fiado'].totalUsd += sale.totalUsd || 0;
-                breakdown['fiado'].totalBs += sale.totalBs || 0;
-                breakdown['fiado'].count += 1;
-                return;
-            }
-
-            if (sale.payments && sale.payments.length > 0) {
-                sale.payments.forEach(p => {
-                    const methodId = p.methodId || 'efectivo_bs';
-                    if (!breakdown[methodId]) {
-                        const label = p.methodLabel || getPaymentLabel(methodId) || toTitleCase(methodId.replace(/_/g, ' '));
-                        breakdown[methodId] = { totalUsd: 0, totalBs: 0, count: 0, label, currency: p.currency || 'BS' };
-                    }
-                    breakdown[methodId].totalUsd += p.amountUsd || 0;
-                    breakdown[methodId].totalBs += p.amountBs || 0;
-                    breakdown[methodId].count += 1;
-                });
-            } else {
-                const methodId = sale.paymentMethod || sale.metodoPago || 'efectivo_bs';
-                if (!breakdown[methodId]) {
-                    const label = getPaymentLabel(methodId) || toTitleCase(methodId.replace(/_/g, ' '));
-                    let currency = 'BS';
-                    if (methodId.includes('usd') || methodId.includes('zelle') || methodId.includes('binance')) currency = 'USD';
-                    else if (methodId.includes('cop')) currency = 'COP';
-                    breakdown[methodId] = { totalUsd: 0, totalBs: 0, count: 0, label, currency };
-                }
-                breakdown[methodId].totalUsd += sale.totalUsd || 0;
-                breakdown[methodId].totalBs += sale.totalBs || 0;
-                breakdown[methodId].count += 1;
-            }
-        });
-
-        return Object.entries(breakdown)
-            .sort(([, a], [, b]) => b.totalUsd - a.totalUsd);
-    }, [sales, activeShiftApertura]);
+        return calculateSupervisorPaymentBreakdown(activeFlow, bcvRate);
+    }, [sales, activeShiftApertura, bcvRate]);
 
     // Ticket promedio del turno activo
     const activeShiftAvgTicket = useMemo(() => {
@@ -290,93 +234,16 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
 
     // ── HISTORIAL DE CIERRES DE CAJA ──
 
-    // Reconstruir cierres agrupados por cierreId
-    const registerCloses = useMemo(() => {
-        const explicitCloses = sales.filter(s => s.tipo === 'REGISTRO_CIERRE');
-        
-        // Agrupar transacciones cerradas por cierreId
-        const groups = {};
-        sales.forEach(s => {
-            if (s.cierreId && s.tipo !== 'REGISTRO_CIERRE') {
-                const cId = s.cierreId;
-                if (!groups[cId]) {
-                    groups[cId] = {
-                        cierreId: cId,
-                        timestamp: new Date(cId).toISOString(),
-                        sales: []
-                    };
-                }
-                groups[cId].sales.push(s);
-            }
-        });
+    // El monitor consume el mismo normalizador y FinancialEngine que la caja.
+    const registerCloses = useMemo(
+        () => buildSupervisorRegisterCloses(sales, products, bcvRate),
+        [sales, products, bcvRate]
+    );
 
-        // Formatear cada grupo combinando datos explícitos de arqueo si existen
-        return Object.values(groups).map(g => {
-            const explicit = explicitCloses.find(ec => ec.cierreId === g.cierreId);
-            
-            // Filtrar para métricas generales y de caja
-            const salesForStats = g.sales.filter(s => s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA');
-            const salesForCashFlow = g.sales.filter(s => {
-                if (s.tipo === 'PAGO_PROVEEDOR' && s.afectaCaja === false) return false;
-                return s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA' || s.tipo === 'COBRO_DEUDA' || s.tipo === 'COBRO_CASHEA' || s.tipo === 'PAGO_PROVEEDOR' || s.tipo === 'GASTO_INTERNO';
-            });
-            
-            const totalUsd = salesForStats.reduce((sum, s) => sum + (s.totalUsd || 0), 0);
-            const totalBs = salesForStats.reduce((sum, s) => sum + (s.totalBs || 0), 0);
-            const totalItems = salesForStats.reduce((sum, s) => sum + (s.items ? s.items.reduce((is, it) => is + it.qty, 0) : 0), 0);
-            
-            // Reconstruir desglose de pagos del cierre
-            const breakdown = {};
-            salesForCashFlow.forEach(sale => {
-                if (sale.tipo === 'VENTA_FIADA') {
-                    if (!breakdown['fiado']) {
-                        breakdown['fiado'] = { totalUsd: 0, totalBs: 0, count: 0, label: 'Fiado (Por Cobrar)', currency: 'FIADO' };
-                    }
-                    breakdown['fiado'].totalUsd += sale.totalUsd || 0;
-                    breakdown['fiado'].totalBs += sale.totalBs || 0;
-                    breakdown['fiado'].count += 1;
-                    return;
-                }
-                if (sale.payments && sale.payments.length > 0) {
-                    sale.payments.forEach(p => {
-                        const mId = p.methodId || 'efectivo_bs';
-                        if (!breakdown[mId]) {
-                            breakdown[mId] = { totalUsd: 0, totalBs: 0, count: 0, label: p.methodLabel || getPaymentLabel(mId), currency: p.currency || 'BS' };
-                        }
-                        breakdown[mId].totalUsd += p.amountUsd || 0;
-                        breakdown[mId].totalBs += p.amountBs || 0;
-                        breakdown[mId].count += 1;
-                    });
-                } else {
-                    const mId = sale.paymentMethod || sale.metodoPago || 'efectivo_bs';
-                    if (!breakdown[mId]) {
-                        breakdown[mId] = { totalUsd: 0, totalBs: 0, count: 0, label: getPaymentLabel(mId), currency: mId.includes('usd') ? 'USD' : 'BS' };
-                    }
-                    breakdown[mId].totalUsd += sale.totalUsd || 0;
-                    breakdown[mId].totalBs += sale.totalBs || 0;
-                    breakdown[mId].count += 1;
-                }
-            });
-
-            const sortedBreakdown = Object.entries(breakdown)
-                .sort(([, a], [, b]) => b.totalUsd - a.totalUsd);
-
-            const apertura = g.sales.find(s => s.tipo === 'APERTURA_CAJA') || null;
-
-            return {
-                cierreId: g.cierreId,
-                timestamp: g.timestamp,
-                sales: salesForStats,
-                totalUsd,
-                totalBs,
-                totalItems,
-                paymentBreakdown: sortedBreakdown,
-                apertura,
-                reconData: explicit?.summary?.reconData || null,
-                cashier: explicit?.summary?.cashier || { nombre: 'Cajero', rol: 'CAJERO' }
-            };
-        }).sort((a, b) => b.cierreId - a.cierreId);
-    }, [sales]);
+    const selectedReportClose = useMemo(() => {
+        if (reportsCierreId === 'all') return null;
+        return registerCloses.find(close => String(close.cierreId) === String(reportsCierreId)) || null;
+    }, [registerCloses, reportsCierreId]);
 
     // Filtro de cierres por rango de fechas
     const filteredRegisterCloses = useMemo(() => {
@@ -402,22 +269,53 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
 
     // Emite Broadcast para cierre o reapertura remota de turno
     const handleSendShiftActionRemote = async (action) => {
+        if (!remoteActionsAvailable) {
+            showToast('La caja está desconectada; no se puede enviar la orden', 'warning');
+            return;
+        }
+        if (!SUPERVISOR_REMOTE_MUTATIONS_ENABLED) {
+            showToast('Las mutaciones remotas están temporalmente deshabilitadas por seguridad', 'warning');
+            return;
+        }
+
         if (!supabaseCloud || !pairedDeviceId) {
             showToast('Dispositivo no vinculado a la nube', 'error');
             return;
         }
+        const shiftId = action === 'close'
+            ? (activeShiftApertura?.shiftId || activeShiftApertura?.id)
+            : selectedCierreId;
+        if (shiftId == null || String(shiftId).length === 0) {
+            showToast(
+                action === 'close' ? 'No hay un turno activo para cerrar' : 'Selecciona un cierre para reabrir',
+                'error'
+            );
+            return;
+        }
+        const cierreId = action === 'close' ? String(Date.now()) : String(selectedCierreId);
         setSendingShiftAction(true);
         try {
-            const channel = supabaseCloud.channel('system_commands');
-            await channel.send({
-                type: 'broadcast',
-                event: 'supervisor_shift_action',
-                payload: { targetDeviceId: pairedDeviceId, action }
+            const result = await sendSupervisorCommand({
+                type: action === 'close' ? 'supervisor.shift.close' : 'supervisor.shift.reopen',
+                targetDeviceId: pairedDeviceId,
+                payload: {
+                    shiftId: String(shiftId),
+                    cierreId,
+                },
             });
+            if (!result.ok) {
+                showToast(result.error, result.status === 'disabled' ? 'warning' : 'error');
+                return;
+            }
+            const ack = await result.ackPromise;
+            if (!ack?.ok) {
+                showToast(ack?.error || 'La caja no confirmó la acción de turno', 'error');
+                return;
+            }
             showToast(
                 action === 'close'
-                    ? '🔒 Solicitud de cierre enviada a la caja'
-                    : '🔓 Solicitud de reapertura enviada a la caja',
+                    ? '🔒 Cierre confirmado en la caja'
+                    : '🔓 Reapertura confirmada en la caja',
                 'success'
             );
             setShiftActionConfirmModal(null);
@@ -429,6 +327,42 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
         }
     };
 
+
+    const reportRangeLabels = {
+        all: 'Todos los movimientos',
+        today: 'Hoy',
+        yesterday: 'Ayer',
+        week: 'Esta semana',
+        month: 'Este mes',
+        lastMonth: 'Mes anterior',
+        custom: 'Personalizado',
+    };
+
+    const handleDownloadSupervisorReport = async (reportType) => {
+        try {
+            const { generateSupervisorReportPDF } = await import('../utils/supervisorReportGenerator');
+            const closeCash = reportType === 'close' && selectedReportClose
+                ? buildSupervisorCloseCashSummary(selectedReportClose, supervisorReportData.cash)
+                : supervisorReportData.cash;
+
+            await generateSupervisorReportPDF({
+                reportType,
+                rangeLabel: reportRangeLabels[reportsDateRange] || reportsDateRange,
+                cierreId: reportsCierreId,
+                records: reportRecords,
+                cash: closeCash,
+                productsSold: supervisorReportData.productsSold,
+                expenses: supervisorReportData.expenses,
+                inventoryMovements: supervisorReportData.inventoryMovements,
+                copEnabled: shouldShowCop,
+                businessName: localStorage.getItem('business_name') || 'Mi Negocio',
+            });
+            showToast('PDF del Supervisor descargado', 'success');
+        } catch (error) {
+            console.error('[OwnerMonitorView] Error generando PDF de Supervisor:', error);
+            showToast('No se pudo generar el PDF', 'error');
+        }
+    };
 
     // ── COMPONENTES GENERALES ──
 
@@ -445,7 +379,10 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
         
         try {
             if (supabaseCloud && pairedDeviceId) {
-                await supabaseCloud.rpc('unpair_monitor', { p_device_id: pairedDeviceId });
+                const { session, error: sessionError } = await ensureSupervisorSession();
+                if (sessionError || !session) throw sessionError || new Error('No hay sesión segura del monitor');
+                const { error } = await supabaseCloud.rpc('unpair_monitor', { p_device_id: pairedDeviceId });
+                if (error) throw error;
             }
         } catch (err) {
             console.warn('[OwnerMonitorView] Error al llamar unpair RPC:', err);
@@ -484,22 +421,23 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
     const isShiftActive = activeShiftApertura !== null || activeShiftSales.length > 0;
 
     return (
-        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 font-sans pb-12 transition-colors duration-300 overflow-x-hidden">
+        <div data-testid="supervisor-panel" className="min-h-screen w-full min-w-0 bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 font-sans pb-12 transition-colors duration-300 overflow-x-hidden">
             {/* Header del Monitor */}
-            <header className="sticky top-0 z-50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 py-3 flex items-center justify-between shadow-sm">
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/20 text-white font-bold">
-                        <ShieldCheck size={20} />
+            <header data-testid="supervisor-header" className="sticky top-0 z-50 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-3 sm:px-4 py-2.5 sm:py-3 flex flex-wrap items-center justify-between gap-2 shadow-sm">
+                <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/20 text-white font-bold shrink-0">
+                        <ShieldCheck size={18} className="sm:hidden" />
+                        <ShieldCheck size={20} className="hidden sm:block" />
                     </div>
-                    <div>
-                        <h1 className="text-base font-black leading-tight text-slate-800 dark:text-white">Panel de Supervisión</h1>
-                        <p className="text-[10px] text-slate-400 font-medium">Monitoreo en vivo • {localStorage.getItem('business_name') || 'Mi Negocio'}</p>
+                    <div className="min-w-0">
+                        <h1 className="text-sm sm:text-base font-black leading-tight text-slate-800 dark:text-white truncate">Panel de Supervisión</h1>
+                        <p className="text-[9px] sm:text-[10px] text-slate-400 font-medium truncate">Monitoreo en vivo • {localStorage.getItem('business_name') || 'Mi Negocio'}</p>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center justify-end gap-1.5 sm:gap-3 shrink-0">
                     {/* Status Badge */}
-                    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black tracking-wider uppercase shadow-sm transition-colors duration-300 ${
+                    <div data-testid="supervisor-connection-status" className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-[9px] sm:text-[10px] font-black tracking-wider uppercase shadow-sm transition-colors duration-300 ${
                         isConnected 
                             ? 'bg-emerald-50 border border-emerald-200/50 text-emerald-600 dark:bg-emerald-950/20 dark:border-emerald-800/30 dark:text-emerald-400' 
                             : 'bg-rose-50 border border-rose-200/50 text-rose-600 dark:bg-rose-950/20 dark:border-rose-800/30 dark:text-rose-400 animate-pulse'
@@ -507,7 +445,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                         {isConnected ? (
                             <>
                                 <Wifi size={12} className="shrink-0" />
-                                <span>En Vivo</span>
+                                <span>{syncState === SUPERVISOR_SYNC_STATES.CONNECTED ? 'En Vivo' : 'Sincronizando'}</span>
                             </>
                         ) : (
                             <>
@@ -519,12 +457,15 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
 
                     <button 
                         onClick={async () => { 
-                            triggerHaptic?.(); 
-                            await triggerRefresh(); 
-                            showToast?.('Datos actualizados', 'success');
+                            triggerHaptic?.();                            const result = await triggerRefresh();
+                            if (result?.ok) {
+                                showToast?.('Datos actualizados', 'success');
+                            } else {
+                                showToast?.(result?.error || 'No se pudieron actualizar los datos', 'error');
+                            }
                         }}
                         disabled={syncLoading}
-                        className="p-2.5 rounded-2xl text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 dark:hover:text-emerald-400 transition-colors disabled:opacity-50"
+                        className="min-h-11 min-w-11 p-2.5 rounded-2xl text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 dark:hover:text-emerald-400 transition-colors disabled:opacity-50"
                         title="Actualizar Datos"
                     >
                         <RefreshCw size={16} className={syncLoading ? "animate-spin text-emerald-500" : ""} />
@@ -532,16 +473,18 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
 
                     <button 
                         onClick={() => { triggerHaptic?.(); setShowRateModal(true); }}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-900/40 dark:text-emerald-300 hover:bg-emerald-100 transition-all shadow-sm active:scale-95"
+                        disabled={!remoteActionsAvailable}
+
+                        className="min-h-11 flex items-center justify-center gap-1.5 px-2 sm:px-3 py-2 rounded-2xl text-[10px] sm:text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-900/40 dark:text-emerald-300 hover:bg-emerald-100 transition-all shadow-sm active:scale-95"
                         title="Ajustar Tasa Remota"
                     >
                         <TrendingUp size={14} />
-                        <span>Ajustar Tasa</span>
+                        <span className="hidden sm:inline">Ajustar Tasa</span><span className="sm:hidden">Tasa</span>
                     </button>
 
                     <button 
                         onClick={() => { triggerHaptic?.(); setShowDisconnectConfirm(true); }}
-                        className="p-2.5 rounded-2xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 dark:hover:text-rose-400 transition-colors"
+                        className="min-h-11 min-w-11 p-2.5 rounded-2xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 dark:hover:text-rose-400 transition-colors"
                         title="Desvincular Dispositivo"
                     >
                         <LogOut size={16} />
@@ -559,13 +502,24 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                 </div>
             )}
 
+            {syncError && (
+                <div className="mx-4 mt-4 p-3.5 bg-rose-50 dark:bg-rose-950/20 border border-rose-200/50 dark:border-rose-900/30 rounded-2xl flex gap-3 items-center text-rose-800 dark:text-rose-400 shadow-sm animate-fade-in">
+                    <AlertTriangle size={18} className="shrink-0" />
+                    <p className="text-xs font-semibold leading-relaxed">
+                        {syncState === SUPERVISOR_SYNC_STATES.DEGRADED && lastSync
+                            ? `Conexión degradada. Mostrando los últimos datos confirmados. ${syncError}`
+                            : syncError}
+                    </p>
+                </div>
+            )}
+
             {/* Contenido Principal */}
-            <main className="max-w-7xl mx-auto px-4 mt-6 space-y-6">
+            <main data-testid="supervisor-main" className="max-w-7xl mx-auto w-full min-w-0 px-3 sm:px-4 mt-4 sm:mt-6 space-y-5 sm:space-y-6">
                 {/* Selector de Pestañas */}
-                <div className="flex bg-slate-200/60 dark:bg-slate-900/60 p-1 rounded-2xl w-full max-w-md shadow-sm overflow-x-auto">
+                <div data-testid="supervisor-tabs" className="flex bg-slate-200/60 dark:bg-slate-900/60 p-1 rounded-2xl w-full max-w-full sm:max-w-2xl shadow-sm overflow-x-auto overscroll-x-contain scrollbar-hide">
                     <button
                         onClick={() => { triggerHaptic?.(); setViewTab('activo'); }}
-                        className={`flex-1 py-2 px-2 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap ${
+                        className={`shrink-0 min-h-11 flex-1 py-2 px-3 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap ${
                             viewTab === 'activo' 
                                 ? 'bg-white dark:bg-slate-800 text-slate-850 dark:text-white shadow-sm' 
                                 : 'text-slate-400 hover:text-slate-650 dark:hover:text-slate-200'
@@ -575,7 +529,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                     </button>
                     <button
                         onClick={() => { triggerHaptic?.(); setViewTab('cierres'); }}
-                        className={`flex-1 py-2 px-2 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap ${
+                        className={`shrink-0 min-h-11 flex-1 py-2 px-3 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap ${
                             viewTab === 'cierres' 
                                 ? 'bg-white dark:bg-slate-800 text-slate-850 dark:text-white shadow-sm' 
                                 : 'text-slate-400 hover:text-slate-650 dark:hover:text-slate-200'
@@ -585,7 +539,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                     </button>
                     <button
                         onClick={() => { triggerHaptic?.(); setViewTab('inventario'); }}
-                        className={`flex-1 py-2 px-2 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap ${
+                        className={`shrink-0 min-h-11 flex-1 py-2 px-3 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap ${
                             viewTab === 'inventario' 
                                 ? 'bg-white dark:bg-slate-800 text-slate-850 dark:text-white shadow-sm' 
                                 : 'text-slate-400 hover:text-slate-650 dark:hover:text-slate-200'
@@ -594,8 +548,18 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                         Inventario
                     </button>
                     <button
+                        onClick={() => { triggerHaptic?.(); setViewTab('reportes'); }}
+                        className={`shrink-0 min-h-11 flex-1 py-2 px-3 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap ${
+                            viewTab === 'reportes'
+                                ? 'bg-white dark:bg-slate-800 text-slate-850 dark:text-white shadow-sm'
+                                : 'text-slate-400 hover:text-slate-650 dark:hover:text-slate-200'
+                        }`}
+                    >
+                        Reportes
+                    </button>
+                    <button
                         onClick={() => { triggerHaptic?.(); setViewTab('terminales'); }}
-                        className={`flex-1 py-2 px-2 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap ${
+                        className={`shrink-0 min-h-11 flex-1 py-2 px-3 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap ${
                             viewTab === 'terminales' 
                                 ? 'bg-white dark:bg-slate-800 text-slate-850 dark:text-white shadow-sm' 
                                 : 'text-slate-400 hover:text-slate-650 dark:hover:text-slate-200'
@@ -605,7 +569,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                     </button>
                     <button
                         onClick={() => { triggerHaptic?.(); setViewTab('cajeros'); }}
-                        className={`flex-1 py-2 px-2 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap ${
+                        className={`shrink-0 min-h-11 flex-1 py-2 px-3 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap ${
                             viewTab === 'cajeros' 
                                 ? 'bg-white dark:bg-slate-800 text-slate-850 dark:text-white shadow-sm' 
                                 : 'text-slate-400 hover:text-slate-650 dark:hover:text-slate-200'
@@ -635,7 +599,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                             {isShiftActive ? (
                                 <button
                                     onClick={() => { triggerHaptic?.(); setShiftActionConfirmModal('close'); }}
-                                    className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/30 dark:hover:bg-rose-950/50 dark:text-rose-400 border border-rose-200 dark:border-rose-900/40 rounded-2xl text-xs font-black transition-all flex items-center gap-2 shadow-sm"
+                                    className="w-full sm:w-auto min-h-11 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/30 dark:hover:bg-rose-950/50 dark:text-rose-400 border border-rose-200 dark:border-rose-900/40 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-sm"
                                 >
                                     <Clock size={14} />
                                     <span>Cerrar Turno Remotamente</span>
@@ -643,7 +607,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                             ) : (
                                 <button
                                     onClick={() => { triggerHaptic?.(); setShiftActionConfirmModal('reopen'); }}
-                                    className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:hover:bg-amber-950/50 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40 rounded-2xl text-xs font-black transition-all flex items-center gap-2 shadow-sm"
+                                    className="w-full sm:w-auto min-h-11 px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:hover:bg-amber-950/50 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-sm"
                                 >
                                     <RefreshCw size={14} />
                                     <span>Reabrir Último Turno Remotamente</span>
@@ -652,7 +616,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                         </div>
 
                         {/* Fila 1: Tarjetas de Métricas de Turno Activo */}
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                             {/* Ventas Turno USD */}
                             <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-3xl border border-slate-200/60 dark:border-slate-800/80 shadow-sm flex flex-col justify-between min-h-[105px] sm:min-h-[125px]">
                                 <div className="flex items-center justify-between w-full">
@@ -768,7 +732,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                                                         <span className="text-[9px] font-bold text-slate-400 uppercase block">Bs Inicial</span>
                                                         <span className="font-outfit text-sm font-black text-slate-700 dark:text-slate-200 tabular-nums">{formatBs(activeShiftApertura.openingBs || 0)} Bs</span>
                                                     </div>
-                                                    {activeShiftApertura.openingCop > 0 && (
+                                                    {shouldShowCop && activeShiftApertura.openingCop > 0 && (
                                                         <div className="space-y-0.5">
                                                             <span className="text-[9px] font-bold text-slate-400 uppercase block">COP Inicial</span>
                                                             <span className="font-outfit text-sm font-black text-slate-700 dark:text-slate-200 tabular-nums">{(activeShiftApertura.openingCop || 0).toLocaleString()} COP</span>
@@ -793,7 +757,9 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                                             </div>
                                         ) : (
                                             <div className="space-y-2.5">
-                                                {activeShiftPaymentBreakdown.map(([methodId, data]) => {
+                                                {activeShiftPaymentBreakdown
+                                                    .filter(([methodId]) => copEnabled || !methodId.toLowerCase().includes('cop'))
+                                                    .map(([methodId, data]) => {
                                                     const IconComp = getMethodIcon(methodId);
                                                     const pct = activeShiftMetrics.totalUsd > 0 
                                                         ? Math.round((data.totalUsd / activeShiftMetrics.totalUsd) * 100) 
@@ -855,7 +821,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                                     {/* Columna Izquierda: Listado de Ventas en Vivo */}
                                     <div className="lg:col-span-2 space-y-4">
-                                        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 p-6 shadow-sm">
+                                        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 p-4 sm:p-6 shadow-sm min-w-0 overflow-hidden">
                                             <h3 className="text-sm font-black text-slate-800 dark:text-white mb-4 flex items-center gap-2">
                                                 <FileText size={18} className="text-slate-400" />
                                                 Ventas del Turno en Tiempo Real
@@ -909,7 +875,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
 
                                     {/* Columna Derecha: Stock Crítico */}
                                     <div className="space-y-6">
-                                        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 p-6 shadow-sm">
+                                        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 p-4 sm:p-6 shadow-sm min-w-0 overflow-hidden">
                                             <h3 className="text-sm font-black text-slate-800 dark:text-white mb-4 flex items-center gap-2">
                                                 <Package size={18} className="text-rose-500" />
                                                 Stock Crítico (Agotados)
@@ -1030,6 +996,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                                         const declaredUsd = activeC.reconData?.cashUsd ?? null;
                                         const declaredBs = activeC.reconData?.cashBs ?? null;
                                         const declaredCop = activeC.reconData?.cashCop ?? null;
+                                        const hasDeclaredCop = declaredCop !== null;
                                         
                                         const diffUsd = declaredUsd !== null ? declaredUsd - expectedUsd : null;
                                         const isCuadrado = declaredUsd === null || Math.abs(diffUsd) <= 0.50;
@@ -1037,7 +1004,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                                         return (
                                             <div className="space-y-6 animate-fade-in">
                                                 {/* Resumen Principal */}
-                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                                                     <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/60 dark:border-slate-800 shadow-sm">
                                                         <span className="text-[9px] font-black uppercase text-slate-400">Total USD</span>
                                                         <strong className="font-outfit text-base sm:text-lg font-black text-slate-800 dark:text-white block mt-1">${activeC.totalUsd.toFixed(2)}</strong>
@@ -1065,7 +1032,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                                                 </div>
 
                                                 {/* Arqueo Detallado de Efectivo */}
-                                                <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 p-5 shadow-sm">
+                                                <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 p-4 sm:p-5 shadow-sm min-w-0 overflow-hidden">
                                                     <h3 className="text-xs font-black text-slate-800 dark:text-white mb-4 uppercase tracking-wider">Cuadre de Efectivo</h3>
                                                     
                                                     {declaredUsd === null ? (
@@ -1076,7 +1043,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                                                         </div>
                                                     ) : (
                                                         <div className="border border-slate-100 dark:border-slate-800 rounded-2xl overflow-hidden text-xs">
-                                                            <div className="grid grid-cols-4 gap-2 px-4 py-2 bg-slate-50 dark:bg-slate-850/50 text-[10px] font-black text-slate-400 uppercase border-b border-slate-150 dark:border-slate-800">
+                                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 px-3 sm:px-4 py-2 bg-slate-50 dark:bg-slate-850/50 text-[10px] font-black text-slate-400 uppercase border-b border-slate-150 dark:border-slate-800">
                                                                 <span>Moneda</span>
                                                                 <span className="text-center">Esperado</span>
                                                                 <span className="text-center">Declarado</span>
@@ -1084,7 +1051,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                                                             </div>
 
                                                             {/* USD Row */}
-                                                            <div className="grid grid-cols-4 gap-2 px-4 py-3 border-b border-slate-100 dark:border-slate-800 items-center">
+                                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 px-3 sm:px-4 py-3 border-b border-slate-100 dark:border-slate-800 items-center">
                                                                 <span className="font-bold text-slate-700 dark:text-slate-200">Dólares ($)</span>
                                                                 <span className="font-outfit font-mono text-slate-400 text-center">${expectedUsd.toFixed(2)}</span>
                                                                 <span className="font-outfit font-mono font-black text-slate-700 dark:text-white text-center">${declaredUsd.toFixed(2)}</span>
@@ -1096,7 +1063,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                                                             </div>
 
                                                             {/* Bs Row */}
-                                                            <div className="grid grid-cols-4 gap-2 px-4 py-3 border-b border-slate-100 dark:border-slate-800 items-center">
+                                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 px-3 sm:px-4 py-3 border-b border-slate-100 dark:border-slate-800 items-center">
                                                                 <span className="font-bold text-slate-700 dark:text-slate-200">Bolívares (Bs)</span>
                                                                 <span className="font-outfit font-mono text-slate-400 text-center">{formatBs(activeC.reconData?.expectedBs || 0)}</span>
                                                                 <span className="font-outfit font-mono font-black text-slate-700 dark:text-white text-center">{formatBs(declaredBs)}</span>
@@ -1113,11 +1080,11 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                                                             </div>
 
                                                             {/* COP Row si aplica */}
-                                                            {activeC.reconData?.expectedCop > 0 && (
-                                                                <div className="grid grid-cols-4 gap-2 px-4 py-3 items-center">
+                                                            {shouldShowCop && activeC.reconData?.expectedCop > 0 && (
+                                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 px-3 sm:px-4 py-3 items-center">
                                                                     <span className="font-bold text-slate-700 dark:text-slate-200">Pesos (COP)</span>
                                                                     <span className="font-outfit font-mono text-slate-400 text-center">{(activeC.reconData.expectedCop).toLocaleString()}</span>
-                                                                    <span className="font-outfit font-mono font-black text-slate-700 dark:text-white text-center">{(declaredCop).toLocaleString()}</span>
+                                                                    <span className="font-outfit font-mono font-black text-slate-700 dark:text-white text-center">{hasDeclaredCop ? formatCop(declaredCop) : 'Sin declarar'}</span>
                                                                     <span className={`font-outfit font-mono font-black text-right ${
                                                                         (declaredCop - activeC.reconData.expectedCop) === 0 
                                                                             ? 'text-slate-400' 
@@ -1126,7 +1093,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                                                                                 : 'text-rose-600'
                                                                     }`}>
                                                                         {(declaredCop - activeC.reconData.expectedCop) > 0 ? '+' : ''}
-                                                                        {(declaredCop - activeC.reconData.expectedCop).toLocaleString()}
+                                                                        {hasDeclaredCop ? formatCop(declaredCop - activeC.reconData.expectedCop) : '—'}
                                                                     </span>
                                                                 </div>
                                                             )}
@@ -1135,10 +1102,12 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                                                 </div>
 
                                                 {/* Desglose de Métodos de Pago */}
-                                                <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 p-5 shadow-sm">
+                                                <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 p-4 sm:p-5 shadow-sm min-w-0 overflow-hidden">
                                                     <h3 className="text-xs font-black text-slate-800 dark:text-white mb-4 uppercase tracking-wider">Desglose de Ingresos</h3>
                                                     <div className="space-y-2.5">
-                                                        {activeC.paymentBreakdown.map(([methodId, data]) => {
+                                                        {activeC.paymentBreakdown
+                                                            .filter(([methodId]) => copEnabled || !methodId.toLowerCase().includes('cop'))
+                                                            .map(([methodId, data]) => {
                                                             const IconComp = getMethodIcon(methodId);
                                                             const pct = activeC.totalUsd > 0 ? Math.round((data.totalUsd / activeC.totalUsd) * 100) : 0;
                                                             return (
@@ -1163,7 +1132,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                                                 </div>
 
                                                 {/* Ventas del Cierre */}
-                                                <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 p-6 shadow-sm">
+                                                <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 p-4 sm:p-6 shadow-sm min-w-0 overflow-hidden">
                                                     <h3 className="text-xs font-black text-slate-800 dark:text-white mb-4 uppercase tracking-wider">Ventas Cerradas en este Turno</h3>
                                                     <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1">
                                                         {activeC.sales.slice().reverse().map(sale => (
@@ -1200,7 +1169,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                 {viewTab === 'inventario' && (
                     <div className="space-y-6 animate-fade-in">
                         {/* Fila de Resumen de Inventario */}
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                             {/* Total Productos */}
                             <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-3xl border border-slate-200/60 dark:border-slate-800/80 shadow-sm flex flex-col justify-between min-h-[90px] sm:min-h-[110px]">
                                 <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-400">Total Artículos</span>
@@ -1402,8 +1371,28 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
 
                                                     {/* Acciones Remotas */}
                                                     <div className="flex items-center gap-1">
+                                                        {(SUPERVISOR_REMOTE_MUTATIONS_ENABLED || SUPERVISOR_REMOTE_INCOME_ENABLED) && (
+                                                            <button
+                                                                onClick={() => {
+                                                                    if (!remoteActionsAvailable) {
+                                                                        showToast?.('La caja está desconectada; no se puede enviar la orden', 'warning');
+                                                                        return;
+                                                                    }
+                                                                    triggerHaptic?.();
+                                                                    setInventoryBatchProduct(p);
+                                                                }}
+                                                                className="rounded-xl p-2 text-emerald-500 transition-colors hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+                                                                title="Ajustar stock remotamente"
+                                                            >
+                                                                <Plus size={15} />
+                                                            </button>
+                                                        )}
                                                         <button
                                                             onClick={() => {
+                                                                if (!remoteActionsAvailable) {
+                                                                    showToast?.('La caja está desconectada; no se puede enviar la orden', 'warning');
+                                                                    return;
+                                                                }
                                                                 triggerHaptic?.();
                                                                 setProductToEditRemote(p);
                                                                 setShowProductFormModal(true);
@@ -1415,18 +1404,32 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                                                         </button>
                                                         <button
                                                             onClick={async () => {
+                                                                if (!remoteActionsAvailable) {
+                                                                    showToast?.('La caja está desconectada; no se puede enviar la orden', 'warning');
+                                                                    return;
+                                                                }
                                                                 if (!window.confirm(`¿Eliminar remotamente "${p.name}" de la caja?`)) return;
+                                                                if (!SUPERVISOR_REMOTE_MUTATIONS_ENABLED) {
+                                                                    showToast?.('Las mutaciones remotas están temporalmente deshabilitadas por seguridad', 'warning');
+                                                                    return;
+                                                                }
                                                                 triggerHaptic?.();
                                                                 try {
-                                                                    const channel = supabaseCloud.channel('system_commands');
-                                                                    await channel.subscribe();
-                                                                    await channel.send({
-                                                                        type: 'broadcast',
-                                                                        event: 'supervisor_product_update',
-                                                                        payload: { targetDeviceId: pairedDeviceId, action: 'delete', productId: p.id }
+                                                                    const result = await sendSupervisorCommand({
+                                                                        type: 'supervisor.product.delete',
+                                                                        targetDeviceId: pairedDeviceId,
+                                                                        payload: { productId: p.id },
                                                                     });
-                                                                    supabaseCloud.removeChannel(channel).catch(() => {});
-                                                                    showToast?.(`Eliminando "${p.name}" en caja...`, 'info');
+                                                                    if (!result.ok) {
+                                                                        showToast?.(result.error, result.status === 'disabled' ? 'warning' : 'error');
+                                                                        return;
+                                                                    }
+                                                                    const ack = await result.ackPromise;
+                                                                    if (!ack?.ok) {
+                                                                        showToast?.(ack?.error || 'La caja no confirmó la eliminación', 'error');
+                                                                        return;
+                                                                    }
+                                                                    showToast?.(`Producto "${p.name}" eliminado en caja`, 'success');
                                                                 } catch (e) {
                                                                     showToast?.('Error al eliminar producto', 'error');
                                                                 }
@@ -1485,7 +1488,224 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                     </div>
                 )}
 
-                {/* ── SECCIÓN 4: TERMINALES Y DISPOSITIVOS ── */}
+                {/* ── SECCIÓN 4: REPORTES DEL SUPERVISOR (SOLO LECTURA) ── */}
+                {viewTab === 'reportes' && (
+                    <div data-testid="supervisor-reports" className="space-y-5 sm:space-y-6 animate-fade-in min-w-0">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                            <div>
+                                <h2 className="text-base sm:text-lg font-black text-slate-800 dark:text-white">Reportes del Supervisor</h2>
+                                <p className="text-[10px] sm:text-xs text-slate-400 font-medium">Información sincronizada de la caja · Solo lectura</p>
+                            </div>
+                            <span className="self-start px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                {supervisorReportData.cash.cashMovementCount} movimientos de caja
+                            </span>
+                        </div>
+
+                        <div data-testid="supervisor-report-filters" className="bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm space-y-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <SupervisorSelect
+                                    label="Período"
+                                    ariaLabel="Filtrar reportes por período"
+                                    value={reportsDateRange}
+                                    onChange={setReportsDateRange}
+                                    testId="supervisor-report-period-select"
+                                    options={[
+                                        { value: 'all', label: 'Todos los movimientos' },
+                                        { value: 'today', label: 'Hoy' },
+                                        { value: 'yesterday', label: 'Ayer' },
+                                        { value: 'week', label: 'Esta semana' },
+                                        { value: 'month', label: 'Este mes' },
+                                        { value: 'lastMonth', label: 'Mes anterior' },
+                                    ]}
+                                />
+                                <SupervisorSelect
+                                    label="Cierre / turno"
+                                    ariaLabel="Filtrar reportes por cierre o turno"
+                                    value={reportsCierreId}
+                                    onChange={setReportsCierreId}
+                                    testId="supervisor-report-close-select"
+                                    options={[
+                                        { value: 'all', label: 'Todos los cierres' },
+                                        ...registerCloses.map(close => ({
+                                            value: String(close.cierreId),
+                                            label: `Cierre #${close.cierreNumber || String(close.cierreId).slice(-4)}`,
+                                        })),
+                                    ]}
+                                />
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                <button onClick={() => handleDownloadSupervisorReport('close')} className="min-h-11 px-3 py-2 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-black flex items-center justify-center gap-2 transition-colors">
+                                    <Download size={14} /> PDF Cierre
+                                </button>
+                                <button onClick={() => handleDownloadSupervisorReport('products')} className="min-h-11 px-3 py-2 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black flex items-center justify-center gap-2 transition-colors">
+                                    <Download size={14} /> PDF Ventas
+                                </button>
+                                <button onClick={() => handleDownloadSupervisorReport('expenses')} className="min-h-11 px-3 py-2 rounded-2xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-black flex items-center justify-center gap-2 transition-colors">
+                                    <Download size={14} /> PDF Gastos
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                            <div className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm min-w-0">
+                                <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Efectivo esperado USD</span>
+                                <strong className="block mt-2 text-xl font-outfit font-black text-slate-800 dark:text-white tabular-nums break-words">
+                                    ${supervisorReportData.cash.expected.USD.toFixed(2)}
+                                </strong>
+                                <span className="text-[10px] text-slate-400 block mt-1">Apertura: ${supervisorReportData.cash.opening.USD.toFixed(2)}</span>
+                            </div>
+                            <div className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm min-w-0">
+                                <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Efectivo esperado Bs</span>
+                                <strong className="block mt-2 text-xl font-outfit font-black text-emerald-600 dark:text-emerald-400 tabular-nums break-words">
+                                    {formatBs(supervisorReportData.cash.expected.BS)} Bs
+                                </strong>
+                                <span className="text-[10px] text-slate-400 block mt-1">Apertura: {formatBs(supervisorReportData.cash.opening.BS)} Bs</span>
+                            </div>
+                            {shouldShowCop && (
+                                <div className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm min-w-0">
+                                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Efectivo esperado COP</span>
+                                    <strong className="block mt-2 text-xl font-outfit font-black text-amber-600 dark:text-amber-400 tabular-nums break-words">
+                                        {formatCop(supervisorReportData.cash.expected.COP)} COP
+                                    </strong>
+                                    <span className="text-[10px] text-slate-400 block mt-1">Sin duplicar cambios dejados</span>
+                                </div>
+                            )}
+                            <div className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm min-w-0">
+                                <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Cambios dejados</span>
+                                <div className="mt-2 space-y-1 text-xs font-outfit font-black tabular-nums">
+                                    <span className="block text-slate-800 dark:text-white">${supervisorReportData.cash.tipsLeft.USD.toFixed(2)}</span>
+                                    <span className="block text-emerald-600 dark:text-emerald-400">{formatBs(supervisorReportData.cash.tipsLeft.BS)} Bs</span>
+                                    {shouldShowCop && <span className="block text-amber-600 dark:text-amber-400">{formatCop(supervisorReportData.cash.tipsLeft.COP)} COP</span>}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 p-4 sm:p-5 shadow-sm min-w-0 overflow-hidden">
+                                <div className="flex items-center justify-between gap-3 mb-4">
+                                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-white">Productos vendidos</h3>
+                                    <span className="text-[10px] font-bold text-slate-400">{supervisorReportData.productsSold.length} productos</span>
+                                </div>
+                                {supervisorReportData.productsSold.length === 0 ? (
+                                    <p className="py-8 text-center text-xs text-slate-400">Sin ventas de productos registradas.</p>
+                                ) : (
+                                    <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+                                        {supervisorReportData.productsSold.slice(0, 10).map(product => (
+                                            <div key={product.productId} className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800/60 min-w-0">
+                                                <div className="min-w-0">
+                                                    <p className="text-xs font-black text-slate-700 dark:text-slate-200 break-words">{product.productName}</p>
+                                                    <p className="text-[10px] text-slate-400 mt-0.5">{product.salesCount} ventas · ${product.revenueUsd.toFixed(2)}</p>
+                                                </div>
+                                                <span className="shrink-0 text-xs font-outfit font-black text-emerald-600 dark:text-emerald-400">{product.quantity} uds</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 p-4 sm:p-5 shadow-sm min-w-0 overflow-hidden">
+                                <div className="flex items-center justify-between gap-3 mb-4">
+                                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-white">Gastos y egresos</h3>
+                                    <span className="text-[10px] font-bold text-slate-400">{supervisorReportData.expenses.length} movimientos</span>
+                                </div>
+                                {supervisorReportData.expenses.length === 0 ? (
+                                    <p className="py-8 text-center text-xs text-slate-400">Sin gastos registrados.</p>
+                                ) : (
+                                    <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+                                        {supervisorReportData.expenses.slice(0, 10).map(expense => (
+                                            <div key={expense.id} className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800/60 min-w-0">
+                                                <div className="min-w-0">
+                                                    <p className="text-xs font-black text-slate-700 dark:text-slate-200 break-words">{expense.description}</p>
+                                                    <p className="text-[10px] text-slate-400 mt-0.5">{toTitleCase(expense.category)} · {expense.affectsCash ? 'Afecta caja' : 'No afecta caja'}</p>
+                                                </div>
+                                                <span className={`shrink-0 text-xs font-outfit font-black ${expense.isAutoconsumo ? 'text-violet-600 dark:text-violet-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                                                    -${expense.totalUsd.toFixed(2)}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 p-4 sm:p-5 shadow-sm min-w-0 overflow-hidden">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+                                <div>
+                                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-white">Movimientos de inventario</h3>
+                                    <p className="text-[10px] text-slate-400 mt-1">Entradas y salidas detectadas en los datos sincronizados.</p>
+                                </div>
+                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                                    <input
+                                        type="search"
+                                        aria-label="Buscar movimiento de inventario"
+                                        placeholder="Buscar producto, lote o proveedor"
+                                        value={inventoryMovementSearch}
+                                        onChange={(event) => setInventoryMovementSearch(event.target.value)}
+                                        className="min-h-9 w-full sm:w-52 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-3 text-[10px] font-bold text-slate-700 dark:text-white outline-none focus:border-emerald-500"
+                                    />
+                                    <div className="flex bg-slate-100 dark:bg-slate-950 p-1 rounded-xl border border-slate-200/60 dark:border-slate-800">
+                                        {[
+                                            ['todos', 'Todos'],
+                                            ['ingreso', 'Entradas'],
+                                            ['egreso', 'Salidas'],
+                                        ].map(([value, label]) => (
+                                            <button
+                                                key={value}
+                                                type="button"
+                                                onClick={() => setInventoryMovementFilter(value)}
+                                                className={`min-h-9 px-2.5 text-[9px] font-black rounded-lg transition-colors ${
+                                                    inventoryMovementFilter === value
+                                                        ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-white shadow-sm'
+                                                        : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                                                }`}
+                                            >
+                                                {label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <span className="text-[10px] font-bold text-slate-400 whitespace-nowrap">{visibleInventoryMovements.length} movimientos</span>
+                                </div>
+                            </div>
+                            {visibleInventoryMovements.length === 0 ? (
+
+                                <div className="py-8 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
+                                    <Package size={24} className="mx-auto text-slate-300 dark:text-slate-700 mb-2" />
+                                    <p className="text-xs font-black text-slate-500 dark:text-slate-400">Sin movimientos de lotes sincronizados</p>
+                                    <p className="text-[10px] text-slate-400 mt-1">Los movimientos aparecerán cuando la caja los registre.</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1">
+                                    {visibleInventoryMovements.slice(0, 20).map(movement => (
+                                        <div key={movement.movementId} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800/60">
+                                            <div className="min-w-0">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-lg ${movement.direction === 'ingreso' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400' : 'bg-rose-100 text-rose-700 dark:bg-rose-950/30 dark:text-rose-400'}`}>
+                                                        {movement.direction}
+                                                    </span>
+                                                    <span className="text-xs font-black text-slate-700 dark:text-slate-200 break-words">{movement.productName}</span>
+                                                </div>
+                                                <p className="text-[10px] text-slate-400 mt-1 break-words">{movement.reason} · {movement.inputUnit} · {movement.operatorName || 'Usuario no informado'}</p>
+                                                <p className="text-[10px] text-slate-400 mt-1 break-words">
+                                                    Stock: {movement.stockBefore == null ? '—' : movement.stockBefore} → {movement.stockAfter == null ? '—' : movement.stockAfter}
+                                                    {movement.unitsPerPackage > 1 ? ` · ${movement.unitsPerPackage} uds/${movement.inputUnit === 'bultos' ? 'bulto' : 'caja'}` : ''}
+                                                </p>
+                                                <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                                    {movement.lotReference && <span className="text-[9px] text-slate-500 dark:text-slate-400">Lote: {movement.lotReference}</span>}
+                                                    {movement.supplierName && <span className="text-[9px] text-slate-500 dark:text-slate-400">Proveedor: {movement.supplierName}</span>}
+                                                    {movement.invoiceReference && <span className="text-[9px] text-slate-500 dark:text-slate-400">Factura: {movement.invoiceReference}</span>}
+                                                    {movement.isIncomplete && <span className="text-[9px] font-black text-amber-600 dark:text-amber-400">Datos incompletos</span>}
+                                                </div>
+                                            </div>
+                                            <span className="shrink-0 self-start sm:self-center text-xs font-outfit font-black text-slate-700 dark:text-slate-200">{movement.unitsDelta} uds</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* ── SECCIÓN 5: TERMINALES Y DISPOSITIVOS ── */}
                 {viewTab === 'terminales' && (
                     <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 border border-slate-200/60 dark:border-slate-800/80 shadow-sm">
                         <DevicesManager triggerHaptic={triggerHaptic} currentDeviceId={localStorage.getItem('pda_device_id')} />
@@ -1505,6 +1725,16 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                 targetDeviceId={pairedDeviceId}
                 currentRateMode={localStorage.getItem('bodega_rate_mode')}
                 currentCustomRate={localStorage.getItem('bodega_custom_rate')}
+                remoteAvailable={remoteActionsAvailable}
+            />
+
+            {/* Modal Ajuste de stock por lote del Supervisor */}
+            <SupervisorInventoryBatchModal
+                isOpen={Boolean(inventoryBatchProduct)}
+                onClose={() => setInventoryBatchProduct(null)}
+                product={inventoryBatchProduct}
+                targetDeviceId={pairedDeviceId}
+                remoteAvailable={remoteActionsAvailable}
             />
 
             {/* Modal Editar / Crear Producto Remoto */}
@@ -1516,6 +1746,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic }) 
                 }}
                 targetDeviceId={pairedDeviceId}
                 productToEdit={productToEditRemote}
+                remoteAvailable={remoteActionsAvailable}
             />
 
             {/* Modal de Confirmación de Desvinculación */}

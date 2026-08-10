@@ -3,180 +3,308 @@ import { supabaseCloud } from '../config/supabaseCloud';
 import { pushLocalSync, pushCloudSync } from './useCloudSync';
 import { storageService } from '../utils/storageService';
 import { withLock } from '../utils/withLock';
-import { sanitizeUserCatalog } from '../utils/userCatalog';
 import { showToast } from '../components/Toast';
+import { ensureSupervisorSession } from '../services/supervisorAuth';
+import { AppliedCommandGuard, validateSupervisorCommand } from '../services/supervisorContracts';
+import { applySupervisorInventoryBatchTransaction } from '../services/supervisorInventoryCommand';
 
-export function useRemoteCommands(deviceId) {
+function rowToCommand(row, deviceId) {
+    const issuedAt = new Date(row.issued_at).getTime();
+    const expiresAt = new Date(row.expires_at).getTime();
+    return {
+        commandId: row.command_id,
+        type: row.command_type,
+        monitorDeviceId: row.actor_auth_id,
+        targetDeviceId: row.target_device_id,
+        issuedAt,
+        expiresAt,
+        payload: row.payload,
+        schemaVersion: row.schema_version || 1,
+        deviceId,
+    };
+}
+
+async function ackCommand(commandId, status, ackPayload = {}, errorMessage = null) {
+    const { error } = await supabaseCloud.rpc('ack_supervisor_command', {
+        p_command_id: commandId,
+        p_status: status,
+        p_ack_payload: ackPayload,
+        p_error_message: errorMessage,
+    });
+    if (error) throw error;
+}
+
+const APPLIED_COMMANDS_KEY = 'supervisor_applied_commands_v1';
+
+async function readAppliedCommand(commandId) {
+    const stored = await storageService.getItem(APPLIED_COMMANDS_KEY, {});
+    const entry = stored?.[commandId];
+    if (!entry || Number(entry.expiresAt) <= Date.now()) return null;
+    return entry;
+}
+
+async function rememberAppliedCommand(commandId, entry) {
+    const stored = await storageService.getItem(APPLIED_COMMANDS_KEY, {});
+    const now = Date.now();
+    const activeEntries = Object.fromEntries(
+        Object.entries(stored || {}).filter(([, value]) => Number(value?.expiresAt) > now)
+    );
+    activeEntries[commandId] = entry;
+    const limitedEntries = Object.fromEntries(Object.entries(activeEntries).slice(-1000));
+    await storageService.setItem(APPLIED_COMMANDS_KEY, limitedEntries);
+}
+
+export function useRemoteCommands(deviceId, enabled = true) {
     useEffect(() => {
-        if (!supabaseCloud) return;
+        if (!supabaseCloud || !deviceId || !enabled) return undefined;
 
-        // Suscribirse al canal global de comandos remotos de La Estación y Supervisor
-        const channel = supabaseCloud.channel('system_commands', {
-            config: { broadcast: { self: false } }
-        });
+        let disposed = false;
+        const appliedCommands = new AppliedCommandGuard();
+        let channel = null;
 
-        channel
-            // ── 1. Orden de recarga remota ──
-            .on('broadcast', { event: 'force_reload' }, (payload) => {
-                const target = payload.payload?.targetDeviceId;
-                if (!target || target === 'all' || target === deviceId) {
-                    console.log('[RemoteCommands] Recibida orden de recarga remota desde La Estación. Recargando app...');
-                    window.location.reload();
+        const applyRateCommand = async (payload) => {
+            const { rateMode, customRate } = payload || {};
+            if (!['bcv', 'euro', 'usdt', 'manual'].includes(rateMode)) {
+                throw new Error('Modo de tasa no permitido');
+            }
+            if (rateMode === 'manual' && !(Number(customRate) > 0 && Number.isFinite(Number(customRate)))) {
+                throw new Error('Tasa personalizada inválida');
+            }
+
+            localStorage.setItem('bodega_rate_mode', rateMode);
+            localStorage.setItem('bodega_use_auto_rate', String(rateMode !== 'manual'));
+            pushLocalSync('bodega_rate_mode', rateMode);
+            pushLocalSync('bodega_use_auto_rate', String(rateMode !== 'manual'));
+
+            if (rateMode === 'manual') {
+                localStorage.setItem('bodega_custom_rate', String(customRate));
+                pushLocalSync('bodega_custom_rate', String(customRate));
+            }
+
+            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_rate_mode' } }));
+            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_custom_rate' } }));
+        };
+
+        const applyProductCommand = async (payload) => {
+            const { action, product, productId } = payload || {};
+            if (!['create', 'edit', 'delete'].includes(action)) throw new Error('Acción de producto inválida');
+            if (action !== 'delete' && (!product || typeof product.id !== 'string')) throw new Error('Producto inválido');
+            if (action === 'delete' && typeof productId !== 'string') throw new Error('Producto inválido');
+
+            await withLock('pos_write_lock', async () => {
+                const currentProducts = await storageService.getItem('bodega_products_v1', []) || [];
+                let updatedProducts;
+
+                if (action === 'delete') {
+                    updatedProducts = currentProducts.filter(item => item.id !== productId);
+                } else if (action === 'edit') {
+                    updatedProducts = currentProducts.map(item => item.id === product.id ? { ...item, ...product } : item);
+                } else {
+                    const exists = currentProducts.some(item => item.id === product.id);
+                    updatedProducts = exists
+                        ? currentProducts.map(item => item.id === product.id ? { ...item, ...product } : item)
+                        : [product, ...currentProducts];
                 }
-            })
 
-            // ── 2. Orden de cambio remoto de tasa ──
-            .on('broadcast', { event: 'supervisor_rate_change' }, (payload) => {
-                const { targetDeviceId, rateMode, customRate } = payload.payload || {};
-                if (targetDeviceId && targetDeviceId !== deviceId) return;
+                await storageService.setItem('bodega_products_v1', updatedProducts);
+                const pushResult = await pushCloudSync('bodega_products_v1', updatedProducts, true);
+                if (!pushResult.ok && !pushResult.skipped) throw new Error(pushResult.error);
+                window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_products_v1' } }));
+            });
+        };
 
-                console.log('[RemoteCommands] Aplicando cambio remoto de tasa:', { rateMode, customRate });
-                
-                if (rateMode) {
-                    localStorage.setItem('bodega_rate_mode', rateMode);
-                    localStorage.setItem('bodega_use_auto_rate', (rateMode !== 'manual').toString());
-                    pushLocalSync('bodega_rate_mode', rateMode);
-                    pushLocalSync('bodega_use_auto_rate', (rateMode !== 'manual').toString());
-                }
+        const applyInventoryBatchCommand = async (payload, commandId) => {
+            let adjustment;
+            await withLock('pos_write_lock', async () => {
+                adjustment = await applySupervisorInventoryBatchTransaction({
+                    storage: storageService,
+                    pushSync: pushCloudSync,
+                    payload,
+                    commandId,
+                });
 
-                if (customRate !== undefined && customRate !== null) {
-                    localStorage.setItem('bodega_custom_rate', String(customRate));
-                    pushLocalSync('bodega_custom_rate', String(customRate));
-                }
+                window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_products_v1' } }));
+                window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_sales_v1' } }));
+            });
 
-                window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_rate_mode' } }));
-                window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_custom_rate' } }));
-                showToast('💱 Tasa de cambio actualizada remotamente por el Supervisor', 'success');
-            })
+            return {
+                commandId,
+                productId: payload.productId,
+                unitsDelta: adjustment.unitsDelta,
+                stockBefore: adjustment.stockBefore,
+                stockAfter: adjustment.stockAfter,
+                status: 'applied',
+            };
+        };
 
-            // ── 3. Orden de actualización remota de inventario (delta) ──
-            .on('broadcast', { event: 'supervisor_product_update' }, async (payload) => {
-                const { targetDeviceId, action, product, productId } = payload.payload || {};
-                if (targetDeviceId && targetDeviceId !== deviceId) return;
+        const applyShiftCommand = async (payload) => {
+            const { action, shiftId, cierreId } = payload || {};
+            if (!['close', 'reopen'].includes(action)
+                || typeof shiftId !== 'string'
+                || typeof cierreId !== 'string') {
+                throw new Error('Acción de turno inválida');
+            }
 
-                console.log('[RemoteCommands] Procesando cambio remoto de producto:', { action, productId, product });
+            await withLock('pos_write_lock', async () => {
+                const sales = (await storageService.getItem('bodega_sales_v1', [])) || [];
+                const targetShiftId = String(shiftId);
+                const targetCierreId = String(cierreId);
 
-                try {
-                    await withLock('pos_write_lock', async () => {
-                        const currentProducts = await storageService.getItem('bodega_products_v1', []) || [];
-                        let updatedProducts = [];
+                if (action === 'close') {
+                    const alreadyClosed = sales.some(sale => (
+                        sale.tipo === 'REGISTRO_CIERRE'
+                        && (String(sale.cierreId) === targetCierreId || String(sale.shiftId) === targetShiftId)
+                    ));
+                    if (alreadyClosed) return;
 
-                        if (action === 'delete') {
-                            updatedProducts = currentProducts.filter(p => p.id !== productId);
-                        } else if (action === 'edit') {
-                            updatedProducts = currentProducts.map(p => p.id === product.id ? { ...p, ...product } : p);
-                        } else if (action === 'create') {
-                            const exists = currentProducts.some(p => p.id === product.id);
-                            if (exists) {
-                                updatedProducts = currentProducts.map(p => p.id === product.id ? { ...p, ...product } : p);
-                            } else {
-                                updatedProducts = [product, ...currentProducts];
-                            }
-                        }
+                    const opening = sales.find(sale => (
+                        sale.tipo === 'APERTURA_CAJA'
+                        && (String(sale.id) === targetShiftId || String(sale.shiftId) === targetShiftId)
+                        && !sale.cajaCerrada
+                    ));
+                    if (!opening) throw new Error('Turno activo no encontrado');
 
-                        await storageService.setItem('bodega_products_v1', updatedProducts);
-                        await pushCloudSync('bodega_products_v1', updatedProducts, true);
-                        window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_products_v1' } }));
+                    const updated = sales.map(sale => {
+                        const belongsToShift = String(sale.id) === String(opening.id)
+                            || String(sale.shiftId) === targetShiftId
+                            || (!sale.cajaCerrada
+                                && sale.timestamp
+                                && new Date(sale.timestamp) >= new Date(opening.timestamp));
+                        return belongsToShift
+                            ? { ...sale, cajaCerrada: true, cierreId: targetCierreId, shiftId: targetShiftId }
+                            : sale;
                     });
-                    showToast(`📦 Inventario actualizado remotamente (${action})`, 'success');
-                } catch (e) {
-                    console.error('[RemoteCommands] Error procesando supervisor_product_update:', e);
-                }
-            })
-
-            // ── 4. Orden de gestión remota de cajeros / usuarios ──
-            .on('broadcast', { event: 'supervisor_user_update' }, async (payload) => {
-                const { targetDeviceId, action, userId, newPin, nombre, rol, bypassPin } = payload.payload || {};
-                if (targetDeviceId && targetDeviceId !== deviceId) return;
-
-                console.log('[RemoteCommands] Procesando actualización remota de usuario:', { action, userId, nombre });
-
-                try {
-                    const { useAuthStore } = await import('./store/useAuthStore');
-                    const store = useAuthStore.getState();
-                    let res;
-
-                    if (action === 'change_pin' && userId && newPin) {
-                        res = store.cambiarPin(userId, newPin);
-                    } else if (action === 'add' && nombre) {
-                        res = store.agregarUsuario(nombre, rol || 'CAJERO', newPin || '000000', bypassPin);
-                    } else if (action === 'edit' && userId) {
-                        res = store.editarUsuario(userId, { nombre, rol, bypassPin });
-                    } else if (action === 'delete' && userId) {
-                        res = store.eliminarUsuario(userId);
-                    }
-
-                    await res?.done;
-
-                    const freshUsers = useAuthStore.getState().usuarios;
-                    localStorage.setItem('bodega_users_catalog_v1', JSON.stringify(freshUsers));
-                    const sanitized = sanitizeUserCatalog(freshUsers);
-                    await pushCloudSync('bodega_users_catalog_v1', sanitized, true);
-                    showToast('👤 Lista de usuarios actualizada remotamente', 'success');
-                } catch (e) {
-                    console.error('[RemoteCommands] Error procesando supervisor_user_update:', e);
-                }
-            })
-
-            // ── 5. Orden de cierre / reapertura remota de turno ──
-            .on('broadcast', { event: 'supervisor_shift_action' }, async (payload) => {
-                const { targetDeviceId, action } = payload.payload || {};
-                if (targetDeviceId && targetDeviceId !== deviceId) return;
-
-                console.log('[RemoteCommands] Procesando acción remota de turno:', { action });
-
-                try {
-                    await withLock('pos_write_lock', async () => {
-                        const sales = (await storageService.getItem('bodega_sales_v1', [])) || [];
-
-                        if (action === 'close') {
-                            const cierreId = Date.now();
-                            const updated = sales.map(s => {
-                                if (!s.cajaCerrada) return { ...s, cajaCerrada: true, cierreId };
-                                return s;
-                            });
-                            updated.push({
-                                id: `cierre_${cierreId}`,
-                                tipo: 'REGISTRO_CIERRE',
-                                cierreId,
-                                cajaCerrada: true,
-                                timestamp: new Date().toISOString(),
-                                summary: { cashier: { nombre: 'Supervisor (Remoto)', rol: 'DUEÑO' } }
-                            });
-                            await storageService.setItem('bodega_sales_v1', updated);
-                            await pushCloudSync('bodega_sales_v1', updated, true);
-                            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_sales_v1' } }));
-                            showToast('🔒 Turno cerrado remotamente por el Supervisor', 'info');
-
-                        } else if (action === 'reopen') {
-                            const lastCierre = [...sales]
-                                .filter(s => s.cajaCerrada && s.cierreId)
-                                .sort((a, b) => b.cierreId - a.cierreId)[0];
-
-                            if (!lastCierre) {
-                                showToast('No se encontró ningún cierre previo para reabrir', 'error');
-                                return;
-                            }
-                            const targetCierreId = lastCierre.cierreId;
-
-                            const updated = sales
-                                .filter(s => !(s.tipo === 'REGISTRO_CIERRE' && s.cierreId === targetCierreId))
-                                .map(s => s.cierreId === targetCierreId ? { ...s, cajaCerrada: false, cierreId: undefined } : s);
-
-                            await storageService.setItem('bodega_sales_v1', updated);
-                            await pushCloudSync('bodega_sales_v1', updated, true);
-                            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_sales_v1' } }));
-                            showToast('🔓 Turno reabierto remotamente por el Supervisor', 'info');
-                        }
+                    updated.push({
+                        id: `cierre_${targetCierreId}`,
+                        tipo: 'REGISTRO_CIERRE',
+                        cierreId: targetCierreId,
+                        shiftId: targetShiftId,
+                        cajaCerrada: true,
+                        timestamp: new Date().toISOString(),
+                        summary: {
+                            cashier: { nombre: 'Supervisor (Remoto)', rol: 'DUEÑO' },
+                            remote: true,
+                        },
                     });
-                } catch (e) {
-                    console.error('[RemoteCommands] Error procesando supervisor_shift_action:', e);
+                    await storageService.setItem('bodega_sales_v1', updated);
+                    const pushResult = await pushCloudSync('bodega_sales_v1', updated, true);
+                    if (!pushResult.ok && !pushResult.skipped) throw new Error(pushResult.error);
+                } else {
+                    const hasClose = sales.some(sale => (
+                        sale.tipo === 'REGISTRO_CIERRE' && String(sale.cierreId) === targetCierreId
+                    ));
+                    if (!hasClose) return;
+                    const updated = sales
+                        .filter(sale => !(sale.tipo === 'REGISTRO_CIERRE' && String(sale.cierreId) === targetCierreId))
+                        .map(sale => String(sale.cierreId) === targetCierreId
+                            ? { ...sale, cajaCerrada: false, cierreId: undefined, shiftId: undefined }
+                            : sale);
+                    await storageService.setItem('bodega_sales_v1', updated);
+                    const pushResult = await pushCloudSync('bodega_sales_v1', updated, true);
+                    if (!pushResult.ok && !pushResult.skipped) throw new Error(pushResult.error);
                 }
-            })
-            .subscribe();
+
+                window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_sales_v1' } }));
+            });
+        };
+
+        const processCommand = async (row) => {
+            if (disposed || !row || row.status !== 'pending') return;
+
+            const command = rowToCommand(row, deviceId);
+            const validation = validateSupervisorCommand(command, {
+                targetDeviceId: deviceId,
+                monitorDeviceId: row.actor_auth_id,
+            });
+            if (!validation.valid) {
+                await ackCommand(row.command_id, 'rejected', {}, validation.error);
+                return;
+            }
+            const remembered = await readAppliedCommand(row.command_id);
+            if (remembered) {
+                await ackCommand(row.command_id, remembered.status, remembered.ackPayload, remembered.errorMessage);
+                return;
+            }
+            if (!appliedCommands.accept(row.command_id, command.expiresAt)) return;
+
+            try {
+                let appliedPayload = { commandId: row.command_id };
+                if (command.type === 'supervisor.rate.set') {
+                    await applyRateCommand(command.payload);
+                    showToast('💱 Tasa actualizada por el Supervisor', 'success');
+                } else if (command.type === 'supervisor.product.create') {
+                    await applyProductCommand({ ...command.payload, action: 'create' });
+                    showToast('📦 Producto creado por el Supervisor', 'success');
+                } else if (command.type === 'supervisor.product.update') {
+                    await applyProductCommand({
+                        action: 'edit',
+                        product: { id: command.payload.productId, ...command.payload.patch },
+                    });
+                    showToast('📦 Producto actualizado por el Supervisor', 'success');
+                } else if (command.type === 'supervisor.product.delete') {
+                    await applyProductCommand({ action: 'delete', productId: command.payload.productId });
+                    showToast('📦 Producto eliminado por el Supervisor', 'success');
+                } else if (command.type === 'supervisor.inventory.batch.adjust') {
+                    appliedPayload = await applyInventoryBatchCommand(command.payload, row.command_id);
+                } else if (command.type === 'supervisor.shift.close' || command.type === 'supervisor.shift.reopen') {
+                    await applyShiftCommand({
+                        action: command.type.endsWith('.close') ? 'close' : 'reopen',
+                        shiftId: command.payload.shiftId,
+                        cierreId: command.payload.cierreId,
+                    });
+                    showToast('🔒 Acción de turno aplicada por el Supervisor', 'info');
+                } else if (command.type.startsWith('supervisor.user.')) {
+                    // Los PINs no deben viajar por comandos remotos. Esta capacidad
+                    // queda bloqueada hasta definir un flujo de credencial segura.
+                    throw new Error('Gestión remota de usuarios temporalmente bloqueada');
+                } else {
+                    throw new Error('Tipo de comando no soportado');
+                }
+
+                await ackCommand(row.command_id, 'applied', appliedPayload);
+                await rememberAppliedCommand(row.command_id, {
+                    status: 'applied',
+                    ackPayload: appliedPayload,
+                    errorMessage: null,
+                    expiresAt: command.expiresAt,
+                });
+            } catch (error) {
+                const errorMessage = error?.message || 'Error aplicando comando';
+                await ackCommand(row.command_id, 'failed', {}, errorMessage);
+                await rememberAppliedCommand(row.command_id, {
+                    status: 'failed',
+                    ackPayload: {},
+                    errorMessage,
+                    expiresAt: command.expiresAt,
+                });
+                console.error('[RemoteCommands] Comando rechazado:', error);
+            }
+        };
+
+        const initialize = async () => {
+            const { session, error } = await ensureSupervisorSession();
+            if (disposed || error || !session) return;
+
+            channel = supabaseCloud
+                .channel(`supervisor-commands:${deviceId}`)
+                .on('postgres_changes', {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'supervisor_commands',
+                    filter: `target_device_id=eq.${deviceId}`,
+                }, ({ new: row }) => {
+                    processCommand(row).catch((commandError) => {
+                        console.error('[RemoteCommands] Error inesperado:', commandError);
+                    });
+                })
+                .subscribe();
+        };
+
+        initialize();
 
         return () => {
-            supabaseCloud.removeChannel(channel).catch(() => {});
+            disposed = true;
+            if (channel) supabaseCloud.removeChannel(channel).catch(() => {});
         };
-    }, [deviceId]);
+    }, [deviceId, enabled]);
 }

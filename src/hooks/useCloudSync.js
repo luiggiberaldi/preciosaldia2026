@@ -2,22 +2,18 @@ import { useEffect, useRef } from 'react';
 import localforage from 'localforage';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { useAuthStore } from './store/useAuthStore';
+import { SUPERVISOR_SYNC_KEYS, validateSupervisorSyncDocument } from '../services/supervisorContracts';
+import { ensureSupervisorSession } from '../services/supervisorAuth';
+import {
+    buildSyncEnvelope,
+    getSyncMetadataKey,
+    isNewerSyncDocument,
+    readSyncEnvelope,
+    withSyncRetry,
+} from '../services/supervisorSyncService';
 
-const SYNC_KEYS = [
-    'bodega_products_v1',
-    'bodega_customers_v1',
-    'bodega_sales_v1',
-    'bodega_payment_methods_v1',
-    'monitor_rates_v12',
-    'bodega_accounts_v2',
-    'abasto_audit_log_v1',
-    'bodega_custom_rate',
-    'bodega_use_auto_rate',
-    'bodega_rate_mode',
-    'tasa_cop',
-    'cop_enabled',
-    'auto_cop_enabled'
-];
+// Una única allowlist compartida por primary y monitor.
+const SYNC_KEYS = SUPERVISOR_SYNC_KEYS;
 
 // SEC-002: `abasto-auth-storage` (hashes de PIN) YA NO se sincroniza a sync_documents.
 // Las políticas RLS de `sync_documents` en el schema original permiten lectura global
@@ -82,39 +78,46 @@ function _debouncePush(key, value) {
 }
 
 export const pushCloudSync = async (key, value, forceUnconditional = false) => {
-    if (!supabaseCloud) return;
-    if (isSyncingFromCloud) return;          // Nunca re-emitir lo que llegó de la nube
-    if (!isCloudSyncActive) return;          // Omitir si la sesión cloud no está activa
-    if (!SYNC_KEYS.includes(key)) return;
-    if (!_currentDeviceId) return;
+    if (!supabaseCloud) return { ok: false, skipped: true, error: 'Supabase no disponible' };
+    if (isSyncingFromCloud) return { ok: false, skipped: true, error: 'Cambio remoto en aplicación' };
+    if (!isCloudSyncActive) return { ok: false, skipped: true, error: 'Sync no activo' };
+    if (!SYNC_KEYS.includes(key)) return { ok: false, skipped: true, error: 'Clave no allowlisted' };
+    if (!_currentDeviceId) return { ok: false, skipped: true, error: 'Dispositivo no definido' };
 
     // SEC-002: jamás empujar `abasto-auth-storage` aunque accidentalmente lo pidan.
-    if (key === 'abasto-auth-storage') return;
+    if (key === 'abasto-auth-storage') return { ok: false, skipped: true, error: 'Documento de autenticación bloqueado' };
 
-    // EGRESS & REQUEST SAVER:
-    // Si el valor a enviar es idéntico al último enviado con éxito a la nube, abortar antes del POST HTTP salvo que sea forceUnconditional
     const hashKey = LAST_PUSH_HASH_PREFIX + key;
     const currentHash = quickHash(value);
     if (!forceUnconditional && localStorage.getItem(hashKey) === currentHash) {
-        return;
+        return { ok: true, skipped: true, reason: 'Sin cambios' };
     }
 
+    const collectionType = LOCAL_KEYS.includes(key) ? 'local' : 'store';
+    const updatedAt = new Date().toISOString();
+    const document = {
+        device_id: _currentDeviceId,
+        collection: collectionType,
+        doc_id: key,
+        data: buildSyncEnvelope(value, updatedAt),
+        updated_at: updatedAt,
+    };
+
     try {
-        const collectionType = LOCAL_KEYS.includes(key) ? 'local' : 'store';
+        const result = await withSyncRetry(async () => {
+            const response = await supabaseCloud
+                .from('sync_documents')
+                .upsert(document, { onConflict: 'device_id,collection,doc_id' });
+            if (response.error) throw response.error;
+            return response;
+        });
 
-        await supabaseCloud.from('sync_documents').upsert({
-            device_id: _currentDeviceId,
-            collection: collectionType,
-            doc_id: key,
-            data: { payload: value },
-            updated_at: new Date().toISOString()
-        }, { onConflict: 'device_id,collection,doc_id' });
-
-        // Update local hash to prevent periodic push from re-uploading
+        // Solo confirmar el hash después de que Supabase confirmó el upsert.
         localStorage.setItem(hashKey, currentHash);
-
-    } catch (e) {
-        // Silencioso en producción
+        return { ok: true, skipped: false, updatedAt, data: result.data ?? null };
+    } catch (error) {
+        console.warn('[CloudSync] No se pudo confirmar el push:', error?.message ?? error);
+        return { ok: false, skipped: false, error: error?.message || 'Error de sincronización' };
     }
 };
 
@@ -164,7 +167,7 @@ export const forceSyncAllPOSData = async (overrideDeviceId, forceUnconditional =
     const activeDeviceId = overrideDeviceId || _currentDeviceId || localStorage.getItem('pda_device_id');
     if (!activeDeviceId) return;
 
-    isCloudSyncActive = true;
+    if (!isCloudSyncActive) return { ok: false, error: 'Sync no activo' };
 
     try {
         const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
@@ -197,11 +200,32 @@ const STORE_SCHEMAS = {
  * Aplica un documento recibido de la nube al almacenamiento local.
  * Garantiza que isSyncingFromCloud esté activo durante toda la operación.
  */
-async function _applyFromCloud(docId, collection, payload) {
+async function _applyFromCloud(docId, collection, data) {
     isSyncingFromCloud = true;
     try {
-        if (payload == null) return;
-        if (docId === 'abasto-auth-storage') return;
+        if (!['store', 'local'].includes(collection)) return false;
+        const envelope = readSyncEnvelope(data);
+        if (!envelope.valid) {
+            console.warn(`[CloudSync] Envelope remoto rechazado: ${envelope.error}`);
+            return false;
+        }
+
+        const { payload } = envelope;
+        if (docId === 'abasto-auth-storage') return false;
+
+        const metadataKey = getSyncMetadataKey(docId);
+        const previousUpdatedAt = localStorage.getItem(metadataKey);
+        if (!isNewerSyncDocument(envelope.updatedAt, previousUpdatedAt)) {
+            return false;
+        }
+
+        // Contrato común del supervisor: incluso el primary debe rechazar
+        // documentos no allowlisted antes de aplicarlos localmente.
+        const supervisorValidation = validateSupervisorSyncDocument(docId, payload);
+        if (!supervisorValidation.valid) {
+            console.warn(`[CloudSync] Documento remoto rechazado: ${supervisorValidation.error}`);
+            return false;
+        }
 
         // DATA-001: Validación de Schema antes de escribir en almacenamiento local
         const validator = STORE_SCHEMAS[docId];
@@ -212,7 +236,7 @@ async function _applyFromCloud(docId, collection, payload) {
             }
             if (!validator(dataToValidate)) {
                 console.warn(`[CloudSync] Schema validation falló para ${docId}, ignorando payload remoto.`, payload);
-                return;
+                return false;
             }
         }
 
@@ -237,6 +261,8 @@ async function _applyFromCloud(docId, collection, payload) {
         // Update local hash to prevent periodic push from re-uploading what we just downloaded
         const hashKey = LAST_PUSH_HASH_PREFIX + docId;
         localStorage.setItem(hashKey, quickHash(payload));
+        if (envelope.updatedAt) localStorage.setItem(metadataKey, envelope.updatedAt);
+        return true;
     } finally {
         isSyncingFromCloud = false;
     }
@@ -273,40 +299,37 @@ export function useCloudSync(deviceId) {
 
         const initSync = async () => {
             try {
-                let hasAuth = false;
-                try {
-                    const { data: { session } } = await supabaseCloud.auth.getSession();
-                    hasAuth = session && !(session.expires_at && session.expires_at * 1000 < Date.now());
-                } catch (e) {}
+                const { session, error: sessionError } = await ensureSupervisorSession();
+                if (sessionError || !session) {
+                    isCloudSyncActive = false;
+                    console.warn('[CloudSync] Sincronización pausada: no hay sesión segura del dispositivo.');
+                    return;
+                }
 
-                if (!hasAuth) {
-                    // Si no hay sesión, verificamos si está emparejado para permitir sync sin login
-                    const { data: pairing, error: pairingErr } = await supabaseCloud
-                        .from('device_pairings')
-                        .select('id')
-                        .eq('primary_device_id', deviceId)
-                        .maybeSingle();
+                const { data: pairing, error: pairingError } = await supabaseCloud
+                    .from('device_pairings')
+                    .select('monitor_device_id')
+                    .eq('primary_device_id', deviceId)
+                    .maybeSingle();
 
-                    if (pairingErr || !pairing) {
-                        isCloudSyncActive = false;
-                        console.log('[CloudSync] Omitiendo sincronización: sin sesión cloud ni emparejamiento activo. Escuchando emparejamientos...');
-                        if (!globalSubscription) {
-                            globalSubscription = supabaseCloud
-                                .channel(`device_pairings:${deviceId}`)
-                                .on('postgres_changes', {
-                                    event: '*',
-                                    schema: 'public',
-                                    table: 'device_pairings',
-                                    filter: `primary_device_id=eq.${deviceId}`
-                                }, () => {
-                                    console.log('[CloudSync] ¡Emparejamiento detectado en tiempo real! Activando sincronización...');
-                                    isInitialized.current = false;
-                                    initSync();
-                                })
-                                .subscribe();
-                        }
-                        return;
+                if (pairingError || !pairing?.monitor_device_id) {
+                    isCloudSyncActive = false;
+                    console.log('[CloudSync] Sincronización pausada hasta completar el pairing.');
+                    if (!globalSubscription) {
+                        globalSubscription = supabaseCloud
+                            .channel(`device_pairings:${deviceId}`)
+                            .on('postgres_changes', {
+                                event: '*',
+                                schema: 'public',
+                                table: 'device_pairings',
+                                filter: `primary_device_id=eq.${deviceId}`
+                            }, () => {
+                                isInitialized.current = false;
+                                initSync();
+                            })
+                            .subscribe();
                     }
+                    return;
                 }
 
                 isCloudSyncActive = true;
@@ -316,6 +339,10 @@ export function useCloudSync(deviceId) {
                 forceSyncAllPOSData(deviceId, true).catch(() => {});
 
                 // ── Pull Inicial / Sincronización de Importación ──
+                // Declarar el snapshot fuera de la rama condicional: el bloque de
+                // auto-recuperación posterior también necesita conocer qué claves
+                // llegaron desde la nube.
+                let docs = [];
                 const backupImported = localStorage.getItem('pda_backup_imported_flag') === 'true';
                 
                 if (backupImported) {
@@ -326,27 +353,32 @@ export function useCloudSync(deviceId) {
                     for (const key of criticalKeys) {
                         const localValue = await lf.getItem(key);
                         if (localValue !== null) {
-                            await pushCloudSync(key, localValue);
-                            const hashKey = LAST_PUSH_HASH_PREFIX + key;
-                            localStorage.setItem(hashKey, quickHash(localValue));
+                            const result = await pushCloudSync(key, localValue);
+                            if (result?.ok) {
+                                const hashKey = LAST_PUSH_HASH_PREFIX + key;
+                                localStorage.setItem(hashKey, quickHash(localValue));
+                            }
                         }
                     }
                     localStorage.setItem('cloud_sync_ts', new Date().toISOString());
                     localStorage.removeItem('pda_backup_imported_flag');
                     console.log('[CloudSync] Sincronización incondicional de importación completada.');
                 } else {
-                    const { data: docs } = await supabaseCloud
+                    const { data: initialDocs, error: docsError } = await supabaseCloud
                         .from('sync_documents')
                         .select('collection, doc_id, data')
                         .eq('device_id', deviceId)
                         .in('collection', ['store', 'local']);
 
-                    if (docs?.length > 0) {
+                    if (docsError) throw docsError;
+                    docs = initialDocs || [];
+
+                    if (docs.length > 0) {
                         for (const doc of docs) {
                             // SEC-002: nunca aplicar `abasto-auth-storage` desde la nube.
                             if (doc.doc_id === 'abasto-auth-storage') continue;
                             try {
-                                await _applyFromCloud(doc.doc_id, doc.collection, doc.data.payload);
+                                await _applyFromCloud(doc.doc_id, doc.collection, doc.data);
                             } catch (e) {
                                 // HOOK-023: try/catch por documento para no abortar el pull completo.
                                 console.warn(`[CloudSync] Error aplicando doc ${doc.doc_id}:`, e);
@@ -370,9 +402,10 @@ export function useCloudSync(deviceId) {
                         const currentHash = quickHash(localValue);
                         if (existingCloudKeys.has(key) && localStorage.getItem(hashKey) === currentHash) continue;
 
-                        // Subimos los datos locales a la base de datos para sincronizar el historial
-                        await pushCloudSync(key, localValue);
-                        localStorage.setItem(hashKey, currentHash);
+                        // Subimos los datos locales a la base de datos para sincronizar el historial.
+                        // El hash solo se confirma si el upsert fue aceptado.
+                        const result = await pushCloudSync(key, localValue);
+                        if (result?.ok) localStorage.setItem(hashKey, currentHash);
                     }
                 } catch (e) {
                     // Silencioso
@@ -419,8 +452,8 @@ export function useCloudSync(deviceId) {
                     const currentHash = quickHash(localValue);
                     if (localStorage.getItem(hashKey) === currentHash) continue;
 
-                    await pushCloudSync(key, localValue);
-                    localStorage.setItem(hashKey, currentHash);
+                    const result = await pushCloudSync(key, localValue);
+                    if (result?.ok) localStorage.setItem(hashKey, currentHash);
                 }
             } catch (e) {
                 // Silencioso

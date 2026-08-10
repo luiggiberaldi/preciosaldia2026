@@ -3,11 +3,12 @@ import { Modal } from '../Modal';
 import ProductFormQuick from '../Products/ProductFormQuick';
 import { useProductContext } from '../../context/ProductContext';
 import { buildProductPayload } from '../../utils/productProcessor';
-import { supabaseCloud } from '../../config/supabaseCloud';
 import { showToast } from '../Toast';
 import { Save } from 'lucide-react';
+import { SUPERVISOR_REMOTE_MUTATIONS_ENABLED } from '../../config/supervisorPolicy';
+import { sendSupervisorCommand } from '../../services/supervisorCommandService';
 
-export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId, productToEdit = null }) {
+export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId, productToEdit = null, remoteAvailable = true }) {
     const { categories, effectiveRate: bcvRate, copEnabled, copPrimary, tasaCop } = useProductContext();
 
     // Form fields
@@ -158,12 +159,22 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
     const handleSubmit = async (e) => {
         if (e) e.preventDefault();
 
+        if (!remoteAvailable) {
+            showToast('La caja está desconectada; no se puede enviar la orden', 'warning');
+            return;
+        }
+
+        if (!SUPERVISOR_REMOTE_MUTATIONS_ENABLED) {
+            showToast('Las mutaciones remotas están temporalmente deshabilitadas por seguridad', 'warning');
+            return;
+        }
+
         if (!name.trim()) {
             showToast('El nombre del producto es obligatorio', 'error');
             return;
         }
 
-        if (!supabaseCloud || !targetDeviceId) {
+        if (!targetDeviceId) {
             showToast('No hay conexión con la caja registradora', 'error');
             return;
         }
@@ -204,22 +215,26 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
                 updatedAt: new Date().toISOString()
             };
 
-            const channel = supabaseCloud.channel('system_commands');
-            await channel.subscribe();
-
-            await channel.send({
-                type: 'broadcast',
-                event: 'supervisor_product_update',
-                payload: {
-                    targetDeviceId,
-                    action: isEdit ? 'edit' : 'create',
-                    productId: productPayload.id,
-                    product: productPayload
-                }
+            const result = await sendSupervisorCommand({
+                type: isEdit ? 'supervisor.product.update' : 'supervisor.product.create',
+                targetDeviceId,
+                payload: isEdit
+                    ? { productId: productPayload.id, patch: productPayload }
+                    : { product: productPayload },
             });
 
-            supabaseCloud.removeChannel(channel).catch(() => {});
-            showToast(isEdit ? '✏️ Orden de edición enviada a la caja' : '➕ Orden de creación enviada a la caja', 'success');
+            if (!result.ok) {
+                showToast(result.error, result.status === 'disabled' ? 'warning' : 'error');
+                return;
+            }
+
+            const ack = await result.ackPromise;
+            if (!ack?.ok) {
+                showToast(ack?.error || 'La caja no confirmó la orden de producto', 'error');
+                return;
+            }
+
+            showToast(isEdit ? '✏️ Edición confirmada en la caja' : '➕ Producto creado en la caja', 'success');
             onClose();
         } catch (err) {
             console.error('[RemoteProductFormModal] Error enviando producto:', err);

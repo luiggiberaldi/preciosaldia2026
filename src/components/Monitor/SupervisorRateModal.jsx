@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { X, Check, DollarSign, Euro, TrendingUp, Edit3 } from 'lucide-react';
-import { supabaseCloud } from '../../config/supabaseCloud';
 import { showToast } from '../Toast';
+import { SUPERVISOR_REMOTE_MUTATIONS_ENABLED } from '../../config/supervisorPolicy';
+import { sendSupervisorCommand } from '../../services/supervisorCommandService';
 
-export default function SupervisorRateModal({ isOpen, onClose, targetDeviceId, currentRateMode, currentCustomRate }) {
+export default function SupervisorRateModal({ isOpen, onClose, targetDeviceId, currentRateMode, currentCustomRate, remoteAvailable = true }) {
     const [rateMode, setRateMode] = useState(currentRateMode || 'bcv');
     const [customRate, setCustomRate] = useState(currentCustomRate || '');
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -11,7 +12,17 @@ export default function SupervisorRateModal({ isOpen, onClose, targetDeviceId, c
     if (!isOpen) return null;
 
     const handleApply = async () => {
-        if (!supabaseCloud || !targetDeviceId) {
+        if (!remoteAvailable) {
+            showToast('La caja está desconectada; no se puede enviar la orden', 'warning');
+            return;
+        }
+
+        if (!SUPERVISOR_REMOTE_MUTATIONS_ENABLED) {
+            showToast('Las mutaciones remotas están temporalmente deshabilitadas por seguridad', 'warning');
+            return;
+        }
+
+        if (!targetDeviceId) {
             showToast('No hay conexión con la caja registradora', 'error');
             return;
         }
@@ -24,53 +35,27 @@ export default function SupervisorRateModal({ isOpen, onClose, targetDeviceId, c
         try {
             setIsSubmitting(true);
 
-            // 1. Guardar en sync_documents de Supabase (Persistencia garantizada para useCloudSync)
-            await supabaseCloud.from('sync_documents').upsert({
-                device_id: targetDeviceId,
-                collection: 'local',
-                doc_id: 'bodega_rate_mode',
-                data: { payload: rateMode },
-                updated_at: new Date().toISOString()
-            }, { onConflict: 'device_id,collection,doc_id' });
-
-            await supabaseCloud.from('sync_documents').upsert({
-                device_id: targetDeviceId,
-                collection: 'local',
-                doc_id: 'bodega_use_auto_rate',
-                data: { payload: (rateMode !== 'manual').toString() },
-                updated_at: new Date().toISOString()
-            }, { onConflict: 'device_id,collection,doc_id' });
-
-            if (rateMode === 'manual' && customRate) {
-                await supabaseCloud.from('sync_documents').upsert({
-                    device_id: targetDeviceId,
-                    collection: 'local',
-                    doc_id: 'bodega_custom_rate',
-                    data: { payload: String(customRate) },
-                    updated_at: new Date().toISOString()
-                }, { onConflict: 'device_id,collection,doc_id' });
-            }
-
-            // 2. Broadcast en tiempo real con callback SUBSCRIBED garantizado
-            const channel = supabaseCloud.channel('system_commands');
-            channel.subscribe(async (status) => {
-                if (status === 'SUBSCRIBED') {
-                    await channel.send({
-                        type: 'broadcast',
-                        event: 'supervisor_rate_change',
-                        payload: {
-                            targetDeviceId,
-                            rateMode,
-                            customRate: rateMode === 'manual' ? parseFloat(customRate) : null
-                        }
-                    });
-                    setTimeout(() => {
-                        supabaseCloud.removeChannel(channel).catch(() => {});
-                    }, 1000);
-                }
+            const result = await sendSupervisorCommand({
+                type: 'supervisor.rate.set',
+                targetDeviceId,
+                payload: {
+                    rateMode,
+                    customRate: rateMode === 'manual' ? parseFloat(customRate) : null,
+                },
             });
 
-            showToast('💱 Tasa de cambio actualizada en la caja', 'success');
+            if (!result.ok) {
+                showToast(result.error, result.status === 'disabled' ? 'warning' : 'error');
+                return;
+            }
+
+            const ack = await result.ackPromise;
+            if (!ack?.ok) {
+                showToast(ack?.error || 'La caja no confirmó el cambio de tasa', 'error');
+                return;
+            }
+
+            showToast('💱 Tasa de cambio confirmada en la caja', 'success');
             onClose();
         } catch (e) {
             console.error('[SupervisorRateModal] Error enviando orden de tasa:', e);
