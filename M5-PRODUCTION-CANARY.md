@@ -1,12 +1,12 @@
-# M5 — Preflight de producción y canary del Supervisor
+# M5 — Producción general del Supervisor
 
 **Fecha:** 2026-08-10
 **Proyecto:** `sodgzkablshladvbtnes`
-**Alcance:** solo lectura y preparación. No activar mutaciones automáticamente.
+**Alcance:** ingreso remoto para cualquier par caja/Supervisor vinculado; egreso remoto bloqueado.
 
 ## Resultado del preflight
 
-Consultas ejecutadas mediante Management API en producción. No se insertaron, actualizaron ni eliminaron filas.
+Consultas y migraciones ejecutadas mediante Management API en producción. No se modificaron ventas ni stock fuera del ingreso canary ya validado.
 
 | Control | Resultado |
 |---|---|
@@ -52,55 +52,45 @@ Verificación posterior:
 
 No se creó ningún comando de producción ni se modificaron movimientos de stock.
 
-## Estado del canary
+## Estado de producción general
 
 ```text
-Backend income-only: PREPARADO
-Canary de cliente: NO ACTIVADO
+Backend income-only: ACTIVO
+Autorización: pairing activo + identidad Auth del Supervisor
 SUPERVISOR_REMOTE_MUTATIONS_ENABLED: false
-SUPERVISOR_REMOTE_INCOME_ENABLED: false por defecto
+SUPERVISOR_REMOTE_INCOME_ENABLED: true en Production
 SUPERVISOR_REMOTE_EGRESS_ENABLED: false
 ```
 
-El cliente necesita un build/deploy con esta variable explícita para iniciar el canary:
+La política server-side ya no depende de la tabla temporal del canary. Cualquier Supervisor puede enviar un ingreso únicamente si:
 
-```env
-VITE_SUPERVISOR_REMOTE_INCOME_ENABLED=true
-```
+1. existe un pairing activo para la caja objetivo;
+2. `monitor_auth_id` coincide con la sesión Auth que crea el comando;
+3. caja y Supervisor son dispositivos distintos;
+4. el comando es exclusivamente `supervisor.inventory.batch.adjust` con `direction=ingreso`;
+5. el ACK, TTL e idempotencia son válidos.
 
-Esa variable habilita únicamente el ingreso por lote; no habilita tasa, productos, turnos ni egresos.
+La tabla `supervisor_canary_allowlist` se conserva por compatibilidad y rollback, pero sus filas no autorizan ni bloquean la política general. El egreso continúa bloqueado en frontend y backend.
 
-Se verificó localmente que el build canary compila con esa variable. Como la aplicación real está desplegada en Vercel, el canary debe publicarse en Vercel; no requiere Cloudflare Workers.
+## Procedimiento de operación general
 
-El canary solo podrá comenzar después de una migración server-side revisada que:
+### A. Vinculación por negocio
 
-1. agregue `supervisor.inventory.batch.adjust` al `CHECK`;
-2. actualice la RPC con validación de ingreso/egreso;
-3. conserve `SECURITY DEFINER` y `search_path` fijo;
-4. mantenga `anon` sin permisos y sin `EXECUTE`;
-5. pase una consulta de verificación posterior;
-6. tenga rollback probado en staging.
+- la caja genera un QR;
+- el Supervisor lo escanea;
+- la sesión Auth del monitor queda ligada al pairing;
+- cada caja mantiene como máximo un Supervisor;
+- desvincular revoca inmediatamente el acceso.
 
-## Procedimiento de activación futura
+### B. Ingreso remoto
 
-### A. Preparación
-
-- backup/checksum de la migración;
-- aplicar primero en staging;
-- ejecutar M2/M4;
-- confirmar 0 comandos pendientes;
-- confirmar pairing único y dispositivo objetivo;
-- mantener ambos flags apagados.
-
-### B. Canary de ingreso
-
-- activar únicamente el ingreso;
-- utilizar una caja autorizada;
-- probar una entrada pequeña y reversible;
+- seleccionar ingreso, unidad y cantidad;
+- exigir motivo;
+- comprobar stock anterior y esperado;
 - esperar ACK real;
-- comprobar stock anterior, delta, stock posterior y movimiento auditado;
-- comprobar que no cambian ventas, precios, usuarios ni cierres;
-- observar errores y timeouts.
+- registrar delta, stock posterior y auditoría;
+- no aplicar cambios si hay timeout, conflicto o NACK;
+- observar errores y reconexiones.
 
 ### C. Rollback inmediato
 
@@ -122,7 +112,7 @@ El egreso requiere una aprobación separada. No se activa junto con el ingreso. 
 - replay idempotente;
 - rollback auditable.
 
-## Allowlist del canary — completada con bloqueo por defecto
+## Allowlist histórica del canary — retirada de la autorización
 
 Se aplicó únicamente en producción:
 
@@ -130,46 +120,27 @@ Se aplicó únicamente en producción:
 supabase_supervisor_canary_allowlist.sql
 ```
 
-Resultado:
+La tabla conserva RLS forzada y permisos directos bloqueados. Sus filas históricas se dejaron desactivadas para que no exista una autorización temporal residual.
+
+El guardia productivo vigente es:
 
 ```text
-RLS: activa y forzada
-Dispositivos autorizados: 0
-Comandos pending: 0
-Trigger canary: activo
-anon SELECT sobre allowlist: bloqueado
-authenticated SELECT sobre allowlist: bloqueado
-anon EXECUTE sobre guard: bloqueado
+supervisor_income_pairing_guard
 ```
 
-La tabla permanece vacía. Por tanto, aunque alguien activara accidentalmente el flag del frontend, ningún ingreso podría crearse hasta autorizar explícitamente el par caja/Supervisor.
-
-Para autorizar el canary se necesita primero elegir el dispositivo real y ejecutar manualmente, con IDs verificados:
-
-```sql
-INSERT INTO public.supervisor_canary_allowlist
-    (primary_device_id, monitor_device_id, purpose, enabled, expires_at)
-VALUES
-    ('ID-CAJA-CANARY', 'ID-MONITOR-CANARY', 'M5 income canary', true, now() + interval '6 hours')
-ON CONFLICT (primary_device_id) DO UPDATE SET
-    monitor_device_id = EXCLUDED.monitor_device_id,
-    purpose = EXCLUDED.purpose,
-    enabled = EXCLUDED.enabled,
-    expires_at = EXCLUDED.expires_at,
-    updated_at = now();
-```
-
-No se insertó ningún dispositivo real. El egreso continúa bloqueado.
+La autorización se obtiene exclusivamente desde `device_pairings`; no requiere insertar IDs manualmente en una allowlist. El egreso continúa bloqueado.
 
 ## Decisión actual
 
-M5 queda **lista para producción con doble bloqueo**:
+M5 queda **habilitada para todos los Supervisores vinculados**:
 
-1. el frontend de producción mantiene el ingreso apagado;
-2. la allowlist server-side está vacía;
-3. el trigger productivo rechaza cualquier comando que no sea ingreso canary autorizado;
-4. el egreso sigue rechazado.
+1. cualquier usuario puede vincular un único Supervisor mediante QR;
+2. el Supervisor puede consultar inventario, ventas, caja y reportes;
+3. el ingreso remoto por lotes está habilitado para todos los pairings activos;
+4. ACK, TTL, idempotencia, pairing y Auth se validan server-side;
+5. el egreso remoto continúa rechazado;
+6. usuarios, tasas, productos remotos y cierres remotos permanecen bloqueados por política.
 
-El Preview de Vercel de `m5-supervisor-canary` tiene el ingreso habilitado únicamente para pruebas y los 14 E2E pasan. La promoción a producción requiere seleccionar un único dispositivo, autorizarlo por 6 horas y ejecutar el smoke test controlado.
+Se validó la transición con staging sintético: pairing activo autorizado aunque la allowlist esté deshabilitada, ACK, replay, conflicto, NACK, timeout y egreso rechazado.
 
 `VITE_SUPERVISOR_REMOTE_EGRESS_ENABLED` no debe configurarse como `true`.

@@ -1,9 +1,11 @@
--- STAGING E2E — ALLOWLIST DEL CANARY DEL SUPERVISOR
+-- STAGING E2E — AUTORIZACIÓN GENERAL DEL INGRESO DEL SUPERVISOR
 -- Proyecto: tdfcpwctvumbdjmifypd
--- Solo contiene los dispositivos sintéticos e2e-*.
+-- Solo contiene dispositivos sintéticos e2e-*.
+-- La tabla allowlist se conserva como fixture/compatibilidad, pero el guardia
+-- autoriza por pairing activo para simular la política general de producción.
 -- No ejecutar en producción.
--- ROLLBACK: DROP TRIGGER IF EXISTS supervisor_canary_income_guard ON public.supervisor_commands;
--- DROP FUNCTION IF EXISTS public.enforce_supervisor_canary_command();
+-- ROLLBACK: DROP TRIGGER IF EXISTS supervisor_income_pairing_guard ON public.supervisor_commands;
+-- DROP FUNCTION IF EXISTS public.enforce_supervisor_income_command();
 -- DROP TABLE IF EXISTS public.supervisor_canary_allowlist;
 
 BEGIN;
@@ -41,44 +43,44 @@ CREATE POLICY staging_canary_allowlist_definer_read
     TO postgres
     USING (primary_device_id LIKE 'e2e-%');
 
-CREATE OR REPLACE FUNCTION public.enforce_supervisor_canary_command()
+DROP TRIGGER IF EXISTS supervisor_canary_income_guard
+    ON public.supervisor_commands;
+DROP FUNCTION IF EXISTS public.enforce_supervisor_canary_command();
+
+CREATE OR REPLACE FUNCTION public.enforce_supervisor_income_command()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, extensions
 AS $$
 BEGIN
-    -- Staging conserva los casos M4 de egreso rechazado; el guardarraíl
-    -- canary se aplica específicamente al ingreso remoto.
+    -- Staging conserva los casos de egreso rechazado; solo el ingreso
+    -- se autoriza cuando existe un pairing activo y coincide el monitor.
     IF NEW.command_type = 'supervisor.inventory.batch.adjust'
        AND coalesce(NEW.payload->>'direction', '') = 'ingreso'
        AND NOT EXISTS (
             SELECT 1
-            FROM public.supervisor_canary_allowlist ca
-            JOIN public.device_pairings dp
-              ON dp.primary_device_id = ca.primary_device_id
-             AND dp.monitor_device_id = ca.monitor_device_id
-             AND dp.monitor_auth_id = NEW.actor_auth_id
-             AND dp.revoked_at IS NULL
-            WHERE ca.primary_device_id = trim(NEW.target_device_id)
-              AND ca.enabled = true
-              AND ca.expires_at > now()
+            FROM public.device_pairings dp
+            WHERE dp.primary_device_id = trim(NEW.target_device_id)
+              AND dp.monitor_device_id IS NOT NULL
+              AND dp.monitor_device_id <> dp.primary_device_id
+              AND dp.monitor_device_id <> trim(NEW.target_device_id)
+              AND dp.monitor_auth_id = NEW.actor_auth_id
+              AND dp.revoked_at IS NULL
        ) THEN
-        RAISE EXCEPTION 'Dispositivo fuera de la allowlist del canary';
+        RAISE EXCEPTION 'Monitor no vinculado o no autorizado para esa caja';
     END IF;
 
     RETURN NEW;
 END;
 $$;
 
-DROP TRIGGER IF EXISTS supervisor_canary_income_guard
-    ON public.supervisor_commands;
-CREATE TRIGGER supervisor_canary_income_guard
+CREATE TRIGGER supervisor_income_pairing_guard
     BEFORE INSERT ON public.supervisor_commands
     FOR EACH ROW
-    EXECUTE FUNCTION public.enforce_supervisor_canary_command();
+    EXECUTE FUNCTION public.enforce_supervisor_income_command();
 
-REVOKE ALL ON FUNCTION public.enforce_supervisor_canary_command() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.enforce_supervisor_income_command() FROM PUBLIC, anon, authenticated;
 
 INSERT INTO public.supervisor_canary_allowlist (
     primary_device_id,

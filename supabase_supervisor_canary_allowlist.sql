@@ -1,32 +1,20 @@
--- PRODUCCIÓN — ALLOWLIST DEL CANARY DE INGRESO DEL SUPERVISOR
+-- PRODUCCIÓN — AUTORIZACIÓN GENERAL DEL INGRESO REMOTO DEL SUPERVISOR
 --
 -- Objetivo:
--- - mantener el ingreso remoto bloqueado por defecto;
--- - permitirlo únicamente para un primary/monitor explícitamente autorizados;
--- - rechazar cualquier otro comando productivo desde la RPC o un INSERT interno.
+-- - permitir el ingreso remoto a cualquier par caja/Supervisor correctamente vinculado;
+-- - exigir sesión Auth, pairing activo, identidad del monitor y ACK;
+-- - mantener cualquier egreso remoto bloqueado en backend.
 --
--- Este script NO autoriza ningún dispositivo. La tabla queda vacía hasta que
--- se inserte manualmente el par de dispositivos canary elegido.
--- No habilita el flag del frontend ni modifica stock.
---
--- Autorización posterior, solo para el dispositivo elegido:
--- INSERT INTO public.supervisor_canary_allowlist
---     (primary_device_id, monitor_device_id, purpose, enabled, expires_at)
--- VALUES
---     ('ID-CAJA-CANARY', 'ID-MONITOR-CANARY', 'M5 income canary', true, now() + interval '6 hours')
--- ON CONFLICT (primary_device_id) DO UPDATE SET
---     monitor_device_id = EXCLUDED.monitor_device_id,
---     purpose = EXCLUDED.purpose,
---     enabled = EXCLUDED.enabled,
---     expires_at = EXCLUDED.expires_at,
---     updated_at = now();
+-- La tabla supervisor_canary_allowlist se conserva por compatibilidad y rollback,
+-- pero deja de ser el mecanismo de autorización general. No se usan IDs reales
+-- dentro de esta función y no se modifica stock al aplicar la migración.
 --
 -- ROLLBACK:
 -- 1) apagar VITE_SUPERVISOR_REMOTE_INCOME_ENABLED;
 -- 2) confirmar 0 comandos pending;
--- 3) DROP TRIGGER IF EXISTS supervisor_canary_income_guard ON public.supervisor_commands;
--- 4) DROP FUNCTION IF EXISTS public.enforce_supervisor_canary_command();
--- 5) DROP TABLE IF EXISTS public.supervisor_canary_allowlist;
+-- 3) DROP TRIGGER IF EXISTS supervisor_income_pairing_guard ON public.supervisor_commands;
+-- 4) DROP FUNCTION IF EXISTS public.enforce_supervisor_income_command();
+-- 5) restaurar la RPC income-only anterior desde el backup revisado;
 
 BEGIN;
 
@@ -64,44 +52,47 @@ CREATE POLICY supervisor_canary_allowlist_definer_read
     TO postgres
     USING (true);
 
-CREATE OR REPLACE FUNCTION public.enforce_supervisor_canary_command()
+DROP TRIGGER IF EXISTS supervisor_canary_income_guard
+    ON public.supervisor_commands;
+DROP FUNCTION IF EXISTS public.enforce_supervisor_canary_command();
+
+CREATE OR REPLACE FUNCTION public.enforce_supervisor_income_command()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, extensions
 AS $$
 BEGIN
+    -- Solo se abre el ingreso. Todo egreso u otro comando continúa bloqueado.
     IF NEW.command_type <> 'supervisor.inventory.batch.adjust'
        OR coalesce(NEW.payload->>'direction', '') <> 'ingreso' THEN
-        RAISE EXCEPTION 'Comando productivo no permitido durante el canary';
+        RAISE EXCEPTION 'Solo el ingreso remoto está habilitado';
     END IF;
 
+    -- Autorización general: cualquier monitor con pairing activo puede operar
+    -- únicamente sobre su propia caja. No depende de una allowlist de IDs.
     IF NOT EXISTS (
         SELECT 1
-        FROM public.supervisor_canary_allowlist ca
-        JOIN public.device_pairings dp
-          ON dp.primary_device_id = ca.primary_device_id
-         AND dp.monitor_device_id = ca.monitor_device_id
-         AND dp.monitor_auth_id = NEW.actor_auth_id
-         AND dp.revoked_at IS NULL
-        WHERE ca.primary_device_id = trim(NEW.target_device_id)
-          AND ca.enabled = true
-          AND ca.expires_at > now()
+        FROM public.device_pairings dp
+        WHERE dp.primary_device_id = trim(NEW.target_device_id)
+          AND dp.monitor_device_id IS NOT NULL
+          AND dp.monitor_device_id <> dp.primary_device_id
+          AND dp.monitor_device_id <> trim(NEW.target_device_id)
+          AND dp.monitor_auth_id = NEW.actor_auth_id
+          AND dp.revoked_at IS NULL
     ) THEN
-        RAISE EXCEPTION 'Dispositivo fuera de la allowlist del canary';
+        RAISE EXCEPTION 'Monitor no vinculado o no autorizado para esa caja';
     END IF;
 
     RETURN NEW;
 END;
 $$;
 
-DROP TRIGGER IF EXISTS supervisor_canary_income_guard
-    ON public.supervisor_commands;
-CREATE TRIGGER supervisor_canary_income_guard
+CREATE TRIGGER supervisor_income_pairing_guard
     BEFORE INSERT ON public.supervisor_commands
     FOR EACH ROW
-    EXECUTE FUNCTION public.enforce_supervisor_canary_command();
+    EXECUTE FUNCTION public.enforce_supervisor_income_command();
 
-REVOKE ALL ON FUNCTION public.enforce_supervisor_canary_command() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.enforce_supervisor_income_command() FROM PUBLIC, anon, authenticated;
 
 COMMIT;

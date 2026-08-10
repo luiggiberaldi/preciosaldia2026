@@ -98,22 +98,25 @@ describe('Supervisor M2 staging — ACK, NACK, timeout, replay y conflicto', () 
                 WHERE primary_device_id = ${sqlLiteral(TARGET_DEVICE_ID)};
             `);
 
-            const blockedByAllowlistId = `${commandPrefix}-allowlist-blocked`;
+            // La política general no depende de la allowlist temporal: un pairing
+            // sintético activo debe poder crear el ingreso aunque el fixture esté
+            // deshabilitado.
             await managementQuery(`
                 UPDATE public.supervisor_canary_allowlist
                 SET enabled = false, updated_at = now()
                 WHERE primary_device_id = ${sqlLiteral(TARGET_DEVICE_ID)};
             `);
-            try {
-                const blockedByAllowlist = await createCommand(monitor.client, blockedByAllowlistId, validPayload());
-                expect(blockedByAllowlist.error?.message).toMatch(/allowlist del canary/i);
-            } finally {
-                await managementQuery(`
-                    UPDATE public.supervisor_canary_allowlist
-                    SET enabled = true, updated_at = now()
-                    WHERE primary_device_id = ${sqlLiteral(TARGET_DEVICE_ID)};
-                `);
-            }
+            const generalAccessId = `${commandPrefix}-general-pairing`;
+            const generalAccess = await createCommand(monitor.client, generalAccessId, validPayload());
+            expect(generalAccess.error).toBeNull();
+            const generalAccessAck = await primary.client.rpc('ack_supervisor_command', {
+                p_command_id: generalAccessId,
+                p_status: 'applied',
+                p_ack_payload: { unitsDelta: 48, stockAfter: 72 },
+                p_error_message: null,
+            });
+            expect(generalAccessAck.error).toBeNull();
+            expect(await readCommand(monitor.client, generalAccessId)).toMatchObject({ status: 'applied' });
 
             const appliedId = `${commandPrefix}-applied`;
             const appliedCreate = await createCommand(monitor.client, appliedId, validPayload());
@@ -208,6 +211,9 @@ describe('Supervisor M2 staging — ACK, NACK, timeout, replay y conflicto', () 
                     UPDATE public.device_pairings
                     SET owner_auth_id = NULL,
                         monitor_auth_id = NULL
+                    WHERE primary_device_id = ${sqlLiteral(TARGET_DEVICE_ID)};
+                    UPDATE public.supervisor_canary_allowlist
+                    SET enabled = true, updated_at = now()
                     WHERE primary_device_id = ${sqlLiteral(TARGET_DEVICE_ID)};
                 `);
             }
