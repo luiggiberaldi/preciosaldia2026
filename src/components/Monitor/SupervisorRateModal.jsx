@@ -49,6 +49,12 @@ export default function SupervisorRateModal({ isOpen, onClose, targetDeviceId, c
                 return;
             }
 
+            if (result.status === 'sent') {
+                showToast('📣 Notificación de tasa enviada a la caja', 'success');
+                onClose();
+                return;
+            }
+
             const ack = await result.ackPromise;
             if (!ack?.ok) {
                 showToast(ack?.error || 'La caja no confirmó el cambio de tasa', 'error');

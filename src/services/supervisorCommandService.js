@@ -11,6 +11,13 @@ import { validateSupervisorCommand } from './supervisorContracts';
 export const SUPERVISOR_COMMAND_TTL_MS = 60_000;
 export const SUPERVISOR_ACK_TIMEOUT_MS = 10_000;
 
+// Las tasas se envían como una notificación automática: la caja procesa el
+// comando y muestra su aviso local, pero el Supervisor no espera confirmación
+// interactiva ni convierte la notificación en un timeout visible.
+export function shouldAwaitSupervisorAck(type) {
+    return type !== 'supervisor.rate.set';
+}
+
 function generateCommandId() {
     if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
     return `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
@@ -167,13 +174,16 @@ export async function sendSupervisorCommand({ type, targetDeviceId, payload }) {
 
     return {
         ok: true,
-        status: created.status || 'pending',
+        status: shouldAwaitSupervisorAck(type) ? (created.status || 'pending') : 'sent',
         commandId: created.command_id,
-        ackPromise: waitForCommandAck(created.command_id),
+        ackPromise: shouldAwaitSupervisorAck(type)
+            ? waitForCommandAck(created.command_id)
+            : null,
     };
 }
 
 export default {
     buildSupervisorCommand,
     sendSupervisorCommand,
+    shouldAwaitSupervisorAck,
 };

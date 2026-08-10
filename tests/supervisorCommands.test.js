@@ -6,6 +6,7 @@ import {
 import {
     buildSupervisorCommand,
     sendSupervisorCommand,
+    shouldAwaitSupervisorAck,
     SUPERVISOR_COMMAND_TTL_MS,
 } from '../src/services/supervisorCommandService';
 
@@ -157,6 +158,11 @@ describe('Supervisor command contract', () => {
             payload: { productId: 'product-1' },
         });
         expect(result).toMatchObject({ ok: false, status: 'disabled' });
+    });
+
+    it('envía tasas como notificación sin esperar ACK visible', () => {
+        expect(shouldAwaitSupervisorAck('supervisor.rate.set')).toBe(false);
+        expect(shouldAwaitSupervisorAck('supervisor.inventory.batch.adjust')).toBe(true);
     });
 
     it('mantiene la tasa remota separada de las demás mutaciones', async () => {
