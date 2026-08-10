@@ -1,8 +1,11 @@
 # AGENT.md — Guía Completa del Proyecto `preciosaldia-bodega`
 
-> **Versión del documento:** 1.1.0 (post-auditoría y fixes)
-> **Última actualización:** 2026-03-30
-> **Estado:** 130/130 issues de auditoría cerrados · 165 tests pasan · build de producción OK
+> **Versión del documento:** 1.2.0 (estado operativo Supervisor y despliegue actualizado)
+> **Última actualización:** 2026-08-10
+> **Estado verificado:** 130 IDs de issues registrados · 262 tests pasan · 11 omitidos explícitamente · build de producción OK
+>
+> **Producción actual:** Vercel → `https://preciosaldiaoficial.vercel.app/`
+> **Rama operativa:** `m5-supervisor-canary` · último commit documentado: `a059185`
 
 ---
 
@@ -211,7 +214,7 @@ Estos módulos fueron creados durante la implementación de fixes y son la base 
 - `vite.config.js`, `worker.js`, `*.config.js` se excluyen del linting de `src/`.
 
 ### TypeScript (check opcional)
-- `typescript@5.9` en devDependencies.
+- `typescript@^5.6.0` en devDependencies.
 - `bun run typecheck` ejecuta `tsc --noEmit --allowJs --checkJs --skipLibCheck`.
 - No es migración completa a TS; es un check incremental disponible.
 
@@ -219,18 +222,27 @@ Estos módulos fueron creados durante la implementación de fixes y son la base 
 
 ## 7. Testing
 
-### Vitest — 165 tests en 8 archivos
+### Vitest — estado verificado el 2026-08-10
 
-| Archivo | Tests | Cubre |
-|---|---:|---|
-| `tests/dinero.test.js` | 15 | round2/3/4/0, mulR, divR, sumR, subR, drift IEEE 754 |
-| `tests/withLock.test.js` | 8 | exclusión mutua, fallback, feature detection, validación |
-| `tests/deepFreeze.test.js` | 10 | objetos anidados, arrays, TypeError, referencias circulares |
-| `tests/securityConstants.test.js` | 14 | validatePin, blacklist, política PIN/rate-limit/epsilon |
-| `tests/crypto.test.js` | 17 | PBKDF2 round-trip, migración legacy, constant-time, base64 |
-| `tests/security.test.js` | 27 | verifyLicenseToken, useAuthStore rate-limit, sesión sin pin, escapeHtml |
-| `tests/financialEngine.test.js` | 35 | breakdown (apertura COP, fiado, anomalía), profit, buildCartTotals, voidSale, deepFreeze |
-| `tests/hooks.test.js` | 81 | quota_exceeded, concurrencia audit, RateService stale, CurrencyService safeParse, envGuard |
+La suite actual contiene **27 archivos de test**:
+
+```text
+26 archivos pasan
+1 archivo omitido por estar protegido detrás del E2E de staging
+262 tests pasan
+11 tests omitidos explícitamente
+```
+
+La suite del Supervisor incluye pairing, contratos de comandos, ACK/replay/TTL, inventario por lote, guardas SQL, sincronización, reportes, responsive y E2E sintético de staging.
+
+Comandos principales:
+
+```bash
+bun run test                 # suite completa
+bun run test:supervisor      # tests Supervisor
+bun run verify:supervisor   # lint + typecheck + tests Supervisor + build
+bun run test:e2e             # Playwright, si se configuran sus credenciales
+```
 
 **Setup:** `tests/setup.js` polyfilla `navigator.locks` para jsdom y silencia `console.warn` salvo `VITEST_VERBOSE=1`.
 
@@ -266,7 +278,7 @@ VITE_ALLOWED_ORIGINS=https://app.tudominio.com  # CORS whitelist del Worker
 ### Iniciar dev server
 
 ```bash
-cd /home/z/my-project/preciosaldia-bodega
+cd preciosaldia-bodega
 bun install
 bun run dev
 # → http://localhost:5173
@@ -289,27 +301,40 @@ bun run build
 # → dist/ (Vite bundle + PWA service worker)
 ```
 
-**Output verificado (v1.1.0):**
-- `dist/index.html` — 3.14 KB (gzip 1.18 KB)
-- `dist/assets/index-*.js` — 413 KB (gzip 122 KB) — chunk principal
-- `dist/assets/vendor-*.js` — 3.65 KB — React/ReactDOM
-- `dist/assets/groq-*.js` — separado (INFRA-008)
-- `dist/assets/supabase-*.js` — separado
-- `dist/assets/pdf-*.js` — 387 KB (jsPDF, lazy)
-- `dist/assets/canvas-*.js` — 201 KB (html2canvas, lazy)
+**Output verificado el 2026-08-10:**
+- `dist/index.html` — generado correctamente por Vite
+- chunk principal aproximado: 954 KB sin comprimir
 - `dist/sw.js` + `dist/workbox-*.js` — Service Worker PWA
-- Precache: 29 entries (1.8 MB)
+- Precache: 40 entradas, aproximadamente 3 MB
+- Las advertencias de chunks grandes no bloquean el build, pero deben considerarse deuda de rendimiento.
 
-### Despliegue (Cloudflare)
+### Despliegue actual: Vercel
 
-El target de deploy es **Cloudflare Workers + Pages** (ver `wrangler.jsonc`). `vercel.json` fue eliminado (INFRA-010).
+La producción vigente se sirve desde Vercel:
+
+```text
+Proyecto: preciosaldia2026
+Dominio: https://preciosaldiaoficial.vercel.app/
+Rama: m5-supervisor-canary
+```
+
+Las variables `VITE_*` se incorporan durante el build; cambiar una variable en Vercel requiere un nuevo deployment.
+
+Flags actuales de Production:
+
+```env
+VITE_SUPERVISOR_REMOTE_INCOME_ENABLED=true
+VITE_SUPERVISOR_REMOTE_RATE_ENABLED=true
+VITE_SUPERVISOR_REMOTE_EGRESS_ENABLED=false
+```
+
+### Cloudflare — configuración secundaria
+
+`wrangler.jsonc` y `worker.js` siguen en el repositorio para los endpoints/servicios que se decida mantener en Workers. **No asumir que `wrangler deploy` publica la PWA productiva actual** sin confirmar el proyecto y el dominio objetivo.
 
 ```bash
-# 1. Configurar secrets del Worker
 wrangler secret put ALLOWED_ORIGINS
 wrangler secret put BACKUP_ENCRYPTION_KEY
-
-# 2. Deploy
 wrangler deploy
 ```
 
@@ -332,13 +357,19 @@ npx cap open android
 
 ---
 
-## 10. SQLs pendientes de ejecutar
+## 10. SQLs y estado de migraciones
 
-> ⚠️ **IMPORTANTE:** Estos 3 SQLs deben ejecutarse manualmente en el SQL Editor de Supabase. No se aplican automáticamente. Están en el repo en la raíz.
+> ⚠️ **IMPORTANTE:** El repositorio contiene 15 archivos SQL. No ejecutar un archivo a ciegas en producción: primero confirmar proyecto, estado actual, backup y si la migración ya fue aplicada.
 
-### Orden de ejecución
+Las migraciones base (`supabase_cloud_schema.sql`, `supabase_rls_hardening.sql` y `db_estacion_maestra_setup.sql`) deben verificarse por ambiente. Durante M5 se aplicaron y verificaron migraciones específicas del Supervisor en los proyectos correspondientes, incluyendo comandos, pairing/auth, ingreso por lote, guardas de pairing y tasas remotas.
 
-Los 3 SQLs son **idempotentes** (`CREATE TABLE IF NOT EXISTS`, `DROP POLICY IF EXISTS` antes de `CREATE POLICY`). Pueden ejecutarse en cualquier orden, pero se recomienda este:
+**Producción Cloud actual:** `https://sodgzkablshladvbtnes.supabase.co`
+
+**Regla operativa:** una migración aplicada no se repite manualmente sin revisar su definición, el estado de las funciones/triggers y los comandos `pending`. Mantener rollback y evidencia de la consulta posterior.
+
+### Orden de ejecución de la base
+
+Los SQL base son **idempotentes en gran parte** (`CREATE TABLE IF NOT EXISTS`, `DROP POLICY IF EXISTS`), pero la idempotencia no sustituye la verificación del ambiente. Se recomienda este orden:
 
 #### Paso 1: `supabase_cloud_schema.sql` — Schema canónico
 
@@ -528,11 +559,35 @@ Si IndexedDB y localStorage están llenos:
 ### Claves sincronizadas
 Definidas en `src/config/backupKeys.js` (`IDB_KEYS`, `LS_KEYS`, `LOCAL_KEYS`). **`abasto-auth-storage` NO está en `LOCAL_KEYS`** (SEC-002 — los hashes de PIN no viajan a la nube).
 
+### Modo Supervisor — estado operativo
+
+El Supervisor funciona con un pairing por QR entre una caja principal y un monitor.
+
+```text
+Lectura, inventario y reportes: activos
+Ingreso remoto por lotes: activo para pairings válidos
+Tasas remotas: activas y notificadas sin confirmación manual en la caja
+Egreso remoto: bloqueado en frontend y backend
+Productos, cierres, usuarios y PIN: bloqueados
+```
+
+Flags de cliente:
+
+```env
+VITE_SUPERVISOR_REMOTE_INCOME_ENABLED=true
+VITE_SUPERVISOR_REMOTE_RATE_ENABLED=true
+VITE_SUPERVISOR_REMOTE_EGRESS_ENABLED=false
+```
+
+El cambio de tasa se envía como notificación: la caja procesa automáticamente el comando y muestra su aviso local; el Supervisor no espera un ACK visible ni muestra un timeout por falta de confirmación manual. Los ACK técnicos y la auditoría permanecen server-side.
+
+El header del Supervisor es sticky, respeta `safe-area-inset-top` y reorganiza sus acciones en pantallas estrechas. Después de actualizar una PWA, cerrar y abrir la aplicación o aceptar la actualización del Service Worker antes de validar la UI.
+
 ---
 
 ## 14. Mapa de issues (ISSUES.md)
 
-Ver `/home/z/my-project/preciosaldia-bodega/ISSUES.md` para el detalle completo de los 129 issues auditados:
+Ver `ISSUES.md` en la raíz del proyecto para el detalle completo de los 130 IDs de issues auditados:
 
 | Dominio | Prefix | Total | Cerrados |
 |---|---|---:|---:|
@@ -569,15 +624,15 @@ La expiración de demos se valida con `Date.now()` del cliente (bypassable manip
 
 ## 16. Próximos pasos operacionales
 
-1. **Aplicar los 3 SQLs** en Supabase (ver §10).
-2. **Rotar secretos** (`scripts/rotate-secrets.md`).
-3. **Purgar git history** (`scripts/purge-history.sh`).
-4. **Inyectar secrets en Cloudflare** (`wrangler secret put ALLOWED_ORIGINS`, `wrangler secret put BACKUP_ENCRYPTION_KEY`).
-5. **Deploy** (`wrangler deploy`).
-6. **UI: modal PINs iniciales** (escuchar `initial-pins-ready`).
-7. **UI: `CheckoutModal` bloquear si tasa inválida**.
-8. **Cron server-side para expirar demos**.
-9. **Migración gradual `priceUsdt` → `priceUsd`**.
+1. **Mantener una matriz de estado de SQLs** por proyecto y no repetir migraciones aplicadas.
+2. **Rotar secretos** (`scripts/rotate-secrets.md`) y no guardar tokens de Vercel/Supabase en el repositorio.
+3. **Purgar git history** solo después de revisar backups y referencias (`scripts/purge-history.sh`).
+4. **Mantener producción en Vercel** y confirmar el proyecto antes de cualquier deployment.
+5. **UI: modal PINs iniciales** (escuchar `initial-pins-ready`).
+6. **UI: `CheckoutModal` bloquear si tasa inválida**.
+7. **Cron server-side para expirar demos**.
+8. **Migración gradual `priceUsdt` → `priceUsd`**.
+9. **Reducir el chunk principal y resolver los warnings heredados de ESLint**.
 
 ---
 
@@ -604,7 +659,9 @@ bun run build            # Vite build → dist/
 bun run preview          # Servir dist/ localmente
 
 # ── Deploy ──
-wrangler deploy          # Cloudflare Worker + Pages
+# Vercel: el deployment productivo se realiza desde el proyecto conectado a Git.
+# No promover Production sin validar Preview y el commit objetivo.
+wrangler deploy          # Solo para el Worker/Pages si ese target está autorizado
 npx cap sync android     # Sincronizar build con Android Studio
 
 # ── Mantenimiento ──
@@ -614,4 +671,4 @@ bash scripts/purge-history.sh   # Purgar binarios/secretos del git history
 
 ---
 
-*Documento mantenido por el equipo de auditoría. Última revisión: 2026-03-30. Para detalles de los fixes aplicados, ver `CHANGES.md`. Para el reporte completo de auditoría, ver `ISSUES.md` y `/home/z/my-project/worklog.md`.*
+*Documento mantenido por el equipo de auditoría. Última revisión: 2026-08-10. Para detalles de los fixes aplicados, ver `CHANGES.md`; para el estado operativo del Supervisor, ver `M5-PRODUCTION-CANARY.md` y `M5-VERCEL-PREVIEW.md`; para el reporte completo, ver `ISSUES.md`.*
