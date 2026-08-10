@@ -5,7 +5,7 @@
 > **Estado verificado:** 130 IDs de issues registrados · 262 tests pasan · 11 omitidos explícitamente · build de producción OK
 >
 > **Producción actual:** Vercel → `https://preciosaldiaoficial.vercel.app/`
-> **Rama operativa:** `m5-supervisor-canary` · último commit documentado: `a059185`
+> **Rama operativa:** `m5-supervisor-canary` · último commit productivo: `a059185` · guía actualizada en `2e7220e`
 
 ---
 
