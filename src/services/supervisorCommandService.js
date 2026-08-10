@@ -10,6 +10,17 @@ import { validateSupervisorCommand } from './supervisorContracts';
 
 export const SUPERVISOR_COMMAND_TTL_MS = 60_000;
 export const SUPERVISOR_ACK_TIMEOUT_MS = 10_000;
+export const SUPERVISOR_PENDING_COMMAND_COLUMNS = 'command_id,target_device_id,actor_auth_id,command_type,status,issued_at,expires_at,payload,schema_version';
+
+export function fetchPendingSupervisorCommands(client, targetDeviceId) {
+    return client
+        .from('supervisor_commands')
+        .select(SUPERVISOR_PENDING_COMMAND_COLUMNS)
+        .eq('target_device_id', targetDeviceId)
+        .eq('status', 'pending')
+        .order('issued_at', { ascending: true })
+        .limit(25);
+}
 
 // Las tasas se envían como una notificación automática: la caja procesa el
 // comando y muestra su aviso local, pero el Supervisor no espera confirmación

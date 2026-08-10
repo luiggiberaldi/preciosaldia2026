@@ -8,6 +8,7 @@ import {
     sendSupervisorCommand,
     shouldAwaitSupervisorAck,
     SUPERVISOR_COMMAND_TTL_MS,
+    fetchPendingSupervisorCommands,
 } from '../src/services/supervisorCommandService';
 
 const baseCommand = (overrides = {}) => ({
@@ -158,6 +159,28 @@ describe('Supervisor command contract', () => {
             payload: { productId: 'product-1' },
         });
         expect(result).toMatchObject({ ok: false, status: 'disabled' });
+    });
+
+    it('recupera órdenes pendientes al reconectar la caja', async () => {
+        const calls = [];
+        const query = {
+            from(table) { calls.push(['from', table]); return this; },
+            select(columns) { calls.push(['select', columns]); return this; },
+            eq(column, value) { calls.push(['eq', column, value]); return this; },
+            order(column, options) { calls.push(['order', column, options]); return this; },
+            limit(value) { calls.push(['limit', value]); return Promise.resolve({ data: [], error: null }); },
+        };
+
+        await fetchPendingSupervisorCommands(query, 'primary-1');
+
+        expect(calls).toEqual([
+            ['from', 'supervisor_commands'],
+            ['select', 'command_id,target_device_id,actor_auth_id,command_type,status,issued_at,expires_at,payload,schema_version'],
+            ['eq', 'target_device_id', 'primary-1'],
+            ['eq', 'status', 'pending'],
+            ['order', 'issued_at', { ascending: true }],
+            ['limit', 25],
+        ]);
     });
 
     it('envía tasas como notificación sin esperar ACK visible', () => {

@@ -6,6 +6,7 @@ import { withLock } from '../utils/withLock';
 import { showToast } from '../components/Toast';
 import { ensureSupervisorSession } from '../services/supervisorAuth';
 import { AppliedCommandGuard, validateSupervisorCommand } from '../services/supervisorContracts';
+import { fetchPendingSupervisorCommands } from '../services/supervisorCommandService';
 import { applySupervisorInventoryBatchTransaction } from '../services/supervisorInventoryCommand';
 
 function rowToCommand(row, deviceId) {
@@ -281,6 +282,26 @@ export function useRemoteCommands(deviceId, enabled = true) {
             }
         };
 
+        const loadPendingCommands = async () => {
+            const { data: rows, error } = await fetchPendingSupervisorCommands(supabaseCloud, deviceId);
+
+            if (error) {
+                console.warn('[RemoteCommands] No se pudieron recuperar órdenes pendientes:', error.message);
+                return;
+            }
+
+            // Realtime cubre órdenes nuevas; esta recuperación cubre las que se
+            // emitieron mientras la caja estaba cerrada, sin conexión o recargando.
+            for (const row of rows || []) {
+                if (disposed) break;
+                try {
+                    await processCommand(row);
+                } catch (commandError) {
+                    console.error('[RemoteCommands] Error recuperando orden pendiente:', commandError);
+                }
+            }
+        };
+
         const initialize = async () => {
             const { session, error } = await ensureSupervisorSession();
             if (disposed || error || !session) return;
@@ -298,6 +319,8 @@ export function useRemoteCommands(deviceId, enabled = true) {
                     });
                 })
                 .subscribe();
+
+            await loadPendingCommands();
         };
 
         initialize();
