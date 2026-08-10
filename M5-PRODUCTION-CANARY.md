@@ -122,16 +122,54 @@ El egreso requiere una aprobación separada. No se activa junto con el ingreso. 
 - replay idempotente;
 - rollback auditable.
 
+## Allowlist del canary — completada con bloqueo por defecto
+
+Se aplicó únicamente en producción:
+
+```text
+supabase_supervisor_canary_allowlist.sql
+```
+
+Resultado:
+
+```text
+RLS: activa y forzada
+Dispositivos autorizados: 0
+Comandos pending: 0
+Trigger canary: activo
+anon SELECT sobre allowlist: bloqueado
+authenticated SELECT sobre allowlist: bloqueado
+anon EXECUTE sobre guard: bloqueado
+```
+
+La tabla permanece vacía. Por tanto, aunque alguien activara accidentalmente el flag del frontend, ningún ingreso podría crearse hasta autorizar explícitamente el par caja/Supervisor.
+
+Para autorizar el canary se necesita primero elegir el dispositivo real y ejecutar manualmente, con IDs verificados:
+
+```sql
+INSERT INTO public.supervisor_canary_allowlist
+    (primary_device_id, monitor_device_id, purpose, enabled, expires_at)
+VALUES
+    ('ID-CAJA-CANARY', 'ID-MONITOR-CANARY', 'M5 income canary', true, now() + interval '24 hours')
+ON CONFLICT (primary_device_id) DO UPDATE SET
+    monitor_device_id = EXCLUDED.monitor_device_id,
+    purpose = EXCLUDED.purpose,
+    enabled = EXCLUDED.enabled,
+    expires_at = EXCLUDED.expires_at,
+    updated_at = now();
+```
+
+No se insertó ningún dispositivo real. El egreso continúa bloqueado.
+
 ## Decisión actual
 
-La fase M5 queda **preparada server-side pero pendiente del despliegue canary del cliente en Vercel**. El SQL productivo ya fue aplicado para ingreso-only; no se activó el flag del frontend desde este checkout, no se desplegó un build nuevo y no se modificaron filas operativas.
+M5 queda **lista para producción con doble bloqueo**:
 
-Configuración necesaria en Vercel para el canary:
+1. el frontend de producción mantiene el ingreso apagado;
+2. la allowlist server-side está vacía;
+3. el trigger productivo rechaza cualquier comando que no sea ingreso canary autorizado;
+4. el egreso sigue rechazado.
 
-```env
-VITE_SUPERVISOR_REMOTE_INCOME_ENABLED=true
-VITE_SUPABASE_CLOUD_URL=https://sodgzkablshladvbtnes.supabase.co
-VITE_SUPABASE_CLOUD_KEY=<anon-key-de-producción>
-```
+El Preview de Vercel de `m5-supervisor-canary` tiene el ingreso habilitado únicamente para pruebas y los 14 E2E pasan. La promoción a producción requiere seleccionar un único dispositivo, autorizarlo por 24 horas y ejecutar el smoke test controlado.
 
 `VITE_SUPERVISOR_REMOTE_EGRESS_ENABLED` no debe configurarse como `true`.

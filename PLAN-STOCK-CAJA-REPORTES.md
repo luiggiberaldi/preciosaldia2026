@@ -1409,23 +1409,30 @@ Pairings: 15 totales, 12 activos
 Realtime: tablas Supervisor publicadas
 ```
 
-Verificación posterior:
+Después se aplicó `supabase_supervisor_canary_allowlist.sql`, sin autorizar dispositivos:
 
 ```text
-create_supervisor_command: permite supervisor.inventory.batch.adjust con direction=ingreso
-anon: sin EXECUTE
-comandos pendientes: 0
-SUPERVISOR_REMOTE_INCOME_ENABLED: false por defecto
-SUPERVISOR_REMOTE_EGRESS_ENABLED: false
+Allowlist canary: creada
+RLS allowlist: activa y forzada
+Dispositivos autorizados: 0
+Trigger canary: activo
+anon SELECT allowlist: bloqueado
+authenticated SELECT allowlist: bloqueado
+Comandos pending: 0
 ```
 
-El canary del cliente requiere desplegar en **Vercel** un build con:
+El trigger productivo solo permite `supervisor.inventory.batch.adjust` con `direction=ingreso` cuando coinciden caja, Supervisor vinculado, Auth del monitor, `enabled=true` y `expires_at` vigente. El egreso y cualquier otro comando son rechazados.
+
+El canary de cliente está desplegado únicamente en **Vercel Preview** con:
 
 ```env
 VITE_SUPERVISOR_REMOTE_INCOME_ENABLED=true
+VITE_SUPERVISOR_REMOTE_EGRESS_ENABLED=false
 ```
 
-El build canary compila localmente con esa variable, pero no se desplegó desde este checkout. Cloudflare Workers no es necesario para el M5 porque la aplicación real está en Vercel y los endpoints `/api/*` ya viven en `api/`. Ese despliegue debe observarse con rollback preparado. No se activó el egreso.
+Los 14 E2E del Preview pasan. Cloudflare Workers no es necesario para M5 porque la aplicación real está en Vercel y los endpoints `/api/*` ya viven en `api/`.
+
+La promoción productiva queda bloqueada hasta elegir un único dispositivo, insertarlo en la allowlist por un plazo corto y ejecutar el smoke test controlado. No se activó el egreso.
 
 ## 22. Definición de terminado
 

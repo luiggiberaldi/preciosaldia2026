@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const vercelBypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+
 export default defineConfig({
     testDir: './tests/e2e',
     timeout: 30_000,
@@ -12,6 +14,14 @@ export default defineConfig({
         screenshot: 'only-on-failure',
         video: 'retain-on-failure',
         ...devices['Desktop Chrome'],
+        ...(vercelBypassSecret
+            ? {
+                  extraHTTPHeaders: {
+                      'x-vercel-protection-bypass': vercelBypassSecret,
+                      'x-vercel-set-bypass-cookie': 'true',
+                  },
+              }
+            : {}),
     },
     webServer: {
         command: 'bun run dev -- --host 127.0.0.1 --port 4173',

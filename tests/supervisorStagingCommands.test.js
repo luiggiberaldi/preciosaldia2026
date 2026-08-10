@@ -98,6 +98,23 @@ describe('Supervisor M2 staging — ACK, NACK, timeout, replay y conflicto', () 
                 WHERE primary_device_id = ${sqlLiteral(TARGET_DEVICE_ID)};
             `);
 
+            const blockedByAllowlistId = `${commandPrefix}-allowlist-blocked`;
+            await managementQuery(`
+                UPDATE public.supervisor_canary_allowlist
+                SET enabled = false, updated_at = now()
+                WHERE primary_device_id = ${sqlLiteral(TARGET_DEVICE_ID)};
+            `);
+            try {
+                const blockedByAllowlist = await createCommand(monitor.client, blockedByAllowlistId, validPayload());
+                expect(blockedByAllowlist.error?.message).toMatch(/allowlist del canary/i);
+            } finally {
+                await managementQuery(`
+                    UPDATE public.supervisor_canary_allowlist
+                    SET enabled = true, updated_at = now()
+                    WHERE primary_device_id = ${sqlLiteral(TARGET_DEVICE_ID)};
+                `);
+            }
+
             const appliedId = `${commandPrefix}-applied`;
             const appliedCreate = await createCommand(monitor.client, appliedId, validPayload());
             expect(appliedCreate.error).toBeNull();
