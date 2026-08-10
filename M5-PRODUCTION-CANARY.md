@@ -150,7 +150,7 @@ Para autorizar el canary se necesita primero elegir el dispositivo real y ejecut
 INSERT INTO public.supervisor_canary_allowlist
     (primary_device_id, monitor_device_id, purpose, enabled, expires_at)
 VALUES
-    ('ID-CAJA-CANARY', 'ID-MONITOR-CANARY', 'M5 income canary', true, now() + interval '24 hours')
+    ('ID-CAJA-CANARY', 'ID-MONITOR-CANARY', 'M5 income canary', true, now() + interval '6 hours')
 ON CONFLICT (primary_device_id) DO UPDATE SET
     monitor_device_id = EXCLUDED.monitor_device_id,
     purpose = EXCLUDED.purpose,
@@ -170,6 +170,6 @@ M5 queda **lista para producción con doble bloqueo**:
 3. el trigger productivo rechaza cualquier comando que no sea ingreso canary autorizado;
 4. el egreso sigue rechazado.
 
-El Preview de Vercel de `m5-supervisor-canary` tiene el ingreso habilitado únicamente para pruebas y los 14 E2E pasan. La promoción a producción requiere seleccionar un único dispositivo, autorizarlo por 24 horas y ejecutar el smoke test controlado.
+El Preview de Vercel de `m5-supervisor-canary` tiene el ingreso habilitado únicamente para pruebas y los 14 E2E pasan. La promoción a producción requiere seleccionar un único dispositivo, autorizarlo por 6 horas y ejecutar el smoke test controlado.
 
 `VITE_SUPERVISOR_REMOTE_EGRESS_ENABLED` no debe configurarse como `true`.

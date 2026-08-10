@@ -13,7 +13,7 @@
 -- INSERT INTO public.supervisor_canary_allowlist
 --     (primary_device_id, monitor_device_id, purpose, enabled, expires_at)
 -- VALUES
---     ('ID-CAJA-CANARY', 'ID-MONITOR-CANARY', 'M5 income canary', true, now() + interval '24 hours')
+--     ('ID-CAJA-CANARY', 'ID-MONITOR-CANARY', 'M5 income canary', true, now() + interval '6 hours')
 -- ON CONFLICT (primary_device_id) DO UPDATE SET
 --     monitor_device_id = EXCLUDED.monitor_device_id,
 --     purpose = EXCLUDED.purpose,
