@@ -59,14 +59,14 @@ function validPayload(expectedStock = 24) {
     };
 }
 
-async function createCommand(client, commandId, payload, expiresInMs = 30_000) {
+async function createCommand(client, commandId, payload, expiresInMs = 30_000, commandType = 'supervisor.inventory.batch.adjust') {
     commandIds.push(commandId);
     const issuedAt = new Date();
     const expiresAt = new Date(issuedAt.getTime() + expiresInMs);
     return client.rpc('create_supervisor_command', {
         p_command_id: commandId,
         p_target_device_id: TARGET_DEVICE_ID,
-        p_command_type: 'supervisor.inventory.batch.adjust',
+        p_command_type: commandType,
         p_payload: payload,
         p_issued_at: issuedAt.toISOString(),
         p_expires_at: expiresAt.toISOString(),
@@ -182,15 +182,34 @@ describe('Supervisor M2 staging — ACK, NACK, timeout, replay y conflicto', () 
                 reasonCategory: 'merma',
                 reason: 'M4 staging: producto dañado',
             });
-            expect(egressCreate.error).toBeNull();
-            const egressNack = await primary.client.rpc('ack_supervisor_command', {
-                p_command_id: egressId,
-                p_status: 'rejected',
-                p_ack_payload: { reason: 'egreso aún bloqueado por política' },
-                p_error_message: 'M4 no habilitado para producción',
+            expect(egressCreate.error?.message).toMatch(/Solo ingreso y tasas remotas están habilitados/i);
+            expect(await readCommand(monitor.client, egressId)).toBeNull();
+
+            const rateId = `${commandPrefix}-rate`;
+            const rateCreate = await createCommand(monitor.client, rateId, {
+                rateMode: 'manual',
+                customRate: 123.45,
+            }, 30_000, 'supervisor.rate.set');
+            expect(rateCreate.error).toBeNull();
+            const rateAck = await primary.client.rpc('ack_supervisor_command', {
+                p_command_id: rateId,
+                p_status: 'applied',
+                p_ack_payload: { rateMode: 'manual', customRate: 123.45 },
+                p_error_message: null,
             });
-            expect(egressNack.error).toBeNull();
-            expect(await readCommand(monitor.client, egressId)).toMatchObject({ status: 'rejected' });
+            expect(rateAck.error).toBeNull();
+            expect(await readCommand(monitor.client, rateId)).toMatchObject({ status: 'applied' });
+
+            const blockedFutureCommands = [
+                ['supervisor.product.update', { productId: 'e2e-product-1', patch: { name: 'No aplicar' } }],
+                ['supervisor.shift.close', { shiftId: 'shift-e2e', cierreId: 'cierre-e2e' }],
+            ];
+            for (const [commandType, payload] of blockedFutureCommands) {
+                const blockedId = `${commandPrefix}-${commandType.split('.').pop()}`;
+                const blocked = await createCommand(monitor.client, blockedId, payload, 30_000, commandType);
+                expect(blocked.error?.message).toMatch(/Solo ingreso y tasas remotas están habilitados/i);
+                expect(await readCommand(monitor.client, blockedId)).toBeNull();
+            }
 
             const timeoutId = `${commandPrefix}-timeout`;
             expect((await createCommand(monitor.client, timeoutId, validPayload(), 700)).error).toBeNull();

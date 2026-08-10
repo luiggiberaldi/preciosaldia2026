@@ -59,6 +59,7 @@ Backend income-only: ACTIVO
 Autorización: pairing activo + identidad Auth del Supervisor
 SUPERVISOR_REMOTE_MUTATIONS_ENABLED: false
 SUPERVISOR_REMOTE_INCOME_ENABLED: true en Production
+SUPERVISOR_REMOTE_RATE_ENABLED: false hasta completar Fase 6
 SUPERVISOR_REMOTE_EGRESS_ENABLED: false
 ```
 

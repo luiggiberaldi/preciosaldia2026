@@ -158,4 +158,13 @@ describe('Supervisor command contract', () => {
         });
         expect(result).toMatchObject({ ok: false, status: 'disabled' });
     });
+
+    it('mantiene la tasa remota separada de las demás mutaciones', async () => {
+        const result = await sendSupervisorCommand({
+            type: 'supervisor.rate.set',
+            targetDeviceId: 'primary-1',
+            payload: { rateMode: 'euro', customRate: null },
+        });
+        expect(result).toMatchObject({ ok: false, status: 'disabled' });
+    });
 });

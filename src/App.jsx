@@ -35,6 +35,7 @@ import { ImagePrecacheRunner } from './hooks/useImagePrecache';
 import {
   SUPERVISOR_REMOTE_MUTATIONS_ENABLED,
   SUPERVISOR_REMOTE_INCOME_ENABLED,
+  SUPERVISOR_REMOTE_RATE_ENABLED,
 } from './config/supervisorPolicy';
 
 const OwnerMonitorView = lazy(() => import('./views/OwnerMonitorView'));
@@ -61,7 +62,7 @@ export default function App() {
   // permanecen deshabilitadas hasta completar el hardening server-side.
   useRemoteCommands(
     isMonitorMode ? null : deviceId,
-    SUPERVISOR_REMOTE_MUTATIONS_ENABLED || SUPERVISOR_REMOTE_INCOME_ENABLED
+    SUPERVISOR_REMOTE_MUTATIONS_ENABLED || SUPERVISOR_REMOTE_INCOME_ENABLED || SUPERVISOR_REMOTE_RATE_ENABLED
   );
 
   const { usuarioActivo, requireLogin } = useAuthStore();

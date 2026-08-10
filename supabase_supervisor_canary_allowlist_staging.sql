@@ -45,6 +45,8 @@ CREATE POLICY staging_canary_allowlist_definer_read
 
 DROP TRIGGER IF EXISTS supervisor_canary_income_guard
     ON public.supervisor_commands;
+DROP TRIGGER IF EXISTS supervisor_income_pairing_guard
+    ON public.supervisor_commands;
 DROP FUNCTION IF EXISTS public.enforce_supervisor_canary_command();
 
 CREATE OR REPLACE FUNCTION public.enforce_supervisor_income_command()
@@ -54,20 +56,35 @@ SECURITY DEFINER
 SET search_path = public, extensions
 AS $$
 BEGIN
-    -- Staging conserva los casos de egreso rechazado; solo el ingreso
-    -- se autoriza cuando existe un pairing activo y coincide el monitor.
-    IF NEW.command_type = 'supervisor.inventory.batch.adjust'
-       AND coalesce(NEW.payload->>'direction', '') = 'ingreso'
-       AND NOT EXISTS (
-            SELECT 1
-            FROM public.device_pairings dp
-            WHERE dp.primary_device_id = trim(NEW.target_device_id)
-              AND dp.monitor_device_id IS NOT NULL
-              AND dp.monitor_device_id <> dp.primary_device_id
-              AND dp.monitor_device_id <> trim(NEW.target_device_id)
-              AND dp.monitor_auth_id = NEW.actor_auth_id
-              AND dp.revoked_at IS NULL
-       ) THEN
+    -- Staging replica la Fase 6: ingreso y tasas, cada uno con su flag de cliente.
+    -- Egreso, productos, cierres y usuarios deben fallar en backend.
+    IF NEW.command_type = 'supervisor.rate.set' THEN
+        IF coalesce(NEW.payload->>'rateMode', '') NOT IN ('bcv', 'euro', 'usdt', 'manual')
+           OR (
+                NEW.payload->>'rateMode' = 'manual'
+                AND (
+                    NULLIF(trim(NEW.payload->>'customRate'), '') IS NULL
+                    OR (NEW.payload->>'customRate') !~ '^[0-9]+([.][0-9]+)?$'
+                    OR (NEW.payload->>'customRate')::numeric <= 0
+                )
+           ) THEN
+            RAISE EXCEPTION 'Payload de tasa inválido';
+        END IF;
+    ELSIF NEW.command_type <> 'supervisor.inventory.batch.adjust'
+       OR coalesce(NEW.payload->>'direction', '') <> 'ingreso' THEN
+        RAISE EXCEPTION 'Solo ingreso y tasas remotas están habilitados';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM public.device_pairings dp
+        WHERE dp.primary_device_id = trim(NEW.target_device_id)
+          AND dp.monitor_device_id IS NOT NULL
+          AND dp.monitor_device_id <> dp.primary_device_id
+          AND dp.monitor_device_id <> trim(NEW.target_device_id)
+          AND dp.monitor_auth_id = NEW.actor_auth_id
+          AND dp.revoked_at IS NULL
+    ) THEN
         RAISE EXCEPTION 'Monitor no vinculado o no autorizado para esa caja';
     END IF;
 

@@ -2,6 +2,7 @@ import { supabaseCloud } from '../config/supabaseCloud';
 import {
     SUPERVISOR_REMOTE_MUTATIONS_ENABLED,
     SUPERVISOR_REMOTE_INCOME_ENABLED,
+    SUPERVISOR_REMOTE_RATE_ENABLED,
     SUPERVISOR_REMOTE_EGRESS_ENABLED,
 } from '../config/supervisorPolicy';
 import { ensureSupervisorSession } from './supervisorAuth';
@@ -99,7 +100,10 @@ async function waitForCommandAck(commandId, timeoutMs = SUPERVISOR_ACK_TIMEOUT_M
 
 export async function sendSupervisorCommand({ type, targetDeviceId, payload }) {
     const isIncomeBatch = type === 'supervisor.inventory.batch.adjust' && payload?.direction === 'ingreso';
-    if (!SUPERVISOR_REMOTE_MUTATIONS_ENABLED && !(isIncomeBatch && SUPERVISOR_REMOTE_INCOME_ENABLED)) {
+    const isRateChange = type === 'supervisor.rate.set';
+    if (!SUPERVISOR_REMOTE_MUTATIONS_ENABLED
+        && !(isIncomeBatch && SUPERVISOR_REMOTE_INCOME_ENABLED)
+        && !(isRateChange && SUPERVISOR_REMOTE_RATE_ENABLED)) {
         return { ok: false, status: 'disabled', error: 'Las mutaciones remotas están temporalmente deshabilitadas por seguridad' };
     }
     if (type?.startsWith('supervisor.user.')) {

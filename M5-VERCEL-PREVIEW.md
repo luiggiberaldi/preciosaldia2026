@@ -8,6 +8,7 @@ Variables de entorno del Preview:
 
 ```env
 VITE_SUPERVISOR_REMOTE_INCOME_ENABLED=true
+VITE_SUPERVISOR_REMOTE_RATE_ENABLED=false
 VITE_SUPERVISOR_REMOTE_EGRESS_ENABLED=false
 VITE_SUPABASE_CLOUD_URL=https://sodgzkablshladvbtnes.supabase.co
 VITE_SUPABASE_CLOUD_KEY=<anon-key-de-producción>
@@ -32,7 +33,19 @@ La variable `VITE_SUPERVISOR_REMOTE_INCOME_ENABLED` se incorpora durante el buil
 2. Confirmar que el Supervisor aparece vinculado a la caja autorizada.
 3. Abrir Inventario.
 4. Confirmar que aparece únicamente la acción de ingreso remoto.
-5. Confirmar que egreso, tasa, productos, usuarios y turnos no se habilitan por esta variable.
+5. Confirmar que egreso, tasa, productos, usuarios y turnos no se habilitan por estas variables.
+
+### Fase 6 — tasas remotas aisladas
+
+Para probar únicamente tasas, usar un Preview separado con:
+
+```env
+VITE_SUPERVISOR_REMOTE_INCOME_ENABLED=true
+VITE_SUPERVISOR_REMOTE_RATE_ENABLED=true
+VITE_SUPERVISOR_REMOTE_EGRESS_ENABLED=false
+```
+
+Verificar BCV, Euro, USDT y manual; ACK, replay, timeout, pairing incorrecto y que productos, cierres y egresos continúen rechazados.
 6. Enviar un ingreso pequeño y reversible.
 7. Esperar ACK real.
 8. Confirmar stock anterior, unidades agregadas y stock posterior.

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, Check, DollarSign, Euro, TrendingUp, Edit3 } from 'lucide-react';
 import { showToast } from '../Toast';
-import { SUPERVISOR_REMOTE_MUTATIONS_ENABLED } from '../../config/supervisorPolicy';
+import { SUPERVISOR_REMOTE_MUTATIONS_ENABLED, SUPERVISOR_REMOTE_RATE_ENABLED } from '../../config/supervisorPolicy';
 import { sendSupervisorCommand } from '../../services/supervisorCommandService';
 
 export default function SupervisorRateModal({ isOpen, onClose, targetDeviceId, currentRateMode, currentCustomRate, remoteAvailable = true }) {
@@ -17,8 +17,8 @@ export default function SupervisorRateModal({ isOpen, onClose, targetDeviceId, c
             return;
         }
 
-        if (!SUPERVISOR_REMOTE_MUTATIONS_ENABLED) {
-            showToast('Las mutaciones remotas están temporalmente deshabilitadas por seguridad', 'warning');
+        if (!SUPERVISOR_REMOTE_MUTATIONS_ENABLED && !SUPERVISOR_REMOTE_RATE_ENABLED) {
+            showToast('El ajuste remoto de tasas todavía no está habilitado', 'warning');
             return;
         }
 

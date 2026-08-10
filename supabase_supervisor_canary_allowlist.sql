@@ -54,6 +54,8 @@ CREATE POLICY supervisor_canary_allowlist_definer_read
 
 DROP TRIGGER IF EXISTS supervisor_canary_income_guard
     ON public.supervisor_commands;
+DROP TRIGGER IF EXISTS supervisor_income_pairing_guard
+    ON public.supervisor_commands;
 DROP FUNCTION IF EXISTS public.enforce_supervisor_canary_command();
 
 CREATE OR REPLACE FUNCTION public.enforce_supervisor_income_command()
@@ -63,10 +65,23 @@ SECURITY DEFINER
 SET search_path = public, extensions
 AS $$
 BEGIN
-    -- Solo se abre el ingreso. Todo egreso u otro comando continúa bloqueado.
-    IF NEW.command_type <> 'supervisor.inventory.batch.adjust'
+    -- Fase 6: se permite ingreso y ajuste de tasa por separado.
+    -- Egreso, productos, cierres y usuarios continúan bloqueados por backend.
+    IF NEW.command_type = 'supervisor.rate.set' THEN
+        IF coalesce(NEW.payload->>'rateMode', '') NOT IN ('bcv', 'euro', 'usdt', 'manual')
+           OR (
+                NEW.payload->>'rateMode' = 'manual'
+                AND (
+                    NULLIF(trim(NEW.payload->>'customRate'), '') IS NULL
+                    OR (NEW.payload->>'customRate') !~ '^[0-9]+([.][0-9]+)?$'
+                    OR (NEW.payload->>'customRate')::numeric <= 0
+                )
+           ) THEN
+            RAISE EXCEPTION 'Payload de tasa inválido';
+        END IF;
+    ELSIF NEW.command_type <> 'supervisor.inventory.batch.adjust'
        OR coalesce(NEW.payload->>'direction', '') <> 'ingreso' THEN
-        RAISE EXCEPTION 'Solo el ingreso remoto está habilitado';
+        RAISE EXCEPTION 'Solo ingreso y tasas remotas están habilitados';
     END IF;
 
     -- Autorización general: cualquier monitor con pairing activo puede operar

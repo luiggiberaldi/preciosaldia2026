@@ -10,7 +10,8 @@ describe('Supervisor canary allowlist guardrails', () => {
         expect(productionSql).toContain('CREATE TRIGGER supervisor_income_pairing_guard');
         expect(productionSql).toContain('CREATE OR REPLACE FUNCTION public.enforce_supervisor_income_command()');
         expect(productionSql).toContain("RAISE EXCEPTION 'Monitor no vinculado o no autorizado para esa caja'");
-        expect(productionSql).toContain("RAISE EXCEPTION 'Solo el ingreso remoto está habilitado'");
+        expect(productionSql).toContain("RAISE EXCEPTION 'Payload de tasa inválido'");
+        expect(productionSql).toContain("NEW.command_type = 'supervisor.rate.set'");
         expect(productionSql).toContain('dp.monitor_auth_id = NEW.actor_auth_id');
         expect(productionSql).not.toContain('ca.enabled = true');
         expect(productionSql).not.toContain('ca.expires_at > now()');
@@ -30,6 +31,8 @@ describe('Supervisor canary allowlist guardrails', () => {
         expect(stagingSql).toContain("'e2e-primary-device'");
         expect(stagingSql).toContain("'e2e-monitor-device'");
         expect(stagingSql).toContain("NEW.payload->>'direction'");
+        expect(stagingSql).toContain("RAISE EXCEPTION 'Payload de tasa inválido'");
+        expect(stagingSql).toContain("NEW.command_type = 'supervisor.rate.set'");
         expect(stagingSql).toContain('dp.monitor_auth_id = NEW.actor_auth_id');
         expect(stagingSql).not.toContain('ca.enabled = true');
         expect(stagingSql).not.toContain('ca.expires_at > now()');
