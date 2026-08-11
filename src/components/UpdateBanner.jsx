@@ -13,6 +13,12 @@ export function UpdateBanner() {
             setShowBanner(true);
         };
 
+        // main.jsx puede detectar el SW antes de que React monte este componente.
+        // Consultar también la marca persistente evita perder la actualización.
+        if (window.__pdaSwUpdateAvailable) {
+            setShowBanner(true);
+        }
+
         window.addEventListener('sw-update-available', handleUpdateAvailable);
         return () => window.removeEventListener('sw-update-available', handleUpdateAvailable);
     }, []);

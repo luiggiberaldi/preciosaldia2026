@@ -27,19 +27,27 @@ if (navigator.storage?.persist) {
 }
 
 // ── Gestión del Service Worker y notificaciones de actualización (A-001/B-003) ──
+// El registro del SW ocurre antes de montar React. Guardamos el estado en window
+// además de emitir el evento para no perder la notificación cuando UpdateBanner
+// todavía no instaló su listener.
+const notifySwUpdateAvailable = () => {
+  window.__pdaSwUpdateAvailable = true;
+  window.dispatchEvent(new CustomEvent('sw-update-available'));
+};
+
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(reg => {
       reg.update().catch(() => {/* Ignorar fallos offline */});
       if (reg.waiting) {
-        window.dispatchEvent(new CustomEvent('sw-update-available'));
+        notifySwUpdateAvailable();
       }
       reg.addEventListener('updatefound', () => {
         const newWorker = reg.installing;
         if (newWorker) {
           newWorker.addEventListener('statechange', () => {
             if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              window.dispatchEvent(new CustomEvent('sw-update-available'));
+              notifySwUpdateAvailable();
             }
           });
         }
