@@ -798,7 +798,8 @@ describe('FIN-027: voidSaleProcessor re-lee products fresco', () => {
 describe('FIN-018: reportsProcessor acumula revenue con round2', () => {
     it('revenue total cuadra sin drift tras sumar muchos items', async () => {
         const { calculateReportsData } = await import('../src/utils/reportsProcessor');
-        const today = new Date().toISOString().slice(0, 10);
+        const { getLocalISODate } = await import('../src/utils/dateHelpers');
+        const today = getLocalISODate(new Date());
         // 100 ventas del mismo item para forzar acumulación de drift.
         const sales = Array.from({ length: 100 }, (_, i) => ({
             id: `s${i}`,

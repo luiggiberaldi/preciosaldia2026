@@ -63,6 +63,10 @@ describe('Supervisor SQL guardrails', () => {
         expect(productionEgressSql).toContain("p_expires_at <= now()");
         expect(productionEgressSql).toContain('monitor_auth_id = v_actor');
         expect(productionEgressSql).toContain('REVOKE ALL ON FUNCTION');
+        expect(productionEgressSql).toContain('DROP TRIGGER IF EXISTS supervisor_income_pairing_guard');
+        expect(productionEgressSql).toContain('CREATE OR REPLACE FUNCTION public.enforce_supervisor_income_command()');
+        expect(productionEgressSql).toContain("NEW.payload->>'direction' = 'egreso'");
+        expect(productionEgressSql).toContain("RAISE EXCEPTION 'Payload de ajuste por lote inválido'");
         expect(productionEgressSql).toContain('ROLLBACK');
         expect(productionEgressSql).not.toMatch(/GRANT\s+[^;]*\bTO\s+anon\b/i);
         expect(productionEgressSql).not.toMatch(/DROP\s+TABLE/i);
