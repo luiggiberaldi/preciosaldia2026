@@ -1,16 +1,38 @@
-import React, { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { getProductImageCandidates } from '../utils/imageFallback';
 import { getCachedImage, saveImageToCache } from '../services/imageBlobCache';
+
+const isLocalCatalogCandidate = (value) => (
+    typeof value === 'string' && value.startsWith('/images/catalog/')
+);
+
+async function findLoadableCandidate(candidates, startIndex = 0) {
+    for (let index = startIndex; index < candidates.length; index += 1) {
+        const candidate = candidates[index];
+        if (candidate.startsWith('data:')) return { index, url: candidate };
+
+        try {
+            // Validar antes de asignar `src` evita que un 404 llegue al elemento
+            // <img> y ensucie la consola con errores repetidos.
+            const response = await fetch(candidate, {
+                method: 'HEAD',
+                cache: 'force-cache',
+                credentials: isLocalCatalogCandidate(candidate) ? 'same-origin' : 'omit',
+            });
+            if (response.ok) return { index, url: candidate };
+        } catch {
+            // Imagen ausente, CORS u offline: probar el siguiente candidato.
+        }
+    }
+    return null;
+}
 
 /**
  * SmartImage — Componente de imagen resiliente con doble capa de caché (IndexedDB + SW + Fallbacks).
  *
- * Flujo de Resiliencia Offline:
- *  1. Revisa si la imagen ya existe en IndexedDB (`getCachedImage`). Si existe, la muestra de inmediato.
- *  2. Si no, prueba la URL original (vía SW o Red).
- *  3. Si falla, prueba secuencialmente los candidatos de catálogo local (.jpg, .png, .webp).
- *  4. Al cargar exitosamente estando online, la guarda en IndexedDB (`saveImageToCache`).
- *  5. Si todo falla, muestra `fallbackIcon`.
+ * Las rutas locales se validan antes de asignarse al elemento <img>; así una
+ * imagen ausente termina en el icono de fallback sin ensuciar la consola con
+ * una cascada de errores 404.
  */
 export default function SmartImage({
     src,
@@ -20,57 +42,91 @@ export default function SmartImage({
     product = null
 }) {
     const rawSrc = src || product?.image;
-    const candidates = getProductImageCandidates(rawSrc);
+    const productImagePath = product?.image_path;
+    const candidates = useMemo(
+        () => getProductImageCandidates({ image: rawSrc, image_path: productImagePath }),
+        [rawSrc, productImagePath]
+    );
 
     const [cachedUrl, setCachedUrl] = useState(null);
+    const [resolvedUrl, setResolvedUrl] = useState(null);
     const [candidateIndex, setCandidateIndex] = useState(0);
+    const [isResolving, setIsResolving] = useState(false);
     const [failed, setFailed] = useState(false);
 
-    // 1. Intentar cargar desde la caché local de IndexedDB
+    // Intentar primero una copia local y después resolver solo una URL válida.
     useEffect(() => {
         let isMounted = true;
         setCandidateIndex(0);
+        setCachedUrl(null);
+        setResolvedUrl(null);
         setFailed(false);
+        setIsResolving(Boolean(rawSrc));
 
-        if (rawSrc) {
-            getCachedImage(rawSrc).then(localDataUrl => {
-                if (isMounted && localDataUrl) {
-                    setCachedUrl(localDataUrl);
-                }
-            });
+        if (!rawSrc) {
+            setIsResolving(false);
+            return () => { isMounted = false; };
         }
+
+        (async () => {
+            const localDataUrl = await getCachedImage(rawSrc);
+            if (!isMounted) return;
+            if (localDataUrl) {
+                setCachedUrl(localDataUrl);
+                setIsResolving(false);
+                return;
+            }
+
+            const match = await findLoadableCandidate(candidates, 0);
+            if (!isMounted) return;
+            if (match) {
+                setCandidateIndex(match.index);
+                setResolvedUrl(match.url);
+            } else {
+                setFailed(true);
+            }
+            setIsResolving(false);
+        })();
 
         return () => { isMounted = false; };
-    }, [rawSrc]);
+    }, [rawSrc, candidates]);
 
-    const handleLoadSuccess = (e) => {
-        // Al cargar con éxito estando online, persistir en IndexedDB para disponibilidad offline permanente
-        if (navigator.onLine && rawSrc && !rawSrc.startsWith('data:')) {
-            saveImageToCache(rawSrc);
+    const handleLoadSuccess = () => {
+        // Guardar la URL que realmente cargó, no el candidato remoto que pudo fallar.
+        const sourceToCache = resolvedUrl || rawSrc;
+        if (navigator.onLine && sourceToCache && !sourceToCache.startsWith('data:')) {
+            saveImageToCache(sourceToCache);
         }
     };
 
-    const handleError = () => {
-        if (cachedUrl) {
-            // Si falló el cachedUrl, limpiar y probar candidatos
-            setCachedUrl(null);
-        } else if (candidateIndex + 1 < candidates.length) {
-            setCandidateIndex(prev => prev + 1);
+    const handleError = async () => {
+        setCachedUrl(null);
+        setResolvedUrl(null);
+        setIsResolving(true);
+
+        const startIndex = candidateIndex + 1;
+        const match = await findLoadableCandidate(candidates, startIndex);
+        if (match) {
+            setCandidateIndex(match.index);
+            setResolvedUrl(match.url);
+            setIsResolving(false);
         } else {
             setFailed(true);
+            setIsResolving(false);
         }
     };
 
-    if (failed || candidates.length === 0) {
+    if (failed || isResolving || candidates.length === 0) {
         return fallbackIcon;
     }
 
-    const currentSource = cachedUrl || candidates[candidateIndex];
+    const currentSource = cachedUrl || resolvedUrl;
+    if (!currentSource) return fallbackIcon;
 
     return (
         <img
             src={currentSource}
-            alt=""
+            alt={alt}
             className={className}
             onLoad={handleLoadSuccess}
             onError={handleError}

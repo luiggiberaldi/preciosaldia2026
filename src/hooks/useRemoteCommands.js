@@ -37,6 +37,15 @@ async function ackCommand(commandId, status, ackPayload = {}, errorMessage = nul
 
 const APPLIED_COMMANDS_KEY = 'supervisor_applied_commands_v1';
 
+function shortSupervisorId(value) {
+    if (!value || typeof value !== 'string') return null;
+    return value.length > 12 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value;
+}
+
+function supervisorLog(message, details = {}) {
+    console.info(`[SupervisorReceiver] ${message}`, details);
+}
+
 async function readAppliedCommand(commandId) {
     const stored = await storageService.getItem(APPLIED_COMMANDS_KEY, {});
     const entry = stored?.[commandId];
@@ -57,10 +66,23 @@ async function rememberAppliedCommand(commandId, entry) {
 
 export function useRemoteCommands(deviceId, enabled = true) {
     useEffect(() => {
-        if (!supabaseCloud || !deviceId || !enabled) return undefined;
+        if (!supabaseCloud || !deviceId || !enabled) {
+            supervisorLog('Listener no iniciado', {
+                reason: !supabaseCloud ? 'supabase_no_disponible' : !deviceId ? 'device_id_no_definido' : 'feature_flag_desactivada',
+                deviceId: shortSupervisorId(deviceId),
+                enabled,
+                pairingMode: localStorage.getItem('pda_pairing_mode') || 'primary',
+            });
+            return undefined;
+        }
 
         let disposed = false;
         const appliedCommands = new AppliedCommandGuard();
+        supervisorLog('Listener iniciando', {
+            deviceId: shortSupervisorId(deviceId),
+            enabled,
+            pairingMode: localStorage.getItem('pda_pairing_mode') || 'primary',
+        });
         let channel = null;
 
         const applyRateCommand = async (payload) => {
@@ -212,12 +234,23 @@ export function useRemoteCommands(deviceId, enabled = true) {
         const processCommand = async (row) => {
             if (disposed || !row || row.status !== 'pending') return;
 
+            supervisorLog('Orden recibida', {
+                commandId: shortSupervisorId(row.command_id),
+                type: row.command_type,
+                status: row.status,
+                targetDeviceId: shortSupervisorId(row.target_device_id),
+            });
+
             const command = rowToCommand(row, deviceId);
             const validation = validateSupervisorCommand(command, {
                 targetDeviceId: deviceId,
                 monitorDeviceId: row.actor_auth_id,
             });
             if (!validation.valid) {
+                console.warn('[SupervisorReceiver] Orden rechazada por validación', {
+                    commandId: shortSupervisorId(row.command_id),
+                    reason: validation.error,
+                });
                 await ackCommand(row.command_id, 'rejected', {}, validation.error);
                 return;
             }
@@ -232,6 +265,11 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 let appliedPayload = { commandId: row.command_id };
                 if (command.type === 'supervisor.rate.set') {
                     await applyRateCommand(command.payload);
+                    supervisorLog('Tasa aplicada localmente', {
+                        commandId: shortSupervisorId(row.command_id),
+                        rateMode: command.payload?.rateMode,
+                        customRate: command.payload?.rateMode === 'manual' ? command.payload?.customRate : null,
+                    });
                     showToast('💱 Tasa actualizada por el Supervisor', 'success');
                 } else if (command.type === 'supervisor.product.create') {
                     await applyProductCommand({ ...command.payload, action: 'create' });
@@ -263,6 +301,10 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 }
 
                 await ackCommand(row.command_id, 'applied', appliedPayload);
+                supervisorLog('ACK enviado', {
+                    commandId: shortSupervisorId(row.command_id),
+                    status: 'applied',
+                });
                 await rememberAppliedCommand(row.command_id, {
                     status: 'applied',
                     ackPayload: appliedPayload,
@@ -271,6 +313,10 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 });
             } catch (error) {
                 const errorMessage = error?.message || 'Error aplicando comando';
+                console.error('[SupervisorReceiver] Error aplicando orden', {
+                    commandId: shortSupervisorId(row.command_id),
+                    error: errorMessage,
+                });
                 await ackCommand(row.command_id, 'failed', {}, errorMessage);
                 await rememberAppliedCommand(row.command_id, {
                     status: 'failed',
@@ -284,6 +330,12 @@ export function useRemoteCommands(deviceId, enabled = true) {
 
         const loadPendingCommands = async () => {
             const { data: rows, error } = await fetchPendingSupervisorCommands(supabaseCloud, deviceId);
+
+            supervisorLog('Consulta de órdenes pendientes', {
+                targetDeviceId: shortSupervisorId(deviceId),
+                count: rows?.length || 0,
+                error: error?.message || null,
+            });
 
             if (error) {
                 console.warn('[RemoteCommands] No se pudieron recuperar órdenes pendientes:', error.message);
@@ -304,7 +356,19 @@ export function useRemoteCommands(deviceId, enabled = true) {
 
         const initialize = async () => {
             const { session, error } = await ensureSupervisorSession();
-            if (disposed || error || !session) return;
+            if (error || !session) {
+                console.warn('[SupervisorReceiver] Sesión no disponible', {
+                    deviceId: shortSupervisorId(deviceId),
+                    error: error?.message || 'sin sesión',
+                });
+                return;
+            }
+            if (disposed) return;
+
+            supervisorLog('Sesión Auth lista', {
+                deviceId: shortSupervisorId(deviceId),
+                authUserId: shortSupervisorId(session.user?.id),
+            });
 
             channel = supabaseCloud
                 .channel(`supervisor-commands:${deviceId}`)
@@ -318,7 +382,13 @@ export function useRemoteCommands(deviceId, enabled = true) {
                         console.error('[RemoteCommands] Error inesperado:', commandError);
                     });
                 })
-                .subscribe();
+                .subscribe((status, error) => {
+                    supervisorLog('Estado Realtime', {
+                        deviceId: shortSupervisorId(deviceId),
+                        status,
+                        error: error?.message || null,
+                    });
+                });
 
             await loadPendingCommands();
         };

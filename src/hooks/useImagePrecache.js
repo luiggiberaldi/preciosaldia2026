@@ -12,9 +12,10 @@ import { saveImageToCache } from '../services/imageBlobCache';
  * fetch silencioso de cada imagen para que el SW las guarde todas — así el
  * inventario y la caja se ven completos sin internet.
  *
- * OFFLINE-IMG (F3): cubre los DOS formatos cacheables — URLs de Storage y rutas
- * locales /images/catalog/ del catálogo base (que antes quedaban fuera por el
- * filtro /^https?:/). Los data: base64 no necesitan precalentado.
+ * Las imágenes locales del catálogo se validan bajo demanda en SmartImage y el
+ * Service Worker las cachea al mostrarlas. El precalentador solo recorre URLs
+ * remotas conocidas; así no dispara cientos de peticiones a slugs locales que
+ * no existen. Los data: base64 no necesitan precalentado.
  *
  * Diseño:
  *  - Debounce de 5s tras cambios en `products` (agrupa ediciones/sync).
@@ -28,16 +29,15 @@ const BATCH_SIZE = 4;
 const DEBOUNCE_MS = 5000;
 
 /**
- * OFFLINE-IMG (F3): ¿el SW puede cachear esta imagen?
- *  - URL remota (Supabase Storage) → sí, regla product-images-cache.
- *  - Ruta local /images/... (catálogo base) → sí, regla catalog-images-cache.
- *  - data: base64 → se EXCLUYE a propósito: ya viaja embebido en el producto,
- *    está offline por definición y fetchearlo no aporta nada.
+ * ¿Debe precalentarse esta imagen?
+ *  - URL remota (Supabase Storage) → sí, si existe.
+ *  - Ruta local /images/... → no: SmartImage la resuelve bajo demanda y el SW
+ *    la cachea después de una validación exitosa.
+ *  - data: base64 → se excluye: ya viaja embebido en el producto.
  */
 function isPrecacheableImage(img) {
     if (typeof img !== 'string' || img.length === 0) return false;
-    if (/^https?:/i.test(img)) return true;
-    return img.startsWith('/images/');
+    return /^https?:/i.test(img);
 }
 
 /**

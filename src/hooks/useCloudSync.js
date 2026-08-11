@@ -15,6 +15,11 @@ import {
 // Una única allowlist compartida por primary y monitor.
 const SYNC_KEYS = SUPERVISOR_SYNC_KEYS;
 
+function shortCloudSyncId(value) {
+    if (!value || typeof value !== 'string') return null;
+    return value.length > 12 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value;
+}
+
 // SEC-002: `abasto-auth-storage` (hashes de PIN) YA NO se sincroniza a sync_documents.
 // Las políticas RLS de `sync_documents` en el schema original permiten lectura global
 // (ver SEC-002/INFRA-002 — fix del SQL corresponde a Agente D). Aunque se arregle la
@@ -274,6 +279,10 @@ export function useCloudSync(deviceId) {
 
     useEffect(() => {
         if (!supabaseCloud || !deviceId) {
+            console.info('[CloudSync] Listener no iniciado', {
+                reason: !supabaseCloud ? 'supabase_no_disponible' : 'device_id_no_definido',
+                deviceId: shortCloudSyncId(deviceId),
+            });
             isCloudSyncActive = false;
             if (globalSubscription) {
                 try { supabaseCloud.removeChannel(globalSubscription).catch(() => {}); } catch { }
@@ -302,9 +311,17 @@ export function useCloudSync(deviceId) {
                 const { session, error: sessionError } = await ensureSupervisorSession();
                 if (sessionError || !session) {
                     isCloudSyncActive = false;
-                    console.warn('[CloudSync] Sincronización pausada: no hay sesión segura del dispositivo.');
+                    console.warn('[CloudSync] Sesión no disponible para sincronizar', {
+                        deviceId: shortCloudSyncId(deviceId),
+                        error: sessionError?.message || 'sin sesión',
+                    });
                     return;
                 }
+
+                console.info('[CloudSync] Sesión Auth lista', {
+                    deviceId: shortCloudSyncId(deviceId),
+                    authUserId: shortCloudSyncId(session.user?.id),
+                });
 
                 const { data: pairing, error: pairingError } = await supabaseCloud
                     .from('device_pairings')
@@ -312,9 +329,19 @@ export function useCloudSync(deviceId) {
                     .eq('primary_device_id', deviceId)
                     .maybeSingle();
 
+                console.info('[CloudSync] Pairing consultado', {
+                    deviceId: shortCloudSyncId(deviceId),
+                    paired: Boolean(pairing?.monitor_device_id),
+                    monitorDeviceId: shortCloudSyncId(pairing?.monitor_device_id),
+                    error: pairingError?.message || null,
+                });
+
                 if (pairingError || !pairing?.monitor_device_id) {
                     isCloudSyncActive = false;
-                    console.log('[CloudSync] Sincronización pausada hasta completar el pairing.');
+                    console.warn('[CloudSync] Sincronización pausada hasta completar el pairing', {
+                        reason: pairingError?.message || 'pairing_sin_monitor',
+                        deviceId: shortCloudSyncId(deviceId),
+                    });
                     if (!globalSubscription) {
                         globalSubscription = supabaseCloud
                             .channel(`device_pairings:${deviceId}`)
@@ -334,6 +361,10 @@ export function useCloudSync(deviceId) {
 
                 isCloudSyncActive = true;
                 isInitialized.current = true;
+                console.info('[CloudSync] Receptor activo', {
+                    deviceId: shortCloudSyncId(deviceId),
+                    monitorDeviceId: shortCloudSyncId(pairing.monitor_device_id),
+                });
 
                 // Sincronizar automáticamente todos los datos del POS a la nube en segundo plano (Patrón Donde Juancho)
                 forceSyncAllPOSData(deviceId, true).catch(() => {});
