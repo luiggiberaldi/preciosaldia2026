@@ -118,9 +118,11 @@ async function waitForCommandAck(commandId, timeoutMs = SUPERVISOR_ACK_TIMEOUT_M
 
 export async function sendSupervisorCommand({ type, targetDeviceId, payload }) {
     const isIncomeBatch = type === 'supervisor.inventory.batch.adjust' && payload?.direction === 'ingreso';
+    const isEgressBatch = type === 'supervisor.inventory.batch.adjust' && payload?.direction === 'egreso';
     const isRateChange = type === 'supervisor.rate.set';
     if (!SUPERVISOR_REMOTE_MUTATIONS_ENABLED
         && !(isIncomeBatch && SUPERVISOR_REMOTE_INCOME_ENABLED)
+        && !(isEgressBatch && SUPERVISOR_REMOTE_EGRESS_ENABLED)
         && !(isRateChange && SUPERVISOR_REMOTE_RATE_ENABLED)) {
         return { ok: false, status: 'disabled', error: 'Las mutaciones remotas están temporalmente deshabilitadas por seguridad' };
     }
