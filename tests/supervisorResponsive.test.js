@@ -6,6 +6,7 @@ const remoteUsers = readFileSync('src/components/Monitor/RemoteUsersManager.jsx'
 const supervisorSelect = readFileSync('src/components/Monitor/SupervisorSelect.jsx', 'utf8');
 const inventoryBatchModal = readFileSync('src/components/Monitor/SupervisorInventoryBatchModal.jsx', 'utf8');
 const rateModal = readFileSync('src/components/Monitor/SupervisorRateModal.jsx', 'utf8');
+const remoteProductModal = readFileSync('src/components/Monitor/RemoteProductFormModal.jsx', 'utf8');
 
 describe('Supervisor responsive controls', () => {
     it('mantiene el header sticky y preparado para móviles con safe-area', () => {
@@ -14,6 +15,17 @@ describe('Supervisor responsive controls', () => {
         expect(ownerMonitor).toContain('flex-col');
         expect(ownerMonitor).toContain('sm:flex-row');
         expect(ownerMonitor).toContain('w-full sm:w-auto');
+    });
+
+    it('oculta la zona de terminales del panel Supervisor', () => {
+        expect(ownerMonitor).not.toContain('setViewTab(\'terminales\')');
+        expect(ownerMonitor).not.toContain('TERMINALES Y DISPOSITIVOS');
+        expect(ownerMonitor).not.toContain("<DevicesManager");
+    });
+
+    it('usa el icono oficial de la PWA en el header del Supervisor', () => {
+        expect(ownerMonitor).toContain('src="/pwa-192x192.png"');
+        expect(ownerMonitor).toContain('aria-hidden="true"');
     });
 
     it('no deja selects nativos cuadrados en las vistas del Supervisor', () => {
@@ -47,5 +59,12 @@ describe('Supervisor responsive controls', () => {
         expect(inventoryBatchModal).toContain('role="radiogroup"');
         expect(inventoryBatchModal).toContain('SUPERVISOR_REMOTE_EGRESS_ENABLED');
         expect(inventoryBatchModal).not.toContain('<select');
+    });
+
+    it('permite buscar y seleccionar fotos sin mezclar el flujo de egreso', () => {
+        expect(remoteProductModal).toContain('/api/search-image');
+        expect(remoteProductModal).toContain('setImageMatches(data.matches)');
+        expect(remoteProductModal).toContain('setImage(imageUrl)');
+        expect(remoteProductModal).not.toContain("direction: 'egreso'");
     });
 });

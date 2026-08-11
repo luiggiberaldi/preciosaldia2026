@@ -59,6 +59,8 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
             setStock(productToEdit.stock != null ? String(productToEdit.stock) : '0');
             setLowStockAlert(productToEdit.lowStockAlert != null ? String(productToEdit.lowStockAlert) : (productToEdit.minStock != null ? String(productToEdit.minStock) : '5'));
             setImage(productToEdit.image || null);
+            setImageMatches([]);
+            setIsSearchingImage(false);
 
             setPackagingType(productToEdit.packagingType || 'suelto');
             setUnitsPerPackage(productToEdit.unitsPerPackage != null ? String(productToEdit.unitsPerPackage) : '1');
@@ -84,6 +86,8 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
             setStock('0');
             setLowStockAlert('5');
             setImage(null);
+            setImageMatches([]);
+            setIsSearchingImage(false);
 
             setPackagingType('suelto');
             setUnitsPerPackage('1');
@@ -149,12 +153,52 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
         }
     };
 
+    // Las fotos encontradas se guardan como URL de Storage, no como base64.
+    // Así el comando de producto permanece pequeño y no comparte estado con
+    // los comandos de ingreso/egreso.
     const handleLoadImageFromUrl = (url) => {
-        if (url) setImage(url);
+        const trimmedUrl = typeof url === 'string' ? url.trim() : '';
+        if (!trimmedUrl.startsWith('http')) {
+            showToast('Ingresa un enlace de imagen válido', 'warning');
+            return;
+        }
+        setImage(trimmedUrl);
+        showToast('Imagen cargada correctamente', 'success');
     };
 
-    const handleAutoSearchImage = () => {};
-    const handleSelectImage = (imgUrl) => setImage(imgUrl);
+    const handleAutoSearchImage = async (productName) => {
+        if (!productName || productName.trim().length < 3) {
+            showToast('Ingresa un nombre de producto de al menos 3 letras', 'warning');
+            return;
+        }
+        setIsSearchingImage(true);
+        setImageMatches([]);
+        try {
+            const response = await fetch(`/api/search-image?q=${encodeURIComponent(productName.trim())}`);
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'No se pudo buscar la imagen');
+            }
+            if (data.success && Array.isArray(data.matches) && data.matches.length > 0) {
+                setImageMatches(data.matches);
+                showToast(`Encontramos ${data.matches.length} fotos. Elige la correcta.`, 'info');
+            } else {
+                showToast('No encontramos una foto para este producto', 'info');
+            }
+        } catch (error) {
+            console.error('[RemoteProductImage] Error buscando foto:', error);
+            showToast(error?.message || 'No se pudo buscar la foto automáticamente', 'error');
+        } finally {
+            setIsSearchingImage(false);
+        }
+    };
+
+    const handleSelectImage = (imageUrl) => {
+        if (!imageUrl) return;
+        setImage(imageUrl);
+        setImageMatches([]);
+        showToast('Foto seleccionada', 'success');
+    };
 
     const handleSubmit = async (e) => {
         if (e) e.preventDefault();

@@ -14,7 +14,6 @@ import {
 import { formatBs, formatCop } from '../utils/calculatorUtils';
 import { getLocalISODate, getDateRange } from '../utils/dateHelpers';
 import { toTitleCase } from '../config/paymentMethods';
-import DevicesManager from '../components/Settings/DevicesManager';
 import SupervisorRateModal from '../components/Monitor/SupervisorRateModal';
 import RemoteProductFormModal from '../components/Monitor/RemoteProductFormModal';
 import SupervisorInventoryBatchModal from '../components/Monitor/SupervisorInventoryBatchModal';
@@ -429,9 +428,13 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                 className="sticky top-0 z-50 flex flex-col items-stretch justify-between gap-2 border-b border-slate-200 bg-white/95 px-3 pb-2.5 shadow-sm backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/95 sm:flex-row sm:items-center sm:px-4 sm:py-3"
             >
                 <div className="flex min-w-0 w-full items-center gap-2.5 sm:flex-1 sm:gap-3">
-                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/20 text-white font-bold shrink-0">
-                        <ShieldCheck size={18} className="sm:hidden" />
-                        <ShieldCheck size={20} className="hidden sm:block" />
+                    <div className="h-9 w-9 shrink-0 overflow-hidden rounded-2xl shadow-lg shadow-emerald-500/20 sm:h-10 sm:w-10">
+                        <img
+                            src="/pwa-192x192.png"
+                            alt=""
+                            aria-hidden="true"
+                            className="h-full w-full object-cover"
+                        />
                     </div>
                     <div className="min-w-0">
                         <h1 className="text-sm sm:text-base font-black leading-tight text-slate-800 dark:text-white truncate">Panel de Supervisión</h1>
@@ -560,16 +563,6 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                         }`}
                     >
                         Reportes
-                    </button>
-                    <button
-                        onClick={() => { triggerHaptic?.(); setViewTab('terminales'); }}
-                        className={`shrink-0 min-h-11 flex-1 py-2 px-3 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap ${
-                            viewTab === 'terminales' 
-                                ? 'bg-white dark:bg-slate-800 text-slate-850 dark:text-white shadow-sm' 
-                                : 'text-slate-400 hover:text-slate-650 dark:hover:text-slate-200'
-                        }`}
-                    >
-                        Terminales
                     </button>
                     <button
                         onClick={() => { triggerHaptic?.(); setViewTab('cajeros'); }}
@@ -1706,13 +1699,6 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                 </div>
                             )}
                         </div>
-                    </div>
-                )}
-
-                {/* ── SECCIÓN 5: TERMINALES Y DISPOSITIVOS ── */}
-                {viewTab === 'terminales' && (
-                    <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 border border-slate-200/60 dark:border-slate-800/80 shadow-sm">
-                        <DevicesManager triggerHaptic={triggerHaptic} currentDeviceId={localStorage.getItem('pda_device_id')} />
                     </div>
                 )}
 
