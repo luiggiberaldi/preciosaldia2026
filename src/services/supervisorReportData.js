@@ -272,11 +272,22 @@ export function buildSupervisorProductReport(records = []) {
         for (const item of Array.isArray(record.items) ? record.items : []) {
             const productId = String(item._originalId || item.productId || item.id || item.name || 'unknown');
             if (!products.has(productId)) {
-                products.set(productId, { productId, productName: item.name || 'Producto sin nombre', quantity: 0, revenueUsd: 0, salesCount: 0 });
+                products.set(productId, {
+                    productId,
+                    productName: item.name || 'Producto sin nombre',
+                    quantity: 0,
+                    revenueUsd: 0,
+                    revenueBs: 0,
+                    revenueCop: 0,
+                    salesCount: 0,
+                });
             }
             const row = products.get(productId);
-            row.quantity = round2(row.quantity + finite(item.qty));
-            row.revenueUsd = round2(row.revenueUsd + finite(item.priceUsd) * finite(item.qty));
+            const quantity = finite(item.qty ?? item.quantity ?? item.cantidad);
+            row.quantity = round2(row.quantity + quantity);
+            row.revenueUsd = round2(row.revenueUsd + finite(item.priceUsd) * quantity);
+            row.revenueBs = round2(row.revenueBs + finite(item.priceBs) * quantity);
+            row.revenueCop = round2(row.revenueCop + finite(item.priceCop) * quantity);
             row.salesCount += 1;
         }
     }

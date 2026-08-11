@@ -52,6 +52,14 @@ describe('Supervisor responsive controls', () => {
         expect(rateModal).toContain('Bs/₮');
     });
 
+    it('permite consultar ventas por producto y fechas específicas', () => {
+        expect(ownerMonitor).toContain('supervisor-report-product-select');
+        expect(ownerMonitor).toContain('Fechas específicas');
+        expect(ownerMonitor).toContain('supervisor-product-sales-summary');
+        expect(ownerMonitor).toContain('Fecha inicial del reporte');
+        expect(ownerMonitor).toContain('Fecha final del reporte');
+    });
+
     it('guía el ajuste por lote con acciones claras, resumen y flags separados', () => {
         expect(inventoryBatchModal).toContain('solo se aplicará cuando la caja lo confirme');
         expect(inventoryBatchModal).toContain('¿Qué quieres hacer?');

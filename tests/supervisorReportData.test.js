@@ -73,6 +73,16 @@ describe('Supervisor report data', () => {
         expect(result.map(row => row.id)).toEqual(['b']);
     });
 
+    it('filtra por fechas específicas para consultar un día o rango', () => {
+        const result = filterSupervisorRecords([
+            { id: 'before', timestamp: '2026-08-09T12:00:00' },
+            { id: 'inside', timestamp: '2026-08-10T12:00:00' },
+            { id: 'after', timestamp: '2026-08-12T12:00:00' },
+        ], { range: 'custom', from: '2026-08-10', to: '2026-08-11' });
+
+        expect(result.map(row => row.id)).toEqual(['inside']);
+    });
+
     it('normaliza movimientos legacy y conserva el motivo disponible', () => {
         const movements = buildSupervisorInventoryMovements([
             {
@@ -155,8 +165,23 @@ describe('Supervisor report data', () => {
         ]);
 
         expect(report).toHaveLength(2);
-        expect(report.find(row => row.productId === 'p1')).toMatchObject({ quantity: 2, revenueUsd: 2 });
-        expect(report.find(row => row.productId === 'p2')).toMatchObject({ quantity: 5, revenueUsd: 10 });
+        expect(report.find(row => row.productId === 'p1')).toMatchObject({ quantity: 2, revenueUsd: 2, revenueBs: 0 });
+        expect(report.find(row => row.productId === 'p2')).toMatchObject({ quantity: 5, revenueUsd: 10, revenueBs: 0 });
+    });
+
+    it('calcula unidades y montos del producto seleccionado', () => {
+        const [report] = buildSupervisorProductReport([
+            { tipo: 'VENTA', items: [{ id: 'p1', name: 'Arroz', qty: 2, priceUsd: 3, priceBs: 120 }] },
+            { tipo: 'VENTA_FIADA', items: [{ id: 'p1', name: 'Arroz', quantity: 1, priceUsd: 3, priceBs: 120 }] },
+        ]);
+
+        expect(report).toMatchObject({
+            productId: 'p1',
+            quantity: 3,
+            salesCount: 2,
+            revenueUsd: 9,
+            revenueBs: 360,
+        });
     });
 
     it('separa autoconsumo de gastos que afectan caja', () => {

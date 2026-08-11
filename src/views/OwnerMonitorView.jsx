@@ -84,7 +84,10 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
     const [shiftActionConfirmModal, setShiftActionConfirmModal] = useState(null); // 'close' | 'reopen' | null
     const [sendingShiftAction, setSendingShiftAction] = useState(false);
     const [reportsDateRange, setReportsDateRange] = useState('all');
+    const [reportsFrom, setReportsFrom] = useState(getLocalISODate());
+    const [reportsTo, setReportsTo] = useState(getLocalISODate());
     const [reportsCierreId, setReportsCierreId] = useState('all');
+    const [reportsProductId, setReportsProductId] = useState('all');
     const [inventoryMovementFilter, setInventoryMovementFilter] = useState('todos');
     const [inventoryMovementSearch, setInventoryMovementSearch] = useState('');
 
@@ -122,16 +125,41 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
 
     const inventoryMetrics = useMemo(() => calculateInventoryMetrics(products), [products]);
     const shouldShowCop = shouldShowSupervisorCop(copEnabled);
+    const allProductSales = useMemo(() => buildSupervisorProductReport(sales), [sales]);
+    const reportProductOptions = useMemo(() => {
+        const byId = new Map();
+        for (const product of products || []) {
+            if (product?.id == null) continue;
+            byId.set(String(product.id), product.name || 'Producto sin nombre');
+        }
+        for (const sale of allProductSales) {
+            if (!byId.has(String(sale.productId))) byId.set(String(sale.productId), sale.productName);
+        }
+        return [
+            { value: 'all', label: 'Todos los productos' },
+            ...[...byId.entries()]
+                .sort((left, right) => left[1].localeCompare(right[1], 'es'))
+                .map(([value, label]) => ({ value, label })),
+        ];
+    }, [products, allProductSales]);
     const reportRecords = useMemo(() => filterSupervisorRecords(sales, {
         range: reportsDateRange,
+        from: reportsFrom,
+        to: reportsTo,
         cierreId: reportsCierreId,
-    }), [sales, reportsDateRange, reportsCierreId]);
+    }), [sales, reportsDateRange, reportsFrom, reportsTo, reportsCierreId]);
     const supervisorReportData = useMemo(() => ({
         cash: calculateSupervisorCashSummary(reportRecords, bcvRate),
         inventoryMovements: buildSupervisorInventoryMovements(reportRecords),
         productsSold: buildSupervisorProductReport(reportRecords),
         expenses: buildSupervisorExpenseReport(reportRecords),
     }), [reportRecords, bcvRate]);
+    const visibleProductSales = useMemo(() => (
+        reportsProductId === 'all'
+            ? supervisorReportData.productsSold
+            : supervisorReportData.productsSold.filter(product => String(product.productId) === String(reportsProductId))
+    ), [reportsProductId, supervisorReportData.productsSold]);
+    const selectedProductName = reportProductOptions.find(option => option.value === reportsProductId)?.label || 'Producto seleccionado';
     const visibleInventoryMovements = useMemo(() => filterSupervisorInventoryMovements(
         supervisorReportData.inventoryMovements,
         { direction: inventoryMovementFilter, search: inventoryMovementSearch }
@@ -350,7 +378,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                 cierreId: reportsCierreId,
                 records: reportRecords,
                 cash: closeCash,
-                productsSold: supervisorReportData.productsSold,
+                productsSold: visibleProductSales,
                 expenses: supervisorReportData.expenses,
                 inventoryMovements: supervisorReportData.inventoryMovements,
                 copEnabled: shouldShowCop,
@@ -1499,7 +1527,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                         </div>
 
                         <div data-testid="supervisor-report-filters" className="bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm space-y-3">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                                 <SupervisorSelect
                                     label="Período"
                                     ariaLabel="Filtrar reportes por período"
@@ -1513,6 +1541,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                         { value: 'week', label: 'Esta semana' },
                                         { value: 'month', label: 'Este mes' },
                                         { value: 'lastMonth', label: 'Mes anterior' },
+                                        { value: 'custom', label: 'Fechas específicas' },
                                     ]}
                                 />
                                 <SupervisorSelect
@@ -1529,7 +1558,39 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                         })),
                                     ]}
                                 />
+                                <SupervisorSelect
+                                    label="Producto vendido"
+                                    ariaLabel="Elegir producto para consultar sus ventas"
+                                    value={reportsProductId}
+                                    onChange={setReportsProductId}
+                                    testId="supervisor-report-product-select"
+                                    options={reportProductOptions}
+                                />
                             </div>
+                            {reportsDateRange === 'custom' && (
+                                <div className="grid grid-cols-1 gap-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-3 dark:border-blue-900/30 dark:bg-blue-950/20 sm:grid-cols-2">
+                                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                        Desde
+                                        <input
+                                            type="date"
+                                            aria-label="Fecha inicial del reporte"
+                                            value={reportsFrom}
+                                            onChange={(event) => setReportsFrom(event.target.value)}
+                                            className="mt-1.5 min-h-11 w-full rounded-2xl border border-blue-100 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-blue-500 dark:border-blue-900/40 dark:bg-slate-900 dark:text-white"
+                                        />
+                                    </label>
+                                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                        Hasta
+                                        <input
+                                            type="date"
+                                            aria-label="Fecha final del reporte"
+                                            value={reportsTo}
+                                            onChange={(event) => setReportsTo(event.target.value)}
+                                            className="mt-1.5 min-h-11 w-full rounded-2xl border border-blue-100 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-blue-500 dark:border-blue-900/40 dark:bg-slate-900 dark:text-white"
+                                        />
+                                    </label>
+                                </div>
+                            )}
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                                 <button onClick={() => handleDownloadSupervisorReport('close')} className="min-h-11 px-3 py-2 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-black flex items-center justify-center gap-2 transition-colors">
                                     <Download size={14} /> PDF Cierre
@@ -1580,18 +1641,21 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                             <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 p-4 sm:p-5 shadow-sm min-w-0 overflow-hidden">
                                 <div className="flex items-center justify-between gap-3 mb-4">
-                                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-white">Productos vendidos</h3>
-                                    <span className="text-[10px] font-bold text-slate-400">{supervisorReportData.productsSold.length} productos</span>
+                                    <div>
+                                        <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-white">Ventas por producto</h3>
+                                        <p className="mt-1 text-[10px] text-slate-400">Elige un producto arriba para consultar cuánto vendió.</p>
+                                    </div>
+                                    <span className="text-[10px] font-bold text-slate-400">{visibleProductSales.length} productos</span>
                                 </div>
-                                {supervisorReportData.productsSold.length === 0 ? (
-                                    <p className="py-8 text-center text-xs text-slate-400">Sin ventas de productos registradas.</p>
+                                {visibleProductSales.length === 0 ? (
+                                    <p className="py-8 text-center text-xs text-slate-400">Sin ventas para el producto o período seleccionado.</p>
                                 ) : (
                                     <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
-                                        {supervisorReportData.productsSold.slice(0, 10).map(product => (
+                                        {visibleProductSales.slice(0, 10).map(product => (
                                             <div key={product.productId} className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800/60 min-w-0">
                                                 <div className="min-w-0">
                                                     <p className="text-xs font-black text-slate-700 dark:text-slate-200 break-words">{product.productName}</p>
-                                                    <p className="text-[10px] text-slate-400 mt-0.5">{product.salesCount} ventas · ${product.revenueUsd.toFixed(2)}</p>
+                                                    <p className="text-[10px] text-slate-400 mt-0.5">{product.salesCount} ventas · ${product.revenueUsd.toFixed(2)} · {formatBs(product.revenueBs)} Bs</p>
                                                 </div>
                                                 <span className="shrink-0 text-xs font-outfit font-black text-emerald-600 dark:text-emerald-400">{product.quantity} uds</span>
                                             </div>
@@ -1599,6 +1663,28 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                     </div>
                                 )}
                             </div>
+
+                            {reportsProductId !== 'all' && (
+                                <div data-testid="supervisor-product-sales-summary" className="bg-blue-600 rounded-3xl p-4 sm:p-5 shadow-sm min-w-0 text-white">
+                                    <span className="text-[9px] font-black uppercase tracking-wider text-blue-100">Resumen del producto</span>
+                                    <h3 className="mt-2 text-base font-black break-words">{selectedProductName}</h3>
+                                    <div className="mt-4 grid grid-cols-3 gap-2">
+                                        <div className="rounded-2xl bg-white/10 p-3">
+                                            <span className="block text-[9px] font-bold text-blue-100">Unidades</span>
+                                            <strong className="mt-1 block text-lg font-black">{visibleProductSales[0]?.quantity || 0}</strong>
+                                        </div>
+                                        <div className="rounded-2xl bg-white/10 p-3">
+                                            <span className="block text-[9px] font-bold text-blue-100">Ventas</span>
+                                            <strong className="mt-1 block text-lg font-black">{visibleProductSales[0]?.salesCount || 0}</strong>
+                                        </div>
+                                        <div className="rounded-2xl bg-white/10 p-3">
+                                            <span className="block text-[9px] font-bold text-blue-100">Total USD</span>
+                                            <strong className="mt-1 block text-lg font-black">${(visibleProductSales[0]?.revenueUsd || 0).toFixed(2)}</strong>
+                                        </div>
+                                    </div>
+                                    <p className="mt-3 text-[10px] font-semibold text-blue-100">Período aplicado: {reportsDateRange === 'custom' ? `${reportsFrom} al ${reportsTo}` : reportRangeLabels[reportsDateRange]}</p>
+                                </div>
+                            )}
 
                             <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 p-4 sm:p-5 shadow-sm min-w-0 overflow-hidden">
                                 <div className="flex items-center justify-between gap-3 mb-4">
