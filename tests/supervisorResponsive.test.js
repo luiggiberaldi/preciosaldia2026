@@ -40,9 +40,11 @@ describe('Supervisor responsive controls', () => {
         expect(rateModal).toContain('Bs/₮');
     });
 
-    it('mantiene el ajuste por lote detrás de ACK, motivo y flags separados', () => {
-        expect(inventoryBatchModal).toContain('ACK');
-        expect(inventoryBatchModal).toContain('Motivo obligatorio');
+    it('guía el ajuste por lote con acciones claras, resumen y flags separados', () => {
+        expect(inventoryBatchModal).toContain('solo se aplicará cuando la caja lo confirme');
+        expect(inventoryBatchModal).toContain('¿Qué quieres hacer?');
+        expect(inventoryBatchModal).toContain('Stock después del movimiento');
+        expect(inventoryBatchModal).toContain('role="radiogroup"');
         expect(inventoryBatchModal).toContain('SUPERVISOR_REMOTE_EGRESS_ENABLED');
         expect(inventoryBatchModal).not.toContain('<select');
     });
