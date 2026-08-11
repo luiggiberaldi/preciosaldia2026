@@ -25,8 +25,8 @@ const EGRESS_REASONS = [
 
 const UNIT_LABELS = {
     unidades: 'unidades',
-    cajas: 'cajas',
-    bultos: 'bultos',
+    cajas: 'cajas / bultos',
+    bultos: 'cajas / bultos',
 };
 
 function formatNumber(value) {
@@ -79,7 +79,7 @@ export default function SupervisorInventoryBatchModal({
     const projectedStock = stock + (isEgress ? -unitsDelta : unitsDelta);
     const stockWillBeNegative = isEgress && hasValidNumbers && projectedStock < 0;
     const unitLabel = UNIT_LABELS[inputUnit] || 'unidades';
-    const packageLabel = inputUnit === 'cajas' ? 'Unidades por caja' : 'Unidades por bulto';
+    const packageLabel = 'Unidades por caja / bulto';
 
     const directionContent = useMemo(() => ({
         ingreso: {
@@ -265,12 +265,11 @@ export default function SupervisorInventoryBatchModal({
                         <SupervisorSelect
                             label="Presentación"
                             ariaLabel="Seleccionar presentación del movimiento"
-                            value={inputUnit}
+                            value={inputUnit === 'bultos' ? 'cajas' : inputUnit}
                             onChange={handleUnitChange}
                             options={[
                                 { value: 'unidades', label: 'Unidades' },
-                                { value: 'cajas', label: 'Cajas' },
-                                { value: 'bultos', label: 'Bultos' },
+                                { value: 'cajas', label: 'Cajas / Bultos' },
                             ]}
                         />
                         <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
