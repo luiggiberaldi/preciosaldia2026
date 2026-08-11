@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 const sql = readFileSync('supabase_supervisor_auth_recovery.sql', 'utf8');
 const commandSql = readFileSync('supabase_supervisor_commands.sql', 'utf8');
 const inventoryBatchSql = readFileSync('supabase_supervisor_inventory_batch.sql', 'utf8');
+const productionEgressSql = readFileSync('supabase_supervisor_inventory_egress_production.sql', 'utf8');
 const commandReceiver = readFileSync('src/hooks/useRemoteCommands.js', 'utf8');
 
 describe('Supervisor SQL guardrails', () => {
@@ -53,5 +54,17 @@ describe('Supervisor SQL guardrails', () => {
         expect(inventoryBatchSql).toContain('SET search_path = public, extensions');
         expect(inventoryBatchSql).not.toMatch(/GRANT\s+[^;]*\bTO\s+anon\b/i);
         expect(inventoryBatchSql).not.toMatch(/DROP\s+TABLE/i);
+    });
+
+    it('mantiene la migración productiva de egreso con guardas y rollback', () => {
+        expect(productionEgressSql).toContain("p_payload->>'direction' NOT IN ('ingreso', 'egreso')");
+        expect(productionEgressSql).toContain("p_payload->>'reasonCategory' NOT IN ('merma', 'danio', 'vencimiento', 'autoconsumo', 'devolucion', 'ajuste')");
+        expect(productionEgressSql).toContain("p_expires_at - p_issued_at > interval '60 seconds'");
+        expect(productionEgressSql).toContain("p_expires_at <= now()");
+        expect(productionEgressSql).toContain('monitor_auth_id = v_actor');
+        expect(productionEgressSql).toContain('REVOKE ALL ON FUNCTION');
+        expect(productionEgressSql).toContain('ROLLBACK');
+        expect(productionEgressSql).not.toMatch(/GRANT\s+[^;]*\bTO\s+anon\b/i);
+        expect(productionEgressSql).not.toMatch(/DROP\s+TABLE/i);
     });
 });
