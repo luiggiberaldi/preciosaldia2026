@@ -59,6 +59,32 @@ const updateSW = registerSW({
 
 window.__pdaUpdateSW = updateSW;
 
+// ── Manejo global de chunks obsoletos tras nuevos despliegues en Vercel/PWA ──
+window.addEventListener('vite:preloadError', (event) => {
+  console.warn('[Vite] Error al precargar chunk dinámico (nueva versión desplegada). Recargando...', event);
+  const lastReload = parseInt(sessionStorage.getItem('__pda_preload_reload') || '0', 10);
+  if (Date.now() - lastReload > 8000) {
+    sessionStorage.setItem('__pda_preload_reload', String(Date.now()));
+    window.location.reload();
+  }
+});
+
+window.addEventListener('error', (event) => {
+  const msg = event?.message || '';
+  if (
+    msg.includes('Failed to fetch dynamically imported module') ||
+    msg.includes('Importing a module script failed') ||
+    msg.includes('error loading dynamically imported module')
+  ) {
+    const lastReload = parseInt(sessionStorage.getItem('__pda_uncaught_reload') || '0', 10);
+    if (Date.now() - lastReload > 8000) {
+      sessionStorage.setItem('__pda_uncaught_reload', String(Date.now()));
+      console.warn('[App] Error de import dinámico detectado. Recargando para cargar la versión más reciente...');
+      window.location.reload();
+    }
+  }
+});
+
 // ── Evitar que la rueda del mouse cambie valores en inputs numéricos ──
 // HOOK-033: Antes este listener se registraba a nivel módulo (sin cleanup),
 // lo que causaba:

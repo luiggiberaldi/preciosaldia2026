@@ -3,14 +3,16 @@ import { Home, ShoppingCart, Store, Users, Download, FlaskConical, Moon, Sun, Ba
 
 import DashboardView from './views/DashboardView';
 
-// Lazy-loaded views
-const SalesView = lazy(() => import('./views/SalesView'));
-const ProductsView = lazy(() => import('./views/ProductsView'));
-const SettingsView = lazy(() => import('./views/SettingsView'));
-const CustomersView = lazy(() => import('./views/CustomersView'));
-const ReportsView = lazy(() => import('./views/ReportsView'));
-const TesterView = lazy(() => import('./views/TesterView').then(m => ({ default: m.TesterView })));
-const AIAssistantWidget = lazy(() => import('./components/AIAssistantWidget'));
+import { lazyWithRetry } from './utils/lazyWithRetry';
+
+// Lazy-loaded views protegidas contra 404 por despliegues
+const SalesView = lazyWithRetry(() => import('./views/SalesView'), 'SalesView');
+const ProductsView = lazyWithRetry(() => import('./views/ProductsView'), 'ProductsView');
+const SettingsView = lazyWithRetry(() => import('./views/SettingsView'), 'SettingsView');
+const CustomersView = lazyWithRetry(() => import('./views/CustomersView'), 'CustomersView');
+const ReportsView = lazyWithRetry(() => import('./views/ReportsView'), 'ReportsView');
+const TesterView = lazyWithRetry(() => import('./views/TesterView').then(m => ({ default: m.TesterView })), 'TesterView');
+const AIAssistantWidget = lazyWithRetry(() => import('./components/AIAssistantWidget'), 'AIAssistantWidget');
 
 import { useRates } from './hooks/useRates';
 import { useSecurity } from './hooks/useSecurity';
@@ -38,7 +40,7 @@ import {
   SUPERVISOR_REMOTE_RATE_ENABLED,
 } from './config/supervisorPolicy';
 
-const OwnerMonitorView = lazy(() => import('./views/OwnerMonitorView'));
+const OwnerMonitorView = lazyWithRetry(() => import('./views/OwnerMonitorView'), 'OwnerMonitorView');
 import PairingScanScreen from './components/PairingScanScreen';
 import SplashScreenPlayer from './remotion/SplashScreenPlayer';
 import { getLocalISODate } from './utils/dateHelpers';

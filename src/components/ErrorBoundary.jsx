@@ -27,6 +27,19 @@ class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, errorInfo) {
     console.error('🔴 App Error:', error, errorInfo);
+    const msg = error?.message || '';
+    if (
+      msg.includes('Failed to fetch dynamically imported module') ||
+      msg.includes('Importing a module script failed') ||
+      msg.includes('error loading dynamically imported module')
+    ) {
+      const lastReload = parseInt(sessionStorage.getItem('__pda_eb_chunk_reload') || '0', 10);
+      if (Date.now() - lastReload > 8000) {
+        sessionStorage.setItem('__pda_eb_chunk_reload', String(Date.now()));
+        console.info('[ErrorBoundary] Recargando aplicación tras actualización de versión...');
+        window.location.reload();
+      }
+    }
   }
 
   _handleRetry = async () => {
