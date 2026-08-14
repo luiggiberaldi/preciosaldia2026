@@ -344,7 +344,9 @@ export async function generateDailyClosePDF({
             contentY = drawCard(colR_X, rightY, colW, payH, 'Ingresos por Método');
             paymentEntries.forEach(([methodId, data]) => {
                 const label = toTitleCase(getPaymentLabel(methodId, data.label));
-                const val = data.currency === 'USD'
+                const val = data.currency === 'INTERNAL_CREDIT' || data.isInternalCredit
+                    ? `${fmtUsd(data.total)} (crédito interno)`
+                    : data.currency === 'USD'
                     ? fmtUsd(data.total)
                     : data.currency === 'COP'
                     ? `${data.total.toLocaleString('es-CO')} COP`
@@ -576,6 +578,16 @@ export async function generateDailyClosePDF({
                     if (s.changeUsd > 0) changeStr += fmtUsd(s.changeUsd);
                     if (s.changeBs > 0) changeStr += `${s.changeUsd > 0 ? ' + ' : ''}Bs ${formatBs(s.changeBs)}`;
                     paymentsText += ` | ${changeStr}`;
+                }
+
+                if (s.tipDonated?.amountUsd > 0) {
+                    paymentsText += ` | Cambio dejado en caja: +${fmtUsd(s.tipDonated.amountUsd)}`;
+                }
+                if (['VENTA', 'VENTA_CASHEA'].includes(s.tipo) && s.vueltoParaMonedero > 0) {
+                    paymentsText += ` | Saldo a favor acreditado: +${fmtUsd(s.vueltoParaMonedero)}`;
+                }
+                if (s.tipo === 'COBRO_DEUDA' && s.saldoFavorGeneradoUsd > 0) {
+                    paymentsText += ` | Saldo a favor generado: +${fmtUsd(s.saldoFavorGeneradoUsd)}`;
                 }
 
                 const fullDetail = `${itemsText}\n${paymentsText}`;
@@ -881,7 +893,9 @@ export async function generateDailyClosePDF({
 
         Object.entries(paymentBreakdown).forEach(([methodId, data]) => {
             const label = toTitleCase(getPaymentLabel(methodId, data.label));
-            const val = data.currency === 'USD'
+            const val = data.currency === 'INTERNAL_CREDIT' || data.isInternalCredit
+                ? `${fmtUsd(data.total)} (crédito interno)`
+                : data.currency === 'USD'
                 ? fmtUsd(data.total)
                 : data.currency === 'COP'
                 ? `${data.total.toLocaleString('es-CO')} COP`

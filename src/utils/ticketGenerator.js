@@ -31,9 +31,21 @@ export async function generateTicketPDF(sale, bcvRate) {
     const itemCount = sale.items?.length || 0;
     const paymentCount = sale.payments?.length || 0;
     const hasFiado = sale.fiadoUsd > 0;
+    const walletCreditUsd = sale.tipo === 'COBRO_DEUDA'
+        ? Math.max(0, Number(sale.saldoFavorGeneradoUsd) || 0)
+        : ['VENTA', 'VENTA_CASHEA'].includes(sale.tipo)
+            ? Math.max(0, Number(sale.vueltoParaMonedero) || 0)
+            : 0;
+    const walletCreditLabel = sale.tipo === 'COBRO_DEUDA'
+        ? 'Saldo a favor generado (sobrante de abono):'
+        : 'Saldo a favor acreditado:';
+    const tipDonatedUsd = Math.max(0, Number(sale.tipDonated?.amountUsd) || 0);
+    const hasPhysicalChange = Number(sale.changeUsd) > 0 || Number(sale.changeBs) > 0;
 
     // Altura MUY generosa para que nunca se corte
-    const H = 160 + (itemCount * 14) + (paymentCount * 7) + (hasFiado ? 18 : 0);
+    const H = 160 + (itemCount * 14) + (paymentCount * 7) + (hasFiado ? 18 : 0)
+        + (walletCreditUsd > 0 ? 10 : 0) + (tipDonatedUsd > 0 ? 10 : 0)
+        + (hasPhysicalChange ? 10 : 0);
 
     const doc = new jsPDF('p', 'mm', [WIDTH, H]);
 
@@ -264,7 +276,7 @@ export async function generateTicketPDF(sale, bcvRate) {
     // ════════════════════════════════════
     //  PAGOS REALIZADOS
     // ════════════════════════════════════
-    const showPayments = (sale.payments && sale.payments.length > 0) || hasFiado;
+    const showPayments = (sale.payments && sale.payments.length > 0) || hasFiado || walletCreditUsd > 0 || tipDonatedUsd > 0 || hasPhysicalChange;
     if (showPayments) {
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(6.5);
@@ -275,9 +287,12 @@ export async function generateTicketPDF(sale, bcvRate) {
         if (sale.payments && sale.payments.length > 0) {
             sale.payments.forEach(p => {
                 const pIsCop = p.currency === 'COP';
-                const isBs = !pIsCop && (p.currency ? p.currency !== 'USD' : (p.methodId.includes('_bs') || p.methodId === 'pago_movil'));
+                const pIsInternalCredit = p.methodId === 'saldo_favor' || p.currency === 'INTERNAL_CREDIT' || p.isInternalCredit;
+                const isBs = !pIsCop && !pIsInternalCredit && (p.currency ? p.currency !== 'USD' : (p.methodId.includes('_bs') || p.methodId === 'pago_movil'));
                 // FIN-024: mulR para conversiones raw.
-                const val = pIsCop
+                const val = pIsInternalCredit
+                    ? '-' + fmtUsd(p.amountUsd || 0)
+                    : pIsCop
                     ? 'COP ' + (p.amountInput || mulR(p.amountUsd, (sale.tasaCop || 1))).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                     : isBs
                     ? 'Bs ' + formatBs(p.amountBs || mulR(p.amountUsd, rate))
@@ -286,7 +301,7 @@ export async function generateTicketPDF(sale, bcvRate) {
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(7.5);
                 doc.setTextColor(...BODY);
-                doc.text(p.methodLabel || 'Pago', M, y);
+                doc.text(pIsInternalCredit ? 'Saldo a favor utilizado:' : (p.methodLabel || 'Pago'), M, y);
                 doc.setFont('helvetica', 'bold');
                 doc.setTextColor(...INK);
                 doc.text(val, RIGHT, y, { align: 'right' });
@@ -316,6 +331,43 @@ export async function generateTicketPDF(sale, bcvRate) {
                 doc.text('Bs ' + formatBs(mulR(sale.fiadoUsd, fiadoRate)) + ' (tasa actual)', RIGHT, y, { align: 'right' });
                 y += 6;
             }
+        }
+
+        if (hasPhysicalChange) {
+            y += 2;
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(8);
+            doc.setTextColor(...BODY);
+            if (sale.changeUsd > 0) {
+                doc.text('Vuelto entregado:', M, y);
+                doc.text(fmtUsd(sale.changeUsd), RIGHT, y, { align: 'right' });
+                y += 5;
+            }
+            if (sale.changeBs > 0) {
+                doc.text('Vuelto entregado Bs:', M, y);
+                doc.text('Bs ' + formatBs(sale.changeBs), RIGHT, y, { align: 'right' });
+                y += 5;
+            }
+        }
+
+        if (tipDonatedUsd > 0) {
+            y += 2;
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(8);
+            doc.setTextColor(...GREEN);
+            doc.text('Cambio dejado en caja:', M, y);
+            doc.text('+' + fmtUsd(tipDonatedUsd), RIGHT, y, { align: 'right' });
+            y += 6;
+        }
+
+        if (walletCreditUsd > 0) {
+            y += 2;
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(8);
+            doc.setTextColor(...GREEN);
+            doc.text(walletCreditLabel, M, y);
+            doc.text('+' + fmtUsd(walletCreditUsd), RIGHT, y, { align: 'right' });
+            y += 6;
         }
 
         y += 2;

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
  * useClientWallet — Portado de Listo POS ModalPago.
  * Calcula la proyección de saldo del cliente cuando hay vuelto acreditado.
  */
-export const useClientWallet = (clienteSeleccionado, clientes, modo, cambioUSD, isChangeCredited, distVueltoUSD, distVueltoBS, tasaSegura) => {
+export const useClientWallet = (clienteSeleccionado, clientes, modo, cambioUSD, isChangeCredited, distVueltoUSD, distVueltoBS, tasaSegura, cashKeptUsd = 0) => {
     const [proyeccion, setProyeccion] = useState(null);
 
     useEffect(() => {
@@ -17,7 +17,7 @@ export const useClientWallet = (clienteSeleccionado, clientes, modo, cambioUSD, 
         const sumaDistribucion = (parseFloat(distVueltoUSD) || 0) + ((parseFloat(distVueltoBS) || 0) / tasaSegura);
 
         if (modo === 'contado' && cambioUSD > 0 && isChangeCredited) {
-            montoAbonarCuenta = Math.max(0, cambioUSD - sumaDistribucion);
+            montoAbonarCuenta = Math.max(0, cambioUSD - cashKeptUsd - sumaDistribucion);
         }
 
         if (clienteObj && montoAbonarCuenta > 0.001) {
@@ -39,7 +39,7 @@ export const useClientWallet = (clienteSeleccionado, clientes, modo, cambioUSD, 
         } else {
             setProyeccion(null);
         }
-    }, [clienteSeleccionado, isChangeCredited, cambioUSD, distVueltoUSD, distVueltoBS, modo, clientes, tasaSegura]);
+    }, [clienteSeleccionado, isChangeCredited, cambioUSD, distVueltoUSD, distVueltoBS, modo, clientes, tasaSegura, cashKeptUsd]);
 
     return { proyeccion };
 };

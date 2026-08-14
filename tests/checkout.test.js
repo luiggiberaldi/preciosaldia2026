@@ -28,6 +28,8 @@ vi.mock('../src/hooks/store/useAuthStore', () => ({
 }));
 
 import { processSaleTransaction } from '../src/utils/checkoutProcessor';
+import { calculateChangeRemainder } from '../src/utils/dinero';
+import { shouldShowWalletSection } from '../src/components/Sales/CheckoutModalPOS/components/WalletSection';
 import { storageService } from '../src/utils/storageService';
 import { logEvent } from '../src/services/auditService';
 
@@ -198,5 +200,195 @@ describe('FIN-037: cliente leído fresco dentro del lock', () => {
         const persisted = _memoryStore.get(CUSTOMERS_KEY).find(c => c.id === 'c1');
         // 5 previos + 10 de esta venta = 15. Si sale 10, se perdió deuda.
         expect(persisted.deuda).toBe(15);
+    });
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// CARTERA — el modo Crédito nunca absorbe un sobrepago
+// ════════════════════════════════════════════════════════════════════════
+describe('Cartera: validación de sobrepago en venta fiada', () => {
+    it('bloquea una venta fiada de $4.80 cuando se ingresan $10', async () => {
+        const customer = { id: 'c-credit', name: 'Chaylin', deuda: 0, favor: 0 };
+        const result = await processSaleTransaction(baseOpts({
+            cart: [{ id: 'p1', name: 'Producto', qty: 1, priceUsd: 4.8, costUsd: 2, costBs: 0, isWeight: false }],
+            cartTotalUsd: 4.8,
+            cartTotalBs: 192,
+            cartSubtotalUsd: 4.8,
+            payments: [{ amountUsd: 10, amountBs: 0, currency: 'USD', methodId: 'efectivo_usd', methodLabel: 'Efectivo $' }],
+            changeBreakdown: { esCredito: true },
+            selectedCustomerId: customer.id,
+            customers: [customer],
+        }));
+
+        expect(result.success).toBe(false);
+        expect(result.error).toMatch(/excede la venta/i);
+        expect(_memoryStore.get(SALES_KEY)).toBeUndefined();
+        expect(_memoryStore.get(CUSTOMERS_KEY)).toBeUndefined();
+    });
+
+    it('permite pago parcial en Crédito y registra únicamente el restante como fiado', async () => {
+        const customer = { id: 'c-partial', name: 'Ana', deuda: 0, favor: 0 };
+        const result = await processSaleTransaction(baseOpts({
+            cart: [{ id: 'p1', name: 'Producto', qty: 1, priceUsd: 10, costUsd: 2, costBs: 0, isWeight: false }],
+            payments: [{ amountUsd: 4, amountBs: 0, currency: 'USD', methodId: 'efectivo_usd', methodLabel: 'Efectivo $' }],
+            changeBreakdown: { esCredito: true },
+            selectedCustomerId: customer.id,
+            customers: [customer],
+        }));
+
+        expect(result.success).toBe(true);
+        expect(result.sale.tipo).toBe('VENTA_FIADA');
+        expect(result.sale.fiadoUsd).toBe(6);
+        expect(_memoryStore.get(CUSTOMERS_KEY)[0]).toMatchObject({ deuda: 6, favor: 0 });
+    });
+});
+
+describe('Cambio parcial dejado en caja', () => {
+    const customer = { id: 'c-change', name: 'Ana', deuda: 0, favor: 0 };
+
+    it('divide el vuelto entre caja y entrega física sin crear saldo a favor', async () => {
+        const result = await processSaleTransaction(baseOpts({
+            payments: [{ amountUsd: 10, amountBs: 0, currency: 'USD', methodId: 'efectivo_usd', methodLabel: 'Efectivo $' }],
+            cartTotalUsd: 5,
+            cartTotalBs: 200,
+            cartSubtotalUsd: 5,
+            changeBreakdown: {
+                changeUsdGiven: 3,
+                changeBsGiven: 0,
+                tipDonated: { amountUsd: 2, currency: 'USD' },
+            },
+        }));
+
+        expect(result.success).toBe(true);
+        expect(result.sale.tipDonated).toMatchObject({ amountUsd: 2, currency: 'USD' });
+        expect(result.sale.changeUsd).toBe(3);
+        expect(result.sale.vueltoParaMonedero).toBe(0);
+        expect(result.sale.changeAllocation).toMatchObject({
+            totalUsd: 5,
+            keptInCashUsd: 2,
+            deliveredUsd: 3,
+            creditedUsd: 0,
+        });
+    });
+
+    it('divide el vuelto entre caja y billetera cuando se acredita el resto', async () => {
+        _memoryStore.set(CUSTOMERS_KEY, [customer]);
+        const result = await processSaleTransaction(baseOpts({
+            payments: [{ amountUsd: 10, amountBs: 0, currency: 'USD', methodId: 'efectivo_usd', methodLabel: 'Efectivo $' }],
+            cartTotalUsd: 5,
+            cartTotalBs: 200,
+            cartSubtotalUsd: 5,
+            changeBreakdown: {
+                changeUsdGiven: 0,
+                changeBsGiven: 0,
+                vueltoCredito: true,
+                tipDonated: { amountUsd: 2, currency: 'USD' },
+            },
+            selectedCustomerId: customer.id,
+            customers: [customer],
+        }));
+
+        expect(result.success).toBe(true);
+        expect(result.sale.changeUsd).toBe(0);
+        expect(result.sale.vueltoParaMonedero).toBe(3);
+        expect(result.sale.changeAllocation).toMatchObject({ keptInCashUsd: 2, creditedUsd: 3 });
+        expect(_memoryStore.get(CUSTOMERS_KEY)[0].favor).toBe(3);
+    });
+
+    it('combina caja, vuelto físico en Bs y billetera sin superar el vuelto real', async () => {
+        _memoryStore.set(CUSTOMERS_KEY, [customer]);
+        const result = await processSaleTransaction(baseOpts({
+            payments: [{ amountUsd: 10, amountBs: 0, currency: 'USD', methodId: 'efectivo_usd', methodLabel: 'Efectivo $' }],
+            cartTotalUsd: 5,
+            cartTotalBs: 200,
+            cartSubtotalUsd: 5,
+            changeBreakdown: {
+                changeUsdGiven: 1,
+                changeBsGiven: 40,
+                vueltoCredito: true,
+                tipDonated: { amountUsd: 1, currency: 'USD' },
+            },
+            selectedCustomerId: customer.id,
+            customers: [customer],
+        }));
+
+        expect(result.success).toBe(true);
+        expect(result.sale.changeUsd).toBe(1);
+        expect(result.sale.changeBs).toBe(40);
+        expect(result.sale.vueltoParaMonedero).toBe(2);
+        expect(result.sale.changeAllocation).toMatchObject({
+            totalUsd: 5,
+            keptInCashUsd: 1,
+            deliveredUsd: 1,
+            deliveredBs: 40,
+            creditedUsd: 2,
+        });
+    });
+
+    it('entrega $1.88 y acredita exactamente $7.00 del vuelto restante', async () => {
+        _memoryStore.set(CUSTOMERS_KEY, [customer]);
+        const result = await processSaleTransaction(baseOpts({
+            cart: [{ id: 'p1', name: 'Producto', qty: 1, priceUsd: 1.12, costUsd: 0.5, costBs: 0, isWeight: false }],
+            cartTotalUsd: 1.12,
+            cartTotalBs: 952,
+            cartSubtotalUsd: 1.12,
+            payments: [{ amountUsd: 10, amountBs: 0, currency: 'USD', methodId: 'efectivo_usd', methodLabel: 'Efectivo $' }],
+            changeBreakdown: { changeUsdGiven: 1.88, changeBsGiven: 0, vueltoCredito: true },
+            selectedCustomerId: customer.id,
+            customers: [customer],
+            effectiveRate: 850,
+        }));
+
+        expect(result.success).toBe(true);
+        expect(result.sale.changeUsd).toBe(1.88);
+        expect(result.sale.vueltoParaMonedero).toBe(7);
+        expect(result.sale.changeAllocation).toMatchObject({ deliveredUsd: 1.88, creditedUsd: 7 });
+        expect(_memoryStore.get(CUSTOMERS_KEY)[0].favor).toBe(7);
+    });
+});
+
+describe('Remanente de cambio entre USD y Bs', () => {
+    it('convierte a Bs el remanente cuando se declara cambio en USD', () => {
+        expect(calculateChangeRemainder(2.88, 1, 0, 724)).toEqual({
+            remainingUsd: 1.88,
+            remainingBs: 1361.12,
+            givenUsd: 1,
+        });
+    });
+
+    it('convierte a USD el remanente cuando se declara cambio en Bs', () => {
+        expect(calculateChangeRemainder(2.88, 0, 100, 724)).toEqual({
+            remainingUsd: 2.74,
+            remainingBs: 1983.76,
+            givenUsd: 0.14,
+        });
+    });
+
+    it('combina USD y Bs sin duplicar el mismo vuelto', () => {
+        expect(calculateChangeRemainder(8.88, 1.88, 100, 850)).toMatchObject({
+            remainingUsd: 6.88,
+            remainingBs: 5848,
+        });
+    });
+
+    it('nunca permite que una combinación sobreasignada produzca remanente negativo', () => {
+        expect(calculateChangeRemainder(2.88, 2, 2085, 724)).toMatchObject({
+            remainingUsd: 0,
+            remainingBs: 0,
+        });
+    });
+});
+
+describe('Visibilidad inteligente de saldo a favor', () => {
+    it('oculta el método cuando el pago ya cubre o supera la venta', () => {
+        expect(shouldShowWalletSection({ saldoDisponible: 2.76, faltaSinSaldo: 0, saldoAplicado: 0 })).toBe(false);
+    });
+
+    it('lo muestra cuando todavía falta pagar y hay saldo disponible', () => {
+        expect(shouldShowWalletSection({ saldoDisponible: 2.76, faltaSinSaldo: 2, saldoAplicado: 0 })).toBe(true);
+    });
+
+    it('mantiene el bloque si ya había saldo aplicado para poder editarlo', () => {
+        expect(shouldShowWalletSection({ saldoDisponible: 2.76, faltaSinSaldo: 0, saldoAplicado: 1 })).toBe(true);
     });
 });

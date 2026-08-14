@@ -118,3 +118,28 @@ export const sumR = (...args) => {
  * @returns {number}
  */
 export const subR = (a, b) => round2((a || 0) - (b || 0));
+
+/**
+ * Calcula cuánto vuelto sigue sin distribuir después de declarar una parte en
+ * dólares y/o bolívares. Los dos montos representan destinos del mismo vuelto,
+ * por eso se convierten a USD antes de restarlos.
+ *
+ * @param {number} totalUsd Vuelto total disponible en USD
+ * @param {number} usdGiven Vuelto físico declarado en USD
+ * @param {number} bsGiven Vuelto físico declarado en Bs
+ * @param {number} rate Tasa Bs por USD
+ * @returns {{ remainingUsd: number, remainingBs: number, givenUsd: number }}
+ */
+export const calculateChangeRemainder = (totalUsd, usdGiven = 0, bsGiven = 0, rate = 0) => {
+    const givenUsd = sumR(
+        Math.max(0, Number(usdGiven) || 0),
+        rate > 0 ? divR(Math.max(0, Number(bsGiven) || 0), rate) : 0,
+    );
+    const remainingUsd = Math.max(0, subR(Math.max(0, Number(totalUsd) || 0), givenUsd));
+
+    return {
+        remainingUsd: round2(remainingUsd),
+        remainingBs: rate > 0 ? mulR(remainingUsd, rate) : 0,
+        givenUsd: round2(givenUsd),
+    };
+};

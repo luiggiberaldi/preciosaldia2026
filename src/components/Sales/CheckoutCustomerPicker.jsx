@@ -136,17 +136,17 @@ export default function CheckoutCustomerPicker({
                                         C.I: {selectedCustomer.documentId}
                                     </span>
                                 )}
-                                {selectedCustomer.deuda !== 0 && (
-                                    <span className={`text-[8px] font-black px-1.5 py-0.5 rounded leading-none border shrink-0 ${
-                                        selectedCustomer.deuda > 0
-                                            ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 border-red-100 dark:border-red-900/30'
-                                            : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 border-emerald-100 dark:border-emerald-900/30'
-                                    }`}>
-                                        {selectedCustomer.deuda > 0
-                                            ? `Debe $${selectedCustomer.deuda.toFixed(2)}`
-                                            : `Favor $${Math.abs(selectedCustomer.deuda).toFixed(2)}`}
-                                    </span>
-                                )}
+                        {(selectedCustomer.deuda > 0.01 || selectedCustomer.favor > 0.01) && (
+                            <span className={`text-[8px] font-black px-1.5 py-0.5 rounded leading-none border shrink-0 ${
+                                selectedCustomer.deuda > 0
+                                    ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 border-red-100 dark:border-red-900/30'
+                                    : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 border-emerald-100 dark:border-emerald-900/30'
+                            }`}>
+                                {selectedCustomer.deuda > 0
+                                    ? `Debe $${selectedCustomer.deuda.toFixed(2)}`
+                                    : `Favor $${selectedCustomer.favor.toFixed(2)}`}
+                            </span>
+                        )}
                             </div>
                         )}
                     </div>
@@ -317,13 +317,13 @@ export default function CheckoutCustomerPicker({
                                                                 C.I: {c.documentId}
                                                             </span>
                                                         )}
-                                                        {c.deuda !== 0 && (
+                                                        {(c.deuda > 0.01 || c.favor > 0.01) && (
                                                             <span className={`text-[8px] font-black px-1.5 py-0.5 rounded leading-none border shrink-0 ${
                                                                 c.deuda > 0
                                                                     ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 border-red-100 dark:border-red-900/30'
                                                                     : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 border-emerald-100 dark:border-emerald-900/30'
                                                             }`}>
-                                                                {c.deuda > 0 ? `Debe $${c.deuda.toFixed(2)}` : `Favor $${Math.abs(c.deuda).toFixed(2)}`}
+                                                                {c.deuda > 0 ? `Debe $${c.deuda.toFixed(2)}` : `Favor $${c.favor.toFixed(2)}`}
                                                             </span>
                                                         )}
                                                     </div>

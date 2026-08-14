@@ -80,19 +80,21 @@ export function buildReceiptWhatsAppUrl(receipt, currentRate) {
     }
 
     // Vuelto
-    const changeLines = r.changeUsd > 0.005
+    const changeLines = (r.changeUsd > 0.005 || r.changeBs > 0.5)
         ? receiptCurrencyMode === 'usd'
-            ? `\nVUELTO: ${fmtUsd(r.changeUsd)}`
+            ? r.changeUsd > 0.005
+                ? `\nVUELTO: ${fmtUsd(r.changeUsd)}`
+                : `\nVUELTO: Bs ${formatBs(r.changeBs)}`
             : receiptCurrencyMode === 'bs'
             ? `\nVUELTO: Bs ${formatBs(r.changeBs)}`
             : `\nVUELTO: ${fmtUsd(r.changeUsd)} / Bs ${formatBs(r.changeBs)}`
         : '';
 
-    // TIP-007: propina donada
+    // TIP-007: parte del cambio dejada en caja
     const tipLine = (r.tipDonated && r.tipDonated.amountUsd > 0.005)
         ? (r.tipDonated.currency === 'BS'
-            ? `\nCLIENTE DEJO EL CAMBIO: Bs ${formatBs(r.tipDonated.amountBs)}`
-            : `\nCLIENTE DEJO EL CAMBIO: ${fmtUsd(r.tipDonated.amountUsd)}`)
+            ? `\nCAMBIO DEJADO EN CAJA: Bs ${formatBs(r.tipDonated.amountBs)}`
+            : `\nCAMBIO DEJADO EN CAJA: ${fmtUsd(r.tipDonated.amountUsd)}`)
         : '';
 
     // Fiado

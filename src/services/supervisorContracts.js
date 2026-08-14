@@ -31,6 +31,7 @@ const isPlainObject = (value) => Boolean(value) && typeof value === 'object' && 
 const SYNC_VALIDATORS = Object.freeze({
     bodega_products_v1: Array.isArray,
     bodega_customers_v1: Array.isArray,
+    bodega_customer_ledger_v1: Array.isArray,
     bodega_sales_v1: Array.isArray,
     bodega_payment_methods_v1: Array.isArray,
     bodega_accounts_v2: Array.isArray,

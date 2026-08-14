@@ -5,7 +5,8 @@ import { Users, Plus, Search, User, X, Trash2, Pencil, Phone, RefreshCw, Save, A
 import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
 import { formatBs, formatUsd, formatCop } from '../utils/calculatorUtils';
-import { procesarImpactoCliente } from '../utils/financialLogic';
+import { applyCustomerMovement } from '../services/customerWalletService';
+import { CUSTOMER_MOVEMENT_TYPES } from '../utils/customerLedger';
 import TransactionModal from '../components/Customers/TransactionModal';
 import { processCustomerTransaction } from '../utils/customerTransactionProcessor';
 import { DEFAULT_PAYMENT_METHODS } from '../config/paymentMethods';
@@ -60,7 +61,7 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
     // Guard: evita eliminar clientes con deuda o saldo a favor pendiente
     const handleDeleteCustomerRequest = (customer) => {
         const deuda = customer.deuda || 0;
-        const saldo = customer.saldoFavor || 0;
+        const saldo = customer.favor || 0;
         if (deuda > 0.005) {
             showToast(`No se puede eliminar: ${customer.name} tiene una deuda de $${deuda.toFixed(2)} pendiente.`, 'error');
             return;
@@ -122,7 +123,7 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
         const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) || (c.phone && c.phone.includes(searchTerm));
         if (!matchesSearch) return false;
         if (filterType === 'deuda') return c.deuda > 0.01;
-        if (filterType === 'favor') return c.deuda < -0.01;
+        if (filterType === 'favor') return c.favor > 0.01;
         return true;
     });
 
@@ -165,10 +166,25 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
         if (!customer) return;
 
         // casheaDeuda NO se toca: es una cuenta por cobrar A CASHEA, no saldo del
-        // cliente. Se cancela registrando la remesa, no condonando al cliente.
-        const updatedCustomer = { ...customer, deuda: 0, favor: 0 };
-        const newCustomers = customers.map(c => c.id === customer.id ? updatedCustomer : c);
-        await saveCustomers(newCustomers);
+        // cliente. Reiniciar deuda/favor es un ajuste auditable, no una edición directa.
+        const freshCustomers = await storageService.getItem('bodega_customers_v1', []);
+        const freshCustomer = freshCustomers.find(c => c.id === customer.id);
+        const balance = (freshCustomer?.favor || 0) - (freshCustomer?.deuda || 0);
+        if (Math.abs(balance) > 0.005) {
+            const result = await applyCustomerMovement({
+                customerId: customer.id,
+                user: usuarioActivo,
+                movement: {
+                    type: balance > 0 ? CUSTOMER_MOVEMENT_TYPES.DEBIT_ADJUSTMENT : CUSTOMER_MOVEMENT_TYPES.CREDIT_ADJUSTMENT,
+                    direction: balance > 0 ? 'DEBIT' : 'CREDIT',
+                    amountUsd: Math.abs(balance),
+                    sourceType: 'ADMIN_ADJUSTMENT',
+                    sourceId: `reset_balance:${customer.id}:${Date.now()}`,
+                    reason: 'Reinicio administrativo de saldo a cero',
+                },
+            });
+            setCustomers(result.updatedCustomers);
+        }
         showToast(`Saldo reiniciado a cero para ${customer.name}`, 'success');
         auditLog('CLIENTE', 'DEUDA_CONDONADA', `Saldo reiniciado a $0 para ${customer.name}`);
         setResetBalanceCustomer(null);
@@ -207,7 +223,7 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
         if (!transactionAmount || isNaN(transactionAmount) || parseFloat(transactionAmount) <= 0) return;
         triggerHaptic();
 
-        const { newCustomers } = await processCustomerTransaction({
+        const transactionResult = await processCustomerTransaction({
             transactionAmount,
             currencyMode,
             type: transactionModal.type,
@@ -218,7 +234,11 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
             copEnabled
         });
 
-        await saveCustomers(newCustomers);
+        if (transactionResult?.error) {
+            showToast(transactionResult.error, 'error');
+            return;
+        }
+        await saveCustomers(transactionResult.newCustomers);
         showToast(`Operación de ${transactionModal.type} exitosa`, 'success');
         auditLog('CLIENTE', transactionModal.type === 'ABONO' ? 'ABONO_REGISTRADO' : 'CREDITO_REGISTRADO', `${transactionModal.type} de ${transactionAmount} ${currencyMode} para ${transactionModal.customer?.name}`);
 
@@ -540,7 +560,7 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                 }}
                 onDelete={() => {
                     const deuda = selectedCustomer?.deuda || 0;
-                    const saldo = selectedCustomer?.saldoFavor || 0;
+                    const saldo = selectedCustomer?.favor || 0;
                     const casheaDeuda = selectedCustomer?.casheaDeuda || 0;
 
                     if (deuda > 0.005) {
@@ -770,6 +790,19 @@ function buildCustomerStatementWhatsAppUrl(customer, sales, bcvRate) {
             msg += `${idx + 1}. [${dateStr}] ${typeStr}: *${sign}$${formatUsd(sale.totalUsd || 0)}*`;
             if (bcvRate > 0 && !isAnulada) msg += ` (Bs ${formatBs((sale.totalUsd || 0) * bcvRate)})`;
             msg += `\n`;
+            if (['VENTA', 'VENTA_CASHEA'].includes(sale.tipo) && sale.vueltoParaMonedero > 0) {
+                msg += `   _Saldo a favor acreditado: +$${formatUsd(sale.vueltoParaMonedero)}_\n`;
+            }
+
+            if (sale.tipo === 'COBRO_DEUDA' && sale.saldoFavorGeneradoUsd > 0) {
+                msg += `   _Saldo a favor generado por sobrante de abono: +$${formatUsd(sale.saldoFavorGeneradoUsd)}_\n`;
+            }
+            const saldoFavorUsado = (sale.payments || [])
+                .filter(p => p.methodId === 'saldo_favor' || p.currency === 'INTERNAL_CREDIT' || p.isInternalCredit)
+                .reduce((sum, p) => sum + (Number(p.amountUsd) || 0), 0);
+            if (saldoFavorUsado > 0) {
+                msg += `   _Saldo a favor utilizado: -$${formatUsd(saldoFavorUsado)}_\n`;
+            }
 
             if (sale.items && sale.items.length > 0) {
                 const itemsStr = sale.items.map(i => i.name).join(', ');
@@ -1010,6 +1043,16 @@ function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, on
                                                 {sale.items && sale.items.length > 0 && (
                                                     <p className="text-[10px] text-slate-400 truncate mt-0.5">
                                                         {sale.items.map(i => i.name).join(', ')}
+                                                    </p>
+                                                )}
+                                                {['VENTA', 'VENTA_CASHEA'].includes(sale.tipo) && sale.vueltoParaMonedero > 0 && (
+                                                    <p className={`text-[10px] font-bold mt-1 ${isAnulada ? 'text-slate-400 line-through' : 'text-cyan-600 dark:text-cyan-400'}`}>
+                                                        {isAnulada ? 'Saldo a favor revertido' : 'Saldo a favor acreditado'}: +${formatUsd(sale.vueltoParaMonedero)}
+                                                    </p>
+                                                )}
+                                                {sale.tipo === 'COBRO_DEUDA' && sale.saldoFavorGeneradoUsd > 0 && (
+                                                    <p className={`text-[10px] font-bold mt-1 ${isAnulada ? 'text-slate-400 line-through' : 'text-cyan-600 dark:text-cyan-400'}`}>
+                                                        {isAnulada ? 'Saldo a favor revertido' : 'Saldo a favor generado por sobrante'}: +${formatUsd(sale.saldoFavorGeneradoUsd)}
                                                     </p>
                                                 )}
                                                 <p className="text-[9px] text-stone-400 mt-1">{dateStr} • {timeStr}</p>
@@ -1361,10 +1404,11 @@ export function TransactionDetailModal({ sale, bcvRate, tasaCop, copEnabled, cop
                             <div className="space-y-1.5">
                                 {sale.payments.map((p, idx) => {
                                     const isCopCurrency = p.currency === 'COP';
-                                    const isBsCurrency = !isCopCurrency && (p.currency ? p.currency !== 'USD' : p.methodId?.includes('_bs'));
+                                    const isInternalCredit = p.methodId === 'saldo_favor' || p.currency === 'INTERNAL_CREDIT' || p.isInternalCredit;
+                                    const isBsCurrency = !isCopCurrency && !isInternalCredit && (p.currency ? p.currency !== 'USD' : p.methodId?.includes('_bs'));
                                     const label = p.methodLabel || getPaymentLabel(p.methodId);
                                     
-                                    let formattedAmt = `$${(p.amountUsd || 0).toFixed(2)}`;
+                                    let formattedAmt = isInternalCredit ? `Crédito interno $${(p.amountUsd || 0).toFixed(2)}` : `$${(p.amountUsd || 0).toFixed(2)}`;
                                     if (isCopCurrency) {
                                         formattedAmt = `${(p.amountCop || Math.round(p.amountUsd * (sale.tasaCop || tasaCop))).toLocaleString('es-CO')} COP`;
                                     } else if (isBsCurrency) {
@@ -1375,7 +1419,7 @@ export function TransactionDetailModal({ sale, bcvRate, tasaCop, copEnabled, cop
                                         <div key={idx} className="flex justify-between items-center text-xs text-slate-650 dark:text-slate-350">
                                             <span>{label}</span>
                                             <span className="font-bold text-slate-800 dark:text-slate-200">
-                                                {formattedAmt} {p.currency !== 'USD' && <span className="text-[9px] text-slate-400 font-normal">(${p.amountUsd.toFixed(2)})</span>}
+                                                {formattedAmt} {!isInternalCredit && p.currency !== 'USD' && <span className="text-[9px] text-slate-400 font-normal">(${p.amountUsd.toFixed(2)})</span>}
                                             </span>
                                         </div>
                                     );
@@ -1384,8 +1428,8 @@ export function TransactionDetailModal({ sale, bcvRate, tasaCop, copEnabled, cop
                         </div>
                     )}
 
-                    {/* Vuelto y Notas */}
-                    {(sale.changeUsd > 0 || sale.changeBs > 0 || sale.note) && (
+                    {/* Vuelto, saldo a favor y notas */}
+                    {(sale.changeUsd > 0 || sale.changeBs > 0 || (['VENTA', 'VENTA_CASHEA'].includes(sale.tipo) && sale.vueltoParaMonedero > 0) || (sale.tipo === 'COBRO_DEUDA' && sale.saldoFavorGeneradoUsd > 0) || sale.note) && (
                         <div className="border-t border-dashed border-slate-200 dark:border-slate-800 pt-3 space-y-2">
                             {sale.changeUsd > 0 && (
                                 <div className="flex justify-between text-xs text-orange-500">
@@ -1397,6 +1441,18 @@ export function TransactionDetailModal({ sale, bcvRate, tasaCop, copEnabled, cop
                                 <div className="flex justify-between text-xs text-orange-500">
                                     <span>Vuelto entregado (Bs)</span>
                                     <span className="font-black">-${formatBs(sale.changeBs)} Bs</span>
+                                </div>
+                            )}
+                            {['VENTA', 'VENTA_CASHEA'].includes(sale.tipo) && sale.vueltoParaMonedero > 0 && (
+                                <div className={`flex justify-between text-xs ${isAnulada ? 'text-slate-400 line-through' : 'text-cyan-600 dark:text-cyan-400'}`}>
+                                    <span>{isAnulada ? 'Saldo a favor revertido' : 'Saldo a favor acreditado'}</span>
+                                    <span className="font-black">+${formatUsd(sale.vueltoParaMonedero)}</span>
+                                </div>
+                            )}
+                            {sale.tipo === 'COBRO_DEUDA' && sale.saldoFavorGeneradoUsd > 0 && (
+                                <div className={`flex justify-between text-xs ${isAnulada ? 'text-slate-400 line-through' : 'text-cyan-600 dark:text-cyan-400'}`}>
+                                    <span>{isAnulada ? 'Saldo a favor revertido' : 'Saldo a favor generado por sobrante'}</span>
+                                    <span className="font-black">+${formatUsd(sale.saldoFavorGeneradoUsd)}</span>
                                 </div>
                             )}
                             {sale.note && (

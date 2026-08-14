@@ -18,12 +18,16 @@ export function useCheckoutCalculations({
     onConfirmSale,
     cart = [],
     discountData = null,
+    saldoFavorDisponible = 0,
+    selectedCustomerId = '',
 }) {
     const [barValues, setBarValues] = useState({});
     const [changeUsdGiven, setChangeUsdGiven] = useState('');
     const [changeBsGiven, setChangeBsGiven] = useState('');
     // TIP: propina donada ("cliente deja el cambio"). Paridad con CheckoutModalPOS.
     const [isTipDonated, setIsTipDonated] = useState(false);
+    const [tipAmountUsd, setTipAmountUsd] = useState('');
+    const [isChangeCredited, setIsChangeCredited] = useState(false);
     const [tipConfirmPending, setTipConfirmPending] = useState(false);
     const [paymentWarning, setPaymentWarning] = useState(null);
     const pendingConfirmRef = useRef(null);
@@ -31,6 +35,12 @@ export function useCheckoutCalculations({
     // -- Cashea Hook Integration --
     const [casheaActive, setCasheaActive] = useState(false);
     const [casheaPercent, setCasheaPercent] = useState(60);
+
+    // El crédito aplicado pertenece al cliente seleccionado; nunca se arrastra a otro.
+    useEffect(() => {
+        setBarValues(prev => ({ ...prev, saldo_favor: '' }));
+        setIsChangeCredited(false);
+    }, [selectedCustomerId]);
 
     const safeRate = effectiveRate > 0 ? effectiveRate : 0;
     const safeTasaCop = tasaCop > 0 ? tasaCop : 0;
@@ -70,7 +80,7 @@ export function useCheckoutCalculations({
     const totalPaidUsd = useMemo(() => {
         return sumR(paymentMethods.map(m => {
             const val = CurrencyService.safeParse(barValues[m.id]);
-            if (m.currency === 'USD') return round2(val);
+            if (m.currency === 'USD' || m.currency === 'INTERNAL_CREDIT') return round2(val);
             if (m.currency === 'COP') return safeTasaCop > 0 ? divR(val, safeTasaCop) : 0;
             return safeRate > 0 ? divR(val, safeRate) : 0;
         }));
@@ -80,6 +90,7 @@ export function useCheckoutCalculations({
         return sumR(paymentMethods.map(m => {
             const val = CurrencyService.safeParse(barValues[m.id]);
             if (m.currency === 'BS') return round2(val);
+            if (m.currency === 'INTERNAL_CREDIT') return 0;
             if (m.currency === 'COP') return safeTasaCop > 0 && safeRate > 0
                 ? mulR(divR(val, safeTasaCop), safeRate)
                 : 0;
@@ -110,8 +121,20 @@ export function useCheckoutCalculations({
         if (!/^[0-9.]*$/.test(v)) return;
         const dots = v.match(/\./g);
         if (dots && dots.length > 1) return;
+
+        const method = paymentMethods.find(m => m.id === methodId);
+        if (method?.currency === 'INTERNAL_CREDIT' && v !== '') {
+            const requested = Number(v);
+            const current = CurrencyService.safeParse(barValues[methodId]);
+            const otherPaid = subR(totalPaidWithCasheaUsd, current);
+            const maxAplicable = Math.min(
+                Math.max(0, Number(saldoFavorDisponible) || 0),
+                Math.max(0, subR(cartTotalUsd, otherPaid))
+            );
+            v = String(round2(Math.min(Math.max(0, requested), maxAplicable)));
+        }
         setBarValues(prev => ({ ...prev, [methodId]: v }));
-    }, []);
+    }, [paymentMethods, barValues, totalPaidWithCasheaUsd, cartTotalUsd, saldoFavorDisponible]);
 
     const fillBar = useCallback((methodId, currency) => {
         triggerHaptic && triggerHaptic();
@@ -129,10 +152,17 @@ export function useCheckoutCalculations({
         }
 
         let val;
-        if (currency === 'USD') {
+        if (currency === 'USD' || currency === 'INTERNAL_CREDIT') {
             const currentPaidUsd = totalPaidWithCasheaUsd;
             const remUsd = Math.max(0, subR(targetUsd, currentPaidUsd));
-            val = remUsd > 0 ? String(round2(remUsd)) : null;
+            const currentCredit = CurrencyService.safeParse(barValues[methodId]);
+            const maxCredit = currency === 'INTERNAL_CREDIT'
+                ? Math.min(
+                    Math.max(0, (Number(saldoFavorDisponible) || 0) - currentCredit),
+                    remUsd,
+                )
+                : remUsd;
+            val = maxCredit > 0 ? String(round2(currentCredit + maxCredit)) : null;
         } else if (currency === 'COP') {
             const currentPaidUsd = totalPaidWithCasheaUsd;
             const remUsd = Math.max(0, subR(targetUsd, currentPaidUsd));
@@ -148,7 +178,7 @@ export function useCheckoutCalculations({
         if (val) {
             setBarValues(prev => ({ ...prev, [methodId]: val }));
         }
-    }, [baseCartTotalUsd, baseCartTotalBs, cart, discountData, safeRate, safeTasaCop, totalPaidWithCasheaUsd, totalPaidBs, casheaAmountUsd, triggerHaptic]);
+    }, [baseCartTotalUsd, baseCartTotalBs, cart, discountData, safeRate, safeTasaCop, totalPaidWithCasheaUsd, totalPaidBs, casheaAmountUsd, triggerHaptic, saldoFavorDisponible, barValues]);
 
     // ── TIP-004 (D7): moneda de la propina según la composición real del efectivo.
     // Mismo criterio que CheckoutModalPOS: se comparan magnitudes en Bs, no el
@@ -170,19 +200,41 @@ export function useCheckoutCalculations({
     const toggleTipDonated = useCallback(() => {
         if (isTipDonated) {
             setIsTipDonated(false);
+            setTipAmountUsd('');
             setTipConfirmPending(false);
             return;
         }
-        if (changeUsd > FINANCIAL_EPSILON.TIP_MAX_AUTO_USD && !tipConfirmPending) {
+        const currentPhysicalUsd = sumR(
+            Math.max(0, Number(changeUsdGiven) || 0),
+            effectiveRate > 0 ? divR(Math.max(0, Number(changeBsGiven) || 0), effectiveRate) : 0
+        );
+        const unallocatedRemainder = round2(Math.max(0, subR(changeUsd, currentPhysicalUsd)));
+        const targetTip = unallocatedRemainder > 0.001 ? unallocatedRemainder : changeUsd;
+
+        if (targetTip > FINANCIAL_EPSILON.TIP_MAX_AUTO_USD && !tipConfirmPending) {
             setTipConfirmPending(true);
             return;
         }
-        setChangeUsdGiven('');
-        setChangeBsGiven('');
+        setIsChangeCredited(false);
         setTipConfirmPending(false);
+        setTipAmountUsd(round2(targetTip).toString());
         setIsTipDonated(true);
         triggerHaptic && triggerHaptic();
-    }, [isTipDonated, tipConfirmPending, changeUsd, triggerHaptic]);
+    }, [isTipDonated, tipConfirmPending, changeUsd, changeUsdGiven, changeBsGiven, effectiveRate, triggerHaptic]);
+
+    const handleTipAmountChange = useCallback((value) => {
+        const cleanValue = String(value).replace(',', '.');
+        if (cleanValue !== '' && !/^\d*\.?\d*$/.test(cleanValue)) return;
+        const currentPhysicalUsd = sumR(
+            Math.max(0, Number(changeUsdGiven) || 0),
+            effectiveRate > 0 ? divR(Math.max(0, Number(changeBsGiven) || 0), effectiveRate) : 0
+        );
+        const maxTip = round2(Math.max(0, subR(changeUsd, currentPhysicalUsd)));
+        const amount = Math.min(Math.max(0, Number(cleanValue) || 0), maxTip > 0.001 ? maxTip : changeUsd);
+        setTipAmountUsd(cleanValue === '' ? '' : round2(amount).toString());
+        setIsTipDonated(amount > FINANCIAL_EPSILON.PAYMENT_ZERO);
+        setIsChangeCredited(false);
+    }, [changeUsd, changeUsdGiven, changeBsGiven, effectiveRate]);
 
     // TIP (T-5): apagar la propina si el vuelto desaparece, y caducar cualquier
     // confirmación pendiente cuando el monto cambia. Sin esto el flag sobrevive
@@ -191,8 +243,24 @@ export function useCheckoutCalculations({
         setTipConfirmPending(false);
         if (changeUsd <= FINANCIAL_EPSILON.PAYMENT_ZERO) {
             setIsTipDonated(false);
+            setTipAmountUsd('');
+            setIsChangeCredited(false);
         }
     }, [changeUsd]);
+
+    // Si se asigna todo el cambio a físico o caja, desactivar automáticamente la acreditación a billetera
+    useEffect(() => {
+        const cashKeptUsd = round2(Math.min(Math.max(0, Number(tipAmountUsd) || 0), changeUsd));
+        const changeToDeliverUsd = round2(Math.max(0, subR(changeUsd, cashKeptUsd)));
+        const physicalUsd = sumR(
+            Math.max(0, Number(changeUsdGiven) || 0),
+            safeRate > 0 ? divR(Math.max(0, Number(changeBsGiven) || 0), safeRate) : 0
+        );
+        const walletRemainder = round2(Math.max(0, subR(changeToDeliverUsd, physicalUsd)));
+        if (isChangeCredited && walletRemainder <= FINANCIAL_EPSILON.PAYMENT_ZERO) {
+            setIsChangeCredited(false);
+        }
+    }, [isChangeCredited, tipAmountUsd, changeUsd, changeUsdGiven, changeBsGiven, safeRate]);
 
     // ── Procesamiento final de la venta (sin validaciones) ────────────────────
     const _processPayments = useCallback(() => {
@@ -207,10 +275,11 @@ export function useCheckoutCalculations({
                     currency: m.currency,
                     amountInput: amount,
                     amountInputCurrency: m.currency,
-                    amountUsd: m.currency === 'USD' ? amount
+                    amountUsd: m.currency === 'USD' || m.currency === 'INTERNAL_CREDIT' ? amount
                         : m.currency === 'COP' ? (safeTasaCop > 0 ? divR(amount, safeTasaCop) : 0)
                         : (safeRate > 0 ? divR(amount, safeRate) : 0),
                     amountBs: m.currency === 'BS' ? amount
+                        : m.currency === 'INTERNAL_CREDIT' ? 0
                         : m.currency === 'COP' ? (safeTasaCop > 0 && safeRate > 0 ? mulR(divR(amount, safeTasaCop), safeRate) : 0)
                         : (safeRate > 0 ? mulR(amount, safeRate) : 0),
                 };
@@ -234,23 +303,28 @@ export function useCheckoutCalculations({
 
         // FIN-034: `changeUsd` y `changeBs` son el MISMO vuelto expresado en dos monedas.
         // Declarar ambos duplicaba el vuelto en el FinancialEngine.
-        // Sin desglose explícito del operador → todo el vuelto se declara en USD y el tramo Bs es 0.
         const hasExplicitSplit = Boolean(changeUsdGiven) || Boolean(changeBsGiven);
-        const splitUsd = hasExplicitSplit ? round2(CurrencyService.safeParse(changeUsdGiven)) : changeUsd;
-        const splitBs  = hasExplicitSplit ? round2(CurrencyService.safeParse(changeBsGiven))  : 0;
-        // TIP-002 (D3): propina donada ⟹ no se entrega vuelto. El umbral usa
-        // FINANCIAL_EPSILON.PAYMENT_ZERO, no `> 0`: un residuo de redondeo no es
-        // una propina (T-6).
-        const tipEfectiva = isTipDonated && changeUsd > FINANCIAL_EPSILON.PAYMENT_ZERO;
+        const cashKeptUsd = round2(Math.min(Math.max(0, Number(tipAmountUsd) || 0), changeUsd));
+        const changeToDeliverUsd = round2(Math.max(0, subR(changeUsd, cashKeptUsd)));
+        const splitUsd = hasExplicitSplit ? round2(CurrencyService.safeParse(changeUsdGiven)) : changeToDeliverUsd;
+        const splitBs  = hasExplicitSplit ? round2(CurrencyService.safeParse(changeBsGiven)) : 0;
+        const tipEfectiva = cashKeptUsd > FINANCIAL_EPSILON.PAYMENT_ZERO;
         onConfirmSale(payments, {
-            changeUsdGiven: tipEfectiva ? 0 : Math.min(splitUsd, changeUsd),
-            changeBsGiven: tipEfectiva ? 0 : Math.min(splitBs, changeBs),
+            changeUsdGiven: hasExplicitSplit
+                ? Math.min(splitUsd, changeToDeliverUsd)
+                : (isChangeCredited ? 0 : changeToDeliverUsd),
+            changeBsGiven: hasExplicitSplit
+                ? Math.min(splitBs, changeToDeliverUsd * safeRate)
+                : 0,
+            vueltoCredito: isChangeCredited,
             // TIP-001: una sola moneda canónica; amountBs lo recalcula el procesador.
             tipDonated: tipEfectiva
-                ? { amountUsd: round2(changeUsd), amountBs: 0, currency: tipCurrency }
+                ? { amountUsd: cashKeptUsd, amountBs: 0, currency: tipCurrency }
                 : null,
+            changeAllocationExplicit: hasExplicitSplit || tipEfectiva || isChangeCredited,
         });
-    }, [barValues, paymentMethods, onConfirmSale, changeUsdGiven, changeBsGiven, changeUsd, changeBs, safeRate, safeTasaCop, casheaActive, casheaAmountUsd, casheaPercent, isTipDonated, tipCurrency]);
+    }, [barValues, paymentMethods, onConfirmSale, changeUsdGiven, changeBsGiven, changeUsd, changeBs, safeRate, safeTasaCop, casheaActive, casheaAmountUsd, casheaPercent, tipAmountUsd, isChangeCredited, tipCurrency]);
+
 
     // ── Detección inteligente de errores de entrada ───────────────────────────
     const _detectWarning = useCallback(() => {
@@ -261,7 +335,7 @@ export function useCheckoutCalculations({
             if (val === 0) continue;
 
             // FIN-016: usar divR en vez de val/safeRate o val/safeTasaCop.
-            const valUsd = m.currency === 'USD' ? val
+            const valUsd = m.currency === 'USD' || m.currency === 'INTERNAL_CREDIT' ? val
                 : m.currency === 'COP' ? (safeTasaCop > 0 ? divR(val, safeTasaCop) : 0)
                 : (safeRate > 0 ? divR(val, safeRate) : 0);
             const diff = valUsd - cartTotalUsd;
@@ -366,7 +440,11 @@ export function useCheckoutCalculations({
         dismissWarning,
         // TIP: propina donada (modo básico).
         isTipDonated,
+        tipAmountUsd,
+        handleTipAmountChange,
         toggleTipDonated,
+        isChangeCredited,
+        setIsChangeCredited,
         tipConfirmPending,
         tipCurrency,
         safeRate,

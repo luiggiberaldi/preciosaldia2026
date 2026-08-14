@@ -4,6 +4,7 @@ import { supabaseCloud } from '../config/supabaseCloud';
 import { useAuthStore } from './store/useAuthStore';
 import { SUPERVISOR_SYNC_KEYS, validateSupervisorSyncDocument } from '../services/supervisorContracts';
 import { ensureSupervisorSession } from '../services/supervisorAuth';
+import { mergeLedgerEntries, rebuildCustomersFromLedger } from '../utils/customerLedger';
 import {
     buildSyncEnvelope,
     getSyncMetadataKey,
@@ -69,7 +70,7 @@ let isCloudSyncActive = false;   // Evita empujar a la nube si el dispositivo no
 const originalSetItem = localStorage.setItem.bind(localStorage);
 
 // Keys pesadas (arrays grandes con imágenes) usan debounce más largo para agrupar ediciones
-const HEAVY_KEYS = ['bodega_products_v1', 'bodega_sales_v1', 'bodega_customers_v1', 'abasto_audit_log_v1'];
+const HEAVY_KEYS = ['bodega_products_v1', 'bodega_sales_v1', 'bodega_customers_v1', 'bodega_customer_ledger_v1', 'abasto_audit_log_v1'];
 const DEBOUNCE_LIGHT_MS = 300;
 const DEBOUNCE_HEAVY_MS = 3000;
 
@@ -176,7 +177,7 @@ export const forceSyncAllPOSData = async (overrideDeviceId, forceUnconditional =
 
     try {
         const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
-        const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_accounts_v2'];
+        const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_customer_ledger_v1', 'bodega_accounts_v2'];
         for (const key of criticalKeys) {
             const val = await lf.getItem(key);
             if (val !== null) {
@@ -193,6 +194,9 @@ const STORE_SCHEMAS = {
     'bodega_products_v1': (data) => Array.isArray(data),
     'bodega_sales_v1': (data) => Array.isArray(data),
     'bodega_customers_v1': (data) => Array.isArray(data),
+    'bodega_customer_ledger_v1': (data) => Array.isArray(data) && data.every(movement => Boolean(movement?.id && movement?.customerId)
+        && Number.isFinite(Number(movement?.amountUsd)) && Number(movement.amountUsd) >= 0
+        && ['CREDIT', 'DEBIT'].includes(movement?.direction)),
     'bodega_payment_methods_v1': (data) => Array.isArray(data),
     'bodega_accounts_v2': (data) => Array.isArray(data),
     'bodega_categories_v1': (data) => Array.isArray(data),
@@ -216,6 +220,7 @@ async function _applyFromCloud(docId, collection, data) {
         }
 
         const { payload } = envelope;
+        let payloadToStore = payload;
         if (docId === 'abasto-auth-storage') return false;
 
         const metadataKey = getSyncMetadataKey(docId);
@@ -255,9 +260,25 @@ async function _applyFromCloud(docId, collection, data) {
             }));
             window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: docId, source: 'remote' } }));
         } else {
-            // Colección 'store' → IndexedDB directo, sin pasar por storageService.setItem
+            // Colección 'store' → IndexedDB directo, sin pasar por storageService.setItem.
+            // El ledger es append-only: nunca se reemplaza por un snapshot remoto.
             const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
-            await lf.setItem(docId, payload);
+            if (docId === 'bodega_customer_ledger_v1') {
+                const localLedger = await lf.getItem(docId);
+                const merged = mergeLedgerEntries(localLedger, payload);
+                payloadToStore = merged.ledger;
+                if (merged.conflicts.length > 0) {
+                    console.warn(`[CloudSync] Conflictos de ledger retenidos localmente: ${merged.conflicts.length}`);
+                }
+            }
+            await lf.setItem(docId, payloadToStore);
+            if (docId === 'bodega_customer_ledger_v1') {
+                const localCustomers = await lf.getItem('bodega_customers_v1');
+                if (Array.isArray(localCustomers)) {
+                    await lf.setItem('bodega_customers_v1', rebuildCustomersFromLedger(localCustomers, payloadToStore));
+                    window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_customers_v1', source: 'remote' } }));
+                }
+            }
 
             // Notificar a los componentes React que lean este store
             window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: docId, source: 'remote' } }));
@@ -265,7 +286,7 @@ async function _applyFromCloud(docId, collection, data) {
 
         // Update local hash to prevent periodic push from re-uploading what we just downloaded
         const hashKey = LAST_PUSH_HASH_PREFIX + docId;
-        localStorage.setItem(hashKey, quickHash(payload));
+        localStorage.setItem(hashKey, quickHash(payloadToStore));
         if (envelope.updatedAt) localStorage.setItem(metadataKey, envelope.updatedAt);
         return true;
     } finally {
@@ -380,7 +401,7 @@ export function useCloudSync(deviceId) {
                     console.log('[CloudSync] Detectado backup importado localmente. Subiendo incondicionalmente a la nube...');
                     isCloudSyncActive = true;
                     const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
-                    const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_accounts_v2'];
+                    const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_customer_ledger_v1', 'bodega_accounts_v2'];
                     for (const key of criticalKeys) {
                         const localValue = await lf.getItem(key);
                         if (localValue !== null) {
@@ -422,7 +443,7 @@ export function useCloudSync(deviceId) {
                 // ── Auto-recuperación: Purgar/subir datos locales que no llegaron a enviarse debido al bug anterior ──
                 try {
                     const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
-                    const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_accounts_v2'];
+                    const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_customer_ledger_v1', 'bodega_accounts_v2'];
                     const existingCloudKeys = new Set((docs || []).map(d => d.doc_id));
 
                     for (const key of criticalKeys) {
@@ -474,7 +495,7 @@ export function useCloudSync(deviceId) {
             if (isSyncingFromCloud || !deviceId) return;
             try {
                 const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
-                const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_accounts_v2'];
+                const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_customer_ledger_v1', 'bodega_accounts_v2'];
                 for (const key of criticalKeys) {
                     const localValue = await lf.getItem(key);
                     if (!localValue) continue;

@@ -27,6 +27,30 @@ describe('Supervisor financial contract', () => {
         expect(Number.isNaN(sale.items[0].qty)).toBe(false);
     });
 
+    it('netea cobranzas contra el fiado sin alterar el efectivo recibido', () => {
+        const breakdown = calculateSupervisorPaymentBreakdown([
+            {
+                tipo: 'VENTA_FIADA',
+                totalUsd: 10,
+                totalBs: 1000,
+                fiadoUsd: 6,
+                rate: 100,
+                payments: [{ methodId: 'efectivo_usd', currency: 'USD', amountUsd: 4, amountBs: 400 }],
+            },
+            {
+                tipo: 'COBRO_DEUDA',
+                totalUsd: 6,
+                totalBs: 600,
+                payments: [{ methodId: 'efectivo_usd', currency: 'USD', amountUsd: 6, amountBs: 600 }],
+            },
+        ], 100);
+
+        const fiado = breakdown.find(([key]) => key === 'fiado')?.[1];
+        const efectivo = breakdown.find(([key]) => key === 'efectivo_usd')?.[1];
+        expect(fiado).toMatchObject({ totalUsd: 0, totalBs: 0, isReceivable: true });
+        expect(efectivo).toMatchObject({ totalUsd: 10, totalBs: 1000 });
+    });
+
     it('usa el mismo cálculo de margen del FinancialEngine cuando el item tiene precio', () => {
         const result = calculateSupervisorSalesMetrics([
             {
@@ -41,6 +65,23 @@ describe('Supervisor financial contract', () => {
         expect(result.costUsd).toBe(8);
         expect(result.profitUsd).toBe(12);
         expect(result.profitBs).toBe(1200);
+    });
+
+    it('separa saldo aplicado y saldo generado sin llevarlo al efectivo', () => {
+        const breakdown = calculateSupervisorPaymentBreakdown([
+            {
+                tipo: 'VENTA', totalUsd: 5, totalBs: 500, vueltoParaMonedero: 5,
+                payments: [{ methodId: 'efectivo_usd', currency: 'USD', amountUsd: 10 }],
+            },
+            {
+                tipo: 'VENTA', totalUsd: 5, totalBs: 500,
+                payments: [{ methodId: 'saldo_favor', currency: 'INTERNAL_CREDIT', amountUsd: 5 }],
+            },
+        ], 100);
+        expect(breakdown).toEqual(expect.arrayContaining([
+            expect.arrayContaining(['saldo_favor_generado', expect.objectContaining({ totalUsd: 5, isWalletCredit: true, currency: 'INTERNAL_CREDIT' })]),
+            expect.arrayContaining(['saldo_favor', expect.objectContaining({ totalUsd: 5, isInternalCredit: true })]),
+        ]));
     });
 
     it('usa el desglose canónico e incluye apertura COP sin romper pagos', () => {

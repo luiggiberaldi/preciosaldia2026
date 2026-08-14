@@ -173,8 +173,11 @@ function TransactionRow({ sale: s, bcvRate, isExpanded, onToggle, onVoidSale, on
                             <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1">Detalle de Pago</p>
                             {s.payments.map((p, i) => {
                                 const pIsCop = p.currency === 'COP';
-                                const isBs = !pIsCop && (p.currency ? p.currency !== 'USD' : (p.methodId?.includes('_bs') || p.methodId === 'pago_movil'));
-                                const val = pIsCop
+                                const pIsInternalCredit = p.methodId === 'saldo_favor' || p.currency === 'INTERNAL_CREDIT' || p.isInternalCredit;
+                                const isBs = !pIsCop && !pIsInternalCredit && (p.currency ? p.currency !== 'USD' : (p.methodId?.includes('_bs') || p.methodId === 'pago_movil'));
+                                const val = pIsInternalCredit
+                                    ? 'Crédito interno $' + (p.amountUsd || 0).toFixed(2)
+                                    : pIsCop
                                     ? 'COP ' + (p.amountInput || (p.amountUsd * (s.tasaCop || tasaCop || 1))).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                                     : isBs
                                     ? 'Bs ' + formatBs(p.amountBs || (p.amountUsd * (s.rate || bcvRate)))
@@ -200,12 +203,22 @@ function TransactionRow({ sale: s, bcvRate, isExpanded, onToggle, onVoidSale, on
                             <span>Ref: {formatBs(s.totalBs)} Bs @ {formatBs(s.rate || bcvRate)}</span>
                             {s.tasaCop > 0 && <span>COP: {(s.totalCop || (s.totalUsd * s.tasaCop)).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} @ {s.tasaCop}</span>}
                         </div>
-                        {s.changeUsd > 0 && (
-                                            <div className="flex items-center gap-1 self-start mt-0.5 bg-orange-50 dark:bg-orange-900/20 text-orange-500 dark:text-orange-400 font-bold px-1.5 py-0.5 rounded-md border border-orange-100 dark:border-orange-800/40 text-[10px]">
-                                                <CornerDownLeft size={10} />
-                                                <span>−${s.changeUsd.toFixed(2)}</span>
-                                            </div>
-                                        )}
+                        {['VENTA', 'VENTA_CASHEA'].includes(s.tipo) && s.vueltoParaMonedero > 0 && (
+                            <div className={`flex items-center gap-1 self-start mt-0.5 bg-cyan-50 dark:bg-cyan-950/30 text-cyan-700 dark:text-cyan-300 font-bold px-1.5 py-0.5 rounded-md border border-cyan-200 dark:border-cyan-800/40 text-[10px] ${isCanceled ? 'line-through opacity-70' : ''}`}>
+                                <span>+${s.vueltoParaMonedero.toFixed(2)} saldo a favor acreditado</span>
+                            </div>
+                        )}
+                        {(s.changeUsd > 0 || s.changeBs > 0) && (
+                            <div className="flex items-center gap-1 self-start mt-0.5 bg-orange-50 dark:bg-orange-900/20 text-orange-500 dark:text-orange-400 font-bold px-1.5 py-0.5 rounded-md border border-orange-100 dark:border-orange-800/40 text-[10px]">
+                                <CornerDownLeft size={10} />
+                                <span>Vuelto entregado: {s.changeUsd > 0 ? `$${s.changeUsd.toFixed(2)}` : `Bs ${formatBs(s.changeBs)}`}</span>
+                            </div>
+                        )}
+                        {s.tipDonated && s.tipDonated.amountUsd > 0 && (
+                            <div className="flex items-center gap-1 self-start mt-0.5 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 font-bold px-1.5 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800/40 text-[10px]">
+                                <span>Cambio dejado en caja: +${s.tipDonated.amountUsd.toFixed(2)}</span>
+                            </div>
+                        )}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2 mt-2">
@@ -355,8 +368,11 @@ export default function ReportsMetricsTab({
                         // TIP-005 (D1): la propina no es un método de pago. Ver
                         // DashboardPaymentBreakdown.jsx para el razonamiento completo.
                         const fiadoMethods = allEntries.filter(([method, d]) => (d.currency === 'FIADO' || method === 'cashea') && !d.isChange && !d.isTip);
+                        const internalCreditMethods = allEntries.filter(([, d]) => d.isInternalCredit || d.currency === 'INTERNAL_CREDIT');
+                        const internalCreditUsed = internalCreditMethods.filter(([, d]) => !d.isWalletCredit);
+                        const internalCreditGenerated = internalCreditMethods.filter(([, d]) => d.isWalletCredit);
                         const bsMethods    = allEntries.filter(([, d]) => (d.currency === 'BS' || (!d.currency)) && !d.isChange && !d.isTip);
-                        const usdMethods   = allEntries.filter(([method, d]) => d.currency === 'USD' && method !== 'cashea' && !d.isChange && !d.isTip);
+                        const usdMethods   = allEntries.filter(([method, d]) => d.currency === 'USD' && method !== 'cashea' && !d.isChange && !d.isTip && !d.isInternalCredit);
                         const copMethods   = allEntries.filter(([, d]) => d.currency === 'COP' && !d.isChange && !d.isTip);
                         const vueltoBs     = allEntries.filter(([, d]) => d.isChange && d.currency === 'BS');
                         const vueltoUsd    = allEntries.filter(([, d]) => d.isChange && d.currency === 'USD');
@@ -371,13 +387,14 @@ export default function ReportsMetricsTab({
                         const netoUsd = subtotalUsd - totalVueltoUsd;
 
                         const toBsEquiv = (data) => {
+                            if (data.currency === 'INTERNAL_CREDIT') return 0;
                             if (data.currency === 'USD' || data.currency === 'FIADO') return data.total * bcvRate;
                             if (data.currency === 'COP') return tasaCop > 0 ? (data.total / tasaCop) * bcvRate : 0;
                             return data.total;
                         };
 
                         const grandTotalBsEquiv = allEntries
-                            .filter(([, d]) => !d.isChange && !d.isTip)
+                            .filter(([, d]) => !d.isChange && !d.isTip && !d.isInternalCredit)
                             .reduce((s, [, d]) => s + toBsEquiv(d), 0);
 
                         const renderMethod = ([method, data]) => {
@@ -387,7 +404,7 @@ export default function ReportsMetricsTab({
                             const pct = grandTotalBsEquiv > 0 ? (bsEquiv / grandTotalBsEquiv * 100) : 0;
 
                             let displayAmount = `${formatBs(data.total)} Bs`;
-                            if (data.currency === 'FIADO') displayAmount = `USD ${data.total.toFixed(2)}`;
+                            if (data.currency === 'FIADO' || data.currency === 'INTERNAL_CREDIT') displayAmount = `USD ${data.total.toFixed(2)}`;
                             else if (data.currency === 'USD') displayAmount = `USD ${data.total.toFixed(2)}`;
                             else if (data.currency === 'COP') displayAmount = `${fmtCop(data.total)} COP`;
 
@@ -400,13 +417,13 @@ export default function ReportsMetricsTab({
                                         </span>
                                         <div className="text-right flex items-center gap-2">
                                             <span className="font-bold text-slate-700 dark:text-white">{displayAmount}</span>
-                                            {data.currency !== 'FIADO' && <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium w-8 text-right">{pct.toFixed(0)}%</span>}
+                                            {data.currency !== 'FIADO' && !data.isInternalCredit && <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium w-8 text-right">{pct.toFixed(0)}%</span>}
                                             {data.currency === 'FIADO' && (
                                                 <div className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">{formatBs(bsEquiv)} Bs</div>
                                             )}
                                         </div>
                                     </div>
-                                    {data.currency !== 'FIADO' && (
+                                    {data.currency !== 'FIADO' && !data.isInternalCredit && (
                                         <div className="w-full h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                                             <div className="h-full bg-gradient-to-r from-brand via-cyan-400 to-teal-400 rounded-full transition-all" style={{ width: `${Math.min(pct, 100)}%` }} />
                                         </div>
@@ -442,6 +459,20 @@ export default function ReportsMetricsTab({
                                 <h3 className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-4">
                                     Medios de Pago
                                 </h3>
+
+                                {internalCreditMethods.length > 0 && (
+                                    <div className="mb-5">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <span className="text-[11px] font-bold text-emerald-500 uppercase tracking-wider">Crédito interno</span>
+                                            <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">
+                                                {internalCreditUsed.length > 0 && `USD ${internalCreditUsed.reduce((s, [,d]) => s + d.total, 0).toFixed(2)} aplicado`}
+                                                {internalCreditUsed.length > 0 && internalCreditGenerated.length > 0 && ' · '}
+                                                {internalCreditGenerated.length > 0 && `USD ${internalCreditGenerated.reduce((s, [,d]) => s + d.total, 0).toFixed(2)} generado`}
+                                            </span>
+                                        </div>
+                                        <div className="space-y-4">{internalCreditMethods.map(e => renderMethod(e))}</div>
+                                    </div>
+                                )}
 
                                 {fiadoMethods.length > 0 && (
                                     <div className="mb-5">

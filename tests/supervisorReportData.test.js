@@ -42,6 +42,21 @@ describe('Supervisor report data', () => {
         expect(result.tipsLeft.BS).toBe(2);
     });
 
+    it('no suma el saldo generado a favor como efectivo esperado', () => {
+        const result = calculateSupervisorCashSummary([{
+            tipo: 'VENTA',
+            totalUsd: 5,
+            totalBs: 500,
+            vueltoParaMonedero: 5,
+            payments: [{ methodId: 'efectivo_usd', currency: 'USD', amountUsd: 10 }],
+            changeUsd: 0,
+            changeBs: 0,
+        }], 100);
+
+        expect(result.expected).toEqual({ USD: 10, BS: 0, COP: 0 });
+        expect(result.changeGiven).toEqual({ USD: 0, BS: 0, COP: 0 });
+    });
+
     it('usa el arqueo guardado del cierre seleccionado sin recalcularlo con la tasa actual', () => {
         const cash = buildSupervisorCloseCashSummary({
             cierreId: 'close-1',

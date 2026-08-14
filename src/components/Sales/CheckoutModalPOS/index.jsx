@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { showToast } from '../../Toast';
 import { useProductContext } from '../../../context/ProductContext';
-import { round2, subR, mulR, divR, sumR } from '../../../utils/dinero';
+import { round2, subR, mulR, divR, sumR, calculateChangeRemainder } from '../../../utils/dinero';
 import { FinancialEngine } from '../../../core/FinancialEngine';
 import { FINANCIAL_EPSILON } from '../../../utils/securityConstants';
 
@@ -12,9 +12,11 @@ import { useClientWallet } from './hooks/useClientWallet';
 
 // Subcomponentes
 import PaymentHeader from './components/PaymentHeader';
+import CheckoutCustomerPicker from '../CheckoutCustomerPicker';
 import PaymentLeftColumn from './components/PaymentLeftColumn';
 import PaymentInputs from './components/PaymentInputs';
 import PaymentFooter from './components/PaymentFooter';
+import ChangeConfirmationModal from './components/ChangeConfirmationModal';
 import WalletSection from './components/WalletSection';
 
 /**
@@ -47,7 +49,7 @@ export default function CheckoutModalPOS({
     const { setCheckoutMode } = useProductContext();
 
     // Separar métodos por tipo para los inputs
-    const metodosActivos = paymentMethods.filter(m => !m.disabled && m.enabled !== false);
+    const metodosActivos = paymentMethods.filter(m => !m.disabled && m.enabled !== false && !m.isInternalCredit && !m.isVirtual);
     const metodosDivisa = metodosActivos.filter(m => m.currency === 'USD');
     const metodosBs = metodosActivos.filter(m => m.currency === 'BS').sort((a, b) => {
         const isCashA = a.label?.toLowerCase().includes('efectivo');
@@ -98,9 +100,18 @@ export default function CheckoutModalPOS({
 
     // Propagar cambio de cliente al exterior
     const handleSetCliente = useCallback((id) => {
+        if (id !== clienteSeleccionado) {
+            setIsChangeCredited(false);
+            setIsTipDonated(false);
+            setTipConfirmPending(false);
+            setTipAmountUsd('');
+            setDistVueltoUSD('');
+            setDistVueltoBS('');
+            setShowMobileChangeDetails(false);
+        }
         setClienteSeleccionado(id);
         setSelectedCustomerId(id);
-    }, [setSelectedCustomerId]);
+    }, [clienteSeleccionado, setSelectedCustomerId]);
 
     // Cashea
     const casheaEnabled = localStorage.getItem('cashea_enabled') === 'true';
@@ -116,6 +127,15 @@ export default function CheckoutModalPOS({
     const [isTipDonated, setIsTipDonated] = useState(false);
     // TIP-002 (D6): propinas grandes exigen una segunda pulsación.
     const [tipConfirmPending, setTipConfirmPending] = useState(false);
+    // Monto del vuelto que el cliente deja en caja. Puede ser parcial.
+    const [tipAmountUsd, setTipAmountUsd] = useState('');
+    // En móvil se muestra una sola familia de moneda a la vez para reducir
+    // desplazamiento y evitar errores de captura. Los valores no se pierden al
+    // cambiar de pestaña.
+    const [mobilePaymentCurrency, setMobilePaymentCurrency] = useState('USD');
+    const [showMobileChangeDetails, setShowMobileChangeDetails] = useState(false);
+    // La distribución se confirma en un segundo paso únicamente cuando existe vuelto.
+    const [changeConfirmation, setChangeConfirmation] = useState(null);
 
     // Detectar si hay pagos ingresados en Bolívares o si un input de Bolívares está seleccionado
     const isBsPaymentActive = useMemo(() => {
@@ -168,6 +188,87 @@ export default function CheckoutModalPOS({
         tasaCop,
     });
 
+    // El resto del vuelto, después de lo dejado en caja, puede entregarse
+    // físicamente o acreditarse a la billetera.
+    const cashKeptUsd = round2(Math.min(
+        Math.max(0, parseFloat(tipAmountUsd) || 0),
+        cambioUSD
+    ));
+    const changeToDeliverUsd = round2(Math.max(0, subR(cambioUSD, cashKeptUsd)));
+    const declaredPhysicalUsd = round2(Math.min(
+        changeToDeliverUsd,
+        Math.max(0, parseFloat(distVueltoUSD) || 0) + divR(Math.max(0, parseFloat(distVueltoBS) || 0), tasaSegura)
+    ));
+    const walletRemainderUsd = round2(Math.max(0, subR(changeToDeliverUsd, declaredPhysicalUsd)));
+    const hasPhysicalDistribution = distVueltoUSD !== '' || distVueltoBS !== '';
+    const plannedPhysicalUsd = hasPhysicalDistribution
+        ? declaredPhysicalUsd
+        : (isChangeCredited ? 0 : changeToDeliverUsd);
+    const plannedWalletUsd = isChangeCredited ? walletRemainderUsd : 0;
+    const unallocatedChangeUsd = round2(Math.max(0, subR(
+        changeToDeliverUsd,
+        sumR(plannedPhysicalUsd, plannedWalletUsd)
+    )));
+    const changeDestinationSelected = changeToDeliverUsd <= FINANCIAL_EPSILON.PAYMENT_ZERO
+        || hasPhysicalDistribution
+        || isChangeCredited;
+    const changeAllocationComplete = changeDestinationSelected
+        && unallocatedChangeUsd <= FINANCIAL_EPSILON.PAYMENT_ZERO;
+    // Referencia dinámica para el cajero: muestra el remanente del mismo vuelto
+    // en ambas monedas, sin escribir automáticamente en el otro campo.
+    const changeRemainder = calculateChangeRemainder(
+        changeToDeliverUsd,
+        distVueltoUSD,
+        distVueltoBS,
+        tasaSegura,
+    );
+    // Cada moneda solo puede ocupar el espacio que deja la otra. Así nunca se
+    // puede declarar $2 + Bs 2.085 cuando el vuelto real es $2,88.
+    const maxVueltoUSD = round2(Math.max(0, subR(
+        changeToDeliverUsd,
+        divR(Math.max(0, parseFloat(distVueltoBS) || 0), tasaSegura),
+    )));
+    const maxVueltoBS = round2(Math.max(0, mulR(
+        Math.max(0, subR(changeToDeliverUsd, Math.max(0, parseFloat(distVueltoUSD) || 0))),
+        tasaSegura,
+    )));
+
+    // Corrige también estados antiguos que pudieran haber quedado sobreasignados
+    // por la versión anterior de la interfaz.
+    useEffect(() => {
+        const currentUsd = Math.max(0, parseFloat(distVueltoUSD) || 0);
+        const currentBs = Math.max(0, parseFloat(distVueltoBS) || 0);
+        if (currentBs > maxVueltoBS + 0.01) {
+            setDistVueltoBS(maxVueltoBS.toString());
+        } else if (currentUsd > maxVueltoUSD + 0.01) {
+            setDistVueltoUSD(maxVueltoUSD.toString());
+        }
+    }, [distVueltoUSD, distVueltoBS, maxVueltoUSD, maxVueltoBS]);
+
+    // Si se asigna todo el cambio a físico o caja, desactivar automáticamente la acreditación a billetera
+    useEffect(() => {
+        if (isChangeCredited && walletRemainderUsd <= FINANCIAL_EPSILON.PAYMENT_ZERO) {
+            setIsChangeCredited(false);
+        }
+    }, [isChangeCredited, walletRemainderUsd]);
+
+    // Límite máximo para propina / dejar en caja respetando el cambio físico ya asignado
+    const declaredPhysicalWithoutTip = round2(
+        Math.max(0, parseFloat(distVueltoUSD) || 0) +
+        divR(Math.max(0, parseFloat(distVueltoBS) || 0), tasaSegura)
+    );
+    const maxTipUsd = round2(Math.max(0, subR(cambioUSD, declaredPhysicalWithoutTip)));
+
+    const handleTipAmountChange = (valor) => {
+        const cleanVal = String(valor).replace(',', '.');
+        if (cleanVal !== '' && !/^\d*\.?\d*$/.test(cleanVal)) return;
+        const availableMax = maxTipUsd > 0.001 ? maxTipUsd : cambioUSD;
+        const amount = Math.min(Math.max(0, parseFloat(cleanVal) || 0), availableMax);
+        setTipAmountUsd(cleanVal === '' ? '' : amount.toString());
+        setIsTipDonated(amount > FINANCIAL_EPSILON.PAYMENT_ZERO);
+        setIsChangeCredited(false);
+    };
+
     const handleVueltoDistChange = (moneda, valor) => {
         let cleanVal = valor.replace(',', '.');
         if (cleanVal !== '' && !/^\d*\.?\d*$/.test(cleanVal)) return;
@@ -175,26 +276,28 @@ export default function CheckoutModalPOS({
         const valNum = parseFloat(cleanVal) || 0;
         
         if (moneda === 'usd') {
-            const usdMax = round2(Math.min(valNum, cambioUSD));
-            if (valNum > cambioUSD) {
-                showToast(`El vuelto total es de $${cambioUSD.toFixed(2)}`, 'warning');
+            const usdMax = round2(Math.min(valNum, maxVueltoUSD));
+            if (valNum > maxVueltoUSD) {
+                showToast(`Con el monto en Bs actual, solo quedan $${maxVueltoUSD.toFixed(2)} para entregar en dólares.`, 'warning');
             }
             setDistVueltoUSD(cleanVal === '' ? '' : usdMax.toString());
             
-            const restUsd = round2(Math.max(0, subR(cambioUSD, usdMax)));
-            const restBs = round2(mulR(restUsd, tasaSegura));
-            setDistVueltoBS(restUsd > 0.001 ? Math.round(restBs).toString() : '');
+            const totalPhysical = sumR(usdMax, divR(Math.max(0, parseFloat(distVueltoBS) || 0), tasaSegura));
+            if (changeToDeliverUsd - totalPhysical <= 0.009) {
+                setIsChangeCredited(false);
+            }
         } else {
-            const maxBs = round2(mulR(cambioUSD, tasaSegura));
+            const maxBs = maxVueltoBS;
             const bsMax = round2(Math.min(valNum, maxBs));
             if (valNum > maxBs) {
                 showToast(`El vuelto total en bolívares es Bs ${Math.round(maxBs).toLocaleString('es-VE')}`, 'warning');
             }
             setDistVueltoBS(cleanVal === '' ? '' : bsMax.toString());
             
-            const restBsInUsd = divR(bsMax, tasaSegura);
-            const restUsd = round2(Math.max(0, subR(cambioUSD, restBsInUsd)));
-            setDistVueltoUSD(restUsd > 0.001 ? restUsd.toFixed(2) : '');
+            const totalPhysical = sumR(Math.max(0, parseFloat(distVueltoUSD) || 0), divR(bsMax, tasaSegura));
+            if (changeToDeliverUsd - totalPhysical <= 0.009) {
+                setIsChangeCredited(false);
+            }
         }
     };
     const handleCreditChange = () => {
@@ -202,6 +305,13 @@ export default function CheckoutModalPOS({
             showToast('Selecciona un cliente para abonar el vuelto a cuenta', 'warning');
             return;
         }
+        if (walletRemainderUsd <= FINANCIAL_EPSILON.PAYMENT_ZERO) {
+            showToast('No queda vuelto para acreditar: el resto ya está en caja o fue asignado como vuelto físico.', 'warning');
+            return;
+        }
+        // El resto, después de lo dejado en caja y del desglose físico,
+        // va a la billetera. Se conservan los campos físicos para permitir
+        // combinaciones: caja + vuelto físico + saldo a favor.
         setIsChangeCredited(true);
     };
 
@@ -227,22 +337,25 @@ export default function CheckoutModalPOS({
     const toggleTipDonated = () => {
         if (isTipDonated) {
             setIsTipDonated(false);
+            setTipAmountUsd('');
             setTipConfirmPending(false);
             return;
         }
-        if (cambioUSD > FINANCIAL_EPSILON.TIP_MAX_AUTO_USD && !tipConfirmPending) {
+        // El monto a asignar a caja es el resto no distribuido físicamente
+        const targetTip = maxTipUsd > 0.001 ? maxTipUsd : cambioUSD;
+
+        if (targetTip > FINANCIAL_EPSILON.TIP_MAX_AUTO_USD && !tipConfirmPending) {
             setTipConfirmPending(true);
             showToast(
-                `Propina de $${cambioUSD.toFixed(2)}. Pulsa de nuevo para confirmar.`,
+                `Propina de $${targetTip.toFixed(2)}. Pulsa de nuevo para confirmar.`,
                 'warning'
             );
             return;
         }
-        // Donar el vuelto y repartirlo a la vez es contradictorio: se limpia.
-        setDistVueltoUSD('');
-        setDistVueltoBS('');
+        
         setIsChangeCredited(false);
         setTipConfirmPending(false);
+        setTipAmountUsd(targetTip.toFixed(2));
         setIsTipDonated(true);
         triggerHaptic && triggerHaptic();
     };
@@ -252,6 +365,9 @@ export default function CheckoutModalPOS({
         if (cambioUSD <= 0) {
             setDistVueltoUSD('');
             setDistVueltoBS('');
+            setTipAmountUsd('');
+            setIsTipDonated(false);
+            setShowMobileChangeDetails(false);
         }
     }, [cambioUSD]);
 
@@ -261,6 +377,7 @@ export default function CheckoutModalPOS({
     useEffect(() => {
         if (cambioUSD <= FINANCIAL_EPSILON.PAYMENT_ZERO) {
             setIsTipDonated(false);
+            setTipAmountUsd('');
             setTipConfirmPending(false);
         }
     }, [cambioUSD]);
@@ -271,10 +388,22 @@ export default function CheckoutModalPOS({
         setTipConfirmPending(false);
     }, [cambioUSD]);
 
+    // Mantener una pestaña válida si la configuración no tiene USD.
+    useEffect(() => {
+        const available = [
+            metodosDivisaNorm.length > 0 && 'USD',
+            metodosBsNorm.length > 0 && 'BS',
+            metodosCopNorm.length > 0 && 'COP',
+        ].filter(Boolean);
+        if (available.length > 0 && !available.includes(mobilePaymentCurrency)) {
+            setMobilePaymentCurrency(available[0]);
+        }
+    }, [metodosDivisaNorm.length, metodosBsNorm.length, metodosCopNorm.length, mobilePaymentCurrency]);
+
     // ─── WALLET ─────────────────────────────────────────────
     const { proyeccion } = useClientWallet(
         clienteSeleccionado, customers, modo, cambioUSD,
-        isChangeCredited, distVueltoUSD, distVueltoBS, tasaSegura
+        isChangeCredited, distVueltoUSD, distVueltoBS, tasaSegura, cashKeptUsd
     );
 
     const selectedCustomer = customers.find(c => c.id === clienteSeleccionado);
@@ -346,6 +475,14 @@ export default function CheckoutModalPOS({
             }
             if (modo === 'credito' && !clienteSeleccionado) {
                 showToast('Selecciona un cliente para vender a crédito', 'warning');
+                return;
+            }
+            // En una venta fiada, pagar más que el total no es un abono válido:
+            // el excedente no debe desaparecer ni convertirse silenciosamente en deuda.
+            // Cambia a Contado para entregar/acreditar el vuelto, o usa Cartera > Abono
+            // si la intención era pagar una deuda anterior.
+            if (modo === 'credito' && cambioUSD > 0.01) {
+                showToast(`El pago excede la venta en $${cambioUSD.toFixed(2)}. Cambia a Contado para gestionar el vuelto.`, 'warning');
                 return;
             }
             if (parseFloat(pagoSaldoFavor || 0) > 0 && !clienteSeleccionado) {
@@ -422,13 +559,17 @@ export default function CheckoutModalPOS({
             const hasExplicitSplit = distVueltoUSD !== '' || distVueltoBS !== '';
             // TIP-002 (D3): propina donada ⟹ no se entrega vuelto. El procesador
             // lo vuelve a forzar, pero se manda coherente desde aquí.
-            const tipEfectiva = isTipDonated && cambioUSD > FINANCIAL_EPSILON.PAYMENT_ZERO;
-            onConfirmSale(payments, {
+            const tipEfectiva = isTipDonated && cashKeptUsd > FINANCIAL_EPSILON.PAYMENT_ZERO;
+            const saleOptions = {
                 // FIN-034: si el operador tocó cualquiera de los dos campos de desglose,
                 // se respetan tal cual (el vacío vale 0). El botón "Todo" del campo Bs deja
                 // distVueltoUSD en '' — leerlo como "no especificado" duplicaba el vuelto.
-                changeUsdGiven: tipEfectiva ? 0 : (hasExplicitSplit ? (parseFloat(distVueltoUSD) || 0) : cambioUSD),
-                changeBsGiven: tipEfectiva ? 0 : (hasExplicitSplit ? (parseFloat(distVueltoBS) || 0) : 0),
+                changeUsdGiven: hasExplicitSplit
+                    ? (parseFloat(distVueltoUSD) || 0)
+                    : (isChangeCredited ? 0 : changeToDeliverUsd),
+                changeBsGiven: hasExplicitSplit
+                    ? (parseFloat(distVueltoBS) || 0)
+                    : 0,
                 esCredito: modo === 'credito',
                 clienteId: clienteSeleccionado || null,
                 esCashea: casheaActive,
@@ -436,10 +577,19 @@ export default function CheckoutModalPOS({
                 // TIP-001: una sola moneda canónica. amountUsd es el monto real;
                 // amountBs lo recalcula el procesador si la moneda nativa es Bs.
                 tipDonated: tipEfectiva
-                    ? { amountUsd: round2(cambioUSD), amountBs: 0, currency: tipCurrency }
+                    ? { amountUsd: cashKeptUsd, amountBs: tipCurrency === 'BS' ? round2(mulR(cashKeptUsd, tasaSegura)) : 0, currency: tipCurrency }
                     : null,
-            }, imprimir);
+                changeAllocationExplicit: hasExplicitSplit || tipEfectiva || isChangeCredited,
+            };
 
+            // Si hay vuelto, se revisa la distribución en un modal final. No se
+            // registra nada hasta que el cajero confirme explícitamente.
+            if (cambioUSD > FINANCIAL_EPSILON.PAYMENT_ZERO) {
+                setChangeConfirmation({ payments, saleOptions, imprimir });
+                return;
+            }
+
+            onConfirmSale(payments, saleOptions, imprimir);
             triggerHaptic && triggerHaptic();
         } catch (err) {
             console.error('Error al procesar pago POS:', err);
@@ -449,8 +599,8 @@ export default function CheckoutModalPOS({
 
     const deudaCliente = modo === 'credito' ? faltaPorPagar : 0;
     // TIP: si el cliente dona el vuelto, no hay nada que repartir → siempre válido.
-    const isVueltoValido = cambioUSD < 0.001 || isTipDonated || (
-        parseFloat(distVueltoUSD || 0) + parseFloat(distVueltoBS || 0) / tasaSegura <= cambioUSD + 0.001
+    const isVueltoValido = changeToDeliverUsd < 0.001 || (
+        parseFloat(distVueltoUSD || 0) + parseFloat(distVueltoBS || 0) / tasaSegura <= changeToDeliverUsd + 0.001
     );
 
     // Switch rápido al modo básico
@@ -467,14 +617,13 @@ export default function CheckoutModalPOS({
     }, [casheaActive, modo, setModo]);
 
     return (
-        <div className="fixed inset-0 bg-black/40 dark:bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 bg-black/40 dark:bg-black/60 flex items-center justify-center z-50 p-0 sm:p-4 backdrop-blur-sm animate-in fade-in duration-200">
             <div
                 role="dialog"
                 aria-modal="true"
                 aria-label="Modal de pago profesional"
-                className="bg-white dark:bg-slate-950 w-full max-w-5xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-in zoom-in-95 duration-200"
+                className="bg-white dark:bg-slate-950 w-full max-w-6xl h-[100dvh] sm:h-auto rounded-none sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[100dvh] sm:max-h-[95vh] animate-in zoom-in-95 duration-200"
             >
-                {/* Header */}
                 <PaymentHeader
                     modo={modo}
                     setModo={setModo}
@@ -483,11 +632,9 @@ export default function CheckoutModalPOS({
                     tasa={effectiveRate}
                     casheaActive={casheaActive}
                 />
-
-                {/* Body — dos columnas en lg, colapsable en mobile */}
-                <div className="flex flex-col lg:flex-row flex-1 overflow-y-auto lg:overflow-hidden">
-                    {/* Columna Izquierda */}
+                <div className="flex flex-col lg:flex-row flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
                     <PaymentLeftColumn
+                        className="order-2 lg:order-1"
                         totalUSD={dynamicCartTotals.totalUsd}
                         totalBS={dynamicCartTotals.totalBs}
                         discountData={discountData}
@@ -510,6 +657,19 @@ export default function CheckoutModalPOS({
                         setIsChangeCredited={setIsChangeCredited}
                         isTipDonated={isTipDonated}
                         toggleTipDonated={toggleTipDonated}
+                        tipAmountUsd={tipAmountUsd}
+                        handleTipAmountChange={handleTipAmountChange}
+                        cashKeptUsd={cashKeptUsd}
+                        changeToDeliverUsd={changeToDeliverUsd}
+                        changeDestinationSelected={changeDestinationSelected}
+                        walletRemainderUsd={walletRemainderUsd}
+                        remainingChangeUsd={changeRemainder.remainingUsd}
+                        remainingChangeBs={changeRemainder.remainingBs}
+                        maxVueltoUSD={maxVueltoUSD}
+                        maxVueltoBS={maxVueltoBS}
+                        maxTipUsd={maxTipUsd}
+                        showMobileChangeDetails={showMobileChangeDetails}
+                        setShowMobileChangeDetails={setShowMobileChangeDetails}
                         tipConfirmPending={tipConfirmPending}
                         tipCurrency={tipCurrency}
                         deudaCliente={deudaCliente}
@@ -523,56 +683,67 @@ export default function CheckoutModalPOS({
                         casheaAmountUsd={casheaAmountUsd}
                         effectiveRate={effectiveRate}
                     />
-
-                    {/* Columna Derecha — inputs */}
-                    <div className="flex-1 flex flex-col bg-white dark:bg-slate-950 overflow-hidden">
-                        <div className="flex-1 overflow-y-auto p-5">
-                            {/* Saldo a Favor */}
-                            <WalletSection
-                                cliente={selectedCustomer}
-                                totalPagadoUSD={totalPagadoUSD}
-                                tasaSegura={tasaSegura}
-                                totalConIGTF={dynamicCartTotals.totalUsd}
-                                casheaAmountUsd={casheaAmountUsd}
-                                pagoSaldoFavor={pagoSaldoFavor}
-                                setPagoSaldoFavor={setPagoSaldoFavor}
-                            />
-
-                            {/* Inputs de pago */}
-                            <PaymentInputs
-                                metodosDivisa={metodosDivisaNorm}
-                                metodosBs={metodosBsNorm}
-                                metodosCop={metodosCopNorm}
-                                pagos={pagos}
-                                handleInputChange={handleInputChange}
-                                llenarSaldo={llenarSaldo}
-                                referencias={referencias}
-                                handleRefChange={handleRefChange}
-                                inputRefs={inputRefs}
-                                handleInputKeyDown={handleInputKeyDown}
-                                tasa={tasaSegura}
-                                sumarBillete={sumarBillete}
-                                isTouch={false}
-                                onFocusInput={(id) => { setActiveInputId(id); setActiveInputType('amount'); }}
-                                activeInputId={activeInputId}
-                                onFocusRef={(id) => { setActiveInputId(id); setActiveInputType('ref'); }}
-                                copEnabled={copEnabled}
-                            />
+                    <div className="order-1 lg:order-2 flex-1 min-h-0 flex flex-col bg-white dark:bg-slate-950 overflow-hidden">
+                        <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-5 pb-5">
+                            <div className="lg:hidden mb-3">
+                                <CheckoutCustomerPicker customers={customers} selectedCustomerId={clienteSeleccionado} setSelectedCustomerId={handleSetCliente} effectiveRate={effectiveRate} onCreateCustomer={onCreateCustomer} />
+                            </div>
+                            <WalletSection cliente={selectedCustomer} totalPagadoUSD={totalPagadoUSD} tasaSegura={tasaSegura} totalConIGTF={dynamicCartTotals.totalUsd} casheaAmountUsd={casheaAmountUsd} pagoSaldoFavor={pagoSaldoFavor} setPagoSaldoFavor={setPagoSaldoFavor} />
+                            <div className="lg:hidden mb-3 flex gap-1.5 overflow-x-auto pb-1" role="tablist" aria-label="Moneda del pago">
+                                {[
+                                    metodosDivisaNorm.length > 0 && { id: 'USD', label: 'Dólares' },
+                                    metodosBsNorm.length > 0 && { id: 'BS', label: 'Bolívares' },
+                                    metodosCopNorm.length > 0 && { id: 'COP', label: 'COP' },
+                                ].filter(Boolean).map(option => (
+                                    <button
+                                        key={option.id}
+                                        type="button"
+                                        role="tab"
+                                        aria-selected={mobilePaymentCurrency === option.id}
+                                        tabIndex={mobilePaymentCurrency === option.id ? 0 : -1}
+                                        onClick={() => setMobilePaymentCurrency(option.id)}
+                                        className={`min-h-[44px] shrink-0 px-4 rounded-xl text-xs font-black focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 ${mobilePaymentCurrency === option.id ? 'bg-brand text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300'}`}
+                                    >
+                                        {option.label}
+                                    </button>
+                                ))}
+                            </div>
+                            <PaymentInputs metodosDivisa={metodosDivisaNorm} mobileCurrency={mobilePaymentCurrency} metodosBs={metodosBsNorm} metodosCop={metodosCopNorm} pagos={pagos} handleInputChange={handleInputChange} llenarSaldo={llenarSaldo} referencias={referencias} handleRefChange={handleRefChange} inputRefs={inputRefs} handleInputKeyDown={handleInputKeyDown} tasa={tasaSegura} sumarBillete={sumarBillete} isTouch={false} onFocusInput={(id) => { setActiveInputId(id); setActiveInputType('amount'); }} activeInputId={activeInputId} onFocusRef={(id) => { setActiveInputId(id); setActiveInputType('ref'); }} copEnabled={copEnabled} />
                         </div>
 
-                        {/* Footer */}
-                        <PaymentFooter
-                            modo={modo}
-                            faltaPorPagar={faltaPorPagar}
-                            clienteSeleccionado={clienteSeleccionado}
-                            totalPagadoGlobalUSD={totalPagadoGlobalUSD}
-                            onProcesar={procesarPago}
-                            isProcessing={isProcessing}
-                            rateError={rateError}
-                        />
+                        <div className="hidden lg:block">
+                            <PaymentFooter modo={modo} faltaPorPagar={faltaPorPagar} clienteSeleccionado={clienteSeleccionado} totalPagadoGlobalUSD={totalPagadoGlobalUSD} cambioUSD={cambioUSD} onProcesar={procesarPago} isProcessing={isProcessing} rateError={rateError} changeAllocationComplete={changeAllocationComplete} />
+                        </div>
+                    </div>
+                    <div className="order-3 lg:hidden sticky bottom-0 z-20 shrink-0">
+                        <PaymentFooter modo={modo} faltaPorPagar={faltaPorPagar} clienteSeleccionado={clienteSeleccionado} totalPagadoGlobalUSD={totalPagadoGlobalUSD} cambioUSD={cambioUSD} onProcesar={procesarPago} isProcessing={isProcessing} rateError={rateError} changeAllocationComplete={changeAllocationComplete} />
                     </div>
                 </div>
             </div>
+
+            {changeConfirmation && (
+                <ChangeConfirmationModal
+                    cambioUSD={cambioUSD}
+                    tasaSegura={tasaSegura}
+                    distVueltoUSD={distVueltoUSD}
+                    distVueltoBS={distVueltoBS}
+                    plannedPhysicalUsd={plannedPhysicalUsd}
+                    plannedWalletUsd={plannedWalletUsd}
+                    plannedCashUsd={cashKeptUsd}
+                    unallocatedChangeUsd={unallocatedChangeUsd}
+                    changeAllocationComplete={changeAllocationComplete}
+                    changeDestinationSelected={changeDestinationSelected}
+                    isChangeCredited={isChangeCredited}
+                    onCancel={() => setChangeConfirmation(null)}
+                    onConfirm={() => {
+                        const pending = changeConfirmation;
+                        setChangeConfirmation(null);
+                        onConfirmSale(pending.payments, pending.saleOptions, pending.imprimir);
+                        triggerHaptic && triggerHaptic();
+                    }}
+                    isProcessing={isProcessing}
+                />
+            )}
         </div>
     );
 }

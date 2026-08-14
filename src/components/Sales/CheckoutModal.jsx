@@ -1,13 +1,14 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { X, Users, Receipt, ArrowLeftRight, AlertTriangle, Smartphone, Lock, LayoutGrid, HandCoins, CheckCircle } from 'lucide-react';
+import { X, Users, Receipt, ArrowLeftRight, AlertTriangle, Smartphone, Lock, LayoutGrid, HandCoins, CheckCircle, Wallet, Zap } from 'lucide-react';
 import CasheaIcon from '../CasheaIcon';
 import { formatBs, formatCop } from '../../utils/calculatorUtils';
-import { mulR, divR, subR, round2 } from '../../utils/dinero';
+import { mulR, divR, subR, round2, calculateChangeRemainder } from '../../utils/dinero';
+import { FINANCIAL_EPSILON } from '../../utils/securityConstants';
 import { useCheckoutCalculations } from '../../hooks/useCheckoutCalculations';
 import CheckoutPaymentBars from './CheckoutPaymentBars';
 import CheckoutCustomerPicker from './CheckoutCustomerPicker';
 import PaymentWarningModal from './PaymentWarningModal';
-import { useProductContext } from '../../context/ProductContext';
+import ChangeConfirmationModal from './CheckoutModalPOS/components/ChangeConfirmationModal';
 
 /**
  * CheckoutModal — Zona de Cobro con Barras de Pago (Estilo Listo POS)
@@ -37,9 +38,19 @@ export default function CheckoutModal({
     isProcessing = false
 }) {
     const [confirmFiar, setConfirmFiar] = useState(false);
-    const { setCheckoutMode } = useProductContext();
-
+    const [changeConfirmation, setChangeConfirmation] = useState(null);
+    const changeSummaryRef = React.useRef({ changeUsd: 0 });
     const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
+
+    // El hook construye los pagos y valida advertencias. Cuando existe vuelto,
+    // interceptamos el registro para pedir una última confirmación de destinos.
+    const handleCalculatedSale = useCallback((payments, saleOptions) => {
+        if (changeSummaryRef.current.changeUsd > FINANCIAL_EPSILON.PAYMENT_ZERO) {
+            setChangeConfirmation({ payments, saleOptions });
+            return;
+        }
+        onConfirmSale(payments, saleOptions);
+    }, [onConfirmSale]);
 
     const {
         barValues,
@@ -61,9 +72,13 @@ export default function CheckoutModal({
         dismissWarning,
         // TIP: propina donada.
         isTipDonated,
+        tipAmountUsd,
+        handleTipAmountChange,
         toggleTipDonated,
         tipConfirmPending,
         tipCurrency,
+        isChangeCredited,
+        setIsChangeCredited,
         // Cashea outputs
         casheaActive,
         setCasheaActive,
@@ -87,12 +102,64 @@ export default function CheckoutModal({
         cartTotalUsd: baseCartTotalUsd,
         cartTotalBs: baseCartTotalBs,
         triggerHaptic,
-        onConfirmSale,
+        onConfirmSale: handleCalculatedSale,
         cart,
         discountData,
+        saldoFavorDisponible: selectedCustomer?.favor || 0,
+        selectedCustomerId,
     });
 
     const CASHEA_LEVEL_MAP = { 1: 60, 2: 50, 3: 40, 4: 30, 5: 20, 6: 10 };
+    const cashKeptUsd = round2(Math.min(Math.max(0, Number(tipAmountUsd) || 0), changeUsd));
+    const changeToDeliverUsd = round2(Math.max(0, subR(changeUsd, cashKeptUsd)));
+    const declaredPhysicalUsd = round2(Math.min(
+        changeToDeliverUsd,
+        Math.max(0, Number(changeUsdGiven) || 0) + divR(Math.max(0, Number(changeBsGiven) || 0), safeRate)
+    ));
+    const walletRemainderUsd = round2(Math.max(0, subR(changeToDeliverUsd, declaredPhysicalUsd)));
+    const hasPhysicalDistribution = changeUsdGiven !== '' || changeBsGiven !== '';
+    const plannedPhysicalUsd = hasPhysicalDistribution
+        ? declaredPhysicalUsd
+        : (isChangeCredited ? 0 : changeToDeliverUsd);
+    const plannedWalletUsd = isChangeCredited ? walletRemainderUsd : 0;
+    const plannedCashUsd = cashKeptUsd;
+    const unallocatedChangeUsd = round2(Math.max(0, subR(
+        changeToDeliverUsd,
+        plannedPhysicalUsd + plannedWalletUsd
+    )));
+    const changeDestinationSelected = changeToDeliverUsd <= FINANCIAL_EPSILON.PAYMENT_ZERO
+        || hasPhysicalDistribution
+        || isChangeCredited;
+    const changeAllocationComplete = changeDestinationSelected && unallocatedChangeUsd <= 0.01;
+    changeSummaryRef.current = { changeUsd };
+    // El mismo vuelto puede repartirse entre USD y Bs. Mostramos el remanente
+    // convertido en ambas monedas sin rellenar automáticamente el otro campo.
+    const changeRemainder = calculateChangeRemainder(
+        changeToDeliverUsd,
+        changeUsdGiven,
+        changeBsGiven,
+        safeRate,
+    );
+    const maxChangeUsdGiven = round2(Math.max(0, subR(
+        changeToDeliverUsd,
+        divR(Math.max(0, Number(changeBsGiven) || 0), safeRate),
+    )));
+    const maxChangeBsGiven = round2(Math.max(0, mulR(
+        Math.max(0, subR(changeToDeliverUsd, Math.max(0, Number(changeUsdGiven) || 0))),
+        safeRate,
+    )));
+
+    // Normaliza cualquier combinación antigua que haya quedado por encima del
+    // vuelto real. Se conserva primero el monto en Bs y se ajusta el USD restante.
+    useEffect(() => {
+        const currentUsd = Math.max(0, Number(changeUsdGiven) || 0);
+        const currentBs = Math.max(0, Number(changeBsGiven) || 0);
+        if (currentBs > maxChangeBsGiven + 0.01) {
+            setChangeBsGiven(maxChangeBsGiven.toString());
+        } else if (currentUsd > maxChangeUsdGiven + 0.01) {
+            setChangeUsdGiven(maxChangeUsdGiven.toString());
+        }
+    }, [changeUsdGiven, changeBsGiven, maxChangeUsdGiven, maxChangeBsGiven]);
 
     useEffect(() => {
         if (casheaEnabled && selectedCustomer) {
@@ -187,6 +254,17 @@ export default function CheckoutModal({
             {/* --- SCROLLABLE BODY --- */}
             <div className="flex-1 overflow-y-auto overscroll-contain pb-28">
 
+                {/* En móvil el cliente se elige antes de mostrar los medios de pago. */}
+                <div className="sm:hidden px-3 pt-3">
+                    <CheckoutCustomerPicker
+                        customers={customers}
+                        selectedCustomerId={selectedCustomerId}
+                        setSelectedCustomerId={setSelectedCustomerId}
+                        effectiveRate={effectiveRate}
+                        onCreateCustomer={onCreateCustomer}
+                    />
+                </div>
+
                 {/* -- PAYMENT BARS -- */}
                 <CheckoutPaymentBars
                     paymentMethods={paymentMethods}
@@ -196,6 +274,8 @@ export default function CheckoutModal({
                     copEnabled={copEnabled}
                     onBarChange={handleBarChange}
                     onFillBar={fillBar}
+                    saldoFavorDisponible={selectedCustomer?.favor || 0}
+                    showSaldoFavor={remainingUsd > 0.01 || Number(barValues.saldo_favor) > 0.01}
                 />
 
                 {/* -- CASHEA PANEL -- */}
@@ -302,6 +382,7 @@ export default function CheckoutModal({
                 )}
 
                 {/* -- CLIENTE -- */}
+                <div className="hidden sm:block">
                 <CheckoutCustomerPicker
                     customers={customers}
                     selectedCustomerId={selectedCustomerId}
@@ -309,6 +390,7 @@ export default function CheckoutModal({
                     effectiveRate={effectiveRate}
                     onCreateCustomer={onCreateCustomer}
                 />
+                </div>
 
                 {/* A-2: el botón "Usar Saldo a Favor" fue eliminado. Llamaba a onUseSaldoFavor,
                     un prop que SalesView nunca pasó (no está en sharedProps), así que fallaba
@@ -373,6 +455,7 @@ export default function CheckoutModal({
                             <button
                                 type="button"
                                 onClick={toggleTipDonated}
+                                title={isTipDonated ? 'Vuelto asignado a caja como ingreso/propina (pulsa para cancelar)' : 'Dejar el vuelto en caja como ingreso o propina para el negocio'}
                                 className={`w-full py-2 px-2.5 rounded-lg font-black text-[10px] flex items-center justify-center gap-1.5 transition-all active:scale-[0.97] ${
                                     isTipDonated
                                         ? 'bg-emerald-600 text-white shadow shadow-emerald-500/30'
@@ -384,7 +467,7 @@ export default function CheckoutModal({
                                 <HandCoins size={13} className="shrink-0" />
                                 <span className="truncate">
                                     {isTipDonated
-                                        ? `Deja el cambio (${tipCurrency === 'BS' ? `Bs ${formatBs(changeBs)}` : `$${changeUsd.toFixed(2)}`})`
+                                        ? `En caja: $${cashKeptUsd.toFixed(2)}`
                                         : tipConfirmPending
                                             ? `Confirmar: donar $${changeUsd.toFixed(2)}`
                                             : 'Cliente deja el cambio (Donar a Caja)'}
@@ -392,53 +475,185 @@ export default function CheckoutModal({
                                 {isTipDonated && <CheckCircle size={12} className="text-white shrink-0" />}
                             </button>
 
-                            {!isTipDonated && (<>
-                            <div className="flex items-center gap-2">
-                                <div className="relative flex-1">
-                                    <input
-                                        type="number"
-                                        inputMode="decimal"
-                                        placeholder="0.00"
-                                        value={changeUsdGiven}
-                                        onChange={e => {
-                                            const v = e.target.value;
-                                            const usd = Math.min(Math.max(0, parseFloat(v) || 0), changeUsd);
-                                            setChangeUsdGiven(v);
-                                            setChangeBsGiven(Math.max(0, mulR(subR(changeUsd, usd), effectiveRate)).toFixed(0));
-                                        }}
-                                        className="w-full py-1.5 pl-2.5 pr-14 rounded-lg border border-emerald-200 dark:border-emerald-700 bg-white dark:bg-slate-900 font-bold text-xs text-slate-800 dark:text-white outline-none focus:ring-1 focus:ring-emerald-500"
-                                    />
-                                    <button
-                                        onClick={() => { setChangeUsdGiven(changeUsd.toFixed(2)); setChangeBsGiven('0'); }}
-                                        className="absolute right-1 top-1/2 -translate-y-1/2 text-[9px] font-black bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded hover:bg-emerald-200 active:scale-95 transition-all"
-                                    >
-                                        Todo $
-                                    </button>
+                            <button
+                                type="button"
+                                disabled={!selectedCustomerId || (!isChangeCredited && walletRemainderUsd <= 0.01)}
+                                onClick={() => {
+                                    if (!selectedCustomerId) {
+                                        triggerHaptic && triggerHaptic();
+                                        return;
+                                    }
+                                                    setIsChangeCredited(current => !current);
+                                }}
+                                className={`w-full py-2 px-2.5 rounded-lg font-black text-[10px] flex items-center justify-center gap-1.5 transition-all active:scale-[0.97] ${
+                                    isChangeCredited
+                                        ? 'bg-brand text-white shadow shadow-brand/30'
+                                        : 'bg-white dark:bg-slate-800 text-brand-dark dark:text-brand border border-brand/30 dark:border-brand/70'
+                                } ${(!selectedCustomerId || walletRemainderUsd <= 0.01) ? 'opacity-40 cursor-not-allowed' : ''}`}
+                            >
+                                <Wallet size={13} className="shrink-0" />
+                                {isChangeCredited ? `Billetera $${walletRemainderUsd.toFixed(2)}` : `Acreditar $${walletRemainderUsd.toFixed(2)}`}
+                            </button>
+
+                            {!isChangeCredited && walletRemainderUsd > 0.01 && selectedCustomerId && (
+                                <p className="w-full mt-1 text-center text-[9px] font-bold text-brand/80 dark:text-brand">
+                                    El saldo se acredita únicamente al pulsar el botón y confirmar la venta.
+                                </p>
+                            )}
+
+                            {isTipDonated && (
+                                <div className="mt-2 pt-2 border-t border-emerald-200/50 dark:border-emerald-800/30">
+                                    <div className="flex items-center justify-between gap-1 mb-1.5">
+                                        <label className="text-[10px] font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-400">
+                                            Parte del vuelto que queda en caja
+                                        </label>
+                                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-100/70 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/60 whitespace-nowrap">
+                                            Máx: ${changeUsd.toFixed(2)}
+                                        </span>
+                                    </div>
+                                    <div className="relative group">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-emerald-600 dark:text-emerald-400 pointer-events-none select-none">
+                                            $
+                                        </span>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max={changeUsd}
+                                            step="0.01"
+                                            value={tipAmountUsd}
+                                            onChange={e => handleTipAmountChange(e.target.value)}
+                                            onFocus={e => e.target.select()}
+                                            placeholder="0.00"
+                                            className="w-full h-11 py-2 pl-7 pr-16 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-900 font-black text-sm text-slate-800 dark:text-white shadow-inner outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => handleTipAmountChange(changeUsd.toString())}
+                                            className="absolute right-1.5 top-1/2 -translate-y-1/2 h-8 px-2.5 inline-flex items-center justify-center gap-1 rounded-lg text-[10px] font-black bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white shadow-sm shadow-emerald-600/20 active:scale-95 transition-all"
+                                            title="Asignar todo el vuelto a caja"
+                                        >
+                                            <Zap size={11} className="fill-current" />
+                                            <span>Todo</span>
+                                        </button>
+                                    </div>
+                                    <p className="mt-1 text-[9px] text-slate-500 dark:text-slate-400">
+                                        El resto se entrega como cambio o se acredita a la billetera.
+                                    </p>
+                                </div>
+                            )}
+
+                            <>
+                            <div className="grid grid-cols-2 gap-2.5">
+                                <div className="min-w-0">
+                                    <div className="flex items-center justify-between gap-1 mb-1.5 min-h-[22px]">
+                                        <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-400 whitespace-nowrap shrink-0">Cambio en $</span>
+                                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-emerald-100/70 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/60 whitespace-nowrap shrink-0">Queda ${changeRemainder.remainingUsd.toFixed(2)}</span>
+                                    </div>
+                                    <div className="relative group">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-emerald-600 dark:text-emerald-400 pointer-events-none select-none">
+                                            $
+                                        </span>
+                                        <input
+                                            type="number"
+                                            inputMode="decimal"
+                                            placeholder="0.00"
+                                            value={changeUsdGiven}
+                                            onChange={e => {
+                                                const v = e.target.value;
+                                                const usd = Math.min(Math.max(0, parseFloat(v) || 0), maxChangeUsdGiven);
+                                                setChangeUsdGiven(v === '' ? '' : usd.toString());
+                                            }}
+                                            className="w-full h-11 py-2 pl-7 pr-16 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-900 font-black text-sm text-slate-800 dark:text-white shadow-inner outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => { setChangeUsdGiven(maxChangeUsdGiven.toFixed(2)); }}
+                                            className="absolute right-1.5 top-1/2 -translate-y-1/2 h-8 px-2.5 inline-flex items-center justify-center gap-1 rounded-lg text-[10px] font-black bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white shadow-sm shadow-emerald-600/20 active:scale-95 transition-all"
+                                            title="Asignar todo el vuelto restante en USD"
+                                        >
+                                            <Zap size={11} className="fill-current" />
+                                            <span>Todo</span>
+                                        </button>
+                                    </div>
                                 </div>
 
-                                <span className="text-slate-400 font-black text-xs shrink-0">+</span>
-
-                                <div className="relative flex-1">
-                                    <input
-                                        type="number"
-                                        inputMode="decimal"
-                                        placeholder="0"
-                                        value={changeBsGiven}
-                                        onChange={e => {
-                                            const v = e.target.value;
-                                            const bsTotal = mulR(changeUsd, effectiveRate);
-                                            const bs = Math.min(Math.max(0, parseFloat(v) || 0), bsTotal);
-                                            setChangeBsGiven(v);
-                                            setChangeUsdGiven(Math.max(0, subR(changeUsd, divR(bs, effectiveRate))).toFixed(2));
-                                        }}
-                                        className="w-full py-1.5 pl-2.5 pr-14 rounded-lg border border-surface-300 dark:border-surface-700 bg-white dark:bg-slate-900 font-bold text-xs text-slate-800 dark:text-white outline-none focus:ring-1 focus:ring-brand"
-                                    />
-                                    <button
-                                        onClick={() => { setChangeUsdGiven('0'); setChangeBsGiven(mulR(changeUsd, effectiveRate).toFixed(0)); }}
-                                        className="absolute right-1 top-1/2 -translate-y-1/2 text-[9px] font-black bg-brand-light dark:bg-surface-800/40 text-brand-dark dark:text-brand px-1.5 py-0.5 rounded hover:bg-brand-light active:scale-95 transition-all"
-                                    >
-                                        Todo Bs
-                                    </button>
+                                <div className="min-w-0">
+                                    <div className="flex items-center justify-between gap-1 mb-1.5 min-h-[22px]">
+                                        <span className="text-[10px] font-black uppercase tracking-wider text-blue-800 dark:text-blue-400 whitespace-nowrap shrink-0">Cambio en Bs</span>
+                                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-blue-100/70 dark:bg-blue-950/50 text-blue-800 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/60 whitespace-nowrap shrink-0">Queda Bs {formatBs(changeRemainder.remainingBs)}</span>
+                                    </div>
+                                    <div className="relative group">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] font-black text-blue-600 dark:text-blue-400 pointer-events-none select-none">
+                                            Bs
+                                        </span>
+                                        <input
+                                            type="number"
+                                            inputMode="decimal"
+                                            placeholder="0"
+                                            value={changeBsGiven}
+                                            onChange={e => {
+                                                const v = e.target.value;
+                                                const bs = Math.min(Math.max(0, parseFloat(v) || 0), maxChangeBsGiven);
+                                                setChangeBsGiven(v === '' ? '' : bs.toString());
+                                            }}
+                                            className="w-full h-11 py-2 pl-8 pr-16 rounded-xl border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-900 font-black text-sm text-slate-800 dark:text-white shadow-inner outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => { setChangeBsGiven(maxChangeBsGiven.toFixed(2)); }}
+                                            className="absolute right-1.5 top-1/2 -translate-y-1/2 h-8 px-2.5 inline-flex items-center justify-center gap-1 rounded-lg text-[10px] font-black bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white shadow-sm shadow-blue-600/20 active:scale-95 transition-all"
+                                            title="Asignar todo el vuelto restante en Bolívares"
+                                        >
+                                            <Zap size={11} className="fill-current" />
+                                            <span>Todo</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div
+                                role="status"
+                                aria-live="polite"
+                                className={`mt-2 px-3 py-2.5 rounded-xl border ${
+                                    changeRemainder.remainingUsd > 0.001
+                                        ? 'bg-red-50 dark:bg-red-950/25 border-red-300 dark:border-red-800/60'
+                                        : 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/40'
+                                }`}
+                            >
+                                <div className="flex items-start gap-2.5">
+                                    <span className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
+                                        changeRemainder.remainingUsd > 0.001
+                                            ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                                            : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                                    }`}>
+                                        {changeRemainder.remainingUsd > 0.001
+                                            ? <AlertTriangle size={14} strokeWidth={2.5} />
+                                            : <CheckCircle size={14} strokeWidth={2.5} />}
+                                    </span>
+                                    <div className="min-w-0 flex-1">
+                                        <p className={`text-[10px] font-black uppercase tracking-wide leading-tight ${
+                                            changeRemainder.remainingUsd > 0.001 ? 'text-red-700 dark:text-red-300' : 'text-emerald-700 dark:text-emerald-300'
+                                        }`}>
+                                            {isChangeCredited ? 'Se acreditará a billetera' : changeRemainder.remainingUsd > 0.001 ? 'Vuelto pendiente' : 'Vuelto asignado'}
+                                        </p>
+                                        <div className={`mt-1 grid grid-cols-2 divide-x ${changeRemainder.remainingUsd > 0.001 ? 'divide-red-200 dark:divide-red-800/60' : 'divide-emerald-200 dark:divide-emerald-800/40'}`}>
+                                            <div className="min-w-0 pr-3">
+                                                <span className={`block text-[9px] font-black uppercase tracking-wide ${changeRemainder.remainingUsd > 0.001 ? 'text-red-500 dark:text-red-300' : 'text-emerald-500 dark:text-emerald-300'}`}>Dólares</span>
+                                                <strong className={`block mt-0.5 text-xl leading-none font-black tracking-tight ${
+                                                    changeRemainder.remainingUsd > 0.001 ? 'text-red-700 dark:text-red-300' : 'text-emerald-700 dark:text-emerald-300'
+                                                }`}>
+                                                    ${changeRemainder.remainingUsd.toFixed(2)}
+                                                </strong>
+                                            </div>
+                                            <div className="min-w-0 pl-3">
+                                                <span className={`block text-[9px] font-black uppercase tracking-wide ${changeRemainder.remainingUsd > 0.001 ? 'text-red-500 dark:text-red-300' : 'text-emerald-500 dark:text-emerald-300'}`}>Bolívares</span>
+                                                <strong className={`block mt-0.5 text-sm leading-tight font-black break-words ${
+                                                    changeRemainder.remainingUsd > 0.001 ? 'text-red-600 dark:text-red-300' : 'text-emerald-600 dark:text-emerald-300'
+                                                }`}>
+                                                    Bs {formatBs(changeRemainder.remainingBs)}
+                                                </strong>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
@@ -453,7 +668,7 @@ export default function CheckoutModal({
                                     </div>
                                 </div>
                             )}
-                            </>)}
+                            </>
                         </div>
                     )}
                 </div>
@@ -472,7 +687,7 @@ export default function CheckoutModal({
                                 handleConfirm();
                             }
                         }}
-                        disabled={isProcessing || rateError || (copEnabled && copRateError) || (!isPaid && casheaActive) || (!selectedCustomerId && remainingUsd > 0.01)}
+                        disabled={isProcessing || rateError || (copEnabled && copRateError) || (!isPaid && casheaActive) || (!selectedCustomerId && remainingUsd > 0.01) || (isPaid && !changeAllocationComplete)}
                         className={`w-full py-4 text-white font-black text-base rounded-2xl shadow-lg transition-all tracking-wide flex items-center justify-center gap-2 ${
                             isProcessing || rateError || (copEnabled && copRateError)
                                 ? 'bg-slate-300 dark:bg-slate-800 text-slate-450 dark:text-slate-500 cursor-not-allowed shadow-none'
@@ -490,7 +705,9 @@ export default function CheckoutModal({
                         ) : rateError || (copEnabled && copRateError) ? (
                             <><AlertTriangle size={18} /> ERROR DE TASA</>
                         ) : isPaid ? (
-                            casheaActive ? (
+                            !changeAllocationComplete ? (
+                                <><AlertTriangle size={18} /> ASIGNA EL VUELTO</>
+                            ) : casheaActive ? (
                                 <><Receipt size={18} /> CONFIRMAR VENTA CASHEA</>
                             ) : (
                                 <><Receipt size={18} /> CONFIRMAR VENTA</>
@@ -621,6 +838,30 @@ export default function CheckoutModal({
                         </div>
                     </div>
                 </div>
+            )}
+
+            {changeConfirmation && (
+                <ChangeConfirmationModal
+                    cambioUSD={changeUsd}
+                    tasaSegura={safeRate}
+                    distVueltoUSD={changeUsdGiven}
+                    distVueltoBS={changeBsGiven}
+                    plannedPhysicalUsd={plannedPhysicalUsd}
+                    plannedWalletUsd={plannedWalletUsd}
+                    plannedCashUsd={plannedCashUsd}
+                    unallocatedChangeUsd={unallocatedChangeUsd}
+                    changeAllocationComplete={changeAllocationComplete}
+                    changeDestinationSelected={changeDestinationSelected}
+                    isChangeCredited={isChangeCredited}
+                    onCancel={() => setChangeConfirmation(null)}
+                    onConfirm={() => {
+                        const pending = changeConfirmation;
+                        setChangeConfirmation(null);
+                        onConfirmSale(pending.payments, pending.saleOptions);
+                        triggerHaptic && triggerHaptic();
+                    }}
+                    isProcessing={isProcessing}
+                />
             )}
 
             <PaymentWarningModal

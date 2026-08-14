@@ -8,7 +8,12 @@ import { showToast } from '../components/Toast';
 import { Modal } from '../components/Modal';
 import { AlertTriangle, ShieldAlert, RotateCcw } from 'lucide-react';
 
-const ProductContext = createContext();
+// Mantener una única instancia durante HMR y cargas lazy. Si Vite recarga este
+// módulo mientras una vista lazy conserva la versión anterior, un Context nuevo
+// deja al consumidor sin su Provider aunque el árbol JSX sea correcto.
+const PRODUCT_CONTEXT_KEY = '__preciosaldia_product_context__';
+const ProductContext = globalThis[PRODUCT_CONTEXT_KEY] || createContext();
+globalThis[PRODUCT_CONTEXT_KEY] = ProductContext;
 
 const normalizeCategories = (cats) => {
     const list = Array.isArray(cats) ? cats : [];

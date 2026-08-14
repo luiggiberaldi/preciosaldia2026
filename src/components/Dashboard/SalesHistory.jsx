@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Clock, Send, Ban, ChevronDown, ChevronUp, Trash2, Shuffle, Recycle, Receipt, Printer, LockIcon, CornerDownLeft, Smartphone, DollarSign, HandCoins } from 'lucide-react';
+import { Clock, Send, Ban, ChevronDown, ChevronUp, Trash2, Shuffle, Recycle, Receipt, Printer, LockIcon, CornerDownLeft, Smartphone, DollarSign, HandCoins, Wallet } from 'lucide-react';
 import { formatBs, formatCop } from '../../utils/calculatorUtils';
 import { getPaymentLabel, getPaymentMethod, PAYMENT_ICONS, toTitleCase, getPaymentIcon } from '../../config/paymentMethods';
 import EmptyState from '../EmptyState';
@@ -269,38 +269,98 @@ export default function SalesHistory({
                                         </div>
                                     )}
 
-                                    <div className="flex justify-between text-[10px] font-medium text-slate-400 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-lg p-2 mb-3">
-                                        <div className="flex flex-col gap-0.5">
-                                            <span>Ref: {formatBs(s.totalBs)} Bs @ {formatBs(s.rate || bcvRate)}</span>
-                                            {s.tasaCop > 0 && <span>COP: {(s.totalCop || (s.totalUsd * s.tasaCop)).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} @ {s.tasaCop}</span>}
-                                        </div>
-                                        {s.casheaUsd > 0 && (
-                                            <div className="flex flex-col gap-0.5 self-start mt-0.5">
-                                                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold px-1.5 py-0.5 rounded-md border border-slate-200 dark:border-slate-700 text-[10px]">
-                                                    <span>💵 Inicial: ${((s.totalUsd || 0) - (s.casheaUsd || 0)).toFixed(2)}</span>
+                                    {(() => {
+                                        const allocation = s.changeAllocation;
+                                        const tipUsd = s.tipDonated?.amountUsd || allocation?.keptInCashUsd || 0;
+                                        const tipBs = s.tipDonated?.amountBs || 0;
+                                        const monederoUsd = s.vueltoParaMonedero || allocation?.creditedUsd || 0;
+
+                                        let deliveredUsd = 0;
+                                        let deliveredBs = 0;
+
+                                        if (allocation) {
+                                            deliveredUsd = allocation.deliveredUsd || 0;
+                                            deliveredBs = allocation.deliveredBs || 0;
+                                        } else {
+                                            const rawChangeUsd = s.changeUsd || 0;
+                                            const remainingDelivered = Math.max(0, rawChangeUsd - tipUsd - monederoUsd);
+                                            if (remainingDelivered > 0.009) {
+                                                deliveredUsd = remainingDelivered;
+                                                deliveredBs = s.changeBs || 0;
+                                            } else if (rawChangeUsd > 0.009 && tipUsd === 0 && monederoUsd === 0) {
+                                                deliveredUsd = rawChangeUsd;
+                                                deliveredBs = s.changeBs || 0;
+                                            }
+                                        }
+
+                                        const hasExtraInfo = s.casheaUsd > 0 || deliveredUsd > 0 || deliveredBs > 0 || monederoUsd > 0 || tipUsd > 0;
+
+                                        return (
+                                            <div className="bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800 rounded-xl p-2.5 mb-3 space-y-2">
+                                                {/* Tasa y referencia */}
+                                                <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-bold text-slate-600 dark:text-slate-300">Tasa:</span>
+                                                        <span>{formatBs(s.rate || bcvRate)} Bs/$</span>
+                                                        <span className="text-slate-300 dark:text-slate-700">•</span>
+                                                        <span>Ref: <strong className="font-bold text-slate-700 dark:text-slate-300">{formatBs(s.totalBs)} Bs</strong></span>
+                                                        {s.tasaCop > 0 && (
+                                                            <>
+                                                                <span className="text-slate-300 dark:text-slate-700">•</span>
+                                                                <span>COP: {(s.totalCop || (s.totalUsd * s.tasaCop)).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                                            </>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                                <div className="flex items-center gap-1 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 font-bold px-1.5 py-0.5 rounded-md border border-purple-200 dark:border-purple-800/40 text-[10px]">
-                                                    <span className="flex items-center gap-1"><CasheaIcon size={10} /> Financia Cashea: ${s.casheaUsd.toFixed(2)}</span>
-                                                </div>
+
+                                                {/* Badges de distribución de vuelto / Cashea */}
+                                                {hasExtraInfo && (
+                                                    <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-slate-200/60 dark:border-slate-800">
+                                                        {/* Cashea */}
+                                                        {s.casheaUsd > 0 && (
+                                                            <div className="inline-flex items-center gap-1 bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 font-black px-2 py-1 rounded-lg border border-purple-200 dark:border-purple-800/60 text-[10px]">
+                                                                <CasheaIcon size={11} />
+                                                                <span>Cashea: Inicial ${((s.totalUsd || 0) - (s.casheaUsd || 0)).toFixed(2)} · Financia ${s.casheaUsd.toFixed(2)}</span>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Vuelto Entregado */}
+                                                        {(deliveredUsd > 0 || deliveredBs > 0) && (
+                                                            <div className="inline-flex items-center gap-1.5 bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 font-black px-2 py-1 rounded-lg border border-blue-200 dark:border-blue-800/60 text-[10px]">
+                                                                <CornerDownLeft size={11} className="text-blue-600 dark:text-blue-400 shrink-0" />
+                                                                <span>
+                                                                    Vuelto entregado:{' '}
+                                                                    {deliveredUsd > 0 ? `$${deliveredUsd.toFixed(2)}` : ''}
+                                                                    {deliveredUsd > 0 && deliveredBs > 0 ? ' + ' : ''}
+                                                                    {deliveredBs > 0 ? `Bs ${formatBs(deliveredBs)}` : ''}
+                                                                </span>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Dejado en caja / Propina */}
+                                                        {tipUsd > 0 && (
+                                                            <div className="inline-flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 font-black px-2 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800/60 text-[10px]">
+                                                                <HandCoins size={11} className="text-emerald-600 shrink-0" />
+                                                                <span>
+                                                                    Dejado en caja: {s.tipDonated?.currency === 'BS' ? `Bs ${formatBs(tipBs || tipUsd * (s.rate || bcvRate))}` : `$${tipUsd.toFixed(2)}`}
+                                                                </span>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Saldo a Favor / Billetera */}
+                                                        {['VENTA', 'VENTA_CASHEA'].includes(s.tipo) && monederoUsd > 0 && (
+                                                            <div className={`inline-flex items-center gap-1.5 bg-cyan-50 dark:bg-cyan-950/40 text-cyan-800 dark:text-cyan-300 font-black px-2 py-1 rounded-lg border border-cyan-200 dark:border-cyan-800/60 text-[10px] ${isCanceled ? 'line-through opacity-70' : ''}`}>
+                                                                <Wallet size={11} className="text-cyan-600 shrink-0" />
+                                                                <span>
+                                                                    {isCanceled ? 'Saldo a favor revertido' : 'Acreditado a billetera'}: +${monederoUsd.toFixed(2)}
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
-                                        )}
-                                        {s.changeUsd > 0 && (
-                                            <div className="flex items-center gap-1 self-start mt-0.5 bg-orange-50 dark:bg-orange-900/20 text-orange-500 dark:text-orange-400 font-bold px-1.5 py-0.5 rounded-md border border-orange-100 dark:border-orange-800/40">
-                                                <CornerDownLeft size={10} />
-                                                {copEnabled && tasaCop > 0
-                                                    ? copPrimary
-                                                        ? <><span>−{formatCop(s.changeUsd * tasaCop)} COP</span><span className="font-normal opacity-75">/ −${s.changeUsd.toFixed(2)} / −{formatBs(s.changeBs || s.changeUsd * (s.rate || bcvRate))} Bs</span></>
-                                                        : <><span>−${s.changeUsd.toFixed(2)}</span><span className="font-normal opacity-75">/ −{formatCop(s.changeUsd * tasaCop)} COP / −{formatBs(s.changeBs || s.changeUsd * (s.rate || bcvRate))} Bs</span></>
-                                                    : <><span>−${s.changeUsd.toFixed(2)}</span><span className="font-normal opacity-75">/ −{formatBs(s.changeBs || s.changeUsd * (s.rate || bcvRate))} Bs</span></>}
-                                            </div>
-                                        )}
-                                        {s.tipDonated && s.tipDonated.amountUsd > 0 && (
-                                            <div className="flex items-center gap-1 self-start mt-0.5 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 font-bold px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800/40 text-[10px]">
-                                                <HandCoins size={11} className="text-emerald-600 shrink-0" />
-                                                <span>Cliente dejó el cambio: {s.tipDonated.currency === 'BS' ? `Bs ${formatBs(s.tipDonated.amountBs)}` : `$${s.tipDonated.amountUsd.toFixed(2)}`}</span>
-                                            </div>
-                                        )}
-                                    </div>
+                                        );
+                                    })()}
 
                                     <div className="flex flex-wrap items-center gap-2 mt-2">
                                         <button

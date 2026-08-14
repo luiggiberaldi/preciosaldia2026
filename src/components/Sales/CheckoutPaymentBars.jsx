@@ -1,5 +1,5 @@
-import React from 'react';
-import { Zap } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Zap, Wallet, DollarSign, Banknote, Coins } from 'lucide-react';
 import { formatBs } from '../../utils/calculatorUtils';
 import { PAYMENT_ICONS, ICON_COMPONENTS } from '../../config/paymentMethods';
 
@@ -33,7 +33,7 @@ const SECTION_STYLES = {
     },
 };
 
-function PaymentBar({ method, styles, barValues, effectiveRate, tasaCop, onBarChange, onFillBar }) {
+function PaymentBar({ method, styles, barValues, effectiveRate, tasaCop, onBarChange, onFillBar, saldoFavorDisponible = 0 }) {
     const val = barValues[method.id] || '';
     const hasValue = parseFloat(val) > 0;
     const equivUsd = method.currency === 'BS' && hasValue
@@ -51,6 +51,11 @@ function PaymentBar({ method, styles, barValues, effectiveRate, tasaCop, onBarCh
                 <span className={`text-[11px] font-bold uppercase tracking-wide ${hasValue ? styles.title : 'text-slate-400 dark:text-slate-500'}`}>
                     {method.label}
                 </span>
+                {method.isInternalCredit && (
+                    <span className="ml-auto text-[10px] font-black text-emerald-600 dark:text-emerald-400">
+                        Disponible: ${Number(saldoFavorDisponible || 0).toFixed(2)}
+                    </span>
+                )}
             </div>
             <div className="flex items-center gap-2">
                 <div className="relative flex-1">
@@ -96,20 +101,85 @@ export default function CheckoutPaymentBars({
     copEnabled,
     onBarChange,
     onFillBar,
+    saldoFavorDisponible = 0,
+    showSaldoFavor = true,
 }) {
+    const methodsInternal = paymentMethods.filter(m => m.currency === 'INTERNAL_CREDIT');
     const methodsUsd = paymentMethods.filter(m => m.currency === 'USD');
     const methodsBs = paymentMethods.filter(m => m.currency === 'BS');
     const methodsCop = paymentMethods.filter(m => m.currency === 'COP');
+    const availableCurrencies = [
+        methodsUsd.length > 0 && 'USD',
+        methodsBs.length > 0 && 'BS',
+        copEnabled && methodsCop.length > 0 && 'COP',
+    ].filter(Boolean);
+    const [mobileCurrency, setMobileCurrency] = useState(availableCurrencies[0] || 'USD');
 
-    const barProps = { barValues, effectiveRate, tasaCop, onBarChange, onFillBar };
+    useEffect(() => {
+        if (availableCurrencies.length > 0 && !availableCurrencies.includes(mobileCurrency)) {
+            setMobileCurrency(availableCurrencies[0]);
+        }
+    }, [mobileCurrency, methodsUsd.length, methodsBs.length, methodsCop.length, copEnabled]);
+
+    const barProps = { barValues, effectiveRate, tasaCop, onBarChange, onFillBar, saldoFavorDisponible };
+    const mobileMethods = mobileCurrency === 'USD' ? methodsUsd : mobileCurrency === 'BS' ? methodsBs : methodsCop;
+    const mobileStyles = SECTION_STYLES[mobileCurrency] || SECTION_STYLES.USD;
+    const mobileTitle = mobileCurrency === 'USD' ? 'Dólares ($)' : mobileCurrency === 'BS' ? 'Bolívares (Bs)' : 'Pesos (COP)';
+    const MobileIcon = mobileCurrency === 'USD' ? DollarSign : mobileCurrency === 'BS' ? Banknote : Coins;
 
     return (
         <>
+            {/* Crédito interno: no se mezcla con USD recibido */}
+            {methodsInternal.length > 0 && saldoFavorDisponible > 0.01 && showSaldoFavor && (
+                <div className="mx-3 mb-3 rounded-2xl border bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/50 p-3">
+                    <h3 className="text-[11px] font-black uppercase tracking-widest mb-3 flex items-center gap-2 text-emerald-800 dark:text-emerald-300">
+                        <span className="p-1 rounded-lg bg-emerald-100 dark:bg-emerald-900/50"><Wallet size={14} strokeWidth={2.5} /></span>
+                        Crédito interno
+                    </h3>
+                    {methodsInternal.map(m => <PaymentBar key={m.id} method={m} styles={SECTION_STYLES.USD} {...barProps} />)}
+                </div>
+            )}
+
+            {/* Vista móvil: una sola moneda expandida a la vez. */}
+            <div className="sm:hidden mx-3 mb-3">
+                <div className="flex gap-1.5 overflow-x-auto pb-1" role="tablist" aria-label="Moneda del pago">
+                    {availableCurrencies.map(currency => (
+                        <button
+                            key={currency}
+                            type="button"
+                            role="tab"
+                            aria-selected={mobileCurrency === currency}
+                            onClick={() => setMobileCurrency(currency)}
+                            className={`min-h-[42px] shrink-0 px-4 rounded-xl text-xs font-black transition-colors ${mobileCurrency === currency
+                                ? 'bg-brand text-white shadow-sm'
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300'
+                            }`}
+                        >
+                            {currency === 'USD' ? 'Dólares' : currency === 'BS' ? 'Bolívares' : 'COP'}
+                        </button>
+                    ))}
+                </div>
+                {mobileMethods.length > 0 && (
+                    <div className={`mt-2 rounded-2xl border ${mobileStyles.bg} ${mobileStyles.border} p-3`}>
+                        <h3 className={`text-[11px] font-black uppercase tracking-widest mb-3 flex items-center gap-2 ${mobileStyles.title}`}>
+                            <span className={`p-1 rounded-lg ${mobileStyles.titleBg}`}><MobileIcon size={14} strokeWidth={2.5} /></span>
+                            {mobileTitle}
+                            {mobileCurrency === 'BS' && <span className="ml-auto text-[10px] font-black">Tasa: {formatBs(effectiveRate)}</span>}
+                        </h3>
+                        {mobileMethods.map(method => (
+                            <PaymentBar key={method.id} method={method} styles={mobileStyles} {...barProps} />
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {/* Vista de escritorio/tablet */}
+            <div className="hidden sm:block">
             {/* USD Section */}
             {methodsUsd.length > 0 && (
                 <div className={`mx-3 mb-3 rounded-2xl border ${SECTION_STYLES.USD.bg} ${SECTION_STYLES.USD.border} p-3`}>
                     <h3 className={`text-[11px] font-black uppercase tracking-widest mb-3 flex items-center gap-2 ${SECTION_STYLES.USD.title}`}>
-                        <span className={`p-1 rounded-lg ${SECTION_STYLES.USD.titleBg}`}>💲</span>
+                        <span className={`p-1 rounded-lg ${SECTION_STYLES.USD.titleBg}`}><DollarSign size={14} strokeWidth={2.5} /></span>
                         Dólares ($)
                     </h3>
                     {methodsUsd.map(m => <PaymentBar key={m.id} method={m} styles={SECTION_STYLES.USD} {...barProps} />)}
@@ -121,7 +191,7 @@ export default function CheckoutPaymentBars({
                 <div className={`mx-3 mb-3 rounded-2xl border ${SECTION_STYLES.BS.bg} ${SECTION_STYLES.BS.border} p-3`}>
                     <div className="flex items-center justify-between mb-3">
                         <h3 className={`text-[11px] font-black uppercase tracking-widest flex items-center gap-2 ${SECTION_STYLES.BS.title}`}>
-                            <span className={`p-1 rounded-lg ${SECTION_STYLES.BS.titleBg}`}>💵</span>
+                            <span className={`p-1 rounded-lg ${SECTION_STYLES.BS.titleBg}`}><Banknote size={14} strokeWidth={2.5} /></span>
                             Bolívares (Bs)
                         </h3>
                         <span className={`text-[10px] font-black px-2 py-0.5 rounded-lg ${SECTION_STYLES.BS.titleBg} ${SECTION_STYLES.BS.title}`}>
@@ -137,7 +207,7 @@ export default function CheckoutPaymentBars({
                 <div className={`mx-3 mb-3 rounded-2xl border ${SECTION_STYLES.COP.bg} ${SECTION_STYLES.COP.border} p-3`}>
                     <div className="flex items-center justify-between mb-3">
                         <h3 className={`text-[11px] font-black uppercase tracking-widest flex items-center gap-2 ${SECTION_STYLES.COP.title}`}>
-                            <span className={`p-1 rounded-lg ${SECTION_STYLES.COP.titleBg}`}>🟡</span>
+                            <span className={`p-1 rounded-lg ${SECTION_STYLES.COP.titleBg}`}><Coins size={14} strokeWidth={2.5} /></span>
                             Pesos (COP)
                         </h3>
                         <span className={`text-[10px] font-black px-2 py-0.5 rounded-lg ${SECTION_STYLES.COP.titleBg} ${SECTION_STYLES.COP.title}`}>
@@ -147,6 +217,7 @@ export default function CheckoutPaymentBars({
                     {methodsCop.map(m => <PaymentBar key={m.id} method={m} styles={SECTION_STYLES.COP} {...barProps} />)}
                 </div>
             )}
+            </div>
         </>
     );
 }

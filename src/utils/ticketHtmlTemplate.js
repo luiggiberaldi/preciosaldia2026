@@ -88,21 +88,42 @@ export function buildTicketHtml(sale, bcvRate, paperConfig, settings) {
     // Generar filas de pagos
     const paymentsHtml = (sale.payments || []).map(p => {
         const pIsCop = p.currency === 'COP';
-        const isBs = !pIsCop && (p.currency ? p.currency !== 'USD' : (p.methodId?.includes('_bs') || p.methodId === 'pago_movil'));
+        const pIsInternalCredit = p.methodId === 'saldo_favor' || p.currency === 'INTERNAL_CREDIT' || p.isInternalCredit;
+        const isBs = !pIsCop && !pIsInternalCredit && (p.currency ? p.currency !== 'USD' : (p.methodId?.includes('_bs') || p.methodId === 'pago_movil'));
         // FIN-024: mulR en vez de multiplicación raw.
-        const val = pIsCop
+        const val = pIsInternalCredit
+            ? '-' + fmtUsd(p.amountUsd || 0)
+            : pIsCop
             ? 'COP ' + (p.amountInput || mulR(p.amountUsd, (sale.tasaCop || 1))).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
             : isBs
             ? 'Bs ' + formatBs(p.amountBs || mulR(p.amountUsd, rate))
             : fmtUsd(p.amountUsd || 0);
         return `
             <tr>
-                <td style="font-size:11px;padding:2px 4px 2px 0;text-align:left;width:65%;word-break:break-word;vertical-align:top;">${escapeHtml(p.methodLabel || 'Pago')}</td>
+                <td style="font-size:11px;padding:2px 4px 2px 0;text-align:left;width:65%;word-break:break-word;vertical-align:top;">${escapeHtml(pIsInternalCredit ? 'Saldo a favor utilizado' : (p.methodLabel || 'Pago'))}</td>
                 <td style="font-size:11px;font-weight:bold;text-align:right;width:35%;white-space:nowrap;vertical-align:top;">${val}</td>
             </tr>`;
     }).join('');
 
     const fiadoRate = bcvRate || rate;
+    const walletCreditUsd = sale.tipo === 'COBRO_DEUDA'
+        ? Math.max(0, Number(sale.saldoFavorGeneradoUsd) || 0)
+        : ['VENTA', 'VENTA_CASHEA'].includes(sale.tipo)
+            ? Math.max(0, Number(sale.vueltoParaMonedero) || 0)
+            : 0;
+    const walletCreditLabel = sale.tipo === 'COBRO_DEUDA'
+        ? 'Saldo a favor generado (sobrante de abono):'
+        : 'Saldo a favor acreditado:';
+    const walletCreditHtml = walletCreditUsd > 0
+        ? `<div style="margin-top:6px;padding:4px 0;border-top:1px dashed #000;"><table style="width:100%"><tr><td style="color:#087f8c;font-weight:bold;font-size:11px;width:65%;text-align:left;">${walletCreditLabel}</td><td style="color:#087f8c;font-weight:bold;font-size:11px;width:35%;text-align:right;white-space:nowrap;">+${fmtUsd(walletCreditUsd)}</td></tr></table></div>`
+        : '';
+    const physicalChangeHtml = (Number(sale.changeUsd) > 0 || Number(sale.changeBs) > 0)
+        ? `<div style="margin-top:6px;padding:4px 0;border-top:1px dashed #000;"><table style="width:100%">${Number(sale.changeUsd) > 0 ? `<tr><td style="font-weight:bold;font-size:11px;width:65%;text-align:left;">Vuelto entregado:</td><td style="font-weight:bold;font-size:11px;width:35%;text-align:right;white-space:nowrap;">${fmtUsd(sale.changeUsd)}</td></tr>` : ''}${Number(sale.changeBs) > 0 ? `<tr><td style="font-weight:bold;font-size:11px;width:65%;text-align:left;">Vuelto entregado Bs:</td><td style="font-weight:bold;font-size:11px;width:35%;text-align:right;white-space:nowrap;">Bs ${formatBs(sale.changeBs)}</td></tr>` : ''}</table></div>`
+        : '';
+    const tipDonatedUsd = Math.max(0, Number(sale.tipDonated?.amountUsd) || 0);
+    const tipHtml = tipDonatedUsd > 0
+        ? `<div style="margin-top:6px;padding:4px 0;border-top:1px dashed #000;"><table style="width:100%"><tr><td style="color:#087f8c;font-weight:bold;font-size:11px;width:65%;text-align:left;">Cambio dejado en caja:</td><td style="color:#087f8c;font-weight:bold;font-size:11px;width:35%;text-align:right;white-space:nowrap;">+${fmtUsd(tipDonatedUsd)}</td></tr></table></div>`
+        : '';
     // FIN-024: mulR en vez de multiplicación raw.
     let fiadoHtml = '';
     if (hasFiado) {
@@ -281,11 +302,14 @@ export function buildTicketHtml(sale, bcvRate, paperConfig, settings) {
     <hr class="dash">
 
     <!-- Pagos -->
-    ${(sale.payments && sale.payments.length > 0) || hasFiado ? `
+    ${(sale.payments && sale.payments.length > 0) || hasFiado || walletCreditUsd > 0 || tipDonatedUsd > 0 || Number(sale.changeUsd) > 0 || Number(sale.changeBs) > 0 ? `
     <div style="margin:4px 0;">
         <div style="font-size:${fTiny};color:#000;font-weight:bold;margin-bottom:4px;">PAGOS REALIZADOS</div>
         <table>${paymentsHtml}</table>
         ${fiadoHtml}
+        ${physicalChangeHtml}
+        ${tipHtml}
+        ${walletCreditHtml}
     </div>
     <hr class="dash">
     ` : ''}

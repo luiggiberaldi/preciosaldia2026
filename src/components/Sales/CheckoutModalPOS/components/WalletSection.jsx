@@ -1,10 +1,15 @@
-import React from 'react';
-import { Wallet } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { Wallet, Zap } from 'lucide-react';
 
 /**
  * WalletSection — Sección de saldo a favor del cliente.
- * Solo se muestra si el cliente tiene saldo a favor.
+ * Solo se muestra si el crédito interno puede cubrir una parte pendiente.
  */
+export const shouldShowWalletSection = ({ saldoDisponible = 0, faltaSinSaldo = 0, saldoAplicado = 0 }) => (
+    Number(saldoDisponible) > 0.01
+    && (Number(faltaSinSaldo) > 0.01 || Number(saldoAplicado) > 0.01)
+);
+
 export default function WalletSection({
     cliente,
     totalPagadoUSD,
@@ -15,14 +20,25 @@ export default function WalletSection({
     setPagoSaldoFavor,
 }) {
     const saldoDisponible = parseFloat(cliente?.favor) || 0;
-    if (saldoDisponible <= 0.01) return null;
-
     // C-2: Cashea también cubre parte del total. Sin descontarlo, faltaSinSaldo
     // queda inflado y el tope del saldo a favor permite fugas de efectivo.
     const pagadoOtros = totalPagadoUSD + (parseFloat(casheaAmountUsd) || 0);
     const faltaSinSaldo = Math.max(0, totalConIGTF - pagadoOtros);
     // C-2 (D1): el saldo a favor solo cubre lo que se debe. NO se convierte en efectivo.
     const maxAplicable = Math.min(saldoDisponible, faltaSinSaldo);
+    const saldoAplicado = parseFloat(pagoSaldoFavor) || 0;
+
+    // El saldo a favor solo es una alternativa cuando todavía falta cubrir la
+    // venta. Si ya existe sobrepago, mostrarlo induce al cajero a usar un
+    // crédito interno sin necesidad. Si ya se aplicó, mantenemos el bloque
+    // visible para poder corregir el monto.
+    useEffect(() => {
+        if (faltaSinSaldo <= 0.01 && saldoAplicado > 0.01) {
+            setPagoSaldoFavor('');
+        }
+    }, [faltaSinSaldo, saldoAplicado, setPagoSaldoFavor]);
+
+    if (!shouldShowWalletSection({ saldoDisponible, faltaSinSaldo, saldoAplicado })) return null;
 
     const handleUsarTodo = () => {
         const aUsar = maxAplicable;
@@ -36,7 +52,7 @@ export default function WalletSection({
                     <Wallet size={20} />
                 </div>
                 <div>
-                    <h4 className="font-bold text-brand/90 dark:text-brand text-xs uppercase tracking-wide">Monedero</h4>
+                    <h4 className="font-bold text-brand/90 dark:text-brand text-xs uppercase tracking-wide">Saldo a Favor · Método de pago</h4>
                     <div className="text-xl font-black text-brand">${saldoDisponible.toFixed(2)}</div>
                 </div>
             </div>
@@ -60,9 +76,11 @@ export default function WalletSection({
                 </div>
                 <button
                     onClick={handleUsarTodo}
-                    className="px-3 py-2 bg-brand hover:bg-brand/90 text-white font-bold text-xs rounded-lg transition-colors whitespace-nowrap active:scale-95"
+                    type="button"
+                    title="Aplicar el máximo saldo a favor permitido"
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-brand hover:bg-brand/90 text-white font-bold text-xs rounded-lg transition-colors whitespace-nowrap active:scale-95"
                 >
-                    ⚡ Todo
+                    <Zap size={13} strokeWidth={3} /> Todo
                 </button>
             </div>
         </div>

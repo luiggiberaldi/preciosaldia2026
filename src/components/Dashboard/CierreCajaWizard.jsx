@@ -180,6 +180,7 @@ export default function CierreCajaWizard({
 
     // Helper: determine currency label for payment breakdown display
     const getCurrencyDisplay = (methodId, data) => {
+        if (data.currency === 'INTERNAL_CREDIT' || data.isInternalCredit) return `$${data.total.toFixed(2)} crédito interno`;
         if (data.currency === 'COP') return `${fmtCop(data.total)} COP`;
         if (data.currency === 'BS' || methodId.includes('_bs') || methodId === 'pago_movil') return `${formatBs(data.total)} Bs`;
         return fmtUsdAmt(data.total);

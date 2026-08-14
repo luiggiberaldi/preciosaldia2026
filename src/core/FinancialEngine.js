@@ -17,6 +17,7 @@
 
 import { round2, mulR, divR, subR, sumR } from '../utils/dinero.js';
 import { FINANCIAL_EPSILON } from '../utils/securityConstants.js';
+import { getGeneratedWalletCredit } from '../utils/customerLedger.js';
 
 // ── Labels de métodos de pago de fábrica (lookup puro, sin async) ──
 // Resuelve el nombre legible de un methodId sin necesitar el módulo async.
@@ -221,6 +222,25 @@ export class FinancialEngine {
                 return; // Ya procesado, no continuar al flujo normal de vuelto y pagos
             }
 
+            // Crédito generado por vuelto acreditado: es una obligación interna con el
+            // cliente, no efectivo ni ingreso cobrado. Se reporta aparte del método
+            // `saldo_favor` utilizado para que ambas patas de la cartera sean auditables.
+            const generatedWalletCredit = getGeneratedWalletCredit(sale);
+            if (generatedWalletCredit > FINANCIAL_EPSILON.PAYMENT_ZERO) {
+                breakdown['_saldo_favor_generado'] = breakdown['_saldo_favor_generado'] || {
+                    total: 0,
+                    currency: 'INTERNAL_CREDIT',
+                    label: 'Saldo a Favor Generado',
+                    isInternalCredit: true,
+                    isWalletCredit: true,
+                    isCash: false,
+                    isRevenue: false,
+                };
+                breakdown['_saldo_favor_generado'].total = round2(
+                    breakdown['_saldo_favor_generado'].total + generatedWalletCredit
+                );
+            }
+
             // Fiado sales: bucket "fiado" tracks the *outstanding debt* generated (fiadoUsd),
             // NOT the total sale (which may have partial real payments).
             // FIN-004: usar sale.fiadoUsd || sale.totalUsd para ventas legacy sin fiadoUsd,
@@ -286,11 +306,13 @@ export class FinancialEngine {
                         // currency 'FIADO' + isReceivable para que ningún consumidor que
                         // filtre por `currency` lo sume como ingreso USD del período.
                         const isCasheaBucket = p.methodId === 'cashea';
+                        const isInternalCredit = p.methodId === 'saldo_favor' || p.isInternalCredit || p.currency === 'INTERNAL_CREDIT';
                         breakdown[p.methodId] = {
                             total: 0,
-                            currency: isCasheaBucket ? 'FIADO' : (p.currency || 'BS'),
-                            label: isCasheaBucket ? 'Cashea (Por Cobrar)' : resolvedLabel,
-                            ...(isCasheaBucket && { isReceivable: true })
+                            currency: isCasheaBucket ? 'FIADO' : (isInternalCredit ? 'INTERNAL_CREDIT' : (p.currency || 'BS')),
+                            label: isCasheaBucket ? 'Cashea (Por Cobrar)' : (isInternalCredit ? 'Saldo a Favor Utilizado' : resolvedLabel),
+                            ...(isCasheaBucket && { isReceivable: true }),
+                            ...(isInternalCredit && { isInternalCredit: true, isCash: false, isRevenue: false }),
                         };
                     }
 
@@ -302,7 +324,9 @@ export class FinancialEngine {
                         ? round2(p.amountBs)
                         : (p.currency === 'BS' ? round2(p.amount) : mulR(p.amount, saleRate));
 
-                    if (p.currency === 'USD') {
+                    if (p.currency === 'INTERNAL_CREDIT' || p.methodId === 'saldo_favor' || p.isInternalCredit) {
+                        breakdown[p.methodId].total = round2(breakdown[p.methodId].total + amountUsd);
+                    } else if (p.currency === 'USD') {
                         breakdown[p.methodId].total = round2(breakdown[p.methodId].total + amountUsd);
                     } else if (p.currency === 'COP') {
                         // FIN-003: Ventas legacy sin tasaCop → fallback a `1` subestimaba COP por ~4000x.

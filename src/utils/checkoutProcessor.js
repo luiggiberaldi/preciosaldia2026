@@ -1,5 +1,6 @@
 import { storageService } from './storageService.js';
-import { procesarImpactoCliente } from './financialLogic.js';
+import { applyCustomerMovementsWithinLock } from '../services/customerWalletService.js';
+import { CUSTOMER_MOVEMENT_TYPES, normalizeCustomer } from './customerLedger.js';
 import { logEvent } from '../services/auditService.js';
 import { useAuthStore } from '../hooks/store/useAuthStore.js';
 import { round2, sumR, subR, divR, mulR } from './dinero.js';
@@ -55,6 +56,13 @@ export async function processSaleTransaction({
         return { success: false, error: 'Datos de pago inválidos' };
     }
 
+    const internalCreditUsd = sumR(payments
+        .filter(p => p.methodId === 'saldo_favor' || p.isInternalCredit)
+        .map(p => p.amountUsd));
+    if (internalCreditUsd > FINANCIAL_EPSILON.PAYMENT_ZERO && !selectedCustomerId) {
+        return { success: false, error: 'Se requiere cliente para usar saldo a favor.' };
+    }
+
     // FIN-022: Validación de tasa y consistencia matemática entre USD y Bs.
     if (!effectiveRate || effectiveRate <= 0) {
         return { success: false, error: 'Tasa de cambio BCV inválida (<= 0). Configura la tasa antes de cobrar.' };
@@ -70,6 +78,18 @@ export async function processSaleTransaction({
     const remainingUsd = round2(Math.max(0, subR(activeCartTotalUsd, totalPaidUsd)));
     const changeUsd    = round2(Math.max(0, subR(totalPaidUsd, activeCartTotalUsd)));
 
+    // Una venta en modo Crédito solo puede cubrir el total o quedar parcialmente
+    // fiada. Un pago superior al total pertenece al flujo Contado: si se aceptara
+    // aquí, el excedente podría quedar fuera de changeUsd y no llegar a caja ni a
+    // la billetera del cliente. La UI también lo bloquea, pero esta validación es
+    // la frontera de integridad para llamadas antiguas o manipuladas.
+    if (changeBreakdown?.esCredito === true && changeUsd > FINANCIAL_EPSILON.PAYMENT_ZERO) {
+        return {
+            success: false,
+            error: `En modo crédito el pago excede la venta en $${changeUsd.toFixed(2)}. Cambia a Contado para gestionar el vuelto o registra un abono desde Cartera.`,
+        };
+    }
+
     // FIN-034: Normalizar el vuelto declarado por la UI.
     // La UI podía enviar el MISMO vuelto duplicado en USD y en Bs (ej: {10, 400} a tasa 40
     // para un vuelto real de $10), y el FinancialEngine sumaba ambos → $20 de vuelto.
@@ -78,17 +98,38 @@ export async function processSaleTransaction({
     // NOTA: effectiveRate ya fue validado > 0 arriba (FIN-022), así que divR es seguro.
     const rawChangeUsdGiven = round2(Math.max(0, Number(changeBreakdown?.changeUsdGiven) || 0));
     const rawChangeBsGiven  = round2(Math.max(0, Number(changeBreakdown?.changeBsGiven)  || 0));
+    // El monto dejado en caja es una parte del vuelto, no una propina adicional.
+    // Se descuenta antes de calcular el vuelto físico para impedir que la suma
+    // "caja + entregado + billetera" supere el cambio real.
+    const rawTip = changeBreakdown?.tipDonated || null;
+    const requestedTipUsd = round2(Math.min(
+        Math.max(0, Number(rawTip?.amountUsd) || 0),
+        changeUsd
+    ));
+    const availableForPhysicalChangeUsd = round2(Math.max(0, subR(changeUsd, requestedTipUsd)));
     const bsGivenAsUsd      = round2(divR(rawChangeBsGiven, effectiveRate));
-    const givenChangeBsUsd  = Math.min(bsGivenAsUsd, changeUsd);
+    const givenChangeBsUsd  = Math.min(bsGivenAsUsd, availableForPhysicalChangeUsd);
     const givenChangeBs     = givenChangeBsUsd === bsGivenAsUsd
         ? rawChangeBsGiven
         : round2(mulR(givenChangeBsUsd, effectiveRate));
-    const givenChangeUsd    = round2(Math.min(rawChangeUsdGiven, Math.max(0, subR(changeUsd, givenChangeBsUsd))));
+    const requestedPhysicalUsd = round2(Math.min(
+        rawChangeUsdGiven,
+        Math.max(0, subR(availableForPhysicalChangeUsd, givenChangeBsUsd))
+    ));
+
+    // Si el operador no activa "Acreditar resto", todo lo que no dejó en caja
+    // debe salir como vuelto físico. Los campos USD/Bs son un desglose de
+    // denominaciones, no una autorización para que desaparezca el remanente.
+    // Con billetera activa, en cambio, el remanente se acredita explícitamente.
+    const hasExplicitChangeAllocation = changeBreakdown?.changeAllocationExplicit === true;
+    const givenChangeUsd = hasExplicitChangeAllocation || changeBreakdown?.vueltoCredito
+        ? requestedPhysicalUsd
+        : round2(Math.max(0, subR(availableForPhysicalChangeUsd, givenChangeBsUsd)));
 
     const casheaPayment = payments.find(p => p.methodId === 'cashea');
     const casheaUsd = casheaPayment ? round2(casheaPayment.amountUsd) : 0;
 
-    if (!selectedCustomer && (remainingUsd > 0.01 || casheaUsd > 0)) {
+    if (!selectedCustomerId && (remainingUsd > 0.01 || casheaUsd > 0)) {
         return { success: false, error: remainingUsd > 0.01 ? 'Se requiere cliente para ventas fiadas' : 'Se requiere cliente para ventas con Cashea' };
     }
 
@@ -110,15 +151,10 @@ export async function processSaleTransaction({
     // la moneda nativa es Bs (y recalculado aquí, sin confiar en el input de la UI).
     // Una VENTA_FIADA no genera sobrepago, así que no admite propina (D4).
     // Una VENTA_CASHEA sí: el vuelto de la cuota inicial es efectivo real (D5).
-    const rawTip = changeBreakdown?.tipDonated || null;
-    const tipUsd = round2(Math.min(
-        Math.max(0, Number(rawTip?.amountUsd) || 0),
-        changeUsd
-    ));
+    const tipUsd = tipoVenta !== 'VENTA_FIADA' ? requestedTipUsd : 0;
     const tipIsBs = rawTip?.currency === 'BS';
     const tipDonated = (rawTip
-        && tipUsd > FINANCIAL_EPSILON.PAYMENT_ZERO
-        && tipoVenta !== 'VENTA_FIADA')
+        && tipUsd > FINANCIAL_EPSILON.PAYMENT_ZERO)
         ? {
             amountUsd: tipUsd,
             amountBs: tipIsBs ? round2(mulR(tipUsd, effectiveRate)) : 0,
@@ -134,6 +170,31 @@ export async function processSaleTransaction({
         currency:    p.currency    || 'USD',
         methodLabel: p.methodLabel || p.methodId,
     }));
+
+    const requestedCreditChangeUsd = changeBreakdown?.vueltoCredito && tipoVenta !== 'VENTA_FIADA'
+        ? round2(Math.max(0, subR(availableForPhysicalChangeUsd, sumR(requestedPhysicalUsd, givenChangeBsUsd))))
+        : 0;
+
+    if (requestedCreditChangeUsd > FINANCIAL_EPSILON.PAYMENT_ZERO && !selectedCustomerId) {
+        return { success: false, error: 'Se requiere cliente para acreditar el vuelto.' };
+    }
+
+    // Cuando el cajero comenzó una distribución explícita, todos los destinos
+    // deben sumar el vuelto completo. Evita que una parte quede sin destino por
+    // accidente: caja + físico + billetera siempre debe cuadrar.
+    const allocatedChangeUsd = sumR(
+        tipUsd,
+        givenChangeUsd,
+        givenChangeBsUsd,
+        requestedCreditChangeUsd
+    );
+    const unallocatedChangeUsd = round2(Math.max(0, subR(changeUsd, allocatedChangeUsd)));
+    if (hasExplicitChangeAllocation && unallocatedChangeUsd > FINANCIAL_EPSILON.PAYMENT_ZERO) {
+        return {
+            success: false,
+            error: `Vuelto sin asignar: $${unallocatedChangeUsd.toFixed(2)}. Entrégalo, déjalo en caja o acredita el resto a la billetera.`,
+        };
+    }
 
     const sale = {
         id: crypto.randomUUID(),
@@ -184,12 +245,21 @@ export async function processSaleTransaction({
         // TIP-002 (D3): propina donada ⟹ vuelto entregado 0, sin excepción.
         // Se fuerza aquí y no solo en la UI: si un modo de checkout manda ambos,
         // el dinero se contaría dos veces (una donado, una entregado).
-        changeUsd: (tipoVenta === 'VENTA_FIADA' || tipDonated) ? 0 : givenChangeUsd,
-        changeBs:  (tipoVenta === 'VENTA_FIADA' || tipDonated) ? 0 : givenChangeBs,
-        // FIN-012: Guardar vueltoParaMonedero para revertir al anular.
-        // Por ahora el flujo de checkout no enruta vuelto a favor (siempre 0),
-        // pero dejamos el campo para ventas futuras y abonos manuales.
-        vueltoParaMonedero: 0,
+        // `change*` representa solo el vuelto físico entregado. El monto dejado
+        // en caja vive en tipDonated y el monto llevado a billetera en el ledger.
+        changeUsd: tipoVenta === 'VENTA_FIADA' ? 0 : givenChangeUsd,
+        changeBs:  tipoVenta === 'VENTA_FIADA' ? 0 : givenChangeBs,
+        // Crédito interno persistido en USD para reversión exacta.
+        vueltoParaMonedero: requestedCreditChangeUsd,
+        // Registro canónico de los tres destinos del vuelto. Evita tener que
+        // inferir una distribución leyendo campos históricos por separado.
+        changeAllocation: tipoVenta === 'VENTA_FIADA' ? null : {
+            totalUsd: changeUsd,
+            keptInCashUsd: tipUsd,
+            deliveredUsd: givenChangeUsd,
+            deliveredBs: givenChangeBs,
+            creditedUsd: requestedCreditChangeUsd,
+        },
         customerId:       selectedCustomerId || null,
         customerName:     selectedCustomer ? selectedCustomer.name : 'Consumidor Final',
         customerDocument: selectedCustomer?.documentId || null,
@@ -209,6 +279,20 @@ export async function processSaleTransaction({
         const saleNumber = existingSales.reduce((mx, s) => Math.max(mx, s.saleNumber || 0), 0) + 1;
         // FIN-008: deep-freeze el sale persistido final.
         const finalPersistedSale = deepFreeze({ ...sale, saleNumber });
+
+        // Validación financiera dentro del lock y contra el snapshot más fresco,
+        // antes de persistir venta o stock.
+        if (selectedCustomerId) {
+            const validationCustomers = await storageService.getItem(CUSTOMERS_KEY, customers);
+            const validationCustomer = validationCustomers.find(c => c.id === selectedCustomerId);
+            if (!validationCustomer) {
+                return { success: false, error: 'El cliente no existe o fue actualizado.' };
+            }
+            const normalizedValidationCustomer = normalizeCustomer(validationCustomer);
+            if (internalCreditUsd > (Number(normalizedValidationCustomer.favor) || 0) + FINANCIAL_EPSILON.PAYMENT_ZERO) {
+                return { success: false, error: `El saldo a favor disponible es insuficiente. Disponible: $${round2(Number(normalizedValidationCustomer.favor) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.` };
+            }
+        }
 
         await storageService.setItem(SALES_KEY, [finalPersistedSale, ...existingSales]);
 
@@ -262,37 +346,64 @@ export async function processSaleTransaction({
         await storageService.setItem(PRODUCTS_KEY, updatedProducts);
         deepFreeze(updatedProducts);
 
-        let updatedCustomer = null;
         let updatedCustomers = customers;
 
-        if (selectedCustomer) {
-            const amount_favor_used = sumR(normalizedPayments
-                .filter(p => p.methodId === 'saldo_favor')
-                .map(p => p.amountUsd));
-
-            // Cashea y fiado son deudas de contrapartes distintas y coexisten:
-            // el ternario anterior descartaba silenciosamente la porción fiada.
-            const deudaParaCliente = sumR(casheaUsd, fiadoAmountUsd);
-
-            const transaccionOpts = {
-                usaSaldoFavor:    amount_favor_used,
-                esCredito:        deudaParaCliente > FINANCIAL_EPSILON.PAYMENT_ZERO,
-                deudaGenerada:    deudaParaCliente,
-                vueltoParaMonedero: 0,
-                esCashea:         casheaUsd > 0
-            };
-
-            // FIN-037: releer clientes frescos DENTRO del lock (mismo patrón que freshProducts).
-            // El prop `customers` viene del render de React y puede estar obsoleto:
-            // aplicar el impacto sobre él sobrescribe abonos o deudas registrados en el medio.
+        if (selectedCustomerId) {
+            // Leer cliente fresco dentro del lock y registrar cada impacto como un
+            // movimiento independiente, manteniendo snapshot y ledger consistentes.
             const freshCustomers = await storageService.getItem(CUSTOMERS_KEY, customers);
-            const freshSelected  = freshCustomers.find(c => c.id === selectedCustomer.id) || selectedCustomer;
+            const freshSelected = freshCustomers.find(c => c.id === selectedCustomerId);
+            if (!freshSelected) {
+                throw new Error('El cliente no existe o fue actualizado.');
+            }
 
-            updatedCustomer  = procesarImpactoCliente(freshSelected, transaccionOpts);
-            updatedCustomers = freshCustomers.map(c => c.id === freshSelected.id ? updatedCustomer : c);
+            const movements = [];
+            if (internalCreditUsd > FINANCIAL_EPSILON.PAYMENT_ZERO) {
+                movements.push({
+                    type: CUSTOMER_MOVEMENT_TYPES.CREDIT_USED,
+                    direction: 'DEBIT',
+                    amountUsd: internalCreditUsd,
+                    sourceType: 'SALE',
+                    sourceId: `${finalPersistedSale.id}:saldo_favor`,
+                    sourceSaleId: finalPersistedSale.id,
+                    paymentMethodId: 'saldo_favor',
+                    reason: 'Saldo a favor utilizado en venta',
+                });
+            }
+            if (fiadoAmountUsd > FINANCIAL_EPSILON.PAYMENT_ZERO) {
+                movements.push({
+                    type: CUSTOMER_MOVEMENT_TYPES.CREDIT_SALE,
+                    direction: 'DEBIT',
+                    amountUsd: fiadoAmountUsd,
+                    sourceType: 'SALE',
+                    sourceId: `${finalPersistedSale.id}:fiado`,
+                    sourceSaleId: finalPersistedSale.id,
+                    reason: 'Venta fiada',
+                });
+            }
+            if (requestedCreditChangeUsd > FINANCIAL_EPSILON.PAYMENT_ZERO) {
+                movements.push({
+                    type: CUSTOMER_MOVEMENT_TYPES.CHANGE_CREDITED,
+                    direction: 'CREDIT',
+                    amountUsd: requestedCreditChangeUsd,
+                    sourceType: 'SALE',
+                    sourceId: `${finalPersistedSale.id}:vuelto`,
+                    sourceSaleId: finalPersistedSale.id,
+                    reason: 'Vuelto acreditado a cartera',
+                });
+            }
 
-            await storageService.setItem(CUSTOMERS_KEY, updatedCustomers);
-            // FIN-008: deep-freeze customers antes de retornar.
+            if (movements.length > 0) {
+                const walletResult = await applyCustomerMovementsWithinLock({
+                    customerId: freshSelected.id,
+                    customers: freshCustomers,
+                    user,
+                    movements,
+                });
+                updatedCustomers = walletResult.updatedCustomers;
+            } else {
+                updatedCustomers = freshCustomers;
+            }
             deepFreeze(updatedCustomers);
         }
 

@@ -1,5 +1,6 @@
 import { FinancialEngine } from '../core/FinancialEngine.js';
 import { divR, round2, sumR } from '../utils/dinero.js';
+import { getGeneratedWalletCredit } from '../utils/customerLedger.js';
 
 const SALE_TYPES = Object.freeze(['VENTA', 'VENTA_FIADA', 'VENTA_CASHEA']);
 const CASH_FLOW_TYPES = Object.freeze([
@@ -112,8 +113,8 @@ export function calculateSupervisorSalesMetrics(sales = [], products = [], bcvRa
 
 export function calculateSupervisorPaymentBreakdown(sales = [], bcvRate = 1) {
     const breakdown = {};
-    const add = (methodId, amountUsd, amountBs, label, currency) => {
-        if (!breakdown[methodId]) breakdown[methodId] = { totalUsd: 0, totalBs: 0, count: 0, label, currency };
+    const add = (methodId, amountUsd, amountBs, label, currency, flags = {}) => {
+        if (!breakdown[methodId]) breakdown[methodId] = { totalUsd: 0, totalBs: 0, count: 0, label, currency, ...flags };
         breakdown[methodId].totalUsd = round2(breakdown[methodId].totalUsd + finite(amountUsd));
         breakdown[methodId].totalBs = round2(breakdown[methodId].totalBs + finite(amountBs));
         breakdown[methodId].count += 1;
@@ -127,7 +128,16 @@ export function calculateSupervisorPaymentBreakdown(sales = [], bcvRate = 1) {
             continue;
         }
         if (sale.tipo === 'VENTA_FIADA') {
-            add('fiado', sale.totalUsd, sale.totalBs, 'Fiado (Por Cobrar)', 'FIADO');
+            add('fiado', sale.fiadoUsd != null ? sale.fiadoUsd : sale.totalUsd, sale.fiadoUsd != null ? sale.fiadoUsd * (sale.rate || bcvRate || 1) : sale.totalBs, 'Fiado (Por Cobrar)', 'FIADO', { isReceivable: true });
+        }
+        // Las cobranzas reducen la cuenta por cobrar y, por separado, registran
+        // el medio físico/electrónico recibido abajo. Sin este ajuste el reporte
+        // del Supervisor mostraba el efectivo correcto pero inflaba el fiado.
+        if (sale.tipo === 'COBRO_DEUDA') {
+            add('fiado', -finite(sale.totalUsd), -finite(sale.totalBs), 'Fiado (Por Cobrar)', 'FIADO', { isReceivable: true });
+        }
+        if (sale.tipo === 'COBRO_CASHEA') {
+            add('cashea', -finite(sale.totalUsd), -finite(sale.totalBs), 'Cashea (Por Cobrar)', 'FIADO', { isReceivable: true });
         }
         if (Array.isArray(sale.payments) && sale.payments.length > 0) {
             for (const payment of sale.payments) {
@@ -141,6 +151,14 @@ export function calculateSupervisorPaymentBreakdown(sales = [], bcvRate = 1) {
                     : payment.currency === 'BS'
                         ? payment.amount
                         : finite(payment.amount) * (sale.rate || bcvRate || 1);
+                if (payment.methodId === 'saldo_favor' || payment.isInternalCredit || payment.currency === 'INTERNAL_CREDIT') {
+                    add('saldo_favor', amountUsd, 0, 'Saldo a Favor Utilizado', 'INTERNAL_CREDIT', {
+                        isInternalCredit: true,
+                        isCash: false,
+                        isRevenue: false,
+                    });
+                    continue;
+                }
                 add(
                     payment.methodId || 'efectivo_bs',
                     amountUsd,
@@ -159,6 +177,18 @@ export function calculateSupervisorPaymentBreakdown(sales = [], bcvRate = 1) {
                 isUsd ? 0 : isCop ? 0 : sale.totalBs,
                 methodId === 'efectivo_bs' ? 'Efectivo Bs' : methodId,
                 isUsd ? 'USD' : isCop ? 'COP' : 'BS',
+            );
+        }
+
+        const generatedWalletCredit = getGeneratedWalletCredit(sale);
+        if (generatedWalletCredit > 0) {
+            add(
+                'saldo_favor_generado',
+                generatedWalletCredit,
+                0,
+                'Saldo a Favor Generado',
+                'INTERNAL_CREDIT',
+                { isInternalCredit: true, isWalletCredit: true, isCash: false, isRevenue: false },
             );
         }
     }

@@ -41,6 +41,9 @@ export default function TransactionModal({
     // Saldo actual legible
     const saldoActualUsd = (currentCustomer.favor || 0) - (currentCustomer.deuda || 0);
     const saldoPreviewUsd = previewCustomer ? (previewCustomer.favor || 0) - (previewCustomer.deuda || 0) : saldoActualUsd;
+    const excedenteAbonoUsd = transactionModal.type === 'ABONO'
+        ? Math.max(0, amtUsd - (Number(currentCustomer.deuda) || 0))
+        : 0;
 
     const formatSaldo = (val) => {
         const isCopP = copEnabled && copPrimary && tasaCop > 0;
@@ -194,6 +197,11 @@ export default function TransactionModal({
                             <span>Tasa BCV: {formatBs(bcvRate)} Bs/$</span>
                             {copEnabled && <span>• Tasa COP: {formatBs(tasaCop)} COP/$</span>}
                         </p>
+                        {excedenteAbonoUsd > 0.01 && (
+                            <div className="mt-2 rounded-lg border border-amber-200 dark:border-amber-800/30 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-center text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                                El abono supera la deuda actual. Se aplican <strong>${formatUsd(amtUsd - excedenteAbonoUsd)}</strong> a la deuda y el sobrante de <strong>${formatUsd(excedenteAbonoUsd)}</strong> quedará como saldo a favor del cliente.
+                            </div>
+                        )}
                     </div>
 
                     {/* Metodo de pago (solo para abonos) */}

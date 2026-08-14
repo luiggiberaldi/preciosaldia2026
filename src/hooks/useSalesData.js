@@ -1,9 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import { storageService } from '../utils/storageService';
-import { getActivePaymentMethods } from '../config/paymentMethods';
+import { getActivePaymentMethods, INTERNAL_CREDIT_PAYMENT_METHOD } from '../config/paymentMethods';
 import { getLocalISODate } from '../utils/dateHelpers';
+import { migrateCustomerLedger } from '../utils/customerMigration';
 
 export const SALES_KEY = 'bodega_sales_v1';
+
+function addInternalCreditMethod(methods) {
+    return [
+        ...(Array.isArray(methods) ? methods : []),
+        { ...INTERNAL_CREDIT_PAYMENT_METHOD },
+    ];
+}
 
 function sanitizeCart(rawCart) {
     if (!Array.isArray(rawCart)) return [];
@@ -29,6 +37,11 @@ export function useSalesData({ setCart, cartRef, isActive }) {
     useEffect(() => {
         let mounted = true;
         const load = async () => {
+            try {
+                await migrateCustomerLedger();
+            } catch (error) {
+                console.error('[useSalesData] No se pudo migrar la cartera:', error);
+            }
             const [savedCustomers, methods, savedCart, savedSales] = await Promise.all([
                 storageService.getItem('bodega_customers_v1', []),
                 getActivePaymentMethods(),
@@ -38,7 +51,7 @@ export function useSalesData({ setCart, cartRef, isActive }) {
             if (mounted) { setSalesData(savedSales); }
             if (mounted) {
                 setCustomers(savedCustomers);
-                setPaymentMethods(methods);
+                setPaymentMethods(addInternalCreditMethod(methods));
 
                 // Sanitizar el carrito de posibles ítems nulos o corruptos antes de cargarlo
                 const cleanCart = sanitizeCart(savedCart);
@@ -67,11 +80,12 @@ export function useSalesData({ setCart, cartRef, isActive }) {
     const handleReloadContent = useCallback(() => {
         if (!isActive) return;
         Promise.all([
+            migrateCustomerLedger().catch(error => console.error('[useSalesData] Error migrando cartera:', error)),
             getActivePaymentMethods(),
             storageService.getItem('bodega_customers_v1', []),
             storageService.getItem(SALES_KEY, [])
-        ]).then(([methods, savedCustomers, savedSales]) => {
-            setPaymentMethods(methods);
+        ]).then(([, methods, savedCustomers, savedSales]) => {
+            setPaymentMethods(addInternalCreditMethod(methods));
             setCustomers(savedCustomers);
             setSalesData(savedSales);
 

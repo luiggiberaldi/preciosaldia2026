@@ -304,9 +304,12 @@ class PrinterSerial {
             chunks.push(encode(line(w)));
             chunks.push(encode('Pagos:\n'));
             for (const p of sale.payments) {
-                const pmtLabel = p.methodLabel || p.methodId || 'Efectivo';
+                let pmtLabel = p.methodLabel || p.methodId || 'Efectivo';
                 let pmtAmount = '';
-                if (p.currency === 'USD' || (!p.currency && p.amountUsd)) {
+                if (p.methodId === 'saldo_favor' || p.currency === 'INTERNAL_CREDIT' || p.isInternalCredit) {
+                    pmtLabel = 'Saldo a favor utilizado';
+                    pmtAmount = `-USD ${(p.amountUsd || 0).toFixed(2)}`;
+                } else if (p.currency === 'USD' || (!p.currency && p.amountUsd)) {
                     pmtAmount = `USD ${(p.amountUsd || 0).toFixed(2)}`;
                 } else if (p.currency === 'BS') {
                     pmtAmount = `${formatBsLocal(p.amountBs || 0)} Bs`;
@@ -325,6 +328,25 @@ class PrinterSerial {
         }
         if (sale.changeBs > 0) {
             chunks.push(encode(twoCol('Vuelto Bs:', `${formatBsLocal(sale.changeBs)} Bs`, w) + '\n'));
+        }
+
+        // ── Cambio dejado en caja ─────────────────────────────────
+        const tipDonatedUsd = Math.max(0, Number(sale.tipDonated?.amountUsd) || 0);
+        if (tipDonatedUsd > 0) {
+            chunks.push(encode(twoCol('Cambio dejado en caja:', `+USD ${tipDonatedUsd.toFixed(2)}`, w) + '\n'));
+        }
+
+        // ── Cartera del cliente ────────────────────────────────────
+        const walletCreditUsd = sale.tipo === 'COBRO_DEUDA'
+            ? Math.max(0, Number(sale.saldoFavorGeneradoUsd) || 0)
+            : ['VENTA', 'VENTA_CASHEA'].includes(sale.tipo)
+                ? Math.max(0, Number(sale.vueltoParaMonedero) || 0)
+                : 0;
+        if (walletCreditUsd > 0) {
+            const walletCreditLabel = sale.tipo === 'COBRO_DEUDA'
+                ? 'Saldo a favor generado (sobrante de abono):'
+                : 'Saldo a favor acreditado:';
+            chunks.push(encode(twoCol(walletCreditLabel, `+USD ${walletCreditUsd.toFixed(2)}`, w) + '\n'));
         }
 
         // ── Footer ─────────────────────────────────────────────────
@@ -380,7 +402,9 @@ class PrinterSerial {
         for (const [method, data] of Object.entries(cierre.paymentBreakdown || {})) {
             const label = (data.label || method).substring(0, w - 14);
             let displayAmount = '';
-            if (data.currency === 'USD' || data.currency === 'FIADO') {
+            if (data.currency === 'INTERNAL_CREDIT' || data.isInternalCredit) {
+                displayAmount = `${fmtUsd(data.total)} crédito interno`;
+            } else if (data.currency === 'USD' || data.currency === 'FIADO') {
                 displayAmount = fmtUsd(data.total);
             } else if (data.currency === 'COP') {
                 displayAmount = `${fmtCop(data.total)} COP`;

@@ -1,7 +1,19 @@
 import { storageService } from '../utils/storageService';
-import { Banknote, Smartphone, CreditCard, DollarSign, Store, ShoppingCart, Package, Coins, Key, Fingerprint } from 'lucide-react';
+import { Banknote, Smartphone, CreditCard, DollarSign, Store, ShoppingCart, Package, Coins, Key, Fingerprint, Wallet } from 'lucide-react';
 
 const PM_KEY = 'bodega_payment_methods_v1';
+
+// Método virtual protegido: representa crédito interno, no dinero recibido.
+export const INTERNAL_CREDIT_PAYMENT_METHOD = Object.freeze({
+    id: 'saldo_favor',
+    label: 'Saldo a Favor',
+    icon: '💰',
+    currency: 'INTERNAL_CREDIT',
+    isFactory: true,
+    isVirtual: true,
+    isInternalCredit: true,
+    isEnabled: true,
+});
 
 // ── MÉTODOS DE FÁBRICA (no editables, no eliminables) ──
 export const FACTORY_PAYMENT_METHODS = [
@@ -197,6 +209,8 @@ export const getPaymentLabel = (id, fallbackLabel) => {
     // Virtual categories (not selectable, display-only)
     if (id === 'fiado') return 'Fiado (Por Cobrar)';
     if (id === 'cashea') return 'Cashea (Por Cobrar)';
+    if (id === 'saldo_favor') return 'Saldo a Favor';
+    if (id === 'saldo_favor_generado' || id === '_saldo_favor_generado') return 'Saldo a Favor Generado';
 
     // Use fallback if provided and it's not a raw ID
     if (fallbackLabel && typeof fallbackLabel === 'string' && fallbackLabel !== id && !fallbackLabel.startsWith('custom_')) {
@@ -218,6 +232,8 @@ export const getPaymentIcon = (id) => {
     if (custom && custom.icon) return ICON_COMPONENTS[custom.icon] || null;
     
     if (id === 'cashea') return Smartphone;
+    if (id === 'saldo_favor') return Wallet;
+    if (id === 'saldo_favor_generado' || id === '_saldo_favor_generado') return Wallet;
 
     return null;
 };
@@ -230,17 +246,19 @@ export const PAYMENT_ICONS = {
     efectivo_usd: DollarSign,
     fiado: ShoppingCart,
     cashea: Smartphone,
+    saldo_favor: Wallet,
 };
 
 // Mapa para rehidratar íconos custom por su key string
 export const ICON_COMPONENTS = {
     Banknote, Smartphone, CreditCard, DollarSign,
-    Store, ShoppingCart, Package, Coins, Key, Fingerprint,
+    Store, ShoppingCart, Package, Coins, Key, Fingerprint, Wallet,
 };
 
 export const getPaymentMethod = (id) => {
     const factory = FACTORY_PAYMENT_METHODS.find(m => m.id === id);
     if (factory) return factory;
+    if (id === 'saldo_favor') return INTERNAL_CREDIT_PAYMENT_METHOD;
 
     // Check in-memory cache
     const custom = _findCustom(id);

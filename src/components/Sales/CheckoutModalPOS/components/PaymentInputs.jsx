@@ -167,6 +167,7 @@ export default function PaymentInputs({
     activeInputId,
     onFocusRef,
     copEnabled = false,
+    mobileCurrency = null,
 }) {
     const renderQuickCash = (id) => (
         <div className="flex flex-wrap gap-1.5 mt-2 px-0.5">
@@ -184,9 +185,10 @@ export default function PaymentInputs({
     let globalIndex = 0;
 
     return (
-        <div className={`grid grid-cols-1 ${copEnabled && metodosCop.length > 0 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} gap-4`}>
+        <div className={`grid grid-cols-1 ${copEnabled && metodosCop.length > 0 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} ${mobileCurrency ? 'gap-3' : 'gap-4'}`}>
             {/* DIVISAS (USD) */}
-            <div className="bg-emerald-50/30 dark:bg-emerald-950/10 border border-emerald-100 dark:border-emerald-900/30 rounded-2xl p-4 flex flex-col gap-4">
+            <div className={`${mobileCurrency && mobileCurrency !== 'USD' ? 'hidden lg:flex' : 'flex'} bg-emerald-50/30 dark:bg-emerald-950/10 border border-emerald-100 dark:border-emerald-900/30 rounded-2xl p-3 sm:p-4 flex-col gap-3 sm:gap-4`}>
+
                 <h3 className="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-2 uppercase tracking-wide border-b border-emerald-100 dark:border-emerald-900/30 pb-2.5">
                     <div className="p-1 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg"><DollarSign size={14} strokeWidth={3} /></div>
                     Divisas ($)
@@ -223,7 +225,8 @@ export default function PaymentInputs({
             </div>
 
             {/* BOLÍVARES (BS) */}
-            <div className="bg-blue-50/30 dark:bg-blue-950/10 border border-blue-100 dark:border-blue-900/30 rounded-2xl p-4 flex flex-col gap-4">
+            <div className={`${mobileCurrency && mobileCurrency !== 'BS' ? 'hidden lg:flex' : 'flex'} bg-blue-50/30 dark:bg-blue-950/10 border border-blue-100 dark:border-blue-900/30 rounded-2xl p-4 flex-col gap-4`}>
+
                 <div className="flex items-center justify-between border-b border-blue-100 dark:border-blue-900/30 pb-2.5">
                     <h3 className="text-xs font-bold text-blue-800 dark:text-blue-300 flex items-center gap-2 uppercase tracking-wide">
                         <div className="p-1 bg-blue-100 dark:bg-blue-900/50 rounded-lg"><Banknote size={14} strokeWidth={3} /></div>
@@ -263,7 +266,8 @@ export default function PaymentInputs({
 
             {/* PESOS COLOMBIANOS (COP) — solo si copEnabled */}
             {copEnabled && metodosCop.length > 0 && (
-                <div className="bg-amber-50/30 dark:bg-amber-950/10 border border-amber-100 dark:border-amber-900/30 rounded-2xl p-4 flex flex-col gap-4">
+                <div className={`${mobileCurrency && mobileCurrency !== 'COP' ? 'hidden lg:flex' : 'flex'} bg-amber-50/30 dark:bg-amber-950/10 border border-amber-100 dark:border-amber-900/30 rounded-2xl p-3 sm:p-4 flex-col gap-3 sm:gap-4`}>
+
                     <h3 className="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-2 uppercase tracking-wide border-b border-amber-100 dark:border-amber-900/30 pb-2.5">
                         <div className="p-1 bg-amber-100 dark:bg-amber-900/50 rounded-lg"><DollarSign size={14} strokeWidth={3} /></div>
                         COP ($)

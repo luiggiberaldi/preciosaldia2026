@@ -74,9 +74,10 @@ export default function PaymentMethodsManager({ triggerHaptic }) {
         setMethods(updated);
     };
 
-    const methodsBs = methods.filter(m => m.currency === 'BS');
-    const methodsUsd = methods.filter(m => m.currency === 'USD');
-    const methodsCop = methods.filter(m => m.currency === 'COP');
+    const visibleMethods = methods.filter(m => !m.isVirtual);
+    const methodsBs = visibleMethods.filter(m => m.currency === 'BS');
+    const methodsUsd = visibleMethods.filter(m => m.currency === 'USD');
+    const methodsCop = visibleMethods.filter(m => m.currency === 'COP');
 
     const renderMethod = (m) => {
         const isEnabled = m.isEnabled !== false;
