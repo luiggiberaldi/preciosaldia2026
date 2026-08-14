@@ -684,8 +684,24 @@ export default function CheckoutModalPOS({
                         effectiveRate={effectiveRate}
                     />
                     <div className="order-1 lg:order-2 flex-1 min-h-0 flex flex-col bg-white dark:bg-slate-950 overflow-hidden">
-                        <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-5 pb-5">
-                            <div className="lg:hidden mb-3">
+                        <div className="flex-1 min-h-0 overflow-y-auto p-2.5 sm:p-5 pb-5">
+                            {/* Barra compacta de Total a Pagar (solo móvil para evitar duplicidad y scroll) */}
+                            <div className="lg:hidden mb-2.5 p-2.5 rounded-xl bg-slate-900 dark:bg-slate-800 text-white flex items-center justify-between shadow-sm">
+                                <div className="flex flex-col">
+                                    <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Total a Pagar</span>
+                                    <span className="text-xl font-black leading-tight text-white">${dynamicCartTotals.totalUsd.toFixed(2)}</span>
+                                </div>
+                                <div className="text-right">
+                                    <span className="text-sm font-bold text-emerald-400">Bs {round2(dynamicCartTotals.totalBs).toLocaleString('es-VE', { minimumFractionDigits: 2 })}</span>
+                                    {discountData?.active && (
+                                        <span className="block text-[9px] text-emerald-300 font-bold">
+                                            Desc: -{discountData.type === 'percentage' ? `${discountData.value}%` : `$${discountData.amountUsd?.toFixed(2)}`}
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="lg:hidden mb-2.5">
                                 <CheckoutCustomerPicker customers={customers} selectedCustomerId={clienteSeleccionado} setSelectedCustomerId={handleSetCliente} effectiveRate={effectiveRate} onCreateCustomer={onCreateCustomer} />
                             </div>
                             <WalletSection cliente={selectedCustomer} totalPagadoUSD={totalPagadoUSD} tasaSegura={tasaSegura} totalConIGTF={dynamicCartTotals.totalUsd} casheaAmountUsd={casheaAmountUsd} pagoSaldoFavor={pagoSaldoFavor} setPagoSaldoFavor={setPagoSaldoFavor} />

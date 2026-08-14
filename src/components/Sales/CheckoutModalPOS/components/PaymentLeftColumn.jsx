@@ -67,13 +67,15 @@ const PaymentLeftColumn = ({
     return (
         <div className={`${className} w-full lg:w-[41%] bg-slate-50 dark:bg-slate-900 border-b lg:border-b-0 lg:border-r border-slate-100 dark:border-slate-800 flex flex-col overflow-hidden`}>
 
-            {/* Resumen del total */}
-            <TransactionSummary
-                totalUSD={totalUSD}
-                totalBS={totalBS}
-                discountData={discountData}
-                tasaSegura={tasaSegura}
-            />
+            {/* Resumen del total (oculto en móvil para evitar duplicidad; se muestra en cabecera del formulario) */}
+            <div className="hidden lg:block">
+                <TransactionSummary
+                    totalUSD={totalUSD}
+                    totalBS={totalBS}
+                    discountData={discountData}
+                    tasaSegura={tasaSegura}
+                />
+            </div>
 
             {/* Contenido scrollable */}
             <div className="flex-1 min-h-0 overflow-y-auto px-2.5 sm:px-3.5 pb-3 pt-1.5 space-y-2">
@@ -163,43 +165,84 @@ const PaymentLeftColumn = ({
                         </div>
                     )}
 
-                    {/* Vuelto */}
+                    {/* Vuelto — Tarjeta Unificada, Compacta y Ergonómica */}
                     {isPaid && cambioUSD > 0.009 && (
-                        <div className={`flex flex-col justify-center items-center text-center p-2.5 sm:p-3 rounded-xl border-2 bg-emerald-50 dark:bg-emerald-950/20 shadow-sm transition-all ${isTipDonated ? 'border-emerald-500 ring-2 ring-emerald-400/50' : 'border-emerald-200 dark:border-emerald-800/40'}`}>
-                            <p className="text-[9px] font-extrabold uppercase tracking-widest text-emerald-700 dark:text-emerald-400">{isTipDonated ? 'Vuelto distribuido' : 'Vuelto'}</p>
-                            <div className="flex items-baseline justify-center gap-2 my-0.5">
-                                <span className="text-2xl sm:text-3xl font-black text-emerald-700 dark:text-emerald-400">${cambioUSD.toFixed(2)}</span>
-                                <span className="text-xs sm:text-sm font-black text-emerald-600 dark:text-emerald-300">
-                                    Bs {round2(cambioUSD * tasaSegura).toLocaleString('es-VE', { minimumFractionDigits: 2 })}
-                                </span>
+                        <div className={`p-2.5 sm:p-3 rounded-xl border-2 bg-emerald-50 dark:bg-emerald-950/20 shadow-sm transition-all ${
+                            isTipDonated ? 'border-emerald-500 ring-2 ring-emerald-400/50' : 'border-emerald-200 dark:border-emerald-800/40'
+                        }`}>
+                            {/* Cabecera del Vuelto con estado inline */}
+                            <div className="flex items-center justify-between gap-2">
+                                <div className="text-left">
+                                    <span className="text-[9px] font-extrabold uppercase tracking-widest text-emerald-700 dark:text-emerald-400 block">
+                                        Vuelto Total
+                                    </span>
+                                    <div className="flex items-baseline gap-1.5">
+                                        <span className="text-xl sm:text-2xl font-black text-emerald-700 dark:text-emerald-400">
+                                            ${cambioUSD.toFixed(2)}
+                                        </span>
+                                        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-300">
+                                            Bs {round2(cambioUSD * tasaSegura).toLocaleString('es-VE', { minimumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    {remainingChangeUsd > 0.001 ? (
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700/60 animate-pulse">
+                                            <AlertTriangle size={11} />
+                                            <span>Resta ${remainingChangeUsd.toFixed(2)}</span>
+                                        </span>
+                                    ) : (
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
+                                            <CheckCircle size={11} />
+                                            <span>Asignado</span>
+                                        </span>
+                                    )}
+                                </div>
                             </div>
 
-                            {/* El operador debe elegir qué hacer con el vuelto: dejarlo en caja,
-                                acreditarlo a la billetera o entregarlo físicamente. */}
-                            <div className="w-full mt-2 grid grid-cols-2 gap-1.5">
+                            {/* Botonera 1-Tap: 4 accesos directos rápidos */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-2">
+                                {/* 1. Todo en $ */}
+                                <button
+                                    type="button"
+                                    onClick={() => handleVueltoDistChange('usd', maxVueltoUSD.toString())}
+                                    className="min-h-[34px] px-2 py-1 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100 dark:hover:bg-slate-700 active:scale-95 transition-all shadow-sm"
+                                    title="Entregar todo el vuelto en dólares en efectivo"
+                                >
+                                    <Zap size={12} className="text-emerald-600 dark:text-emerald-400 fill-current shrink-0" />
+                                    <span className="whitespace-nowrap">Todo en $</span>
+                                </button>
+
+                                {/* 2. Todo en Bs */}
+                                <button
+                                    type="button"
+                                    onClick={() => handleVueltoDistChange('bs', maxVueltoBS.toString())}
+                                    className="min-h-[34px] px-2 py-1 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-slate-700 active:scale-95 transition-all shadow-sm"
+                                    title="Entregar todo el vuelto en bolívares en efectivo"
+                                >
+                                    <Zap size={12} className="text-blue-600 dark:text-blue-400 fill-current shrink-0" />
+                                    <span className="whitespace-nowrap">Todo en Bs</span>
+                                </button>
+
+                                {/* 3. Dejar en caja */}
                                 <button
                                     type="button"
                                     onClick={toggleTipDonated}
-                                    title={isTipDonated ? 'Vuelto asignado a caja como ingreso/propina (pulsa para cancelar)' : 'Dejar el vuelto en caja como ingreso o propina para el negocio'}
-                                    className={`py-1.5 px-2 min-h-[34px] rounded-lg font-black text-[10px] flex items-center justify-center gap-1 transition-all active:scale-[0.97] ${
+                                    title={isTipDonated ? 'Vuelto asignado a caja como ingreso/propina (pulsa para cancelar)' : 'Dejar el vuelto restante en caja como ingreso o propina para el negocio'}
+                                    className={`min-h-[34px] px-2 py-1 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 transition-all active:scale-95 shadow-sm ${
                                         isTipDonated
                                             ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/30'
-                                            : tipConfirmPending
-                                                ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-2 border-amber-400 animate-pulse'
-                                                : 'bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100 dark:hover:bg-slate-700'
+                                            : 'bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100 dark:hover:bg-slate-700'
                                     }`}
                                 >
-                                    <HandCoins size={14} className="shrink-0" />
-                                    <span className="truncate">
-                                        {isTipDonated
-                                            ? `En caja: $${cashKeptUsd.toFixed(2)}`
-                                            : tipConfirmPending
-                                                ? `Confirmar $${cambioUSD.toFixed(2)}`
-                                                : 'Dejar en caja'}
+                                    <HandCoins size={13} className="shrink-0" />
+                                    <span className="whitespace-nowrap truncate">
+                                        {isTipDonated ? `En Caja $${cashKeptUsd.toFixed(2)}` : 'En Caja'}
                                     </span>
-                                    {isTipDonated && <CheckCircle size={13} className="text-white shrink-0" />}
+                                    {isTipDonated && <CheckCircle size={12} className="text-white shrink-0" />}
                                 </button>
 
+                                {/* 4. Acreditar a Billetera */}
                                 <button
                                     type="button"
                                     disabled={!clienteSeleccionado || (!isChangeCredited && walletRemainderUsd <= 0.01)}
@@ -210,45 +253,34 @@ const PaymentLeftColumn = ({
                                             handleCreditChange();
                                         }
                                     }}
-                                    className={`py-1.5 px-2 min-h-[34px] rounded-lg font-black text-[10px] flex items-center justify-center gap-1 transition-all active:scale-[0.97] ${
+                                    className={`min-h-[34px] px-2 py-1 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 transition-all active:scale-95 shadow-sm ${
                                         isChangeCredited
                                             ? 'bg-brand text-white shadow-md shadow-brand/30'
                                             : 'bg-white dark:bg-slate-800 text-brand-dark dark:text-brand border border-brand/30 dark:border-brand/70 hover:bg-brand-light dark:hover:bg-slate-700'
                                     } ${(!clienteSeleccionado || walletRemainderUsd <= 0.01) ? 'opacity-40 cursor-not-allowed' : ''}`}
-                                    title={!clienteSeleccionado ? 'Selecciona un cliente para acreditar el vuelto' : 'Acreditar el resto del vuelto como saldo a favor'}
+                                    title={!clienteSeleccionado ? 'Selecciona un cliente para acreditar el vuelto' : 'Acreditar el resto del vuelto como saldo a favor en la billetera'}
                                 >
-                                    <Wallet size={14} className="shrink-0" />
-                                    <span className="whitespace-nowrap">
-                                        {isChangeCredited ? `Billetera $${walletRemainderUsd.toFixed(2)}` : `Acreditar $${walletRemainderUsd.toFixed(2)}`}
+                                    <Wallet size={13} className="shrink-0" />
+                                    <span className="whitespace-nowrap truncate">
+                                        {isChangeCredited ? `Billetera $${walletRemainderUsd.toFixed(2)}` : 'Billetera'}
                                     </span>
-                                    {isChangeCredited && <CheckCircle size={13} className="text-white shrink-0" />}
+                                    {isChangeCredited && <CheckCircle size={12} className="text-white shrink-0" />}
                                 </button>
                             </div>
 
+                            {/* Detalle si está acreditado */}
                             {isChangeCredited && (
                                 <div className="w-full mt-1.5 px-2 py-1 rounded-lg bg-brand/10 border border-brand/20 text-center text-[9px] font-bold text-brand-dark dark:text-brand">
                                     Acreditará a billetera: <strong>${walletRemainderUsd.toFixed(2)}</strong>.
                                 </div>
                             )}
 
-                            {/* En móvil los campos avanzados se revelan solo cuando
-                                el cajero decide personalizar la distribución. */}
-                            <button
-                                type="button"
-                                className="lg:hidden w-full mt-2 min-h-[38px] rounded-xl border border-emerald-300 dark:border-emerald-700 bg-white/80 dark:bg-slate-900/70 text-emerald-700 dark:text-emerald-300 text-[10px] font-black"
-                                onClick={() => setShowMobileChangeDetails(current => !current)}
-                                aria-expanded={showMobileChangeDetails}
-                            >
-                                {showMobileChangeDetails ? 'Ocultar distribución avanzada' : 'Personalizar distribución del vuelto'}
-                            </button>
-
-                            {/* Monto parcial que el cliente deja en caja. Solo se
-                                muestra después de activar "Dejar en caja". */}
+                            {/* Monto parcial en caja (solo si activado) */}
                             {isTipDonated && (
-                                <div className={`w-full mt-2 pt-2 border-t border-emerald-200/60 dark:border-emerald-800/30 ${showMobileChangeDetails ? 'block' : 'hidden'} lg:block`}>
+                                <div className="w-full mt-2 pt-1.5 border-t border-emerald-200/60 dark:border-emerald-800/30">
                                     <div className="flex items-center justify-between gap-1 mb-1">
-                                        <label className="text-[10px] font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-400">
-                                            Parte del vuelto que queda en caja
+                                        <label className="text-[9px] font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-400">
+                                            Parte que queda en caja
                                         </label>
                                         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-100/70 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/60 whitespace-nowrap">
                                             Máx: ${(maxTipUsd !== undefined ? maxTipUsd : cambioUSD).toFixed(2)}
@@ -267,36 +299,34 @@ const PaymentLeftColumn = ({
                                             onChange={e => handleTipAmountChange(e.target.value)}
                                             onFocus={e => e.target.select()}
                                             placeholder="0.00"
-                                            className="w-full h-11 py-2 pl-7 pr-16 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-900 font-black text-sm text-slate-800 dark:text-white shadow-inner outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                                            className="w-full h-10 py-1.5 pl-7 pr-16 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-900 font-black text-sm text-slate-800 dark:text-white shadow-inner outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                                         />
                                         <button
                                             type="button"
                                             onClick={() => handleTipAmountChange((maxTipUsd !== undefined ? maxTipUsd : cambioUSD).toString())}
-                                            className="absolute right-1.5 top-1/2 -translate-y-1/2 h-8 px-2.5 inline-flex items-center justify-center gap-1 rounded-lg text-[10px] font-black bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white shadow-sm shadow-emerald-600/20 active:scale-95 transition-all"
+                                            className="absolute right-1.5 top-1/2 -translate-y-1/2 h-7 px-2 inline-flex items-center justify-center gap-1 rounded-lg text-[9px] font-black bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white shadow-sm active:scale-95 transition-all"
                                             title="Asignar todo el vuelto a caja"
                                         >
-                                            <Zap size={11} className="fill-current" />
+                                            <Zap size={10} className="fill-current" />
                                             <span>Todo</span>
                                         </button>
                                     </div>
                                 </div>
                             )}
 
-                            {/* Distribución de vuelto físico. Si no se acredita el resto,
-                                cualquier monto no especificado se entrega en USD para no perderlo. */}
-
-                            <div className={`w-full mt-2 pt-2 border-t border-emerald-200/60 dark:border-emerald-800/30 grid grid-cols-2 gap-2.5 ${showMobileChangeDetails ? 'grid' : 'hidden'} lg:grid`}>
+                            {/* Distribución de vuelto físico en $ y en Bs */}
+                            <div className="w-full mt-2 pt-1.5 border-t border-emerald-200/60 dark:border-emerald-800/30 grid grid-cols-2 gap-2">
                                 <div className="min-w-0">
-                                    <div className="flex items-center justify-between gap-1 mb-1.5 min-h-[22px]">
-                                        <label className="text-[10px] font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-400 whitespace-nowrap shrink-0">
+                                    <div className="flex items-center justify-between gap-1 mb-1">
+                                        <label className="text-[9px] font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-400 whitespace-nowrap shrink-0">
                                             Cambio en $
                                         </label>
-                                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-emerald-100/70 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/60 whitespace-nowrap shrink-0">
+                                        <span className="text-[8px] font-black px-1 py-0.5 rounded bg-emerald-100/70 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 whitespace-nowrap shrink-0">
                                             Queda ${remainingChangeUsd.toFixed(2)}
                                         </span>
                                     </div>
                                     <div className="relative group">
-                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-emerald-600 dark:text-emerald-400 pointer-events-none select-none">
+                                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-black text-emerald-600 dark:text-emerald-400 pointer-events-none select-none">
                                             $
                                         </span>
                                         <input
@@ -310,30 +340,30 @@ const PaymentLeftColumn = ({
                                                 }
                                             }}
                                             placeholder="0.00"
-                                            className="w-full h-11 py-2 pl-7 pr-16 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-900 font-black text-sm text-slate-800 dark:text-white shadow-inner outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                                            className="w-full h-10 py-1.5 pl-6 pr-14 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-900 font-black text-sm text-slate-800 dark:text-white shadow-inner outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                                         />
                                         <button
                                             type="button"
                                             onClick={() => handleVueltoDistChange('usd', maxVueltoUSD.toString())}
-                                            className="absolute right-1.5 top-1/2 -translate-y-1/2 h-8 px-2.5 inline-flex items-center justify-center gap-1 rounded-lg text-[10px] font-black bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white shadow-sm shadow-emerald-600/20 active:scale-95 transition-all"
+                                            className="absolute right-1 top-1/2 -translate-y-1/2 h-7 px-2 inline-flex items-center justify-center gap-0.5 rounded-lg text-[9px] font-black bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white shadow-sm active:scale-95 transition-all"
                                             title="Asignar todo el vuelto restante en USD"
                                         >
-                                            <Zap size={11} className="fill-current" />
+                                            <Zap size={10} className="fill-current" />
                                             <span>Todo</span>
                                         </button>
                                     </div>
                                 </div>
                                 <div className="min-w-0">
-                                    <div className="flex items-center justify-between gap-1 mb-1.5 min-h-[22px]">
-                                        <label className="text-[10px] font-black uppercase tracking-wider text-blue-800 dark:text-blue-400 whitespace-nowrap shrink-0">
+                                    <div className="flex items-center justify-between gap-1 mb-1">
+                                        <label className="text-[9px] font-black uppercase tracking-wider text-blue-800 dark:text-blue-400 whitespace-nowrap shrink-0">
                                             Cambio en Bs
                                         </label>
-                                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-blue-100/70 dark:bg-blue-950/50 text-blue-800 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/60 whitespace-nowrap shrink-0">
-                                            Queda Bs {remainingChangeBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        <span className="text-[8px] font-black px-1 py-0.5 rounded bg-blue-100/70 dark:bg-blue-950/50 text-blue-800 dark:text-blue-300 whitespace-nowrap shrink-0 truncate max-w-[90px]">
+                                            Bs {remainingChangeBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </span>
                                     </div>
                                     <div className="relative group">
-                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] font-black text-blue-600 dark:text-blue-400 pointer-events-none select-none">
+                                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-black text-blue-600 dark:text-blue-400 pointer-events-none select-none">
                                             Bs
                                         </span>
                                         <input
@@ -347,89 +377,20 @@ const PaymentLeftColumn = ({
                                                 }
                                             }}
                                             placeholder="0"
-                                            className="w-full h-11 py-2 pl-8 pr-16 rounded-xl border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-900 font-black text-sm text-slate-800 dark:text-white shadow-inner outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                                            className="w-full h-10 py-1.5 pl-7 pr-14 rounded-xl border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-900 font-black text-sm text-slate-800 dark:text-white shadow-inner outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                                         />
                                         <button
                                             type="button"
                                             onClick={() => handleVueltoDistChange('bs', maxVueltoBS.toString())}
-                                            className="absolute right-1.5 top-1/2 -translate-y-1/2 h-8 px-2.5 inline-flex items-center justify-center gap-1 rounded-lg text-[10px] font-black bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white shadow-sm shadow-blue-600/20 active:scale-95 transition-all"
+                                            className="absolute right-1 top-1/2 -translate-y-1/2 h-7 px-2 inline-flex items-center justify-center gap-0.5 rounded-lg text-[9px] font-black bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white shadow-sm active:scale-95 transition-all"
                                             title="Asignar todo el vuelto restante en Bolívares"
                                         >
-                                            <Zap size={11} className="fill-current" />
+                                            <Zap size={10} className="fill-current" />
                                             <span>Todo</span>
                                         </button>
                                     </div>
                                 </div>
                             </div>
-                            <div
-                                role="status"
-                                aria-live="polite"
-                                className={`w-full mt-2 px-3 py-2.5 rounded-xl border ${
-                                    remainingChangeUsd > 0.001
-                                        ? 'bg-red-50 dark:bg-red-950/25 border-red-300 dark:border-red-800/60'
-                                        : 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/40'
-                                }`}
-                            >
-                                <div className="flex items-start gap-2.5">
-                                    <span className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
-                                        remainingChangeUsd > 0.001
-                                            ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
-                                            : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
-                                    }`}>
-                                        {remainingChangeUsd > 0.001
-                                            ? <AlertTriangle size={14} strokeWidth={2.5} />
-                                            : <CheckCircle size={14} strokeWidth={2.5} />}
-                                    </span>
-                                    <div className="min-w-0 flex-1">
-                                        <p className={`text-[10px] font-black uppercase tracking-wide leading-tight ${
-                                            remainingChangeUsd > 0.001 ? 'text-red-700 dark:text-red-300' : 'text-emerald-700 dark:text-emerald-300'
-                                        }`}>
-                                            {isChangeCredited ? 'Se acreditará a billetera' : remainingChangeUsd > 0.001 ? 'Vuelto pendiente' : 'Vuelto asignado'}
-                                        </p>
-                                        <div className={`mt-1 grid grid-cols-2 divide-x ${remainingChangeUsd > 0.001 ? 'divide-red-200 dark:divide-red-800/60' : 'divide-emerald-200 dark:divide-emerald-800/40'}`}>
-                                            <div className="min-w-0 pr-3">
-                                                <span className={`block text-[9px] font-black uppercase tracking-wide ${remainingChangeUsd > 0.001 ? 'text-red-500 dark:text-red-300' : 'text-emerald-500 dark:text-emerald-300'}`}>Dólares</span>
-                                                <strong className={`block mt-0.5 text-xl leading-none font-black tracking-tight ${
-                                                    remainingChangeUsd > 0.001 ? 'text-red-700 dark:text-red-300' : 'text-emerald-700 dark:text-emerald-300'
-                                                }`}>
-                                                    ${remainingChangeUsd.toFixed(2)}
-                                                </strong>
-                                            </div>
-                                            <div className="min-w-0 pl-3">
-                                                <span className={`block text-[9px] font-black uppercase tracking-wide ${remainingChangeUsd > 0.001 ? 'text-red-500 dark:text-red-300' : 'text-emerald-500 dark:text-emerald-300'}`}>Bolívares</span>
-                                                <strong className={`block mt-0.5 text-sm leading-tight font-black break-words ${
-                                                    remainingChangeUsd > 0.001 ? 'text-red-600 dark:text-red-300' : 'text-emerald-600 dark:text-emerald-300'
-                                                }`}>
-                                                    Bs {remainingChangeBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}
-                                                </strong>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            {!showMobileChangeDetails && !changeDestinationSelected && changeToDeliverUsd > 0.001 && (
-                                <>
-                                    <p className="lg:hidden w-full mt-2 text-center text-[10px] font-black text-amber-700 dark:text-amber-300">
-                                        Selecciona cómo entregar el vuelto:
-                                    </p>
-                                    <div className="lg:hidden grid grid-cols-2 gap-2 mt-1">
-                                        <button
-                                            type="button"
-                                            onClick={() => handleVueltoDistChange('usd', maxVueltoUSD.toString())}
-                                            className="w-full min-w-0 min-h-[40px] rounded-lg border border-emerald-300 bg-white dark:bg-slate-800 px-1 text-[10px] leading-tight font-black text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50"
-                                        >
-                                            Todo en $
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => handleVueltoDistChange('bs', maxVueltoBS.toString())}
-                                            className="w-full min-w-0 min-h-[40px] rounded-lg border border-blue-300 bg-white dark:bg-slate-800 px-1 text-[10px] leading-tight font-black text-blue-700 dark:text-blue-300 hover:bg-blue-50"
-                                        >
-                                            Todo en Bs
-                                        </button>
-                                    </div>
-                                </>
-                            )}
                         </div>
                     )}
 
