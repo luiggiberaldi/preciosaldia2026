@@ -164,13 +164,13 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                                 salesCount: metadataPayload.sales_count,
                                 customerCount: metadataPayload.customer_count
                             })
-                        });
-                        if (res.ok) apiSuccess = true;
+                        }).catch(() => null);
+                        if (res?.ok) apiSuccess = true;
                     } catch (apiErr) {
                         apiSuccess = false;
                     }
 
-                    // Fallback directo a Supabase en cloud_backups (con manejo de 401/RLS)
+                    // Fallback directo a Supabase en cloud_backups (con manejo silencioso de 403/RLS)
                     if (!apiSuccess && supabaseCloud) {
                         try {
                             const sessionRes = await supabaseCloud.auth.getSession().catch(() => null);
@@ -179,7 +179,7 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                                     device_id: devId,
                                     backup_data: metadataPayload,
                                     updated_at: new Date().toISOString()
-                                }, { onConflict: 'device_id' });
+                                }, { onConflict: 'device_id' }).catch(() => null);
                             }
                         } catch (sErr) {
                             // Omitir silenciosamente si no hay permisos/sesión activa

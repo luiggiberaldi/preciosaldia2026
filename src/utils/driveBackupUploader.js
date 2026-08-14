@@ -24,37 +24,16 @@ export async function uploadToGoogleDrive(payload, deviceId, clientName) {
     });
 
     try {
-        const response = await fetch(GOOGLE_SCRIPT_URL, {
+        // Enviar vía mode: 'no-cors' con text/plain para Apps Script, evitando bloqueos por 302 redirect
+        await fetch(GOOGLE_SCRIPT_URL, {
             method: 'POST',
+            mode: 'no-cors',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body,
-            redirect: 'follow'
+            body
         });
-
-        if (response.ok) {
-            const text = await response.text();
-            try {
-                const result = JSON.parse(text);
-                if (result.status === 'success' && result.downloadUrl) {
-                    return result;
-                }
-            } catch (e) {
-                // Ignore parse error on redirect
-            }
-        }
-    } catch (corsErr) {
-        // En caso de bloqueo CORS o 302 redirect del navegador, enviamos via no-cors sin fallar la consola
-        try {
-            await fetch(GOOGLE_SCRIPT_URL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body
-            });
-            return { downloadUrl: null, sizeBytes: body.length, status: 'submitted_nocors' };
-        } catch (e) {
-            // Silenciosamente omitir si la red está desconectada
-        }
+        return { downloadUrl: null, sizeBytes: body.length, status: 'submitted' };
+    } catch (e) {
+        return null;
     }
 
     return null;
