@@ -155,7 +155,7 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                     try {
                         const res = await fetch(`${ESTACION_API}/api/backup/complete`, {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: { 'Content-Type': 'text/plain' },
                             body: JSON.stringify({
                                 deviceId: devId,
                                 driveUrl: metadataPayload.drive_url,
@@ -166,7 +166,7 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                             })
                         }).catch(() => null);
                         if (res?.ok) apiSuccess = true;
-                    } catch (apiErr) {
+                    } catch {
                         apiSuccess = false;
                     }
 

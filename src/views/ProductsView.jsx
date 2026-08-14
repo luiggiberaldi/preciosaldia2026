@@ -779,7 +779,8 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                                 {paginatedProducts.map(p => {
                                     const valBs = p.priceUsdt * effectiveRate;
                                     const isLowStock = (p.stock ?? 0) <= (p.lowStockAlert ?? 5);
-                                    const margin = p.costBs > 0 ? ((valBs - p.costBs) / p.costBs * 100) : null;
+                                    const effectiveCostUsd = p.costUsd || (p.costBs && effectiveRate > 0 ? p.costBs / effectiveRate : 0);
+                                    const margin = effectiveCostUsd > 0 && p.priceUsdt > 0 ? ((p.priceUsdt - effectiveCostUsd) / effectiveCostUsd * 100) : null;
                                     const catInfo = categories.find(c => c.id === p.category);
                                     return (
                                         <div key={p.id} className={`grid grid-cols-[auto_1fr_auto] sm:grid-cols-[40px_1fr_100px_100px_70px_80px_110px] gap-2 px-4 py-3 items-center hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors ${selectedIds.has(p.id) ? 'bg-brand/5 dark:bg-brand/10' : ''} ${isLowStock ? 'bg-amber-50/50 dark:bg-amber-900/5' : ''}`}>

@@ -93,8 +93,8 @@ export function useProductForm() {
         // HOOK-029: usar PATCH para actualizar todos los campos en una sola
         // dispatch (un único re-render en vez de 17).
         const currentPriceUsd = product.priceUsdt || product.priceUsd || 0;
-        const currentCostUsd = product.costUsd || (product.costBs ? product.costBs / effectiveRate : 0);
-        const currentCostBs = product.costBs || (product.costUsd ? product.costUsd * effectiveRate : 0);
+        const currentCostUsd = product.costUsd || (product.costBs && effectiveRate > 0 ? product.costBs / effectiveRate : 0);
+        const currentCostBs = currentCostUsd > 0 && effectiveRate > 0 ? (currentCostUsd * effectiveRate) : (product.costBs || 0);
 
         const u = product.unit || 'unidad';
 

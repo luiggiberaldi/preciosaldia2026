@@ -52,8 +52,10 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
             setPricingMode(productToEdit.pricingMode || 'tasa_dia');
             setPriceBsUsdRef(productToEdit.priceBsUsdRef != null ? String(productToEdit.priceBsUsdRef) : '');
 
-            setCostUsd(productToEdit.costUsd != null ? String(productToEdit.costUsd) : (productToEdit.costPrice != null ? String(productToEdit.costPrice) : ''));
-            setCostBs(productToEdit.costBs != null ? String(productToEdit.costBs) : '');
+            const rawCostUsd = productToEdit.costUsd != null ? String(productToEdit.costUsd) : (productToEdit.costPrice != null ? String(productToEdit.costPrice) : '');
+            setCostUsd(rawCostUsd);
+            const derivedCostBs = rawCostUsd && bcvRate > 0 ? (parseFloat(rawCostUsd) * bcvRate).toFixed(2) : (productToEdit.costBs != null ? String(productToEdit.costBs) : '');
+            setCostBs(derivedCostBs);
             setCostCop(productToEdit.costCop != null ? String(productToEdit.costCop) : '');
 
             setStock(productToEdit.stock != null ? String(productToEdit.stock) : '0');

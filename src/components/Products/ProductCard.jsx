@@ -27,7 +27,8 @@ export default function ProductCard({
     const valBs = effectiveUsd * effectiveRate;
     const valCop = getCop(p, tasaCop);
     const isLowStock = (p.stock ?? 0) <= (p.lowStockAlert ?? 5);
-    const margin = p.costBs > 0 ? ((valBs - p.costBs) / p.costBs * 100) : null;
+    const effectiveCostUsd = p.costUsd || (p.costBs && effectiveRate > 0 ? p.costBs / effectiveRate : 0);
+    const margin = effectiveCostUsd > 0 && effectiveUsd > 0 ? ((effectiveUsd - effectiveCostUsd) / effectiveCostUsd * 100) : null;
     const catInfo = categories.find(c => c.id === p.category);
     const unitInfo = UNITS.find(u => u.id === p.unit);
     const efectivoPrecio = streetRate > 0 ? `$${smartCashRounding(valBs / streetRate)}` : null;
