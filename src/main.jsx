@@ -5,6 +5,7 @@ import ResetPasswordView from './views/ResetPasswordView.jsx'
 import { ToastProvider } from './components/Toast.jsx'
 import { SecurityProvider } from './hooks/useSecurity.jsx'
 import { supabaseCloud } from './config/supabaseCloud.js'
+import { registerSW } from 'virtual:pwa-register'
 import './index.css'
 
 // ── Interceptor global de Fetch para Electron (protocolo file://) ──
@@ -35,26 +36,28 @@ const notifySwUpdateAvailable = () => {
   window.dispatchEvent(new CustomEvent('sw-update-available'));
 };
 
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then(regs => {
-    regs.forEach(reg => {
-      reg.update().catch(() => {/* Ignorar fallos offline */});
-      if (reg.waiting) {
-        notifySwUpdateAvailable();
-      }
-      reg.addEventListener('updatefound', () => {
-        const newWorker = reg.installing;
-        if (newWorker) {
-          newWorker.addEventListener('statechange', () => {
-            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              notifySwUpdateAvailable();
-            }
-          });
-        }
-      });
-    });
-  });
-}
+const updateSW = registerSW({
+  immediate: true,
+  onNeedRefresh() {
+    notifySwUpdateAvailable();
+  },
+  onOfflineReady() {
+    console.log('[PWA] Aplicación lista para operar offline');
+  },
+  onRegistered(registration) {
+    if (registration) {
+      // Comprobar actualizaciones periódicamente (cada 30 min)
+      setInterval(() => {
+        registration.update().catch(() => {});
+      }, 30 * 60 * 1000);
+    }
+  },
+  onRegisterError(error) {
+    console.error('[PWA] Error al registrar Service Worker:', error);
+  }
+});
+
+window.__pdaUpdateSW = updateSW;
 
 // ── Evitar que la rueda del mouse cambie valores en inputs numéricos ──
 // HOOK-033: Antes este listener se registraba a nivel módulo (sin cleanup),

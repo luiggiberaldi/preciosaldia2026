@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Loader2 } from 'lucide-react';
 
 /**
  * UpdateBanner Component (A-001/B-003)
@@ -7,6 +8,7 @@ import React, { useState, useEffect } from 'react';
  */
 export function UpdateBanner() {
     const [showBanner, setShowBanner] = useState(false);
+    const [isUpdating, setIsUpdating] = useState(false);
 
     useEffect(() => {
         const handleUpdateAvailable = () => {
@@ -23,15 +25,45 @@ export function UpdateBanner() {
         return () => window.removeEventListener('sw-update-available', handleUpdateAvailable);
     }, []);
 
-    const applyUpdate = () => {
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistration().then(reg => {
+    const applyUpdate = async () => {
+        if (isUpdating) return;
+        setIsUpdating(true);
+
+        try {
+            // 1. Si vite-plugin-pwa nos proveyó la función de update oficial:
+            if (typeof window.__pdaUpdateSW === 'function') {
+                await window.__pdaUpdateSW(true);
+                return;
+            }
+
+            // 2. Fallback estándar para Service Worker nativo:
+            if ('serviceWorker' in navigator) {
+                const reg = await navigator.serviceWorker.getRegistration();
                 if (reg && reg.waiting) {
+                    let refreshing = false;
+                    navigator.serviceWorker.addEventListener('controllerchange', () => {
+                        if (!refreshing) {
+                            refreshing = true;
+                            window.location.reload();
+                        }
+                    });
+
                     reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+
+                    // Respaldo de seguridad por si controllerchange tarda
+                    setTimeout(() => {
+                        if (!refreshing) {
+                            refreshing = true;
+                            window.location.reload();
+                        }
+                    }, 1200);
+                    return;
                 }
-                window.location.reload();
-            });
-        } else {
+            }
+
+            window.location.reload();
+        } catch (err) {
+            console.error('[UpdateBanner] Error al aplicar actualización:', err);
             window.location.reload();
         }
     };
@@ -46,16 +78,25 @@ export function UpdateBanner() {
             </div>
             <div className="flex items-center gap-2">
                 <button
+                    disabled={isUpdating}
                     onClick={() => setShowBanner(false)}
-                    className="px-3 py-1 rounded bg-black/20 hover:bg-black/30 text-white text-xs transition"
+                    className="px-3 py-1 rounded bg-black/20 hover:bg-black/30 text-white text-xs transition disabled:opacity-50"
                 >
                     Ahora no
                 </button>
                 <button
+                    disabled={isUpdating}
                     onClick={applyUpdate}
-                    className="px-3 py-1 rounded bg-white text-emerald-800 hover:bg-emerald-50 text-xs font-bold transition shadow-sm"
+                    className="px-3 py-1 rounded bg-white text-emerald-800 hover:bg-emerald-50 text-xs font-bold transition shadow-sm flex items-center gap-1.5 disabled:opacity-80"
                 >
-                    Actualizar ahora
+                    {isUpdating ? (
+                        <>
+                            <Loader2 size={13} className="animate-spin text-emerald-800" />
+                            <span>Actualizando...</span>
+                        </>
+                    ) : (
+                        <span>Actualizar ahora</span>
+                    )}
                 </button>
             </div>
         </div>
