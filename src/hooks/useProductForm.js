@@ -1,4 +1,5 @@
 import { useReducer, useCallback } from 'react';
+import { unShiftBarcode } from '../utils/barcodeNormalizer';
 
 /**
  * Hook para el formulario de producto.
@@ -61,7 +62,10 @@ export function useProductForm() {
 
     const setEditingId = useCallback((v) => dispatch({ type: 'SET', field: 'editingId', value: v }), []);
     const setName = useCallback((v) => dispatch({ type: 'SET', field: 'name', value: v }), []);
-    const setBarcode = useCallback((v) => dispatch({ type: 'SET', field: 'barcode', value: v }), []);
+    const setBarcode = useCallback((v) => {
+        const normalized = typeof v === 'string' ? unShiftBarcode(v) || v : v;
+        dispatch({ type: 'SET', field: 'barcode', value: normalized });
+    }, []);
     const setPriceUsd = useCallback((v) => dispatch({ type: 'SET', field: 'priceUsd', value: v }), []);
     const setPriceBs = useCallback((v) => dispatch({ type: 'SET', field: 'priceBs', value: v }), []);
     const setPricingMode = useCallback((v) => dispatch({ type: 'SET', field: 'pricingMode', value: v }), []);

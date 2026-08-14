@@ -7,6 +7,7 @@ import { useSounds } from '../hooks/useSounds';
 import { useVoiceSearch } from '../hooks/useVoiceSearch';
 import { useNotifications } from '../hooks/useNotifications';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
+import { normalizeBarcode, isLikelyBarcode } from '../utils/barcodeNormalizer';
 import { showToast } from '../components/Toast';
 import { ShoppingCart, X, DollarSign, CheckCircle2, Trash2 } from 'lucide-react';
 import { useCart } from '../context/CartContext';
@@ -246,22 +247,23 @@ export default function SalesView({ triggerHaptic, isActive }) {
     useBarcodeScanner({
         onScan: (barcode) => {
             if (showCheckout || showReceipt || showClearCartConfirm) return;
+            const normalized = normalizeBarcode(barcode, products);
 
             // Pesa electrónica con PLU
-            if (barcode.startsWith('21') && barcode.length >= 13) {
-                const pluCode = parseInt(barcode.substring(2, 7), 10).toString();
-                const weightKg = parseInt(barcode.substring(7, 12), 10) / 1000;
-                const p = products.find(p => p.id === pluCode || p.barcode?.includes(pluCode) || p.barcode?.includes(barcode.substring(0, 7)));
+            if (normalized.startsWith('21') && normalized.length >= 13) {
+                const pluCode = parseInt(normalized.substring(2, 7), 10).toString();
+                const weightKg = parseInt(normalized.substring(7, 12), 10) / 1000;
+                const p = products.find(p => String(p.id) === pluCode || p.barcode?.includes(pluCode) || p.barcode?.includes(normalized.substring(0, 7)));
                 if (p) { addToCart({ ...p, isWeight: true }, weightKg, null, true); return; }
             }
 
             // Producto regular
-            const product = products.find(p => p.barcode === barcode || p.id === barcode);
+            const product = products.find(p => p.barcode === normalized || String(p.id) === normalized);
             if (product) {
                 addToCart(product, null, null, true);
             } else {
                 playError();
-                showToast(`Producto no encontrado (${barcode})`, 'warning');
+                showToast(`Producto no encontrado (${normalized})`, 'warning');
             }
         },
         enabled: !isLoading && isActive && !!todayAperturaData
@@ -271,12 +273,13 @@ export default function SalesView({ triggerHaptic, isActive }) {
     const handlePasteBarcode = (pastedText) => {
         // Ignoramos si hay popups activos
         if (showCheckout || showReceipt || showClearCartConfirm) return;
+        const normalized = normalizeBarcode(pastedText, products);
 
         // Intentar Pesa Electrónica
-        if (pastedText.startsWith('21') && pastedText.length >= 13) {
-            const pluCode = parseInt(pastedText.substring(2, 7), 10).toString();
-            const weightKg = parseInt(pastedText.substring(7, 12), 10) / 1000;
-            const p = products.find(p => p.id === pluCode || p.barcode?.includes(pluCode) || p.barcode?.includes(pastedText.substring(0, 7)));
+        if (normalized.startsWith('21') && normalized.length >= 13) {
+            const pluCode = parseInt(normalized.substring(2, 7), 10).toString();
+            const weightKg = parseInt(normalized.substring(7, 12), 10) / 1000;
+            const p = products.find(p => String(p.id) === pluCode || p.barcode?.includes(pluCode) || p.barcode?.includes(normalized.substring(0, 7)));
             if (p) {
                 addToCart({ ...p, isWeight: true }, weightKg, null, true);
                 // Limpiamos el texto que se acaba de pegar
@@ -286,7 +289,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
         }
 
         // Buscar producto regular por código de barras o ID exactamente
-        const product = products.find(p => p.barcode === pastedText || p.id === pastedText);
+        const product = products.find(p => p.barcode === normalized || String(p.id) === normalized);
         if (product) {
             addToCart(product, null, null, true);
             // Limpiamos la barra tras pegarse
@@ -597,31 +600,43 @@ export default function SalesView({ triggerHaptic, isActive }) {
         }
         else if (e.key === 'Enter') {
             e.preventDefault();
-            const trimmedTerm = searchTerm.trim();
+            const rawTerm = searchTerm.trim();
+            if (!rawTerm) return;
 
-            // 1. Coincidencia exacta de código de barras o ID primero (pistola enfocada)
-            if (trimmedTerm.length >= 3) {
-                const exactMatch = products.find(p => p.barcode === trimmedTerm || p.id === trimmedTerm);
-                if (exactMatch) {
-                    addToCart(exactMatch, null, null, true);
-                    handleSetSearchTerm('');
-                    return;
-                }
-            }
+            const normalized = normalizeBarcode(rawTerm, products);
 
-            // 2. Barcode de balanza/pesa electrónica (prefijo 21)
-            if (trimmedTerm.startsWith('21') && trimmedTerm.length >= 13) {
-                const pluCode = parseInt(trimmedTerm.substring(2, 7), 10).toString();
-                const weightKg = parseInt(trimmedTerm.substring(7, 12), 10) / 1000;
-                const p = products.find(p => p.id === pluCode || p.barcode?.includes(pluCode) || p.barcode?.includes(trimmedTerm.substring(0, 7)));
+            // 1. Barcode de balanza/pesa electrónica (prefijo 21)
+            if (normalized.startsWith('21') && normalized.length >= 13) {
+                const pluCode = parseInt(normalized.substring(2, 7), 10).toString();
+                const weightKg = parseInt(normalized.substring(7, 12), 10) / 1000;
+                const p = products.find(p => String(p.id) === pluCode || p.barcode?.includes(pluCode) || p.barcode?.includes(normalized.substring(0, 7)));
                 if (p) { addToCart({ ...p, isWeight: true }, weightKg, null, true); handleSetSearchTerm(''); return; }
             }
 
-            // 3. Fallbacks de selección
+            // 2. Coincidencia exacta de código de barras o ID
+            const exactMatch = products.find(p => p.barcode === normalized || String(p.id) === normalized || p.barcode === rawTerm || String(p.id) === rawTerm);
+            if (exactMatch) {
+                addToCart(exactMatch, null, null, true);
+                handleSetSearchTerm('');
+                return;
+            }
+
+            // 3. Si parece un código de barras (numérico o símbolos escaneados) pero no existe en el catálogo:
+            // Alertar y no agregar un producto aleatorio por fallback de búsqueda difusa
+            if (isLikelyBarcode(rawTerm)) {
+                playError();
+                showToast(`Producto no encontrado (${normalized})`, 'warning');
+                searchInputRef.current?.select();
+                return;
+            }
+
+            // 4. Fallbacks de selección manual de texto
             if (searchResults[selectedIndex]) {
                 addToCart(searchResults[selectedIndex]);
+                handleSetSearchTerm('');
             } else if (searchResults.length === 1) {
                 addToCart(searchResults[0]);
+                handleSetSearchTerm('');
             }
         }
     };

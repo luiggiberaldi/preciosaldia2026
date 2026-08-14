@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { unShiftBarcode } from '../utils/barcodeNormalizer';
 
 /**
  * Hook para escuchar eventos del teclado globalmente y detectar
@@ -43,11 +44,12 @@ export function useBarcodeScanner({ onScan, enabled = true, timeout = 50 }) {
                 if (buffer.current.length >= 3) {
                     // Prevenir comportamientos por defecto si asimilamos que es un escaneo
                     e.preventDefault();
-                    const scannedCode = buffer.current;
+                    const rawCode = buffer.current;
                     buffer.current = '';
+                    const translatedCode = unShiftBarcode(rawCode) || rawCode.trim();
                     // HOOK-028: invocar vía ref en vez de closure directa.
                     if (typeof onScanRef.current === 'function') {
-                        onScanRef.current(scannedCode);
+                        onScanRef.current(translatedCode);
                     }
                 } else {
                     buffer.current = '';
