@@ -76,10 +76,14 @@ export default function App() {
     if (requireLogin) logout();
   }, []);
 
-  // Al iniciar sesión, redirigir siempre a la pestaña de inicio
+  // Al iniciar sesión, redirigir al punto de venta si es cajero, o a inicio si es admin
   useEffect(() => {
     if (usuarioActivo) {
-      setActiveTab('inicio');
+      if (usuarioActivo.rol === 'CAJERO') {
+        setActiveTab('ventas');
+      } else {
+        setActiveTab('inicio');
+      }
     }
   }, [usuarioActivo]);
 

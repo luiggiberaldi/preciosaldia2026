@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Clock, Send, Ban, ChevronDown, ChevronUp, Trash2, Shuffle, Recycle, Receipt, Printer, LockIcon, CornerDownLeft, Smartphone, DollarSign, HandCoins, Wallet } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Clock, Send, Ban, ChevronDown, ChevronUp, Trash2, Shuffle, Recycle, Receipt, Printer, LockIcon, CornerDownLeft, Smartphone, DollarSign, HandCoins, Wallet, Search, X, Layers, ShoppingBag } from 'lucide-react';
 import { formatBs, formatCop } from '../../utils/calculatorUtils';
 import { getPaymentLabel, getPaymentMethod, PAYMENT_ICONS, toTitleCase, getPaymentIcon } from '../../config/paymentMethods';
 import EmptyState from '../EmptyState';
@@ -10,7 +10,9 @@ import { usePagination } from '../../hooks/usePagination';
 import PaginationBar from '../PaginationBar';
 
 export default function SalesHistory({
-    recentSales,
+    sales = [],
+    recentSales = [],
+    todaySales = [],
     bcvRate,
     totalSalesCount,
     onVoidSale,
@@ -27,6 +29,166 @@ export default function SalesHistory({
 }) {
     const [expandedSaleId, setExpandedSaleId] = useState(null);
     const [printingId, setPrintingId] = useState(null);
+    const [historyTab, setHistoryTab] = useState('turno'); // 'turno' | 'general'
+    const [searchTerm, setSearchTerm] = useState('');
+
+    // Ventas del turno (caja abierta actual)
+    const shiftSales = useMemo(() => {
+        if (todaySales && todaySales.length > 0) {
+            return todaySales.filter(s => !s.cajaCerrada);
+        }
+        return (recentSales || []).filter(s => !s.cajaCerrada);
+    }, [todaySales, recentSales]);
+
+    // Ventas generales (historial acumulado)
+    const allSales = useMemo(() => {
+        return recentSales || [];
+    }, [recentSales]);
+
+    const currentBaseSales = historyTab === 'turno' ? shiftSales : allSales;
+
+    // Motor de búsqueda inteligente con normalización y puntuación de relevancia
+    const filteredSales = useMemo(() => {
+        if (!searchTerm.trim()) return currentBaseSales;
+
+        // Normalizador sin tildes ni caracteres especiales
+        const norm = (str) => {
+            if (!str) return '';
+            return String(str)
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .trim();
+        };
+
+        const rawTerm = searchTerm.trim();
+        const term = norm(rawTerm);
+        // Limpiar prefijo # y ceros a la izquierda para comparar números de ticket
+        const termNoHash = term.replace(/^#+/, '').trim();
+        const termOnlyDigits = termNoHash.replace(/^0+/, ''); // '0000757' -> '757'
+        const isNumeric = /^\d+(\.\d+)?$/.test(termNoHash);
+
+        const scoredResults = [];
+
+        for (const sale of currentBaseSales) {
+            let score = 0;
+
+            // 1. Número de Ticket / Venta (Máxima prioridad)
+            const saleNum = sale.saleNumber != null ? String(sale.saleNumber) : '';
+            const paddedNum = saleNum ? saleNum.padStart(7, '0') : ''; // '0000757'
+
+            if (saleNum) {
+                // Coincidencia exacta con el número de ticket (ej. "757" con ticket #757)
+                if (termOnlyDigits && saleNum === termOnlyDigits) {
+                    score += 1000;
+                } else if (termNoHash && paddedNum === termNoHash) {
+                    score += 900;
+                } else if (termNoHash && paddedNum.endsWith(termNoHash)) {
+                    score += 700;
+                } else if (termNoHash && paddedNum.includes(termNoHash)) {
+                    score += 500;
+                }
+            }
+
+            // Factura externa o número de comprobante
+            if (sale.invoiceNumber) {
+                const inv = norm(sale.invoiceNumber);
+                if (inv === termNoHash) score += 800;
+                else if (inv.includes(termNoHash)) score += 400;
+            }
+
+            // 2. Cliente (Nombre, Cédula/RIF, Teléfono)
+            const customer = norm(sale.customerName || sale.clientName);
+            if (customer) {
+                if (customer === term) {
+                    score += 600;
+                } else if (customer.startsWith(term)) {
+                    score += 450;
+                } else if (customer.includes(term)) {
+                    score += 350;
+                }
+            }
+
+            if (sale.clientDocument && norm(sale.clientDocument).includes(termNoHash)) {
+                score += 400;
+            }
+            if (sale.clientPhone && norm(sale.clientPhone).includes(termNoHash)) {
+                score += 400;
+            }
+
+            // 3. Productos dentro del ticket (Nombre y Código de barra)
+            if (sale.items && Array.isArray(sale.items)) {
+                for (const item of sale.items) {
+                    const itemName = norm(item.name);
+                    const barcode = item.barcode ? String(item.barcode).trim() : '';
+                    if (itemName && itemName.includes(term)) {
+                        score += 300;
+                        break;
+                    }
+                    if (barcode && (barcode === rawTerm || barcode.includes(termNoHash))) {
+                        score += 350;
+                        break;
+                    }
+                }
+            }
+
+            // 4. Métodos de Pago y Modalidades
+            const isCashea = (sale.tipo === 'VENTA_CASHEA') || (sale.casheaUsd > 0) || (sale.payments && sale.payments.some(p => p.isCashea || norm(p.methodId).includes('cashea') || norm(p.methodLabel).includes('cashea')));
+            if (term === 'cashea' && isCashea) {
+                score += 300;
+            }
+            if ((term === 'fiado' || term === 'deuda' || term === 'por cobrar') && sale.tipo === 'VENTA_FIADA') {
+                score += 300;
+            }
+            if ((term === 'anulada' || term === 'cancelada') && sale.status === 'ANULADA') {
+                score += 300;
+            }
+            if (term === 'mixto' && sale.payments && sale.payments.length > 1) {
+                score += 300;
+            }
+            if (sale.payments && Array.isArray(sale.payments)) {
+                for (const p of sale.payments) {
+                    if (norm(p.methodLabel).includes(term) || norm(p.methodId).includes(term)) {
+                        score += 200;
+                        break;
+                    }
+                }
+            }
+            if (sale.paymentMethod && norm(sale.paymentMethod).includes(term)) {
+                score += 200;
+            }
+
+            // 5. Monto Exacto en USD o Bs
+            if (isNumeric) {
+                const searchNum = parseFloat(termNoHash);
+                const usdTotal = sale.totalUsd != null ? Math.round(sale.totalUsd * 100) / 100 : null;
+                const bsTotal = sale.totalBs != null ? Math.round(sale.totalBs * 100) / 100 : null;
+
+                if (usdTotal != null && usdTotal === searchNum) {
+                    score += 250;
+                } else if (bsTotal != null && bsTotal === searchNum) {
+                    score += 250;
+                }
+            }
+
+            // 6. Cajero
+            if (sale.cashier?.nombre && norm(sale.cashier.nombre).includes(term)) {
+                score += 200;
+            }
+
+            if (score > 0) {
+                scoredResults.push({ sale, score });
+            }
+        }
+
+        // Ordenar: primero por mayor relevancia, a igual relevancia por fecha más reciente
+        scoredResults.sort((a, b) => {
+            if (b.score !== a.score) return b.score - a.score;
+            return new Date(b.sale.timestamp || 0) - new Date(a.sale.timestamp || 0);
+        });
+
+        return scoredResults.map(r => r.sale);
+    }, [currentBaseSales, searchTerm]);
 
     const {
         currentPage,
@@ -39,7 +201,7 @@ export default function SalesHistory({
         startIndex,
         endIndex,
         totalItems,
-    } = usePagination(recentSales, 10);
+    } = usePagination(filteredSales, 10);
 
     const handleThermalPrint = async (e, sale) => {
         e.stopPropagation();
@@ -62,30 +224,21 @@ export default function SalesHistory({
         }
     };
 
-    if (recentSales.length === 0) {
-        return (
-            <div className="mb-20 mt-4">
-                <EmptyState
-                    icon={Receipt}
-                    title="Aún no hay ventas"
-                    description="Las ventas recientes aparecerán aquí una vez que comiences a facturar."
-                />
-            </div>
-        );
-    }
-
     return (
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 shadow-sm mb-20">
+            {/* Encabezado con Título y Acciones */}
             <div className="flex items-center justify-between mb-3">
-                <h3 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1">
-                    <Clock size={12} /> Historial de Ventas
+                <h3 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1.5 tracking-wider">
+                    <Clock size={14} className="text-slate-400" /> Historial de Ventas
                 </h3>
                 <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">{totalSalesCount} histórico</span>
+                    <span className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-full">
+                        {totalSalesCount || allSales.length} histórico
+                    </span>
                     {isAdmin && (
                         <button
                             onClick={onOpenDeleteModal}
-                            className="text-slate-300 hover:text-red-500 transition-colors bg-slate-50 hover:bg-red-50 p-1.5 rounded-lg"
+                            className="text-slate-300 hover:text-red-500 transition-colors bg-slate-50 hover:bg-red-50 dark:bg-slate-800/40 dark:hover:bg-red-900/30 p-1.5 rounded-lg"
                             title="Borrar historial"
                         >
                             <Trash2 size={14} />
@@ -93,7 +246,115 @@ export default function SalesHistory({
                     )}
                 </div>
             </div>
-            <div className="space-y-3">
+
+            {/* Pestañas: Ventas del Turno vs Ventas en General */}
+            <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl mb-3">
+                <button
+                    onClick={() => { setHistoryTab('turno'); }}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-extrabold transition-all ${
+                        historyTab === 'turno'
+                            ? 'bg-brand text-white shadow-sm dark:bg-[#1ce2ee] dark:text-slate-950'
+                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
+                    }`}
+                >
+                    <ShoppingBag size={14} />
+                    <span>Ventas del Turno</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                        historyTab === 'turno'
+                            ? 'bg-white/20 text-white dark:bg-slate-950/20 dark:text-slate-950'
+                            : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                    }`}>
+                        {shiftSales.length}
+                    </span>
+                </button>
+
+                <button
+                    onClick={() => { setHistoryTab('general'); }}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-extrabold transition-all ${
+                        historyTab === 'general'
+                            ? 'bg-brand text-white shadow-sm dark:bg-[#1ce2ee] dark:text-slate-950'
+                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
+                    }`}
+                >
+                    <Layers size={14} />
+                    <span>Ventas en General</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                        historyTab === 'general'
+                            ? 'bg-white/20 text-white dark:bg-slate-950/20 dark:text-slate-950'
+                            : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                    }`}>
+                        {allSales.length}
+                    </span>
+                </button>
+            </div>
+
+            {/* Barra de Búsqueda Inteligente */}
+            <div className="relative mb-3">
+                <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Buscar ticket, cliente, producto, pago o monto..."
+                    className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 rounded-xl text-xs text-slate-800 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/30 dark:focus:ring-brand/20 transition-all"
+                />
+                {searchTerm && (
+                    <button
+                        onClick={() => setSearchTerm('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
+                        title="Limpiar búsqueda"
+                    >
+                        <X size={14} />
+                    </button>
+                )}
+            </div>
+
+            {/* Contador de resultados cuando se busca */}
+            {searchTerm && (
+                <div className="flex items-center justify-between mb-2.5 px-1">
+                    <span className="text-[11px] font-medium text-slate-400">
+                        {filteredSales.length === 1 ? '1 resultado encontrado' : `${filteredSales.length} resultados encontrados`}
+                    </span>
+                    <button
+                        onClick={() => setSearchTerm('')}
+                        className="text-[11px] text-brand hover:underline font-bold"
+                    >
+                        Ver todas
+                    </button>
+                </div>
+            )}
+
+            {/* Empty state cuando no hay coincidencias o no hay ventas */}
+            {filteredSales.length === 0 ? (
+                <div className="py-10 text-center flex flex-col items-center justify-center space-y-2">
+                    <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800/80 flex items-center justify-center text-slate-400">
+                        {searchTerm ? <Search size={22} /> : <Receipt size={22} />}
+                    </div>
+                    <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                        {searchTerm
+                            ? `No hay coincidencias para "${searchTerm}"`
+                            : historyTab === 'turno'
+                                ? 'No hay ventas registradas en el turno activo'
+                                : 'Aún no hay ventas en el historial general'}
+                    </p>
+                    <p className="text-[11px] text-slate-400 max-w-xs leading-relaxed">
+                        {searchTerm
+                            ? 'Prueba buscando por número de ticket, producto, cliente, método de pago o monto.'
+                            : historyTab === 'turno'
+                                ? 'Las ventas que realices durante este turno aparecerán aquí.'
+                                : 'Las ventas facturadas se acumularán en esta sección.'}
+                    </p>
+                    {searchTerm && (
+                        <button
+                            onClick={() => setSearchTerm('')}
+                            className="mt-2 text-xs text-brand font-bold bg-brand/10 hover:bg-brand/20 px-3 py-1.5 rounded-lg transition-colors"
+                        >
+                            Limpiar búsqueda
+                        </button>
+                    )}
+                </div>
+            ) : (
+                <div className="space-y-3">
                 {paginatedSales.map(s => {
                     const d = new Date(s.timestamp);
                     const hasCashea = (s.payments && s.payments.some(p => 
@@ -417,18 +678,22 @@ export default function SalesHistory({
                     );
                 })}
             </div>
-            <PaginationBar
-                currentPage={currentPage}
-                totalPages={totalPages}
-                totalItems={totalItems}
-                startIndex={startIndex}
-                endIndex={endIndex}
-                onNext={goNext}
-                onPrev={goPrev}
-                hasNext={hasNext}
-                hasPrev={hasPrev}
-                label="ventas"
-            />
+            )}
+
+            {filteredSales.length > 0 && (
+                <PaginationBar
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    totalItems={totalItems}
+                    startIndex={startIndex}
+                    endIndex={endIndex}
+                    onNext={goNext}
+                    onPrev={goPrev}
+                    hasNext={hasNext}
+                    hasPrev={hasPrev}
+                    label="ventas"
+                />
+            )}
         </div>
     );
 }

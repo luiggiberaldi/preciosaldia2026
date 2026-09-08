@@ -3,11 +3,14 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const PORT = 4194;
+const PORT = 4199;
 const DIST_DIR = path.join(__dirname, '..', 'dist');
 const OUTPUT_DIR_LANDING_PUBLIC = path.join('C:', 'Users', 'luigg', 'Desktop', 'precios al dia final', 'pagina precios al dia', 'public');
 const OUTPUT_DIR_LANDING_SCREENSHOTS = path.join(OUTPUT_DIR_LANDING_PUBLIC, 'screenshots');
 const OUTPUT_DIR_BODEGA_SCREENSHOTS = path.join(__dirname, '..', 'screenshots');
+const BACKUP_PATH = path.join(__dirname, 'imported-backup.json');
+
+const backupJson = JSON.parse(fs.readFileSync(BACKUP_PATH, 'utf8'));
 
 [OUTPUT_DIR_LANDING_PUBLIC, OUTPUT_DIR_LANDING_SCREENSHOTS, OUTPUT_DIR_BODEGA_SCREENSHOTS].forEach(dir => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -50,70 +53,6 @@ function startServer(port = PORT) {
     });
   });
 }
-
-const DEMO_PRODUCTS = [
-  { id: 'p1', name: 'Harina P.A.N. Blanca 1 Kg', barcode: '7591001000101', priceUsd: 1.30, priceUsdt: 1.30, costUsd: 1.05, stock: 48, category: 'Víveres', unit: 'paquete', isWeight: false },
-  { id: 'p2', name: 'Arroz Mary Tradicional 1 Kg', barcode: '7591002000202', priceUsd: 1.45, priceUsdt: 1.45, costUsd: 1.15, stock: 36, category: 'Víveres', unit: 'paquete', isWeight: false },
-  { id: 'p3', name: 'Pasta Primor Larga 1 Kg', barcode: '7591003000303', priceUsd: 1.60, priceUsdt: 1.60, costUsd: 1.25, stock: 24, category: 'Víveres', unit: 'paquete', isWeight: false },
-  { id: 'p4', name: 'Aceite Diana Vegetal 1 Litro', barcode: '7591004000404', priceUsd: 2.80, priceUsdt: 2.80, costUsd: 2.30, stock: 18, category: 'Víveres', unit: 'unidad', isWeight: false },
-  { id: 'p5', name: 'Mayonesa Mavesa 445g', barcode: '7591005000505', priceUsd: 2.40, priceUsdt: 2.40, costUsd: 1.95, stock: 15, category: 'Salsas', unit: 'frasco', isWeight: false },
-  { id: 'p6', name: 'Margarina Mavesa 500g', barcode: '7591006000606', priceUsd: 1.90, priceUsdt: 1.90, costUsd: 1.50, stock: 30, category: 'Lácteos', unit: 'unidad', isWeight: false },
-  { id: 'p7', name: 'Azúcar Montalbán 1 Kg', barcode: '7591007000707', priceUsd: 1.35, priceUsdt: 1.35, costUsd: 1.10, stock: 40, category: 'Víveres', unit: 'paquete', isWeight: false },
-  { id: 'p8', name: 'Café Fama de América 250g', barcode: '7591008000808', priceUsd: 2.50, priceUsdt: 2.50, costUsd: 2.00, stock: 22, category: 'Café', unit: 'paquete', isWeight: false },
-  { id: 'p9', name: 'Leche La Campiña 1 Kg', barcode: '7591009000909', priceUsd: 8.50, priceUsdt: 8.50, costUsd: 7.20, stock: 12, category: 'Lácteos', unit: 'bolsa', isWeight: false },
-  { id: 'p10', name: 'Refresco Coca Cola 2 Litros', barcode: '7591010001010', priceUsd: 2.50, priceUsdt: 2.50, costUsd: 1.90, stock: 28, category: 'Bebidas', unit: 'botella', isWeight: false },
-  { id: 'p11', name: 'Queso Blanco Llanero', barcode: '2000000000111', priceUsd: 5.50, priceUsdt: 5.50, costUsd: 4.20, stock: 15.5, category: 'Charcutería', unit: 'kg', isWeight: true },
-  { id: 'p12', name: 'Jamón de Pierna Plumrose', barcode: '2000000000122', priceUsd: 7.80, priceUsdt: 7.80, costUsd: 6.10, stock: 10.2, category: 'Charcutería', unit: 'kg', isWeight: true }
-];
-
-const now = new Date();
-const todayStr = now.toISOString().split('T')[0];
-
-const DEMO_SALES = [
-  {
-    id: 'apertura-1',
-    tipo: 'APERTURA_CAJA',
-    timestamp: now.toISOString(),
-    montoUsd: 50.00,
-    montoBs: 2125.00,
-    cajaCerrada: false
-  },
-  {
-    id: 's1',
-    saleNumber: 101,
-    timestamp: now.toISOString(),
-    date: now.toISOString(),
-    totalUsd: 14.85,
-    rate: 42.50,
-    totalBs: 631.13,
-    status: 'COMPLETADA',
-    tipo: 'VENTA',
-    paymentMethod: 'pago_movil',
-    payments: [{ methodId: 'pago_movil', amountUsd: 14.85, amountBs: 631.13, currency: 'BS' }],
-    items: [
-      { id: 'p1', name: 'Harina P.A.N. Blanca 1 Kg', qty: 2, priceUsd: 1.30, costUsd: 1.05 },
-      { id: 'p4', name: 'Aceite Diana Vegetal 1 Litro', qty: 1, priceUsd: 2.80, costUsd: 2.30 },
-      { id: 'p9', name: 'Leche La Campiña 1 Kg', qty: 1, priceUsd: 8.50, costUsd: 7.20 }
-    ]
-  },
-  {
-    id: 's2',
-    saleNumber: 102,
-    timestamp: now.toISOString(),
-    date: now.toISOString(),
-    totalUsd: 9.60,
-    rate: 42.50,
-    totalBs: 408.00,
-    status: 'COMPLETADA',
-    tipo: 'VENTA',
-    paymentMethod: 'efectivo_usd',
-    payments: [{ methodId: 'efectivo_usd', amountUsd: 9.60, amountBs: 0, currency: 'USD' }],
-    items: [
-      { id: 'p10', name: 'Refresco Coca Cola 2 Litros', qty: 2, priceUsd: 2.50, costUsd: 1.90 },
-      { id: 'p5', name: 'Mayonesa Mavesa 445g', qty: 1, priceUsd: 2.40, costUsd: 1.95 }
-    ]
-  }
-];
 
 async function saveToTargets(filename, buffer) {
   const target1 = path.join(OUTPUT_DIR_LANDING_PUBLIC, filename);
@@ -164,37 +103,63 @@ async function captureAll() {
     });
   });
 
-  await context.addInitScript(({ products, sales, today }) => {
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+
+  const activeApertura = {
+    id: 'apertura_hoy_' + Date.now(),
+    tipo: 'APERTURA_CAJA',
+    openingUsd: 50.00,
+    openingBs: 2500.00,
+    openingCop: 0,
+    timestamp: now.toISOString(),
+    cajaCerrada: false
+  };
+
+  const salesWithOpenRegister = [activeApertura, ...(backupJson.data.idb.bodega_sales_v1 || [])];
+
+  await context.addInitScript(({ backup, today, openSales }) => {
     localStorage.setItem('pda_terms_accepted', 'true');
-    localStorage.setItem('business_name', 'Bodega Don José');
-    localStorage.setItem('marketing_email', 'contacto@bodegadonjose.com');
+    localStorage.setItem('pda_welcome_dismissed', 'true');
     localStorage.setItem('pda_last_splash_date', today);
     localStorage.setItem('pda_onboarding_completed', 'true');
-    localStorage.setItem('pda_welcome_dismissed', 'true');
-    localStorage.setItem('bodega_products_v1', JSON.stringify(products));
-    localStorage.setItem('bodega_sales_v1', JSON.stringify(sales));
     localStorage.setItem('theme', 'light');
     localStorage.setItem('cashea_enabled', 'true');
-    localStorage.setItem('pda_custom_rate', '42.50');
+    localStorage.setItem('pda_custom_rate', '784.66');
     localStorage.setItem('pda_rate_mode', 'bcv');
     localStorage.setItem('allow_cash_advance', 'true');
+
+    if (backup.data.ls) {
+      for (const [k, v] of Object.entries(backup.data.ls)) {
+        localStorage.setItem(k, typeof v === 'object' ? JSON.stringify(v) : v);
+      }
+    }
+
+    if (backup.data.idb) {
+      for (const [k, v] of Object.entries(backup.data.idb)) {
+        localStorage.setItem(k, JSON.stringify(v));
+      }
+    }
+
+    localStorage.setItem('bodega_sales_v1', JSON.stringify(openSales));
+
     localStorage.setItem('abasto-device-session', JSON.stringify({
-      id: 'u1',
-      nombre: 'Admin / Dueño',
+      id: 1,
+      nombre: 'Administrador',
       rol: 'ADMIN'
     }));
     localStorage.setItem('abasto-auth-storage', JSON.stringify({
       state: {
-        usuarioActivo: { id: 'u1', nombre: 'Admin / Dueño', rol: 'ADMIN', pin: '1234' },
+        usuarioActivo: { id: 1, nombre: 'Administrador', rol: 'ADMIN' },
         requireLogin: false,
         usuarios: [
-          { id: 'u1', nombre: 'Admin / Dueño', rol: 'ADMIN', pin: '1234' },
-          { id: 'u2', nombre: 'Cajero 1', rol: 'CAJERO', pin: '0000' }
+          { id: 1, nombre: 'Administrador', rol: 'ADMIN' },
+          { id: 2, nombre: 'Cajero', rol: 'CAJERO' }
         ]
       },
       version: 0
     }));
-  }, { products: DEMO_PRODUCTS, sales: DEMO_SALES, today: todayStr });
+  }, { backup: backupJson, today: todayStr, openSales: salesWithOpenRegister });
 
   const page = await context.newPage();
 
@@ -218,51 +183,66 @@ async function captureAll() {
   // 1. Dashboard
   console.log('\n--- 1. Capturando Dashboard (dashboard.png) ---');
   await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(2000);
+  await page.waitForTimeout(3000);
   await cleanAllOverlays();
   const dashBuf = await page.screenshot({ fullPage: false });
   await saveToTargets('dashboard.png', dashBuf);
 
-  // 2. Inventario
-  console.log('\n--- 2. Capturando Inventario / Catálogo (inventory.png) ---');
+  // 2. Inventario con Fotos Reales
+  console.log('\n--- 2. Capturando Inventario con Fotos Reales (inventory.png) ---');
   await page.evaluate(() => {
     const tab = document.querySelector('[data-tour="tab-catalogo"]') || Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('Inventario'));
     if (tab) tab.click();
   });
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(3000);
   await cleanAllOverlays();
   const invBuf = await page.screenshot({ fullPage: false });
   await saveToTargets('inventory.png', invBuf);
 
-  // 3. POS con Carrito Lleno
+  // 3. POS con Carrito y Fotos de Productos
   console.log('\n--- 3. Capturando Punto de Venta con Carrito (pos.png) ---');
   await page.evaluate(() => {
     const tab = document.querySelector('[data-tour="tab-ventas"]') || Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('Vender'));
     if (tab) tab.click();
   });
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(2500);
   await cleanAllOverlays();
 
-  // Click en 2 productos para agregarlos al carrito
-  await page.evaluate(() => {
-    const productCards = Array.from(document.querySelectorAll('div, button')).filter(el => 
-      el.innerText && (el.innerText.includes('Harina P.A.N.') || el.innerText.includes('Aceite Diana') || el.innerText.includes('Refresco Coca'))
-    );
-    if (productCards[0]) productCards[0].click();
-    if (productCards[0]) productCards[0].click();
-    if (productCards[1]) productCards[1].click();
-  });
+  // Click en botones de producto
+  const harinaBtn = page.locator('button').filter({ hasText: 'Harina PAN 1kg' }).first();
+  if (await harinaBtn.isVisible()) {
+    await harinaBtn.click();
+    await page.waitForTimeout(300);
+    await harinaBtn.click();
+    await page.waitForTimeout(300);
+  }
+
+  const mavesaBtn = page.locator('button').filter({ hasText: 'Mayonesa Mavesa 500g' }).first();
+  if (await mavesaBtn.isVisible()) {
+    await mavesaBtn.click();
+    await page.waitForTimeout(300);
+  }
+
+  const pamperoBtn = page.locator('button').filter({ hasText: 'Salsa de Tomate Pampero 397g' }).first();
+  if (await pamperoBtn.isVisible()) {
+    await pamperoBtn.click();
+    await page.waitForTimeout(300);
+  }
+
+  const jamonBtn = page.locator('button').filter({ hasText: 'Jamon De Pierna La Montserratina 200g' }).first();
+  if (await jamonBtn.isVisible()) {
+    await jamonBtn.click();
+    await page.waitForTimeout(500);
+  }
+
   await page.waitForTimeout(1000);
   await cleanAllOverlays();
   const posBuf = await page.screenshot({ fullPage: false });
   await saveToTargets('pos.png', posBuf);
 
-  // 4. Checkout Modal
+  // 4. Modal de Checkout / Cobro
   console.log('\n--- 4. Capturando Modal de Cobro / Checkout (checkout.png) ---');
-  await page.evaluate(() => {
-    const btn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('COBRAR') || b.innerText.includes('Cobrar'));
-    if (btn) btn.click();
-  });
+  await page.click('button:has-text("COBRAR")');
   await page.waitForTimeout(1500);
   const checkBuf = await page.screenshot({ fullPage: false });
   await saveToTargets('checkout.png', checkBuf);
@@ -275,32 +255,58 @@ async function captureAll() {
     const tab = document.querySelector('[data-tour="tab-reportes"]') || Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('Reportes'));
     if (tab) tab.click();
   });
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(2000);
   await cleanAllOverlays();
   const repBuf = await page.screenshot({ fullPage: false });
   await saveToTargets('reports.png', repBuf);
 
-  // 6. Login / Control de Acceso
+  // 6. Login
   console.log('\n--- 6. Capturando Login / Control de Acceso (login.png) ---');
-  await page.evaluate(() => {
-    localStorage.removeItem('abasto-device-session');
+  const loginContext = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    deviceScaleFactor: 2,
+    locale: 'es-VE'
+  });
+
+  await loginContext.addInitScript(({ today }) => {
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem('pda_terms_accepted', 'true');
     localStorage.setItem('pda_welcome_dismissed', 'true');
+    localStorage.setItem('pda_last_splash_date', today);
+    localStorage.setItem('pda_onboarding_completed', 'true');
     localStorage.setItem('abasto-auth-storage', JSON.stringify({
       state: {
         usuarioActivo: null,
         requireLogin: true,
+        requireAdminPin: true,
+        requireCajeroPin: true,
         usuarios: [
-          { id: 'u1', nombre: 'Admin / Dueño', rol: 'ADMIN', pin: '1234' },
-          { id: 'u2', nombre: 'Cajero Principal', rol: 'CAJERO', pin: '0000' }
+          { id: 1, nombre: 'Administrador', rol: 'ADMIN', pin: '1234' },
+          { id: 2, nombre: 'Cajero', rol: 'CAJERO', pin: '0000' }
         ]
       },
       version: 0
     }));
+  }, { today: todayStr });
+
+  const loginPage = await loginContext.newPage();
+  await loginPage.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
+  await loginPage.waitForTimeout(2000);
+  await loginPage.evaluate(() => {
+    document.querySelectorAll('.fixed').forEach(el => {
+      const text = el.innerText || '';
+      if (
+        text.includes('Términos y Condiciones') || 
+        text.includes('Acepto los Términos') || 
+        text.includes('Cargando Precios Al Día') || 
+        el.getAttribute('role') === 'status'
+      ) {
+        el.remove();
+      }
+    });
   });
-  await page.reload({ waitUntil: 'networkidle' });
-  await page.waitForTimeout(2000);
-  await cleanAllOverlays();
-  const loginBuf = await page.screenshot({ fullPage: false });
+  const loginBuf = await loginPage.screenshot({ fullPage: false });
   await saveToTargets('login.png', loginBuf);
 
   await browser.close();

@@ -74,6 +74,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     const { deviceId } = useSecurity();
     const isAdmin = true;
     const isCajero = useAuthStore(s => s.requireLogin && s.usuarioActivo?.rol === 'CAJERO');
+    const usuarioActivo = useAuthStore(s => s.usuarioActivo);
     const { log: auditLog } = useAudit();
     const { products, setProducts, isLoadingProducts, effectiveRate: bcvRate, copEnabled, copPrimary, tasaCop } = useProductContext();
     const { loadCart } = useCart();
@@ -507,113 +508,147 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 </div>
             </div>
 
-            {/* ── CAJERO: vista simplificada — v1.2.0: reveal + shadow-tone-sm + font-display en totales ── */}
-            {isCajero ? (
-                <div className="grid grid-cols-2 gap-3 mb-5">
-                    <div className="reveal card !p-4 !rounded-2xl relative overflow-hidden">
-                        <div className="absolute -right-4 -top-4 w-16 h-16 bg-brand-light dark:bg-surface-800/10 rounded-full blur-2xl" />
-                        <div className="w-9 h-9 bg-brand-light dark:bg-surface-800/30 rounded-xl flex items-center justify-center mb-2">
-                            <ShoppingCart size={18} className="text-brand" />
+            {/* Componente de historial de ventas reutilizable para Cajero y Admin */}
+            {(() => {
+                const salesHistoryComponent = (
+                    <SalesHistory
+                        sales={sales}
+                        recentSales={recentSales}
+                        todaySales={todaySales}
+                        bcvRate={bcvRate}
+                        totalSalesCount={sales.filter(s => s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA').length}
+                        isAdmin={!isCajero}
+                        onVoidSale={handleVoidSale}
+                        onShareWhatsApp={handleShareWhatsApp}
+                        onDownloadPDF={handleDownloadPDF}
+                        onOpenDeleteModal={() => setIsDeleteModalOpen(true)}
+                        onRequestClientForTicket={(sale) => {
+                            triggerHaptic && triggerHaptic();
+                            setTicketPendingSale(sale);
+                        }}
+                        onRecycleSale={(sale) => {
+                            triggerHaptic && triggerHaptic();
+                            loadCart(sale.items);
+                            if (onNavigate) onNavigate('ventas');
+                        }}
+                        onPrintTicket={handlePrintTicket}
+                        copEnabled={copEnabled}
+                        copPrimary={copPrimary}
+                        tasaCop={tasaCop}
+                    />
+                );
+
+                return isCajero ? (
+                    <div className="space-y-4 mb-8">
+                        {/* Hero Card de Acción Rápida para el Cajero */}
+                        <div className="p-4 sm:p-5 rounded-2xl border border-brand/20 dark:border-brand/30 bg-gradient-to-br from-brand/5 via-white to-brand/10 dark:from-surface-900 dark:via-surface-900 dark:to-surface-800 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                            <div className="flex items-center gap-3.5">
+                                <div className="w-12 h-12 rounded-2xl bg-brand text-white flex items-center justify-center shadow-md shadow-brand/20 shrink-0">
+                                    <ShoppingCart size={24} />
+                                </div>
+                                <div>
+                                    <h2 className="text-base sm:text-lg font-bold text-slate-800 dark:text-white leading-snug">
+                                        Caja Activa · {usuarioActivo?.nombre || 'Cajero'}
+                                    </h2>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                                        Tasa oficial: <span className="font-semibold text-slate-700 dark:text-slate-200">{formatBs(bcvRate)} Bs/$</span>
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => { if (onNavigate) { triggerHaptic && triggerHaptic(); onNavigate('ventas'); } }}
+                                className="w-full sm:w-auto px-5 py-2.5 bg-[#01696f] hover:bg-[#00575d] dark:bg-[#1ce2ee] dark:hover:bg-[#0bc2cd] text-white dark:text-slate-950 font-extrabold text-sm rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2"
+                            >
+                                <ShoppingCart size={18} />
+                                <span>Ir a Caja / Vender</span>
+                            </button>
                         </div>
-                        <p className="font-outfit text-4xl font-semibold text-surface-700 dark:text-surface-100 leading-none">{todaySales.length}</p>
-                        <p className="text-[11px] text-surface-400 mt-1">{todaySales.length === 1 ? 'venta hoy' : 'ventas hoy'}</p>
-                    </div>
-                    <div className="reveal card !p-4 !rounded-2xl relative overflow-hidden">
-                        <div className="absolute -right-4 -top-4 w-16 h-16 bg-emerald-50 dark:bg-emerald-900/10 rounded-full blur-2xl" />
-                        <div className="w-9 h-9 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl flex items-center justify-center mb-2">
-                            <Package size={18} className="text-emerald-500" />
+
+                        {/* Resumen del Turno (Sin clase .reveal que causaba opacidad cero) */}
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="card !p-4 !rounded-2xl relative overflow-hidden bg-white dark:bg-surface-900 border border-slate-200/70 dark:border-slate-800 shadow-sm">
+                                <div className="w-9 h-9 bg-brand-light dark:bg-surface-800/30 rounded-xl flex items-center justify-center mb-2">
+                                    <ShoppingCart size={18} className="text-brand" />
+                                </div>
+                                <p className="font-outfit text-3xl sm:text-4xl font-semibold text-surface-700 dark:text-surface-100 leading-none">{todaySales.length}</p>
+                                <p className="text-[11px] font-medium text-surface-400 mt-1">{todaySales.length === 1 ? 'venta hoy' : 'ventas hoy'}</p>
+                            </div>
+                            <div className="card !p-4 !rounded-2xl relative overflow-hidden bg-white dark:bg-surface-900 border border-slate-200/70 dark:border-slate-800 shadow-sm">
+                                <div className="w-9 h-9 bg-emerald-50 dark:bg-emerald-900/30 rounded-xl flex items-center justify-center mb-2">
+                                    <Package size={18} className="text-emerald-500" />
+                                </div>
+                                <p className="font-outfit text-3xl sm:text-4xl font-semibold text-surface-700 dark:text-surface-100 leading-none">{todayItemsSold}</p>
+                                <p className="text-[11px] font-medium text-surface-400 mt-1">{todayItemsSold === 1 ? 'artículo vendido' : 'artículos vendidos'}</p>
+                            </div>
                         </div>
-                        <p className="font-outfit text-4xl font-semibold text-surface-700 dark:text-surface-100 leading-none">{todayItemsSold}</p>
-                        <p className="text-[11px] text-surface-400 mt-1">{todayItemsSold === 1 ? 'artículo vendido' : 'artículos vendidos'}</p>
+
+                        {/* Historial de ventas del turno para reimprimir tickets */}
+                        {salesHistoryComponent}
                     </div>
-                </div>
-            ) : (
-                <div className={`${(outOfStockProducts.length > 0 || lowStockProducts.length > 0 || topProducts.length > 0) ? 'lg:grid lg:grid-cols-[1fr_300px] xl:grid-cols-[1fr_340px] lg:gap-6 lg:items-start' : ''}`}>
+                ) : (
+                    <div className={`${(outOfStockProducts.length > 0 || lowStockProducts.length > 0 || topProducts.length > 0) ? 'lg:grid lg:grid-cols-[1fr_300px] xl:grid-cols-[1fr_340px] lg:gap-6 lg:items-start' : ''}`}>
 
-            {/* LEFT: Stats + Payment + Chart */}
-            <div>
-            {/* Stats Cards */}
-            <DashboardStats
-                isDemo={isDemo}
-                demoTimeLeft={demoTimeLeft}
-                deviceId={deviceId}
-                todayTotalUsd={todayTotalUsd}
-                todayTotalBs={todayTotalBs}
-                todayTotalCop={todayTotalCop}
-                todaySales={todaySales}
-                todayItemsSold={todayItemsSold}
-                todayExpenses={todayExpenses}
-                todayExpensesUsd={todayExpensesUsd}
-                todayGastosUsd={todayGastosUsd}
-                todayProfit={todayProfit}
-                bcvRate={bcvRate}
-                todayCashFlow={todayCashFlow}
-                totalDeudas={totalDeudas}
-                showTopDeudas={showTopDeudas}
-                setShowTopDeudas={setShowTopDeudas}
-                triggerHaptic={triggerHaptic}
-                onDailyClose={handleDailyClose}
-                copEnabled={copEnabled}
-                copPrimary={copPrimary}
-                tasaCop={tasaCop}
-                onTasaClick={() => setShowMonitor(true)}
-                onOpenGasto={() => setIsAddGastoOpen(true)}
-            />
+                {/* LEFT: Stats + Payment + Chart */}
+                <div>
+                {/* Stats Cards */}
+                <DashboardStats
+                    isDemo={isDemo}
+                    demoTimeLeft={demoTimeLeft}
+                    deviceId={deviceId}
+                    todayTotalUsd={todayTotalUsd}
+                    todayTotalBs={todayTotalBs}
+                    todayTotalCop={todayTotalCop}
+                    todaySales={todaySales}
+                    todayItemsSold={todayItemsSold}
+                    todayExpenses={todayExpenses}
+                    todayExpensesUsd={todayExpensesUsd}
+                    todayGastosUsd={todayGastosUsd}
+                    todayProfit={todayProfit}
+                    bcvRate={bcvRate}
+                    todayCashFlow={todayCashFlow}
+                    totalDeudas={totalDeudas}
+                    showTopDeudas={showTopDeudas}
+                    setShowTopDeudas={setShowTopDeudas}
+                    triggerHaptic={triggerHaptic}
+                    onDailyClose={handleDailyClose}
+                    copEnabled={copEnabled}
+                    copPrimary={copPrimary}
+                    tasaCop={tasaCop}
+                    onTasaClick={() => setShowMonitor(true)}
+                    onOpenGasto={() => setIsAddGastoOpen(true)}
+                />
 
-            {/* Pago por Metodo */}
-            <DashboardPaymentBreakdown
-                paymentBreakdown={paymentBreakdown}
-                todayTotalBs={todayTotalBs}
-                bcvRate={bcvRate}
-                copEnabled={copEnabled}
-                copPrimary={copPrimary}
-                tasaCop={tasaCop}
-            />
+                {/* Pago por Metodo */}
+                <DashboardPaymentBreakdown
+                    paymentBreakdown={paymentBreakdown}
+                    todayTotalBs={todayTotalBs}
+                    bcvRate={bcvRate}
+                    copEnabled={copEnabled}
+                    copPrimary={copPrimary}
+                    tasaCop={tasaCop}
+                />
 
-            {/* Gráfica semanal */}
-            <SalesChart
-                weekData={weekData}
-                selectedDate={selectedChartDate}
-                copEnabled={copEnabled}
-                copPrimary={copPrimary}
-                tasaCop={tasaCop}
-                bcvRate={bcvRate}
-                onDayClick={(date) => {
-                    triggerHaptic();
-                    setSelectedChartDate(prev => prev === date ? null : date);
-                    setTimeout(() => {
-                        window.scrollBy({ top: 150, behavior: 'smooth' });
-                    }, 50);
-                }}
-            />
+                {/* Gráfica semanal */}
+                <SalesChart
+                    weekData={weekData}
+                    selectedDate={selectedChartDate}
+                    copEnabled={copEnabled}
+                    copPrimary={copPrimary}
+                    tasaCop={tasaCop}
+                    bcvRate={bcvRate}
+                    onDayClick={(date) => {
+                        triggerHaptic();
+                        setSelectedChartDate(prev => prev === date ? null : date);
+                        setTimeout(() => {
+                            window.scrollBy({ top: 150, behavior: 'smooth' });
+                        }, 50);
+                    }}
+                />
 
-            {/* Historial de ventas — integrado en la columna izquierda para eliminar espacios vacíos */}
-            <SalesHistory
-                sales={sales}
-                recentSales={recentSales}
-                bcvRate={bcvRate}
-                totalSalesCount={sales.filter(s => s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA').length}
-                isAdmin={!isCajero}
-                onVoidSale={handleVoidSale}
-                onShareWhatsApp={handleShareWhatsApp}
-                onDownloadPDF={handleDownloadPDF}
-                onOpenDeleteModal={() => setIsDeleteModalOpen(true)}
-                onRequestClientForTicket={(sale) => {
-                    triggerHaptic && triggerHaptic();
-                    setTicketPendingSale(sale);
-                }}
-                onRecycleSale={(sale) => {
-                    triggerHaptic && triggerHaptic();
-                    loadCart(sale.items);
-                    if (onNavigate) onNavigate('ventas');
-                }}
-                onPrintTicket={handlePrintTicket}
-                copEnabled={copEnabled}
-                copPrimary={copPrimary}
-                tasaCop={tasaCop}
-            />
+                {/* Historial de ventas — integrado en la columna izquierda para eliminar espacios vacíos */}
+                {salesHistoryComponent}
 
-            </div>{/* end LEFT column */}
+                </div>{/* end LEFT column */}
 
             {/* RIGHT: Inventory Valuation + Out of stock + Low stock + Top products */}
             <div>
@@ -752,7 +787,8 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
 
             </div>
             </div>
-            )}
+        );
+    })()}
 
             {/* Empty state */}
             {sales.length === 0 && (
