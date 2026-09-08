@@ -3,6 +3,7 @@ import { storageService } from '../utils/storageService';
 import { getActivePaymentMethods, INTERNAL_CREDIT_PAYMENT_METHOD } from '../config/paymentMethods';
 import { getLocalISODate } from '../utils/dateHelpers';
 import { migrateCustomerLedger } from '../utils/customerMigration';
+import { isGranelProduct, normalizeCartQuantity } from '../utils/granel'; // GRANEL-001
 
 export const SALES_KEY = 'bodega_sales_v1';
 
@@ -17,13 +18,20 @@ function sanitizeCart(rawCart) {
     if (!Array.isArray(rawCart)) return [];
     return rawCart
         .filter(item => item && typeof item === 'object')
-        .map((item, idx) => ({
-            ...item,
-            id: item.id ?? `legacy_cart_item_${idx}_${Date.now()}`,
-            name: item.name || 'Producto Sin Nombre',
-            qty: typeof item.qty === 'number' && !isNaN(item.qty) && item.qty > 0 ? item.qty : 1,
-            priceUsd: typeof item.priceUsd === 'number' && !isNaN(item.priceUsd) ? item.priceUsd : 0
-        }));
+        .map((item, idx) => {
+            const itemIsGranel = isGranelProduct(item);
+            const normalizedQty = normalizeCartQuantity(item.qty, itemIsGranel);
+            return {
+                ...item,
+                id: item.id ?? `legacy_cart_item_${idx}_${Date.now()}`,
+                name: item.name || 'Producto Sin Nombre',
+                // Corrige una cesta legacy: granel conserva 3 decimales; el resto
+                // queda en entero estricto antes de llegar a la UI.
+                qty: normalizedQty > 0 ? normalizedQty : 1,
+                priceUsd: typeof item.priceUsd === 'number' && !isNaN(item.priceUsd) ? item.priceUsd : 0,
+                isWeight: itemIsGranel,
+            };
+        });
 }
 
 export function useSalesData({ setCart, cartRef, isActive }) {

@@ -94,6 +94,24 @@ export const parseCartQuantity = (raw, isGranel) => {
 };
 
 /**
+ * Normaliza cantidades que ya vienen dentro del estado persistido (por ejemplo,
+ * una cesta antigua). A diferencia de parseCartQuantity, corrige legacy decimals
+ * no-granel a entero para impedir que sobrevivan en el estado.
+ * @param {string|number} raw
+ * @param {object|boolean} productOrIsGranel
+ * @returns {number}
+ */
+export const normalizeCartQuantity = (raw, productOrIsGranel) => {
+    const isGranel = typeof productOrIsGranel === 'boolean'
+        ? productOrIsGranel
+        : isGranelProduct(productOrIsGranel);
+    const cleaned = String(raw ?? '').trim().replace(/\s/g, '').replace(',', '.');
+    const n = Number(cleaned);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return normalizeStockValue(n, isGranel);
+};
+
+/**
  * Ajuste de stock sin drift IEEE-754: stock + delta con redondeo canónico.
  * @param {number} stock
  * @param {number} delta

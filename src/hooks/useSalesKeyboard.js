@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { isGranelProduct } from '../utils/granel'; // GRANEL-001
 
 export function useSalesKeyboard({
     todayAperturaData,
@@ -74,14 +75,14 @@ export function useSalesKeyboard({
 
                 if (e.key === '+' || e.key === 'Add') {
                     e.preventDefault();
-                    updateQty(item.id, item.isWeight ? 0.1 : 1);
+                    updateQty(item.id, isGranelProduct(item) ? 0.1 : 1);
                     setCartSelectedIndex(activeIdx); // Ensure selection is active
                     return;
                 }
                 
                 if (e.key === '-' || e.key === 'Subtract') {
                     e.preventDefault();
-                    updateQty(item.id, item.isWeight ? -0.1 : -1);
+                    updateQty(item.id, isGranelProduct(item) ? -0.1 : -1);
                     setCartSelectedIndex(activeIdx);
                     return;
                 }

@@ -5,7 +5,7 @@ import { mulR } from '../../utils/dinero';
 import SmartImage from '../SmartImage';
 import { FinancialEngine } from '../../core/FinancialEngine';
 import { showToast } from '../Toast';
-import { isGranelProduct, granelUnitLabel, parseStockInput, formatStockDisplay } from '../../utils/granel'; // GRANEL-001
+import { isGranelProduct, granelUnitLabel, parseCartQuantity, formatStockDisplay } from '../../utils/granel'; // GRANEL-001
 
 export default function CartPanel({
     cart,
@@ -77,7 +77,7 @@ export default function CartPanel({
             return;
         }
 
-        const parsed = parseStockInput(tempQty, itemIsGranel);
+        const parsed = parseCartQuantity(tempQty, itemIsGranel);
         if (parsed === null || parsed <= 0) {
             setTempQty('');
             return;

@@ -4,6 +4,8 @@ import {
     granelUnitLabel,
     normalizeStockValue,
     parseStockInput,
+    parseCartQuantity,
+    normalizeCartQuantity,
     adjustStockValue,
     formatStockDisplay,
 } from '../src/utils/granel.js';
@@ -62,6 +64,18 @@ describe('stock guardrails (normalize / parse / adjust / format)', () => {
         expect(parseStockInput('abc', true)).toBe(null);
         expect(parseStockInput('', true)).toBe(null);
         expect(parseStockInput(null, true)).toBe(null);
+    });
+
+    it('rejects decimal quantities for non-granel cart lines but accepts them for granel', () => {
+        expect(parseCartQuantity('0.5', false)).toBe(null);
+        expect(parseCartQuantity('0.125', true)).toBe(0.125);
+        expect(parseCartQuantity('2', false)).toBe(2);
+    });
+
+    it('normalizes legacy cart quantities before they reach the UI', () => {
+        expect(normalizeCartQuantity(0.5, { unit: 'unidad', packagingType: 'suelto' })).toBe(1);
+        expect(normalizeCartQuantity(0.125, { unit: 'kg', packagingType: 'granel' })).toBe(0.125);
+        expect(normalizeCartQuantity('2.750', { unit: 'kg' })).toBe(2.75);
     });
 
     it('adjusts without IEEE-754 drift', () => {

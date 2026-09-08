@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { isGranelProduct, normalizeCartQuantity } from '../utils/granel'; // GRANEL-001
 
 // HOOK-006: CartContext es la ÚNICA fuente de verdad del carrito.
 // Antes había estado duplicado en `useAppStore` (Zustand) y aquí mismo;
@@ -23,15 +24,20 @@ export function CartProvider({ children }) {
      */
     const loadCart = useCallback((items, navigateTo = 'ventas') => {
         if (!Array.isArray(items) || items.length === 0) return;
-        setCart(items.map(item => ({
-            id: item.id,
-            name: item.name,
-            qty: item.qty,
-            priceUsd: item.priceUsd,
-            costBs: item.costBs || 0,
-            costUsd: item.costUsd || 0,
-            isWeight: item.isWeight || false,
-        })));
+        setCart(items.map(item => {
+            const itemIsGranel = isGranelProduct(item);
+            const normalizedQty = normalizeCartQuantity(item.qty, itemIsGranel);
+            return {
+                ...item,
+                id: item.id,
+                name: item.name,
+                qty: normalizedQty > 0 ? normalizedQty : 1,
+                priceUsd: item.priceUsd,
+                costBs: item.costBs || 0,
+                costUsd: item.costUsd || 0,
+                isWeight: itemIsGranel,
+            };
+        }));
         setPendingNavigate(navigateTo);
     }, []);
 

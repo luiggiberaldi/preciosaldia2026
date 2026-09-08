@@ -12,6 +12,7 @@ import { showToast } from '../components/Toast';
 import { ShoppingCart, X, DollarSign, CheckCircle2, Trash2 } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useProductContext } from '../context/ProductContext';
+import { isGranelProduct, parseCartQuantity, adjustStockValue } from '../utils/granel'; // GRANEL-001
 
 // Components
 import SalesHeader from '../components/Sales/SalesHeader';
@@ -436,7 +437,8 @@ export default function SalesView({ triggerHaptic, isActive }) {
         playAdd();
 
         if (product.sellByUnit && product.unitPriceUsd && !forceMode && !qtyOverride) { setHierarchyPending(product); return; }
-        if ((product.unit === 'kg' || product.unit === 'litro') && !qtyOverride) { setWeightPending(product); return; }
+        const productIsGranel = isGranelProduct(product);
+        if (productIsGranel && !qtyOverride) { setWeightPending(product); return; }
 
         // When priceCop is the source of truth, derive USD from COP at current rate
         let priceToUse = (product.priceCop && tasaCop > 0)
@@ -444,7 +446,15 @@ export default function SalesView({ triggerHaptic, isActive }) {
             : (parseFloat(product.priceUsdt) || 0);
         let cartId = product.id;
         let cartName = product.name;
-        let qtyToAdd = qtyOverride || 1;
+        const qtyToAdd = parseCartQuantity(qtyOverride ?? 1, productIsGranel);
+
+        // GRANEL-001: una cantidad fraccionaria nunca puede entrar al carrito de
+        // un producto por unidad/bulto/lote. El flujo de peso sí admite hasta 3.
+        if (qtyToAdd === null || qtyToAdd <= 0) {
+            playError();
+            showToast(`${product.name}: la cantidad debe ser un número entero`, 'warning');
+            return;
+        }
 
         if (forceMode === 'unit') {
             const unitCop = product.unitPriceCop || (product.priceCop ? Math.round(product.priceCop / (product.unitsPerPackage || 1)) : null);
@@ -496,8 +506,12 @@ export default function SalesView({ triggerHaptic, isActive }) {
 
         setCart(prev => {
             const existing = prev.find(i => i.id === cartId && i.priceUsd === priceToUse);
-            if (existing && !qtyOverride) return prev.map(i => i.id === cartId ? { ...i, qty: i.qty + 1 } : i);
-            if (existing && qtyOverride) return prev.map(i => i.id === cartId ? { ...i, qty: i.qty + qtyOverride } : i);
+            if (existing) {
+                return prev.map(i => i.id === cartId
+                    ? { ...i, qty: adjustStockValue(i.qty, qtyToAdd, isGranelProduct(i)) }
+                    : i
+                );
+            }
 
             const itemCostBs = product.costBs || (product.costUsd ? product.costUsd * effectiveRate : 0);
             const itemPriceCop = forceMode === 'unit'
@@ -509,7 +523,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
                 exactBs: product.exactBs || null,
                 costBs: forceMode === 'unit' ? itemCostBs / (product.unitsPerPackage || 1) : itemCostBs,
                 costUsd: forceMode === 'unit' ? (product.costUsd || 0) / (product.unitsPerPackage || 1) : (product.costUsd || 0),
-                qty: qtyToAdd, isWeight: !!qtyOverride,
+                qty: qtyToAdd, isWeight: productIsGranel,
                 _originalId: product.id, _mode: forceMode || 'package', _unitsPerPackage: product.unitsPerPackage || 1,
             }, ...prev];
         });
@@ -559,12 +573,14 @@ export default function SalesView({ triggerHaptic, isActive }) {
                 const productData = products.find(p => p.id === originalId);
                 if (productData) {
                     const availableStock = parseFloat(productData.stock) || 0;
-                    const newQty = Math.round((cartItem.qty + delta) * 1000) / 1000;
+                    const cartItemIsGranel = isGranelProduct(cartItem);
+                    const newQty = adjustStockValue(cartItem.qty, delta, cartItemIsGranel);
                     const totalUsed = currentCart.reduce((sum, item) => {
                         if ((item._originalId || item.id) !== originalId) return sum;
                         if (item.id === id) return sum;
-                        if (item._mode === 'unit') return sum + (item.qty / (item._unitsPerPackage || 1));
-                        return sum + item.qty;
+                        const normalizedQty = adjustStockValue(item.qty, 0, isGranelProduct(item));
+                        if (item._mode === 'unit') return sum + (normalizedQty / (item._unitsPerPackage || 1));
+                        return sum + normalizedQty;
                     }, 0);
                     const thisItemStock = cartItem._mode === 'unit' ? newQty / (cartItem._unitsPerPackage || 1) : newQty;
                     if (totalUsed + thisItemStock > availableStock) {
@@ -578,9 +594,8 @@ export default function SalesView({ triggerHaptic, isActive }) {
 
         setCart(prev => prev.map(i => {
             if (i.id !== id) return i;
-            let newQty = Math.round((i.qty + delta) * 1000) / 1000;
-            if (newQty < 0) newQty = 0;
-            return newQty === 0 ? null : { ...i, qty: newQty };
+            const newQty = adjustStockValue(i.qty, delta, isGranelProduct(i));
+            return newQty <= 0 ? null : { ...i, qty: newQty };
         }).filter(Boolean));
     }, [triggerHaptic, playRemove, playError, products]);
 
