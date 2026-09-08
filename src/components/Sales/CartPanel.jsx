@@ -4,6 +4,8 @@ import { formatBs, formatCop, getCop, formatUsd } from '../../utils/calculatorUt
 import { mulR } from '../../utils/dinero';
 import SmartImage from '../SmartImage';
 import { FinancialEngine } from '../../core/FinancialEngine';
+import { showToast } from '../Toast';
+import { isGranelProduct, granelUnitLabel, parseStockInput, formatStockDisplay } from '../../utils/granel'; // GRANEL-001
 
 export default function CartPanel({
     cart,
@@ -56,12 +58,36 @@ export default function CartPanel({
     const submitCustomQty = (item) => {
         setEditingQtyId(null);
         if (!tempQty || tempQty.trim() === '') return; // Si no ingresó nada, conserva la cantidad previa
-        let parsed = parseFloat(tempQty.replace(',', '.'));
-        if (isNaN(parsed) || parsed <= 0) return;
-        const diff = parsed - item.qty;
+
+        const itemIsGranel = isGranelProduct(item);
+        const normalizedRaw = String(tempQty).trim().replace(/\s/g, '').replace(',', '.');
+        const rawNumber = Number(normalizedRaw);
+
+        if (!Number.isFinite(rawNumber) || rawNumber <= 0) {
+            setTempQty('');
+            return;
+        }
+
+        // GRANEL-001: el editor de cesta NO permite fracciones para unidad/bulto/lote.
+        // No redondeamos silenciosamente 0.5 a 1: rechazamos la entrada y conservamos
+        // la cantidad previa para que el cajero no cobre una cantidad inesperada.
+        if (!itemIsGranel && !Number.isInteger(rawNumber)) {
+            showToast('Este producto solo acepta cantidades enteras', 'warning');
+            setTempQty('');
+            return;
+        }
+
+        const parsed = parseStockInput(tempQty, itemIsGranel);
+        if (parsed === null || parsed <= 0) {
+            setTempQty('');
+            return;
+        }
+
+        const diff = parsed - (Number(item.qty) || 0);
         if (diff !== 0) {
             updateQty(item.id, diff);
         }
+        setTempQty('');
     };
 
     return (
@@ -91,7 +117,13 @@ export default function CartPanel({
                     <div className="space-y-2">
                         {cart.map((item, idx) => {
                             if (!item) return null;
-                            const qtyDisplay = item.isWeight ? `${(item.qty || 0).toFixed(3)} Kg` : (item.qty ?? 1);
+                            const itemIsGranel = isGranelProduct(item);
+                            const itemUnitLabel = itemIsGranel
+                                ? (granelUnitLabel(item) === 'UND' ? 'kg' : granelUnitLabel(item))
+                                : 'un.';
+                            const qtyDisplay = itemIsGranel
+                                ? `${formatStockDisplay(item.qty || 0, true)} ${itemUnitLabel}`
+                                : String(item.qty ?? 1);
                             const isCustomProduct = (item?.id?.toString() || '').startsWith('custom_') || item?.name === 'Venta Libre';
                             const isCashAdvance = item.isCashAdvance === true;
                             const isEditing = editingQtyId === item.id;
@@ -179,7 +211,7 @@ export default function CartPanel({
 
                                     {/* Fila 2: Subtotal Dual ($ + Bs) si qty > 1, o Badge 1 un. si qty = 1 + Controles */}
                                     <div className="flex items-center justify-between gap-1.5 w-full pt-1.5 border-t border-slate-100 dark:border-slate-800/60">
-                                        {item.qty > 1 ? (
+                                        {itemIsGranel || item.qty > 1 ? (
                                             <div className="flex items-center gap-1 flex-wrap min-w-0">
                                                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0">SUBTOTAL:</span>
                                                 <span className="text-xs font-black text-slate-800 dark:text-white shrink-0">${formatUsd(mulR(item.priceUsd, item.qty))}</span>
@@ -194,7 +226,7 @@ export default function CartPanel({
                                         ) : (
                                             <div className="flex items-center gap-1">
                                                 <span className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md">
-                                                    1 un.
+                                                    {itemIsGranel ? `1 ${itemUnitLabel}` : '1 un.'}
                                                 </span>
                                             </div>
                                         )}
@@ -209,7 +241,7 @@ export default function CartPanel({
                                                     <button 
                                                         type="button"
                                                         aria-label="Quitar uno" 
-                                                        onClick={() => updateQty(item.id, item.isWeight ? -0.1 : -1)} 
+                                                        onClick={() => updateQty(item.id, itemIsGranel ? -0.1 : -1)} 
                                                         className="w-7 h-7 min-h-[36px] min-w-[36px] lg:min-h-[28px] lg:min-w-[28px] lg:w-7 lg:h-7 flex items-center justify-center text-slate-500 hover:text-red-500 transition-colors rounded-md active:bg-slate-200 dark:active:bg-slate-700"
                                                     >
                                                         <Minus size={14} strokeWidth={2.5} />
@@ -226,7 +258,8 @@ export default function CartPanel({
                                                             onKeyDown={e => { if (e.key === 'Enter') submitCustomQty(item) }}
                                                             placeholder={item.qty.toString()}
                                                             className="w-10 h-7 text-center font-black text-slate-700 bg-white dark:bg-slate-900 dark:text-white border border-emerald-500 rounded-md text-xs outline-none"
-                                                            step={item.isWeight ? "0.01" : "1"}
+                                                            step={itemIsGranel ? "0.001" : "1"}
+                                                            inputMode={itemIsGranel ? "decimal" : "numeric"}
                                                         />
                                                     ) : (
                                                         <span 
@@ -240,7 +273,7 @@ export default function CartPanel({
                                                     <button 
                                                         type="button"
                                                         aria-label="Agregar uno" 
-                                                        onClick={() => updateQty(item.id, item.isWeight ? 0.1 : 1)} 
+                                                        onClick={() => updateQty(item.id, itemIsGranel ? 0.1 : 1)} 
                                                         className="w-7 h-7 min-h-[36px] min-w-[36px] lg:min-h-[28px] lg:min-w-[28px] lg:w-7 lg:h-7 flex items-center justify-center text-slate-500 hover:text-emerald-500 transition-colors rounded-md active:bg-slate-200 dark:active:bg-slate-700"
                                                     >
                                                         <Plus size={14} strokeWidth={2.5} />

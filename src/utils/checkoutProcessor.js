@@ -3,7 +3,8 @@ import { applyCustomerMovementsWithinLock } from '../services/customerWalletServ
 import { CUSTOMER_MOVEMENT_TYPES, normalizeCustomer } from './customerLedger.js';
 import { logEvent } from '../services/auditService.js';
 import { useAuthStore } from '../hooks/store/useAuthStore.js';
-import { round2, sumR, subR, divR, mulR } from './dinero.js';
+import { round2, round0, round3, sumR, subR, divR, mulR } from './dinero.js';
+import { isGranelProduct } from './granel.js'; // GRANEL-001
 import { withLock } from './withLock.js';          // FIN-007: feature detection + fallback.
 import { deepFreeze } from './deepFreeze.js';      // FIN-008: deep freeze (no solo shallow).
 import { FINANCIAL_EPSILON } from './securityConstants.js';
@@ -316,13 +317,20 @@ export async function processSaleTransaction({
         const updatedProducts = freshProducts.map(p => {
             const cartItemsForThisProduct = cart.filter(i => (i._originalId || i.id) === p.id);
             if (cartItemsForThisProduct.length > 0) {
+                // GRANEL-001: la suma de cantidades deducidas se acumula a 3 decimales.
+                // sumR (round2) convertía 0.125 kg en 0.13 antes de restar → stock erróneo.
                 const totalDeducted = cartItemsForThisProduct.reduce((sum, item) => {
-                    if (item.isWeight)        return sumR(sum, item.qty);
-                    if (item._mode === 'unit') return sumR(sum, divR(item.qty, item._unitsPerPackage || 1));
-                    return sumR(sum, item.qty);
+                    if (item.isWeight)        return round3(sum + item.qty);
+                    if (item._mode === 'unit') return round3(sum + divR(item.qty, item._unitsPerPackage || 1));
+                    return round3(sum + item.qty);
                 }, 0);
 
-                const newStock = subR(p.stock ?? 0, totalDeducted);
+                // GRANEL-001: granel conserva hasta 3 decimales al descontar
+                // (subR truncaba a 2, perdiendo el tercer decimal en 0.125 kg).
+                // El resto de productos permanece estrictamente entero.
+                const newStock = isGranelProduct(p)
+                    ? round3((p.stock ?? 0) - totalDeducted)
+                    : round0((p.stock ?? 0) - totalDeducted);
                 // FIN-014: auditar uso de stock negativo (no mover el flag, solo loguear).
                 if (newStock < 0 && allowNeg) {
                     negativeStockUsed = true;

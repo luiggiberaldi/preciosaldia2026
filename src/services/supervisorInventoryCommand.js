@@ -1,4 +1,5 @@
 import { round2 } from '../utils/dinero';
+import { isGranelProduct, normalizeStockValue } from '../utils/granel'; // GRANEL-001
 
 const INPUT_UNITS = new Set(['unidades', 'cajas', 'bultos']);
 const EGRESS_REASONS = new Set(['merma', 'danio', 'vencimiento', 'autoconsumo', 'devolucion', 'ajuste']);
@@ -32,8 +33,11 @@ export function calculateSupervisorInventoryBatchAdjustment(product = {}, payloa
         throw new Error(`El stock cambió antes de aplicar: esperado ${expectedStock}, actual ${stockBefore}`);
     }
 
+    // GRANEL-001: granel conserva hasta 3 decimales en el stock resultante;
+    // el resto permanece entero estricto.
+    const isGranel = isGranelProduct(product);
     const unitsDelta = round2(quantityInput * unitsPerPackage);
-    const stockAfter = round2(stockBefore + (isEgress ? -unitsDelta : unitsDelta));
+    const stockAfter = normalizeStockValue(stockBefore + (isEgress ? -unitsDelta : unitsDelta), isGranel);
     if (stockAfter < 0) throw new Error('Stock insuficiente para el egreso');
     const movement = {
         id: `supervisor-${commandId}`,

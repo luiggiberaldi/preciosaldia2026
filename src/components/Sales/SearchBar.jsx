@@ -1,4 +1,4 @@
-import { forwardRef } from 'react';
+import { forwardRef, useState, useEffect, useRef } from 'react';
 import { Search, Mic, Package, X, Box } from 'lucide-react';
 import { BODEGA_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../config/categories';
 import { formatCop, formatUsd, getCop, getUsd } from '../../utils/calculatorUtils';
@@ -211,91 +211,164 @@ const SearchBar = forwardRef(function SearchBar({
 
             {/* ─── POPUP PESAJE: Kg / Litro ─── */}
             {weightPending && (
-                <div className="absolute top-full mt-2 left-0 right-0 z-30 bg-white dark:bg-slate-900 border-2 border-amber-200 dark:border-amber-800 rounded-2xl shadow-2xl shadow-amber-500/10 overflow-hidden">
-                    <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-100 dark:border-amber-800">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-xs font-black text-amber-700 dark:text-amber-300 uppercase tracking-wider">
-                                    ¿Cuántos {weightPending.unit === 'kg' ? 'kilos' : 'litros'}?
-                                </p>
-                                <p className="text-[11px] text-amber-500/70 dark:text-amber-400/50 font-medium mt-0.5">{weightPending.name} · ${weightPending.priceUsdt?.toFixed(2)}/{weightPending.unit === 'kg' ? 'kg' : 'lt'}</p>
-                            </div>
-                            <button onClick={() => setWeightPending(null)} className="p-1 text-amber-400 hover:text-amber-600"><X size={16} /></button>
-                        </div>
-                    </div>
-                    <div className="p-3 space-y-3">
-                        {/* Botones rápidos */}
-                        <div className="grid grid-cols-4 gap-2">
-                            {[0.25, 0.5, 1, 2].map(q => (
-                                <button key={q} onClick={() => { addToCart(weightPending, q); setWeightPending(null); }}
-                                    className="py-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm font-black text-amber-700 dark:text-amber-300 hover:bg-amber-100 active:scale-95 transition-all">
-                                    {q} {weightPending.unit === 'kg' ? 'kg' : 'lt'}
-                                </button>
-                            ))}
-                        </div>
-                        {/* Input manual */}
-                        <div className="flex gap-2 items-center">
-                            <div className="flex-1 flex items-center bg-amber-50 dark:bg-slate-800 border border-amber-200 dark:border-amber-700 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-amber-500/50 transition-all">
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        const input = document.getElementById('weight-input');
-                                        if (input) {
-                                            const currentVal = parseFloat(input.value) || 0;
-                                            const step = 0.1;
-                                            input.value = Math.max(0.01, parseFloat((currentVal - step).toFixed(3))).toString();
-                                        }
-                                    }}
-                                    className="px-4 py-3 text-amber-600 hover:bg-amber-100/30 active:bg-amber-200/30 transition-colors font-black text-base select-none"
-                                >
-                                    -
-                                </button>
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    min="0.01"
-                                    placeholder="0.00"
-                                    id="weight-input"
-                                    defaultValue="1.00"
-                                    className="flex-1 bg-transparent text-center py-3 font-bold text-slate-700 dark:text-white outline-none text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            const val = parseFloat(e.target.value);
-                                            if (val > 0) { addToCart(weightPending, val); setWeightPending(null); }
-                                        }
-                                    }}
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        const input = document.getElementById('weight-input');
-                                        if (input) {
-                                            const currentVal = parseFloat(input.value) || 0;
-                                            const step = 0.1;
-                                            input.value = parseFloat((currentVal + step).toFixed(3)).toString();
-                                        }
-                                    }}
-                                    className="px-4 py-3 text-amber-600 hover:bg-amber-100/30 active:bg-amber-200/30 transition-colors font-black text-base select-none"
-                                >
-                                    +
-                                </button>
-                            </div>
-                            <button
-                                onClick={() => {
-                                    const input = document.getElementById('weight-input');
-                                    const val = parseFloat(input?.value);
-                                    if (val > 0) { addToCart(weightPending, val); setWeightPending(null); }
-                                }}
-                                className="px-5 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black text-sm active:scale-95 transition-all shrink-0"
-                            >
-                                Agregar
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <WeightPopup
+                    weightPending={weightPending}
+                    setWeightPending={setWeightPending}
+                    addToCart={addToCart}
+                />
             )}
         </div>
     );
 });
 
+// ─── SUBCOMPONENTE DE PESAJE CON BORRADO AUTOMÁTICO AL PULSAR CLIC ───
+function WeightPopup({ weightPending, setWeightPending, addToCart }) {
+    const [qty, setQty] = useState('1.00');
+    const [isEditing, setIsEditing] = useState(false);
+    const [draft, setDraft] = useState('');
+    const prevQtyRef = useRef('1.00');
+
+    // Reiniciar valores si cambia el producto a pesar
+    useEffect(() => {
+        setQty('1.00');
+        setDraft('');
+        setIsEditing(false);
+        prevQtyRef.current = '1.00';
+    }, [weightPending?.id]);
+
+    // Al hacer clic o foco: borra el número inmediatamente y muestra el anterior como placeholder tenue
+    const handleFocus = () => {
+        if (isEditing) return;
+        prevQtyRef.current = draft || qty || '1.00';
+        setIsEditing(true);
+        setDraft('');
+    };
+
+    const handleChange = (e) => {
+        setDraft(e.target.value);
+    };
+
+    const handleBlur = () => {
+        setIsEditing(false);
+        if (!draft || draft.trim() === '') {
+            setQty(prevQtyRef.current);
+        } else {
+            const parsed = parseFloat(draft.replace(',', '.'));
+            if (isNaN(parsed) || parsed <= 0) {
+                setQty(prevQtyRef.current);
+            } else {
+                setQty(parsed.toString());
+            }
+        }
+    };
+
+    const handleStep = (delta) => {
+        const current = parseFloat((isEditing ? draft : qty).replace(',', '.')) || parseFloat(prevQtyRef.current) || 1;
+        const next = Math.max(0.01, parseFloat((current + delta).toFixed(3)));
+        setQty(next.toString());
+        setDraft(next.toString());
+    };
+
+    const handleSubmit = () => {
+        const raw = isEditing ? draft : qty;
+        let parsed = parseFloat((raw || '').replace(',', '.'));
+        if (isNaN(parsed) || parsed <= 0) {
+            parsed = parseFloat(prevQtyRef.current) || 1;
+        }
+        if (parsed > 0) {
+            addToCart(weightPending, parsed);
+            setWeightPending(null);
+        }
+    };
+
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            handleSubmit();
+        }
+    };
+
+    const unitLabel = weightPending.unit === 'kg' ? 'kg' : weightPending.unit === 'litro' ? 'lt' : (weightPending.granelUnit || 'kg');
+
+    return (
+        <div className="absolute top-full mt-2 left-0 right-0 z-30 bg-white dark:bg-slate-900 border-2 border-amber-200 dark:border-amber-800 rounded-2xl shadow-2xl shadow-amber-500/10 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-100 dark:border-amber-800">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <p className="text-xs font-black text-amber-700 dark:text-amber-300 uppercase tracking-wider">
+                            ¿Cuántos {weightPending.unit === 'kg' ? 'kilos' : 'litros'}?
+                        </p>
+                        <p className="text-[11px] text-amber-500/70 dark:text-amber-400/50 font-medium mt-0.5">
+                            {weightPending.name} · ${weightPending.priceUsdt?.toFixed(2)}/{unitLabel}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setWeightPending(null)}
+                        className="p-1 text-amber-400 hover:text-amber-600 transition-colors"
+                    >
+                        <X size={16} />
+                    </button>
+                </div>
+            </div>
+            <div className="p-3 space-y-3">
+                {/* Botones rápidos */}
+                <div className="grid grid-cols-4 gap-2">
+                    {[0.25, 0.5, 1, 2].map(q => (
+                        <button
+                            key={q}
+                            type="button"
+                            onClick={() => { addToCart(weightPending, q); setWeightPending(null); }}
+                            className="py-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm font-black text-amber-700 dark:text-amber-300 hover:bg-amber-100 active:scale-95 transition-all"
+                        >
+                            {q} {unitLabel}
+                        </button>
+                    ))}
+                </div>
+                {/* Input manual con borrado al pulsar clic */}
+                <div className="flex gap-2 items-center">
+                    <div className="flex-1 flex items-center bg-amber-50 dark:bg-slate-800 border border-amber-200 dark:border-amber-700 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-amber-500/50 transition-all">
+                        <button
+                            type="button"
+                            onClick={() => handleStep(-0.1)}
+                            className="px-4 py-3 text-amber-600 hover:bg-amber-100/30 active:bg-amber-200/30 transition-colors font-black text-base select-none"
+                        >
+                            -
+                        </button>
+                        <input
+                            type="text"
+                            inputMode="decimal"
+                            value={isEditing ? draft : qty}
+                            placeholder={prevQtyRef.current || '1.00'}
+                            onFocus={handleFocus}
+                            onClick={handleFocus}
+                            onChange={handleChange}
+                            onBlur={handleBlur}
+                            onKeyDown={handleKeyDown}
+                            autoFocus
+                            className="flex-1 bg-transparent text-center py-3 font-bold text-slate-700 dark:text-white outline-none text-sm placeholder:text-slate-400/50"
+                        />
+                        <button
+                            type="button"
+                            onClick={() => handleStep(0.1)}
+                            className="px-4 py-3 text-amber-600 hover:bg-amber-100/30 active:bg-amber-200/30 transition-colors font-black text-base select-none"
+                        >
+                            +
+                        </button>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={handleSubmit}
+                        className="px-5 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black text-sm active:scale-95 transition-all shrink-0 shadow-sm"
+                    >
+                        Agregar
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export default SearchBar;
+
+

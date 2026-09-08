@@ -352,7 +352,9 @@ export default function SalesView({ triggerHaptic, isActive }) {
         };
     }, [salesData]);
 
-    const cartItemCount = cart.reduce((sum, item) => sum + item.qty, 0);
+    // GRANEL-001-UI: cuenta ARTÍCULOS distintos de la cesta, nunca suma cantidades
+    // (sumar item.qty mostraba decimales "1.355" para productos a granel).
+    const cartItemCount = cart.length;
 
     const formatBs = (n) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 

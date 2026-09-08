@@ -643,9 +643,12 @@ function BottomNav({
   if (isKeyboardOpen) return null;
 
   const { cart } = useCart();
+  // GRANEL-001-UI: el badge cuenta ARTÍCULOS distintos de la cesta, nunca suma cantidades.
+  // Sumar item.qty mostraba decimales (ej: "1.355") para productos a granel (kg/L).
+  // Un badge es un contador discreto: 1 queso de 1.355 kg = 1 artículo en la cesta.
   const totalCartItems = useMemo(() => {
     if (!Array.isArray(cart)) return 0;
-    return cart.reduce((acc, item) => acc + (item.qty || 1), 0);
+    return cart.length;
   }, [cart]);
 
   return (

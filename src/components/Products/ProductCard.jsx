@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState, useRef } from 'react';
 import { Tag, Banknote, AlertTriangle, Box, Minus, Plus, Pencil, Trash2, Package, Layers, Clock, Printer, FileText } from 'lucide-react';
 import { CATEGORY_COLORS, CATEGORY_ICONS, UNITS } from '../../config/categories';
 import { formatUsd, formatBs, formatCop, smartCashRounding, getCop, getUsd } from '../../utils/calculatorUtils';
 import { showToast } from '../Toast';
 import SmartImage from '../SmartImage';
+import { isGranelProduct, granelUnitLabel, parseStockInput, formatStockDisplay } from '../../utils/granel'; // GRANEL-001
 
 export default function ProductCard({
     product: p,
@@ -11,6 +12,7 @@ export default function ProductCard({
     streetRate,
     categories,
     onAdjustStock,
+    onSetDirectStock,
     copEnabled,
     copPrimary,
     tasaCop,
@@ -23,6 +25,24 @@ export default function ProductCard({
     onEdit,
     onDelete
 }) {
+    // GRANEL-001: edición inline rápida del stock al tocar el número.
+    const isGranel = isGranelProduct(p);
+    const unitShort = isGranel ? granelUnitLabel(p) : 'UND';
+    const [isEditingStock, setIsEditingStock] = useState(false);
+    const [stockDraft, setStockDraft] = useState('');
+    const stockInputRef = useRef(null);
+
+    const commitStockEdit = () => {
+        setIsEditingStock(false);
+        const parsed = parseStockInput(stockDraft, isGranel);
+        if (parsed !== null && parsed >= 0) {
+            onSetDirectStock?.(p.id, parsed);
+        } else if (stockDraft.trim() !== '') {
+            showToast('Valor de stock inválido', 'error');
+        }
+        setStockDraft('');
+    };
+
     const effectiveUsd = getUsd(p, tasaCop);
     const valBs = effectiveUsd * effectiveRate;
     const valCop = getCop(p, tasaCop);
@@ -305,10 +325,35 @@ ${showSecondary ? `[PRECIO SECUNDARIO]
                         </button>
                         )}
                         <div className="flex flex-col items-center justify-center px-2 text-center min-w-[50px]">
-                            <span className={`text-base font-black leading-none mb-0.5 ${isLowStock ? 'text-amber-500' : 'text-slate-700 dark:text-slate-200'}`}>
-                                {p.stock ?? 0}
-                            </span>
-                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-none">{(p.unit === 'kg' || p.unit === 'litro') ? unitInfo?.short : 'UND'}</span>
+                            {!readOnly && isEditingStock ? (
+                                <input
+                                    ref={stockInputRef}
+                                    type="number"
+                                    autoFocus
+                                    step={isGranel ? 'any' : '1'}
+                                    inputMode={isGranel ? 'decimal' : 'numeric'}
+                                    value={stockDraft}
+                                    placeholder={String(p.stock ?? 0)}
+                                    onChange={(e) => setStockDraft(e.target.value)}
+                                    onBlur={commitStockEdit}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
+                                        if (e.key === 'Escape') { setStockDraft(''); setIsEditingStock(false); }
+                                    }}
+                                    className="w-16 h-6 text-base font-black text-center bg-white dark:bg-slate-700 border border-brand/50 rounded-lg outline-none focus:ring-2 focus:ring-brand/40 text-slate-800 dark:text-white placeholder:text-slate-400/60 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                />
+                            ) : (
+                                <button
+                                    type="button"
+                                    disabled={readOnly}
+                                    onClick={() => { setStockDraft(''); setIsEditingStock(true); }}
+                                    title="Toca para editar el stock"
+                                    className={`text-base font-black leading-none mb-0.5 ${isLowStock ? 'text-amber-500' : 'text-slate-700 dark:text-slate-200'} ${readOnly ? '' : 'cursor-text hover:text-brand'}`}
+                                >
+                                    {formatStockDisplay(p.stock ?? 0, isGranel)}
+                                </button>
+                            )}
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-none">{unitShort}</span>
                             {p.unit === 'paquete' && p.unitsPerPackage > 0 && Math.floor((p.stock ?? 0) / p.unitsPerPackage) > 0 && (
                                 <span className="text-[8px] text-slate-400 leading-none">= {Math.floor((p.stock ?? 0) / p.unitsPerPackage)} bultos</span>
                             )}

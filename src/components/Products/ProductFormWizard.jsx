@@ -3,6 +3,7 @@ import { Camera, X, AlertTriangle, Package, Tag, Scale, Droplets, Barcode, Bankn
 import { useProductContext } from '../../context/ProductContext';
 import CustomSelect from '../CustomSelect';
 import { showToast } from '../Toast';
+import { granelUnitLabel } from '../../utils/granel'; // GRANEL-001
 
 const PACKAGING_TYPES = [
     { id: 'suelto', label: 'Suelto', Icon: Tag, desc: 'Unidad individual', color: 'emerald' },
@@ -95,6 +96,12 @@ export default function ProductFormWizard({
 
     const granelLabel = granelUnit === 'kg' ? 'Kilo' : 'Litro';
     const priceSuffix = isLote ? ' / Bulto' : isGranel ? ` / ${granelLabel}` : '';
+
+    // GRANEL-001: atributos condicionales de tipado numérico.
+    // Granel → teclado decimal + step any; resto → estrictamente entero.
+    const stockStep = isGranel ? 'any' : '1';
+    const stockInputMode = isGranel ? 'decimal' : 'numeric';
+    const stockPlaceholder = isGranel ? '0.000' : '0';
 
     return (
         <div className="space-y-4">
@@ -397,6 +404,7 @@ export default function ProductFormWizard({
                                 </label>
                                 <input 
                                     type="number" 
+                                    step="1"
                                     inputMode="numeric" 
                                     value={lowStockAlert} 
                                     onChange={e => setLowStockAlert(e.target.value)} 
@@ -411,13 +419,14 @@ export default function ProductFormWizard({
                     ) : (
                         <div className="grid grid-cols-2 gap-3 animate-in fade-in duration-200">
                             <div>
-                                <label className="text-xs font-bold text-slate-400 ml-1 mb-1 block uppercase">Stock Inicial</label>
+                                <label className="text-xs font-bold text-slate-400 ml-1 mb-1 block uppercase">Stock Inicial{isGranel ? ` (${granelUnitLabel({ unit: granelUnit, packagingType })})` : ''}</label>
                                 <input 
                                     type="number" 
-                                    inputMode="numeric" 
+                                    step={stockStep}
+                                    inputMode={stockInputMode} 
                                     value={stock} 
                                     onChange={e => setStock(e.target.value)} 
-                                    placeholder="0"
+                                    placeholder={stockPlaceholder}
                                     className="w-full bg-slate-50 dark:bg-slate-800 p-3 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 text-sm" 
                                 />
                                 {parsedUnits > 1 && (parseInt(stock) || 0) > 0 && (() => {
@@ -448,10 +457,11 @@ export default function ProductFormWizard({
                                 </label>
                                 <input 
                                     type="number" 
-                                    inputMode="numeric" 
+                                    step={stockStep}
+                                    inputMode={stockInputMode} 
                                     value={lowStockAlert} 
                                     onChange={e => setLowStockAlert(e.target.value)} 
-                                    placeholder="5"
+                                    placeholder={isGranel ? '2.5' : '5'}
                                     className="w-full bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800/30 p-3 rounded-xl font-bold text-amber-700 dark:text-amber-400 outline-none focus:ring-2 focus:ring-amber-500/50 text-sm" />
                             </div>
                         </div>

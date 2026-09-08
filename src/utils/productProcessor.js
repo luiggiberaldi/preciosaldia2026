@@ -3,6 +3,7 @@
 //          para migración gradual hacia el nombre canónico.
 import { round2, divR, mulR } from './dinero.js';
 import { CurrencyService } from '../services/CurrencyService.js'; // FIN-017-pattern: safeParse en vez de parseFloat.
+import { isGranelProduct, parseStockInput } from './granel.js'; // GRANEL-001: decimales SOLO para productos a granel.
 
 export function buildProductPayload(formData, effectiveRate) {
     const {
@@ -64,11 +65,19 @@ export function buildProductPayload(formData, effectiveRate) {
             ? divR(finalPriceCop, parsedUnitsPerPkg)
             : null);
 
-    // Stock: for lote, convert lotes → units
-    let finalStock = stock ? parseInt(stock, 10) : 0;
+    // GRANEL-001: Solo los productos a granel aceptan decimales en stock (hasta 3).
+    // Todo lo demás (unidad, paquete, lote, suelto) permanece estrictamente entero.
+    const isGranel = isGranelProduct({ packagingType, granelUnit, unit: legacyUnit });
+    let finalStock = stock ? (parseStockInput(stock, isGranel) ?? 0) : 0;
     if (isLote && stockInLotes && parsedUnitsPerPkg > 0) {
         finalStock = Math.round(parseFloat(stockInLotes) * parsedUnitsPerPkg);
     }
+
+    // GRANEL-001: alerta de stock bajo con el mismo guardarraíl de tipado
+    // (granel admite hasta 3 decimales; el resto cae a entero, con fallback a 5).
+    const finalLowStockAlert = lowStockAlert
+        ? (parseStockInput(lowStockAlert, isGranel) ?? 5)
+        : 5;
 
     // Doble Precio y modalidad de precios (dual_usd / tasa_dia)
     const rawPricingMode = formData.pricingMode || 'tasa_dia';
@@ -104,6 +113,6 @@ export function buildProductPayload(formData, effectiveRate) {
         unitPriceCop: isLote && sellByUnit ? finalUnitPriceCop : null,
         stockInLotes: isLote && stockInLotes ? parseInt(stockInLotes) : null,
         category: category,
-        lowStockAlert: lowStockAlert ? parseInt(lowStockAlert) : 5,
+        lowStockAlert: finalLowStockAlert,
     };
 }

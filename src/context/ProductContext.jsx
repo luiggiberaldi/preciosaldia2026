@@ -7,6 +7,7 @@ import { useRateContext } from './RateContext';
 import { showToast } from '../components/Toast';
 import { Modal } from '../components/Modal';
 import { AlertTriangle, ShieldAlert, RotateCcw } from 'lucide-react';
+import { isGranelProduct, adjustStockValue, normalizeStockValue } from '../utils/granel.js'; // GRANEL-001
 
 // Mantener una única instancia durante HMR y cargas lazy. Si Vite recarga este
 // módulo mientras una vista lazy conserva la versión anterior, un Context nuevo
@@ -250,12 +251,33 @@ export function ProductProvider({ children }) {
         return false;
     }, []);
 
+    // GRANEL-001: ajuste con aritmética canónica — sin drift IEEE-754.
+    // Granel → hasta 3 decimales; resto → entero estricto.
     const adjustStock = useCallback((productId, delta) => {
         setProducts(prevProducts => {
             const updated = prevProducts.map(p => {
                 if (p.id === productId) {
                     const allowNeg = localStorage.getItem('allow_negative_stock') === 'true';
-                    const newStock = (p.stock ?? 0) + delta;
+                    const isGranel = isGranelProduct(p);
+                    const newStock = adjustStockValue(p.stock ?? 0, delta, isGranel);
+                    return { ...p, stock: allowNeg ? newStock : Math.max(0, newStock) };
+                }
+                return p;
+            });
+            storageService.setItem('bodega_products_v1', updated);
+            return updated;
+        });
+    }, []);
+
+    // GRANEL-001: fijar el stock directamente (edición inline en tarjeta/lista).
+    // Aplica el mismo guardarraíl de tipado y respeta allow_negative_stock.
+    const setDirectStock = useCallback((productId, newStockRaw) => {
+        setProducts(prevProducts => {
+            const updated = prevProducts.map(p => {
+                if (p.id === productId) {
+                    const allowNeg = localStorage.getItem('allow_negative_stock') === 'true';
+                    const isGranel = isGranelProduct(p);
+                    const newStock = normalizeStockValue(newStockRaw, isGranel);
                     return { ...p, stock: allowNeg ? newStock : Math.max(0, newStock) };
                 }
                 return p;
@@ -310,6 +332,7 @@ export function ProductProvider({ children }) {
         effectiveCheckoutMode,
         setCheckoutMode,
         adjustStock,
+        setDirectStock,
         restoreShadowBackup,
         inventoryFinancials
     }), [
@@ -320,6 +343,7 @@ export function ProductProvider({ children }) {
         checkoutMode,
         effectiveCheckoutMode,
         adjustStock,
+        setDirectStock,
         restoreShadowBackup,
         inventoryFinancials
     ]);

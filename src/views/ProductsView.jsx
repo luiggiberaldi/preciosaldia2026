@@ -30,6 +30,7 @@ import { useProductFiltering } from '../hooks/useProductFiltering';
 import { useProductForm } from '../hooks/useProductForm';
 import { useProductSorting } from '../hooks/useProductSorting';
 import { buildProductPayload } from '../utils/productProcessor';
+import { isGranelProduct, formatStockDisplay } from '../utils/granel'; // GRANEL-001
 import { uploadProductImage, migrateProductImagesToStorage } from '../utils/imageUpload';
 // useAuthStore removed - single-user app
 import { useAudit } from '../hooks/useAudit';
@@ -50,7 +51,8 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         copEnabled,
         copPrimary,
         tasaCop,
-        adjustStock: baseAdjustStock
+        adjustStock: baseAdjustStock,
+        setDirectStock
     } = useProductContext();
     const isCajero = useAuthStore(s => s.requireLogin && s.usuarioActivo?.rol === 'CAJERO');
     const { log: auditLog } = useAudit();
@@ -733,6 +735,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                                         copPrimary={copPrimary}
                                         tasaCop={tasaCop}
                                         onAdjustStock={adjustStock}
+                                        onSetDirectStock={setDirectStock}
                                         onShare={setShareProduct}
                                         onEdit={isCajero ? undefined : handleEdit}
                                         onDelete={isCajero ? undefined : handleDelete}
@@ -819,11 +822,11 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                                                 {!isCajero && (
                                                 <div className="flex items-center bg-surface-50 dark:bg-surface-800 rounded-lg">
                                                     <button onClick={() => adjustStock(p.id, -1)} aria-label={`Restar 1 unidad de ${p.name}`} className="p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-surface-400 hover:text-red-500 transition-colors"><Minus size={14} aria-hidden="true" /></button>
-                                                    <span className={`text-xs font-black min-w-[28px] text-center ${isLowStock ? 'text-amber-500' : 'text-surface-700 dark:text-surface-200'}`}>{p.stock ?? 0}</span>
+                                                    <span className={`text-xs font-black min-w-[28px] text-center ${isLowStock ? 'text-amber-500' : 'text-surface-700 dark:text-surface-200'}`}>{formatStockDisplay(p.stock ?? 0, isGranelProduct(p))}</span>
                                                     <button onClick={() => adjustStock(p.id, 1)} aria-label={`Sumar 1 unidad de ${p.name}`} className="p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-surface-400 hover:text-emerald-500 transition-colors"><Plus size={14} aria-hidden="true" /></button>
                                                 </div>
                                                 )}
-                                                {isCajero && <span className={`text-xs font-black ${isLowStock ? 'text-amber-500' : 'text-surface-700 dark:text-surface-200'}`}>{p.stock ?? 0}</span>}
+                                                {isCajero && <span className={`text-xs font-black ${isLowStock ? 'text-amber-500' : 'text-surface-700 dark:text-surface-200'}`}>{formatStockDisplay(p.stock ?? 0, isGranelProduct(p))}</span>}
                                                 {!isCajero && <button onClick={() => handleEdit(p)} aria-label={`Editar ${p.name}`} className="p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-surface-300 hover:text-amber-500 transition-colors"><Pencil size={14} aria-hidden="true" /></button>}
                                             </div>
 
@@ -860,7 +863,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                                             </div>
                                             <div className="hidden sm:flex items-center gap-1">
                                                 {!isCajero && <button onClick={() => adjustStock(p.id, -1)} aria-label={`Restar 1 unidad de ${p.name}`} className="w-9 h-9 rounded-lg bg-surface-50 dark:bg-surface-800 flex items-center justify-center text-surface-400 hover:text-red-500 transition-colors active:scale-90"><Minus size={14} aria-hidden="true" /></button>}
-                                                <span className={`text-sm font-black min-w-[32px] text-center ${isLowStock ? 'text-amber-500' : 'text-surface-700 dark:text-surface-200'}`}>{p.stock ?? 0}</span>
+                                                <span className={`text-sm font-black min-w-[32px] text-center ${isLowStock ? 'text-amber-500' : 'text-surface-700 dark:text-surface-200'}`}>{formatStockDisplay(p.stock ?? 0, isGranelProduct(p))}</span>
                                                 {!isCajero && <button onClick={() => adjustStock(p.id, 1)} aria-label={`Sumar 1 unidad de ${p.name}`} className="w-9 h-9 rounded-lg bg-surface-50 dark:bg-surface-800 flex items-center justify-center text-surface-400 hover:text-emerald-500 transition-colors active:scale-90"><Plus size={14} aria-hidden="true" /></button>}
                                             </div>
                                             <div className="hidden sm:flex items-center justify-end gap-1">
@@ -1076,6 +1079,8 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 copEnabled={copEnabled}
                 copPrimary={copPrimary}
                 tasaCop={tasaCop}
+                selectedIds={selectedIds}
+                onClearSelection={() => setSelectedIds(new Set())}
             />
 
             <CategoryManagerModal

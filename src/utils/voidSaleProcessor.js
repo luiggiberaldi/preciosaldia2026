@@ -1,7 +1,8 @@
 import { storageService } from './storageService.js';
 import { logEvent } from '../services/auditService.js';
 import { useAuthStore } from '../hooks/store/useAuthStore.js';
-import { divR, sumR, round2 } from './dinero.js';
+import { divR, sumR, round2, round3 } from './dinero.js';
+import { isGranelProduct, adjustStockValue } from './granel.js'; // GRANEL-001
 import { withLock } from './withLock.js';
 import { deepFreeze } from './deepFreeze.js';
 import { applyCustomerMovementsWithinLock } from '../services/customerWalletService.js';
@@ -80,12 +81,16 @@ export async function processVoidSale(sale, currentSales, currentProducts) {
             updatedProducts = freshProducts.map(p => {
                 const itemsInSale = freshSale.items.filter(i => (i._originalId || i.id) === p.id);
                 if (itemsInSale.length === 0) return p;
+                // GRANEL-001: la suma a restaurar se acumula a 3 decimales para no
+                // perder el tercer decimal del peso vendido (0.125 kg → 0.13 con sumR).
                 const totalToRestore = itemsInSale.reduce((sum, item) => {
-                    if (item.isWeight) return sumR(sum, item.qty);
-                    if (item._mode === 'unit') return sumR(sum, divR(item.qty, item._unitsPerPackage || 1));
-                    return sumR(sum, item.qty);
+                    if (item.isWeight) return round3(sum + item.qty);
+                    if (item._mode === 'unit') return round3(sum + divR(item.qty, item._unitsPerPackage || 1));
+                    return round3(sum + item.qty);
                 }, 0);
-                return { ...p, stock: sumR(p.stock || 0, totalToRestore) };
+                // GRANEL-001: granel restaura hasta 3 decimales sin drift;
+                // el resto permanece entero estricto.
+                return { ...p, stock: adjustStockValue(p.stock || 0, totalToRestore, isGranelProduct(p)) };
             });
         }
 

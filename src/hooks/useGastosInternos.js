@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { storageService } from '../utils/storageService';
 import { withLock } from '../utils/withLock';
 import { subR, sumR, mulR } from '../utils/dinero';
+import { isGranelProduct, adjustStockValue } from '../utils/granel'; // GRANEL-001
 import { showToast } from '../components/Toast';
 import { useAuthStore } from './store/useAuthStore';
 
@@ -96,11 +97,11 @@ export function useGastosInternos({ bcvRate, tasaCop, copEnabled, triggerHaptic,
             const freshProducts = await storageService.getItem(PRODUCTS_KEY, []);
             const allowNeg = localStorage.getItem('allow_negative_stock') === 'true';
 
-            // 2. Deducir stock
+            // 2. Deducir stock — GRANEL-001: granel conserva 3 decimales, resto entero.
             const updatedProducts = freshProducts.map(p => {
                 const cartItem = items.find(i => i.id === p.id);
                 if (!cartItem) return p;
-                const newStock = subR(p.stock ?? 0, cartItem.qty);
+                const newStock = adjustStockValue(p.stock ?? 0, -cartItem.qty, isGranelProduct(p));
                 return { ...p, stock: allowNeg ? newStock : Math.max(0, newStock) };
             });
 
@@ -180,7 +181,8 @@ export function useGastosInternos({ bcvRate, tasaCop, copEnabled, triggerHaptic,
                 const restored = freshProducts.map(p => {
                     const item = targetGasto.items.find(i => i.id === p.id);
                     if (!item) return p;
-                    return { ...p, stock: sumR(p.stock ?? 0, item.qty) };
+                    // GRANEL-001: restauración sin drift, 3 decimales solo para granel.
+                    return { ...p, stock: adjustStockValue(p.stock ?? 0, item.qty, isGranelProduct(p)) };
                 });
                 await storageService.setItem(PRODUCTS_KEY, restored);
             });
