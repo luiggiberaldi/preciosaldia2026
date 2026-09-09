@@ -164,4 +164,18 @@ export function describeCloudErrorShort(err) {
     return `${info.title}. ${info.hint}`;
 }
 
-export default { describeCloudError, describeCloudErrorShort };
+/**
+ * Detecta si un error es un bloqueo de RLS (42501) que el relay de
+ * Estación Maestra puede resolver (RLS-RELAY). No confundir con 401/403:
+ * esos son credenciales inválidas y el relay no ayuda.
+ * @param {any} err
+ * @returns {boolean}
+ */
+export function isRlsBlockedError(err) {
+    if (!err) return false;
+    if (err.code === '42501') return true;
+    const msg = typeof err.message === 'string' ? err.message : (typeof err === 'string' ? err : '');
+    return /row-level security/i.test(msg);
+}
+
+export default { describeCloudError, describeCloudErrorShort, isRlsBlockedError };

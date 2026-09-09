@@ -4,10 +4,11 @@ import { supabaseCloud } from '../config/supabaseCloud';
 import { runWithoutEco } from '../utils/syncFlags';
 import { compressString, isCompressionSupported } from '../utils/compression';
 import { uploadToGoogleDrive } from '../utils/driveBackupUploader';
-import { describeCloudError } from '../utils/cloudError';
+import { describeCloudError, isRlsBlockedError } from '../utils/cloudError';
 import { buildCloudBackupsRow, buildSyncDocumentRow } from '../config/cloudSchema';
 import { ensureDeviceSessionRegistered } from '../utils/deviceIdentity';
 import { ensureSupervisorSession } from '../services/supervisorAuth';
+import { relayUploadBackup, relayFetchBackup } from '../utils/backupRelay';
 import {
     collectLocalBackupPayload,
     validateBackupJson,
@@ -105,7 +106,22 @@ export function useCloudBackup({
                 buildCloudBackupsRow({ deviceId, backupData: metadataPayload }),
                 { onConflict: 'device_id' }
             );
-        if (error) throw error;
+        if (error) {
+            // RLS-RELAY: sin la migración own-row, RLS rechaza al dispositivo
+            // (42501). Reintento vía Estación Maestra (service-role del lado
+            // servidor) antes de fallar.
+            if (isRlsBlockedError(error)) {
+                const relay = await relayUploadBackup(deviceId, metadataPayload);
+                if (!relay.ok) {
+                    throw new Error(
+                        `RLS bloqueó la escritura directa y el relay falló: ${relay.error?.message || relay.error || 'sin detalle'}`
+                    );
+                }
+                console.info('[CloudBackup] Escritura realizada vía relay de Estación Maestra (RLS).');
+            } else {
+                throw error;
+            }
+        }
 
         // 2. Inyección inicial en sync_documents para P2P (best-effort)
         try {
@@ -186,12 +202,27 @@ export function useCloudBackup({
                 }
             }
 
-            const { data: cloudRow, error: fetchError } = await supabaseCloud
+            let cloudRow = null;
+            let fetchError = null;
+            ({ data: cloudRow, error: fetchError } = await supabaseCloud
                 .from('cloud_backups')
                 .select('backup_data')
                 .eq('device_id', deviceId)
-                .maybeSingle();
-            if (fetchError) throw fetchError;
+                .maybeSingle());
+
+            if (fetchError) {
+                if (!isRlsBlockedError(fetchError)) throw fetchError;
+                console.warn('[CloudBackup] Lectura directa bloqueada por RLS, probando relay...');
+            } else if (!cloudRow) {
+                // RLS-RELAY: RLS también bloquea el SELECT silenciosamente
+                // (0 filas en vez de error). Si el directo no ve nada, sondear
+                // el relay antes de concluir que la nube está vacía.
+                const relayProbe = await relayFetchBackup(deviceId);
+                if (relayProbe.ok && relayProbe.backupData) {
+                    cloudRow = { backup_data: relayProbe.backupData };
+                    console.info('[CloudBackup] Backup obtenido vía relay de Estación Maestra.');
+                }
+            }
 
             const cloudBackup = cloudRow?.backup_data || null;
             const localBackup = await collectLocalBackupPayload({ appName: 'TasasAlDia_Bodegas_Cloud' });
