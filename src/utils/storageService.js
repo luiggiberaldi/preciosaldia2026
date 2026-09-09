@@ -1,6 +1,7 @@
 import localforage from 'localforage';
 import { queueCloudSync } from '../hooks/useCloudSync';
 import { shadowBackupService } from './shadowBackupService';
+import { isSyncingFromCloud } from './syncFlags';
 
 localforage.config({
     name: 'BodegaApp',
@@ -124,7 +125,11 @@ export const storageService = {
             if (typeof window !== "undefined") {
                 window.dispatchEvent(new CustomEvent("app_storage_update", { detail: { key } }));
             }
-            queueCloudSync(key, value);
+            // BACKUP-004/HOOK-014: el eco se corta EN LA COLA, no solo al ejecutar
+            // el push. `queueCloudSync` usa debounce, así que para cuando el push
+            // real corra el flag ya estaría restaurado; verificamos aquí, de forma
+            // síncrona, mientras runWithoutEco mantiene el flag activo.
+            if (!isSyncingFromCloud()) queueCloudSync(key, value);
         } catch (error) {
             // RE-LANZAR CircuitBreaker obligatoriamente para evitar que el catch general escriba en localStorage
             if (error?.message?.includes('[CircuitBreaker]')) {

@@ -3,6 +3,11 @@ import localforage from 'localforage';
 import { Share2, Download, X, Copy, Check, Loader2, AlertTriangle, Package, Users, ShoppingBag, Settings2, Database } from 'lucide-react';
 import { storageService } from '../utils/storageService';
 
+// BACKUP-005: al restaurar por código de compartición también debe activarse
+// la bandera de re-sincronización; si no, los datos importados nunca suben a
+// sync_documents y solo existen en este dispositivo.
+const BACKUP_IMPORTED_FLAG = 'pda_backup_imported_flag';
+
 // Grupos de datos compartibles
 const SHARE_GROUPS = [
     {
@@ -166,6 +171,7 @@ export default function ShareInventoryModal({ isOpen, onClose }) {
                     localStorage.setItem(key, value);
                 }
             }
+            localStorage.setItem(BACKUP_IMPORTED_FLAG, 'true');
             setTimeout(() => window.location.reload(), 300);
         } catch (err) {
             setError('Error al restaurar: ' + err.message);

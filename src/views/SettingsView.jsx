@@ -172,6 +172,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
         setStatusMessage,
         dataConflictPending,
         setDataConflictPending,
+        handleSyncCloud,
         handleDataConflictChoice,
     } = useCloudBackup({
         deviceId,
@@ -347,6 +348,9 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                                 importStatus={importStatus} statusMessage={statusMessage}
                                 handleExport={handleExport}
                                 handleImportClick={handleImportClick}
+                                handleSyncCloud={handleSyncCloud}
+                                dataConflictPending={dataConflictPending}
+                                handleDataConflictChoice={handleDataConflictChoice}
                                 setIsShareOpen={setIsShareOpen}
                                 setShowDeleteConfirm={setShowDeleteConfirm}
                                 triggerHaptic={triggerHaptic}

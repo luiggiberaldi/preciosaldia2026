@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-    Database, Palette, Fingerprint, Upload, Download, Share2,
+    Database, Palette, Fingerprint, Upload, Download, Share2, Cloud,
     Check, ChevronRight, Trash2, AlertTriangle, FileText, ZoomIn, ZoomOut, RotateCcw, QrCode
 } from 'lucide-react';
 import { SectionCard } from '../../SettingsShared';
@@ -14,6 +14,8 @@ export default function SettingsTabSistema({
     isAdmin,
     importStatus, statusMessage,
     handleExport, handleImportClick,
+    handleSyncCloud,
+    dataConflictPending, handleDataConflictChoice,
     setIsShareOpen,
     setShowDeleteConfirm,
     triggerHaptic,
@@ -88,6 +90,15 @@ export default function SettingsTabSistema({
                         <ChevronRight size={16} className="text-slate-300" />
                     </button>
 
+                    <button onClick={handleSyncCloud} className="w-full flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors group active:scale-[0.98]">
+                        <div className="p-2 bg-sky-50 dark:bg-sky-900/30 rounded-lg"><Cloud size={18} className="text-sky-500" /></div>
+                        <div className="text-left flex-1">
+                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Sincronizar con la Nube</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Restaurar o guardar backup en la nube</p>
+                        </div>
+                        <ChevronRight size={16} className="text-slate-300" />
+                    </button>
+
                     <button onClick={() => setIsShareOpen(true)} className="w-full flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors group active:scale-[0.98]">
                         <div className="p-2 bg-brand-light dark:bg-surface-800/30 rounded-lg"><Share2 size={18} className="text-brand" /></div>
                         <div className="text-left flex-1">
@@ -97,6 +108,31 @@ export default function SettingsTabSistema({
                         <ChevronRight size={16} className="text-slate-300" />
                     </button>
                 </div>
+
+                {dataConflictPending && (
+                    <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 rounded-xl space-y-2">
+                        <p className="text-xs font-bold text-amber-800 dark:text-amber-400 flex items-center gap-1.5">
+                            <AlertTriangle size={14} /> Conflicto de datos detectado
+                        </p>
+                        <p className="text-[11px] text-amber-700 dark:text-amber-500/90 leading-relaxed">
+                            Hay datos tanto en este dispositivo como en la nube. Elige que version conservar:
+                        </p>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => handleDataConflictChoice('cloud')}
+                                className="flex-1 py-2.5 text-xs font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-xl active:scale-95 transition-all"
+                            >
+                                Usar los de la Nube
+                            </button>
+                            <button
+                                onClick={() => handleDataConflictChoice('local')}
+                                className="flex-1 py-2.5 text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-600 rounded-xl active:scale-95 transition-all"
+                            >
+                                Subir los de este Equipo
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {importStatus && (
                     <div className={`p-2.5 rounded-xl text-xs font-bold text-center flex items-center justify-center gap-2 ${importStatus === 'success' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'}`}>

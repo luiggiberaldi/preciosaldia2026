@@ -4,6 +4,7 @@ import { supabaseCloud } from '../config/supabaseCloud';
 import { IDB_KEYS, LS_KEYS } from '../config/backupKeys';
 import { compressString, isCompressionSupported } from '../utils/compression';
 import { uploadToGoogleDrive } from '../utils/driveBackupUploader';
+import { validateBackupJson, applyBackupToStorage } from '../utils/backupRestoreService';
 
 
 // ─── Configuración optimizada ───────────────────────────────────────────────
@@ -309,32 +310,20 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
     }, [deviceId]);
 }
 
-// Restaurar desde backup local (para emergencias)
+// Restaurar desde backup local (para emergencias).
+// BACKUP-006: ahora valida el backup, corre dentro de runWithoutEco (anti-eco
+// hacia la nube) y activa `pda_backup_imported_flag` para que useCloudSync
+// re-sincronice los datos críticos tras recargar.
 export async function restoreFromBackup() {
     const backup = await storageService.getItem('bodega_autobackup_v1', null);
     if (!backup?.data) return null;
 
-    if (backup.version === '2.0' && backup.data.idb) {
-        for (const [key, val] of Object.entries(backup.data.idb)) {
-            await storageService.setItem(key, val);
-        }
-        if (backup.data.ls) {
-            for (const [key, val] of Object.entries(backup.data.ls)) {
-                localStorage.setItem(key, val);
-            }
-        }
-        return {
-            restoredKeys: [...Object.keys(backup.data.idb), ...Object.keys(backup.data.ls)],
-            backupTime: new Date(backup.timestamp).toLocaleString('es-VE'),
-        };
-    }
+    validateBackupJson(backup);
+    const applied = await applyBackupToStorage(backup, { writeMode: 'storageService' });
+    localStorage.setItem('pda_backup_imported_flag', 'true');
 
-    // Fallback formato legacy
-    for (const [key, val] of Object.entries(backup.data)) {
-        await storageService.setItem(key, val);
-    }
     return {
-        restoredKeys: Object.keys(backup.data),
+        restoredKeys: [...applied.idbKeys, ...applied.lsKeys],
         backupTime: new Date(backup.timestamp).toLocaleString('es-VE'),
     };
 }

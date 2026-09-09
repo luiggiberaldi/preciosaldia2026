@@ -1,16 +1,24 @@
 import { useState } from 'react';
-import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
 import { supabaseCloud } from '../config/supabaseCloud';
-import { IDB_KEYS, LS_KEYS } from '../config/backupKeys';
 import { runWithoutEco } from '../utils/syncFlags';
-import { compressString, decompressString, isCompressionSupported } from '../utils/compression';
+import { compressString, isCompressionSupported } from '../utils/compression';
 import { uploadToGoogleDrive } from '../utils/driveBackupUploader';
-
+import {
+    collectLocalBackupPayload,
+    validateBackupJson,
+    decompressCloudBackup,
+    applyBackupToStorage,
+    countBackupRecords,
+} from '../utils/backupRestoreService';
 
 /**
  * Hook that encapsulates cloud backup/restore logic using device_id as the sole identifier.
  * No email or password required.
+ *
+ * BACKUP-001: ahora `cloud_backups.backup_data` guarda el payload COMPLETO
+ * (comprimido cuando el navegador lo soporta) y no solo metadatos. La fila
+ * incluye además un resumen (`summary`) para UI sin descomprimir.
  *
  * @param {Object} params
  * @param {string}   params.deviceId
@@ -29,69 +37,19 @@ export function useCloudBackup({
     const [dataConflictPending, setDataConflictPending] = useState(null);
 
     // ─── HELPER: Apply a cloud backup to local storage ───────────────────────
-    // HOOK-014: Envolver TODA la restauración en `runWithoutEco` para setear
-    // el flag `isSyncingFromCloud=true` y evitar que `storageService.setItem`
-    // (vía `pushCloudSync`) re-envíe a la nube los datos que acabamos de recibir.
+    // HOOK-014: toda la restauración corre dentro de `runWithoutEco`
+    // (lo garantiza applyBackupToStorage con writeMode 'storageService').
     const applyCloudBackup = async (cloudBackup) => {
-        let backup = cloudBackup;
-        if (cloudBackup?.compressed) {
-            try {
-                const rawJson = await decompressString(cloudBackup.data);
-                backup = JSON.parse(rawJson);
-            } catch (err) {
-                console.error('[applyCloudBackup] Error al descomprimir:', err);
-                throw new Error('El backup de la nube está dañado o no pudo descomprirse.');
-            }
-        }
-
-        if (!backup?.data) {
-            console.error('[applyCloudBackup] Backup inválido o sin datos:', backup);
-            throw new Error('El backup de la nube está vacío o es inválido.');
-        }
-        await runWithoutEco(async () => {
-            if (backup.version === '2.0' && backup.data.idb) {
-                const idbEntries = Object.entries(backup.data.idb);
-                for (const [key, value] of idbEntries) {
-                    await storageService.setItem(key, value);
-                }
-            } else {
-                console.warn('[applyCloudBackup] Formato no reconocido, intentando restauración legacy...');
-            }
-            if (backup.data.ls) {
-                for (const [key, value] of Object.entries(backup.data.ls)) {
-                    // localStorage.setItem pasa por el interceptor de useCloudSync;
-                    // el flag global también lo silencia (doble protección).
-                    localStorage.setItem(key, value);
-                }
-            }
-        });
-    };
-
-    // ─── HELPER: Collect local backup payload ────────────────────────────────
-    // HOOK-041: Usa las listas canónicas de `src/config/backupKeys.js`.
-    const collectLocalBackup = async () => {
-        const idbData = {};
-        for (const key of IDB_KEYS) {
-            const data = await storageService.getItem(key, null);
-            if (data !== null) idbData[key] = data;
-        }
-        const lsData = {};
-        for (const key of LS_KEYS) {
-            const val = localStorage.getItem(key);
-            if (val !== null) lsData[key] = val;
-        }
-        return {
-            timestamp: new Date().toISOString(),
-            version: '2.0',
-            appName: 'TasasAlDia_Bodegas_Cloud',
-            data: { idb: idbData, ls: lsData }
-        };
+        const backup = await decompressCloudBackup(cloudBackup);
+        validateBackupJson(backup);
+        return applyBackupToStorage(backup, { writeMode: 'storageService' });
     };
 
     // ─── HELPER: Upload local backup + initialize sync_documents ─────────────
     const uploadLocalBackup = async (backupData) => {
         if (!supabaseCloud || !deviceId) return;
 
+        // BACKUP-001: subir el payload COMPLETO (comprimido si es posible).
         let payloadToUpload = backupData;
         if (isCompressionSupported()) {
             try {
@@ -101,6 +59,11 @@ export function useCloudBackup({
                     version: '2.0',
                     timestamp: backupData.timestamp,
                     appName: backupData.appName,
+                    summary: {
+                        idbKeys: Object.keys(backupData.data.idb || {}),
+                        lsKeys: Object.keys(backupData.data.ls || {}),
+                        recordCount: countBackupRecords(backupData),
+                    },
                     data: compressedData
                 };
             } catch (err) {
@@ -108,7 +71,8 @@ export function useCloudBackup({
             }
         }
 
-        // 1. Subir a Google Drive y guardar metadatos en Supabase
+        // 1. Subir a Google Drive (copia externa, best-effort) y guardar
+        //    payload completo + metadatos en Supabase.
         const clientName = localStorage.getItem('business_name') || 'Mi Negocio';
         let driveResult = null;
         try {
@@ -118,6 +82,7 @@ export function useCloudBackup({
         }
 
         const metadataPayload = {
+            ...payloadToUpload,
             drive_url: driveResult?.downloadUrl || null,
             size_bytes: driveResult?.sizeBytes || JSON.stringify(payloadToUpload).length,
             updated_at: new Date().toISOString()
@@ -133,7 +98,7 @@ export function useCloudBackup({
             }, { onConflict: 'device_id' });
         if (error) throw error;
 
-        // 2. Inyección inicial en sync_documents para P2P
+        // 2. Inyección inicial en sync_documents para P2P (best-effort)
         try {
             const syncPayloads = [];
             for (const [key, value] of Object.entries(backupData.data.idb || {})) {
@@ -199,16 +164,25 @@ export function useCloudBackup({
             setImportStatus('loading');
             setStatusMessage('Consultando backup en la nube...');
 
-            const { data: cloudRow } = await supabaseCloud
+            const { data: cloudRow, error: fetchError } = await supabaseCloud
                 .from('cloud_backups')
                 .select('backup_data')
                 .eq('device_id', deviceId)
                 .maybeSingle();
+            if (fetchError) throw fetchError;
 
             const cloudBackup = cloudRow?.backup_data || null;
-            const localBackup = await collectLocalBackup();
+            const localBackup = await collectLocalBackupPayload({ appName: 'TasasAlDia_Bodegas_Cloud' });
+            // BACKUP-001: con payloads completos, un backup de la nube con solo
+            // metadatos ya no cuenta como "datos en la nube".
+            const hasCloudData = (() => {
+                if (!cloudBackup) return false;
+                if (cloudBackup.compressed) return true; // comprimido ⇒ payload completo
+                const summary = cloudBackup.summary;
+                if (summary && typeof summary === 'object') return summary.recordCount > 0;
+                return countBackupRecords(cloudBackup) > 0;
+            })();
             const hasLocalData = Object.keys(localBackup.data.idb).length > 0;
-            const hasCloudData = cloudBackup && cloudBackup.data;
 
             if (hasCloudData && hasLocalData) {
                 // ⚠️ Conflicto: ambos tienen datos → preguntar al usuario
@@ -255,9 +229,12 @@ export function useCloudBackup({
         dataConflictPending,
         setDataConflictPending,
         applyCloudBackup,
-        collectLocalBackup,
+        collectLocalBackup: collectLocalBackupPayload,
         uploadLocalBackup,
         handleSyncCloud,
         handleDataConflictChoice,
     };
 }
+
+// Aliases para no romper imports históricos (p. ej. tests)
+export { runWithoutEco };
