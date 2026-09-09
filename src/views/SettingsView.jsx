@@ -172,6 +172,8 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
         setStatusMessage,
         dataConflictPending,
         setDataConflictPending,
+        lastError,
+        setLastError,
         handleSyncCloud,
         handleDataConflictChoice,
     } = useCloudBackup({
@@ -351,6 +353,8 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                                 handleSyncCloud={handleSyncCloud}
                                 dataConflictPending={dataConflictPending}
                                 handleDataConflictChoice={handleDataConflictChoice}
+                                lastError={lastError}
+                                onDismissError={() => setLastError(null)}
                                 setIsShareOpen={setIsShareOpen}
                                 setShowDeleteConfirm={setShowDeleteConfirm}
                                 triggerHaptic={triggerHaptic}

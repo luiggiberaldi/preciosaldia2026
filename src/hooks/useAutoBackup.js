@@ -5,6 +5,7 @@ import { IDB_KEYS, LS_KEYS } from '../config/backupKeys';
 import { compressString, isCompressionSupported } from '../utils/compression';
 import { uploadToGoogleDrive } from '../utils/driveBackupUploader';
 import { validateBackupJson, applyBackupToStorage } from '../utils/backupRestoreService';
+import { buildCloudBackupsRow } from '../config/cloudSchema';
 
 
 // ─── Configuración optimizada ───────────────────────────────────────────────
@@ -176,11 +177,11 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                         try {
                             const sessionRes = await supabaseCloud.auth.getSession().catch(() => null);
                             if (sessionRes?.data?.session) {
-                                await supabaseCloud.from('cloud_backups').upsert({
-                                    device_id: devId,
-                                    backup_data: metadataPayload,
-                                    updated_at: new Date().toISOString()
-                                }, { onConflict: 'device_id' }).catch(() => null);
+                                // Contrato de esquema: builder con allowlist de columnas.
+                                await supabaseCloud.from('cloud_backups').upsert(
+                                    buildCloudBackupsRow({ deviceId: devId, backupData: metadataPayload }),
+                                    { onConflict: 'device_id' }
+                                ).catch(() => null);
                             }
                         } catch (sErr) {
                             // Omitir silenciosamente si no hay permisos/sesión activa

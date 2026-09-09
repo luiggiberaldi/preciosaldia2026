@@ -4,6 +4,8 @@ import { supabaseCloud } from '../config/supabaseCloud';
 import { runWithoutEco } from '../utils/syncFlags';
 import { compressString, isCompressionSupported } from '../utils/compression';
 import { uploadToGoogleDrive } from '../utils/driveBackupUploader';
+import { describeCloudError } from '../utils/cloudError';
+import { buildCloudBackupsRow, buildSyncDocumentRow } from '../config/cloudSchema';
 import {
     collectLocalBackupPayload,
     validateBackupJson,
@@ -38,6 +40,8 @@ export function useCloudBackup({
     const [importStatus, setImportStatus] = useState(null);
     const [statusMessage, setStatusMessage] = useState('');
     const [dataConflictPending, setDataConflictPending] = useState(null);
+    // BACKUP-ERR: último error estructurado para la UI (título, detalle, hint).
+    const [lastError, setLastError] = useState(null);
 
     // ─── HELPER: Apply a cloud backup to local storage ───────────────────────
     // HOOK-014: toda la restauración corre dentro de `runWithoutEco`
@@ -91,37 +95,36 @@ export function useCloudBackup({
             updated_at: new Date().toISOString()
         };
 
+        // Contrato de esquema: el builder valida contra la allowlist real de
+        // columnas (evita regresiones PGRST204 como el bug de size_bytes).
         const { error } = await supabaseCloud
             .from('cloud_backups')
-            .upsert({
-                device_id: deviceId,
-                backup_data: metadataPayload,
-                updated_at: new Date().toISOString()
-            }, { onConflict: 'device_id' });
+            .upsert(
+                buildCloudBackupsRow({ deviceId, backupData: metadataPayload }),
+                { onConflict: 'device_id' }
+            );
         if (error) throw error;
 
         // 2. Inyección inicial en sync_documents para P2P (best-effort)
         try {
             const syncPayloads = [];
             for (const [key, value] of Object.entries(backupData.data.idb || {})) {
-                syncPayloads.push({
-                    device_id: deviceId,
+                syncPayloads.push(buildSyncDocumentRow({
+                    deviceId,
                     collection: 'store',
-                    doc_id: key,
+                    docId: key,
                     data: { payload: value },
-                    updated_at: new Date().toISOString()
-                });
+                }));
             }
             for (const [key, value] of Object.entries(backupData.data.ls || {})) {
                 let finalVal = value;
                 try { finalVal = JSON.parse(value); } catch { /* keep as string */ }
-                syncPayloads.push({
-                    device_id: deviceId,
+                syncPayloads.push(buildSyncDocumentRow({
+                    deviceId,
                     collection: 'local',
-                    doc_id: key,
+                    docId: key,
                     data: { payload: finalVal },
-                    updated_at: new Date().toISOString()
-                });
+                }));
             }
             if (syncPayloads.length > 0) {
                 await supabaseCloud.from('sync_documents').upsert(syncPayloads, { onConflict: 'device_id,collection,doc_id' });
@@ -150,7 +153,10 @@ export function useCloudBackup({
             auditLog('NUBE', 'CONFLICTO_RESUELTO', `Conflicto datos resuelto: usuario eligió ${choice}`);
             setImportStatus(null);
         } catch (err) {
-            showToast(err.message || 'Error al resolver el conflicto', 'error');
+            console.error('[CloudBackup] Error al resolver conflicto:', err);
+            const info = describeCloudError(err);
+            setLastError(info);
+            showToast(`${info.title}. ${info.hint}`, 'error');
             setImportStatus('error');
         }
     };
@@ -216,9 +222,11 @@ export function useCloudBackup({
             triggerHaptic?.();
             setImportStatus(null);
 
-        } catch (error) {
-            console.error('[CloudBackup] Error:', error);
-            showToast(error.message || 'Error contactando la nube', 'error');
+        } catch (err) {
+            console.error('[CloudBackup] Error:', err);
+            const info = describeCloudError(err);
+            setLastError(info);
+            showToast(`${info.title}. ${info.hint}`, 'error');
             setImportStatus('error');
         }
     };
@@ -230,6 +238,8 @@ export function useCloudBackup({
         setStatusMessage,
         dataConflictPending,
         setDataConflictPending,
+        lastError,
+        setLastError,
         applyCloudBackup,
         collectLocalBackup: collectLocalBackupPayload,
         uploadLocalBackup,

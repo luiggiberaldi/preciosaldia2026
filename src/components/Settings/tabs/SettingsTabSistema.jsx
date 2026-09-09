@@ -16,6 +16,7 @@ export default function SettingsTabSistema({
     handleExport, handleImportClick,
     handleSyncCloud,
     dataConflictPending, handleDataConflictChoice,
+    lastError, onDismissError,
     setIsShareOpen,
     setShowDeleteConfirm,
     triggerHaptic,
@@ -108,6 +109,30 @@ export default function SettingsTabSistema({
                         <ChevronRight size={16} className="text-slate-300" />
                     </button>
                 </div>
+
+                {lastError && (
+                    <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 rounded-xl space-y-1.5" role="alert">
+                        <div className="flex items-start justify-between gap-2">
+                            <p className="text-xs font-bold text-red-700 dark:text-red-400 flex items-center gap-1.5">
+                                <AlertTriangle size={14} className="shrink-0 mt-0.5" /> {lastError.title}
+                            </p>
+                            <button
+                                onClick={onDismissError}
+                                className="text-red-400 hover:text-red-600 dark:hover:text-red-300 text-xs font-bold px-1"
+                                aria-label="Descartar error"
+                            >
+                                ✕
+                            </button>
+                        </div>
+                        <p className="text-[11px] text-red-600 dark:text-red-500/90 leading-relaxed">{lastError.detail}</p>
+                        <p className="text-[11px] text-red-700 dark:text-red-400 font-medium leading-relaxed">💡 {lastError.hint}</p>
+                        {lastError.technical && (
+                            <p className="text-[9px] text-red-400/70 font-mono break-all pt-1 border-t border-red-100 dark:border-red-800/30">
+                                {lastError.technical}
+                            </p>
+                        )}
+                    </div>
+                )}
 
                 {dataConflictPending && (
                     <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 rounded-xl space-y-2">
