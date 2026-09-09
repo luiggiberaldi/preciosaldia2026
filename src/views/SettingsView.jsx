@@ -52,7 +52,9 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
 
     const isAdmin = !requireLogin || !usuarioActivo || usuarioActivo.rol === 'ADMIN';
 
-    const { deviceId, forceHeartbeat } = useSecurity();
+    const { deviceId, forceHeartbeat, isPremium, isDemo } = useSecurity();
+    // LICENCIA-CLOUD: solo licencias completas (premium y no demo) acceden a la nube.
+    const isLicensedCloud = isPremium && !isDemo;
     const { log: auditLog } = useAudit();
     const fileInputRef = useRef(null);
     const [activeTab, setActiveTab] = useState('negocio');
@@ -180,6 +182,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
         deviceId,
         auditLog,
         forceHeartbeat,
+        isLicensedCloud,
         triggerHaptic,
     });
 
@@ -357,6 +360,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                                 onDismissError={() => setLastError(null)}
                                 setIsShareOpen={setIsShareOpen}
                                 setShowDeleteConfirm={setShowDeleteConfirm}
+                                isLicensedCloud={isLicensedCloud}
                                 triggerHaptic={triggerHaptic}
                             />
                         )}

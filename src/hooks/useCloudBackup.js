@@ -32,12 +32,15 @@ import {
  * @param {string}   params.deviceId
  * @param {Function} params.auditLog
  * @param {Function} params.forceHeartbeat
+ * @param {boolean}  [params.isLicensedCloud] Licencia completa activa (no demo).
+ *   La sincronización con la nube es exclusiva de licencias completas.
  * @param {Function} [params.triggerHaptic]
  */
 export function useCloudBackup({
     deviceId,
     auditLog,
     forceHeartbeat,
+    isLicensedCloud = false,
     triggerHaptic,
 }) {
     const [importStatus, setImportStatus] = useState(null);
@@ -181,6 +184,12 @@ export function useCloudBackup({
 
     // ─── HANDLER: Sync cloud (initial connect) ────────────────────────────────
     const handleSyncCloud = async () => {
+        // LICENCIA-CLOUD: la nube es exclusiva de licencias completas.
+        // Los demos solo tienen respaldo local (exportar/importar archivo).
+        if (!isLicensedCloud) {
+            showToast('La sincronización con la nube requiere licencia completa', 'error');
+            return;
+        }
         if (!supabaseCloud || !deviceId) {
             showToast('Sin conexión a la nube', 'error');
             return;
