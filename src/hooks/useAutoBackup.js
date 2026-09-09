@@ -157,7 +157,11 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                     try {
                         const res = await fetch(`${ESTACION_API}/api/backup/complete`, {
                             method: 'POST',
-                            headers: { 'Content-Type': 'text/plain' },
+                            headers: {
+                                'Content-Type': 'text/plain',
+                                // Shared secret exigido por el endpoint (blindaje anti-escritura pública)
+                                'x-backup-secret': import.meta.env.VITE_ESTACION_BACKUP_SECRET || '',
+                            },
                             body: JSON.stringify({
                                 deviceId: devId,
                                 driveUrl: metadataPayload.drive_url,

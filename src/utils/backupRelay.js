@@ -20,6 +20,11 @@ export function getEstacionApiUrl() {
     );
 }
 
+/** Shared secret que exigen los endpoints de backup de Estación Maestra. */
+function getEstacionBackupSecret() {
+    return import.meta.env?.VITE_ESTACION_BACKUP_SECRET || '';
+}
+
 /**
  * Sube el backup de un dispositivo vía relay.
  * @param {string} deviceId
@@ -33,7 +38,10 @@ export async function relayUploadBackup(deviceId, backupData) {
     try {
         const res = await fetch(`${base}/api/backup/relay`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'x-backup-secret': getEstacionBackupSecret(),
+            },
             body: JSON.stringify({ deviceId, backup_data: backupData }),
         });
         const data = await res.json().catch(() => ({}));
@@ -56,7 +64,9 @@ export async function relayFetchBackup(deviceId) {
     if (!base) return { ok: false, backupData: null, updatedAt: null, error: 'relay no configurado' };
 
     try {
-        const res = await fetch(`${base}/api/backup/relay?deviceId=${encodeURIComponent(deviceId)}`);
+        const res = await fetch(`${base}/api/backup/relay?deviceId=${encodeURIComponent(deviceId)}`, {
+            headers: { 'x-backup-secret': getEstacionBackupSecret() },
+        });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
             return { ok: false, backupData: null, updatedAt: null, error: data?.error || `HTTP ${res.status}` };

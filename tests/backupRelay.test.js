@@ -43,7 +43,10 @@ describe('relayUploadBackup', () => {
         expect(res.relayed).toBe(true);
         expect(fetch).toHaveBeenCalledWith(
             `${BASE}/api/backup/relay`,
-            expect.objectContaining({ method: 'POST' })
+            expect.objectContaining({
+                method: 'POST',
+                headers: expect.objectContaining({ 'x-backup-secret': expect.any(String) }),
+            })
         );
         const body = JSON.parse(fetch.mock.calls[0][1].body);
         expect(body.deviceId).toBe('PDA-TEST');
@@ -86,7 +89,10 @@ describe('relayFetchBackup', () => {
         expect(res.ok).toBe(true);
         expect(res.backupData).toEqual({ compressed: true });
         expect(res.updatedAt).toBe('2026-09-09T00:00:00Z');
-        expect(fetch).toHaveBeenCalledWith(`${BASE}/api/backup/relay?deviceId=PDA-TEST`);
+        expect(fetch).toHaveBeenCalledWith(
+            `${BASE}/api/backup/relay?deviceId=PDA-TEST`,
+            expect.objectContaining({ headers: expect.objectContaining({ 'x-backup-secret': expect.any(String) }) })
+        );
     });
 
     it('404 lógico del relay → backupData null (nube vacía)', async () => {
