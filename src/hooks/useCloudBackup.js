@@ -6,6 +6,8 @@ import { compressString, isCompressionSupported } from '../utils/compression';
 import { uploadToGoogleDrive } from '../utils/driveBackupUploader';
 import { describeCloudError } from '../utils/cloudError';
 import { buildCloudBackupsRow, buildSyncDocumentRow } from '../config/cloudSchema';
+import { ensureDeviceSessionRegistered } from '../utils/deviceIdentity';
+import { ensureSupervisorSession } from '../services/supervisorAuth';
 import {
     collectLocalBackupPayload,
     validateBackupJson,
@@ -171,6 +173,18 @@ export function useCloudBackup({
         try {
             setImportStatus('loading');
             setStatusMessage('Consultando backup en la nube...');
+
+            // RLS-IDENTITY: las políticas own-row (001_device_own_row_rls.sql)
+            // requieren que el dispositivo esté registrado en device_sessions
+            // vinculado a su sesión. Fail-soft: si falla, el error de RLS
+            // posterior se clasificará y mostrará con instrucciones claras.
+            const { session } = await ensureSupervisorSession();
+            if (session) {
+                const reg = await ensureDeviceSessionRegistered(deviceId);
+                if (!reg.ok) {
+                    console.warn('[CloudBackup] device_sessions no disponible:', reg.error);
+                }
+            }
 
             const { data: cloudRow, error: fetchError } = await supabaseCloud
                 .from('cloud_backups')
