@@ -14,7 +14,7 @@ export async function processDeterministicOfflineQuery(userQuery, { effectiveRat
         const rateCopVal = tasaCop || 0;
 
         // Extraer montos en dólares del texto (ej: "vuelto de 20$" o "20 dolares")
-        const numberMatch = q.match(/(\d+([\.,]\d+)?)/);
+        const numberMatch = q.match(/(\d+([.,]\d+)?)/);
         const amountUsd = numberMatch ? parseFloat(numberMatch[1].replace(',', '.')) : 0;
 
         let responseMd = `## Estado actual (Modo Local Offline)
@@ -59,7 +59,10 @@ Fuente: Datos locales del POS (Modo Offline) · ${timestampStr}`;
 
     // 3. CONSULTA DE VENTAS Y CAJA HOY
     if (q.includes('venta') || q.includes('caja') || q.includes('cuadre') || q.includes('hoy') || q.includes('ganancia')) {
-        if (isCajero && (q.includes('ganancia') || q.includes('costo') || q.includes('deuda'))) {
+        // Filtro financiero ampliado: misma política que el modo online (systemConsciousnessService).
+        // Ya no depende de 3 keywords exactas ("¿cuánto gané hoy extra?" ahora también se bloquea).
+        const asksFinancial = /ganancia|gané|gane|costo|margen|deuda|deudor|utilidad|beneficio|fiado/.test(q);
+        if (isCajero && asksFinancial) {
             return `## Estado actual (Modo Local Offline)
 
 - **Acceso Restringido**: El rol Cajero no tiene permiso para consultar métricas financieras o deudas globales.
@@ -81,6 +84,19 @@ Fuente: Datos locales del POS (Modo Offline) · ${timestampStr}`;
             totalSalesUsd = todaySales.reduce((acc, s) => acc + (s.totalUsd || 0), 0);
             totalSalesBs = todaySales.reduce((acc, s) => acc + (s.totalBs || 0), 0);
         } catch {}
+
+        // Paridad de roles con el modo online (systemConsciousnessService):
+        // el Cajero solo ve el conteo de su turno, nunca los montos totales.
+        if (isCajero) {
+            return `## Estado actual (Modo Local Offline)
+
+- **Ventas de tu turno hoy**: ${salesCount} transacciones procesadas.
+
+## Recomendación
+Para montos totales y desglose por método de pago, consulta a un Administrador o Supervisor.
+
+Fuente: Datos locales del POS (Modo Offline) · ${timestampStr}`;
+        }
 
         return `## Estado actual (Modo Local Offline)
 
