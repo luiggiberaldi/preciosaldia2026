@@ -52,6 +52,23 @@ export default function AIAssistantWidget() {
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null);
     const recognitionRef = useRef(null);
+    const abortControllerRef = useRef(null);
+
+    // Privacidad y limpieza: al desmontar, detener el micrófono y cancelar cualquier stream en curso
+    useEffect(() => {
+        return () => {
+            try { recognitionRef.current?.stop(); } catch {}
+            try { abortControllerRef.current?.abort(); } catch {}
+        };
+    }, []);
+
+    // Cierre del panel: detener el micrófono (privacidad en el mostrador) y cancelar el stream activo
+    const closePanel = () => {
+        try { recognitionRef.current?.stop(); } catch {}
+        setIsListening(false);
+        try { abortControllerRef.current?.abort(); } catch {}
+        setIsOpen(false);
+    };
 
     // Toast de notificación no-nativo (PISU UX Standard)
     const showToast = (msg) => {
@@ -150,10 +167,12 @@ export default function AIAssistantWidget() {
                 ...newMessages.map(m => ({ role: m.role, content: m.content }))
             ];
 
+            abortControllerRef.current = new AbortController();
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ messages: apiMessages })
+                body: JSON.stringify({ messages: apiMessages }),
+                signal: abortControllerRef.current.signal
             });
 
             if (!response.ok) throw new Error(`Error de servidor (${response.status})`);
@@ -198,6 +217,17 @@ export default function AIAssistantWidget() {
                 }
             }
         } catch (error) {
+            if (error?.name === 'AbortError') {
+                // El usuario cerró el panel: limpiar la burbuja vacía y no mostrar fallback ni error
+                setMessages(prev => {
+                    const updated = [...prev];
+                    if (updated.length && updated[updated.length - 1].role === 'assistant' && updated[updated.length - 1].content === '') {
+                        updated.pop();
+                    }
+                    return updated;
+                });
+                return;
+            }
             // Fallback seguro a respuesta determinista local en caso de fallo de red/IA
             const fallbackOfflineReply = await processDeterministicOfflineQuery(messageText, {
                 effectiveRate,
@@ -321,7 +351,7 @@ export default function AIAssistantWidget() {
                                 <Trash2 size={15} />
                             </button>
                             <button 
-                                onClick={() => setIsOpen(false)} 
+                                onClick={closePanel} 
                                 className="p-2 text-slate-400 hover:text-slate-700 dark:text-slate-400 dark:hover:text-white rounded-xl hover:bg-slate-200 dark:hover:bg-white/10 transition-all"
                                 title="Cerrar asistente"
                             >
