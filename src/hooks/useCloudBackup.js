@@ -19,6 +19,9 @@ import {
  * BACKUP-001: ahora `cloud_backups.backup_data` guarda el payload COMPLETO
  * (comprimido cuando el navegador lo soporta) y no solo metadatos. La fila
  * incluye además un resumen (`summary`) para UI sin descomprimir.
+ * Esquema: la tabla solo expone `device_id`, `backup_data` y `updated_at`
+ * (mismo contrato que usa useAutoBackup); `size_bytes`/`drive_url` viven
+ * DENTRO del JSON de `backup_data`, no como columnas.
  *
  * @param {Object} params
  * @param {string}   params.deviceId
@@ -93,7 +96,6 @@ export function useCloudBackup({
             .upsert({
                 device_id: deviceId,
                 backup_data: metadataPayload,
-                size_bytes: metadataPayload.size_bytes,
                 updated_at: new Date().toISOString()
             }, { onConflict: 'device_id' });
         if (error) throw error;
