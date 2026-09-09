@@ -2,6 +2,7 @@ import { forwardRef, useState, useEffect, useRef } from 'react';
 import { Search, Mic, Package, X, Box } from 'lucide-react';
 import { BODEGA_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../config/categories';
 import { formatCop, formatUsd, getCop, getUsd } from '../../utils/calculatorUtils';
+import { parseMoneyAmount, bsToUsd, qtyFromMoneyAmount, formatStockDisplay } from '../../utils/granel'; // GRANEL-MONEY
 import SmartImage from '../SmartImage';
 
 const formatBs = (n) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
@@ -215,6 +216,8 @@ const SearchBar = forwardRef(function SearchBar({
                     weightPending={weightPending}
                     setWeightPending={setWeightPending}
                     addToCart={addToCart}
+                    effectiveRate={effectiveRate}
+                    tasaCop={tasaCop}
                 />
             )}
         </div>
@@ -222,17 +225,22 @@ const SearchBar = forwardRef(function SearchBar({
 });
 
 // ─── SUBCOMPONENTE DE PESAJE CON BORRADO AUTOMÁTICO AL PULSAR CLIC ───
-function WeightPopup({ weightPending, setWeightPending, addToCart }) {
+function WeightPopup({ weightPending, setWeightPending, addToCart, effectiveRate = 0, tasaCop = 0 }) {
     const [qty, setQty] = useState('1.00');
     const [isEditing, setIsEditing] = useState(false);
     const [draft, setDraft] = useState('');
     const prevQtyRef = useRef('1.00');
+
+    // GRANEL-MONEY: venta por monto ("dame 3$ de queso", "dame 5000 Bs de jabón")
+    const [amountInput, setAmountInput] = useState('');
+    const [amountCurrency, setAmountCurrency] = useState('usd'); // 'usd' | 'bs'
 
     // Reiniciar valores si cambia el producto a pesar
     useEffect(() => {
         setQty('1.00');
         setDraft('');
         setIsEditing(false);
+        setAmountInput('');
         prevQtyRef.current = '1.00';
     }, [weightPending?.id]);
 
@@ -290,6 +298,32 @@ function WeightPopup({ weightPending, setWeightPending, addToCart }) {
 
     const unitLabel = weightPending.unit === 'kg' ? 'kg' : weightPending.unit === 'litro' ? 'lt' : (weightPending.granelUnit || 'kg');
 
+    // ── GRANEL-MONEY: conversión monto → cantidad con preview en vivo ──
+    // Mismo precio efectivo que usa addToCart (priceCop tiene prioridad si hay tasa COP).
+    const pricePerUnit = (weightPending.priceCop && tasaCop > 0)
+        ? weightPending.priceCop / tasaCop
+        : (parseFloat(weightPending.priceUsdt) || 0);
+    const parsedAmount = parseMoneyAmount(amountInput);
+    const amountUsdPreview = (parsedAmount != null && amountCurrency === 'bs')
+        ? (effectiveRate > 0 ? bsToUsd(parsedAmount, effectiveRate) : null)
+        : parsedAmount;
+    const qtyPreview = (amountUsdPreview != null && amountUsdPreview > 0 && pricePerUnit > 0)
+        ? qtyFromMoneyAmount(amountUsdPreview, 'usd', pricePerUnit, effectiveRate)
+        : null;
+    const amountHint = (() => {
+        if (parsedAmount == null) return null;
+        if (amountCurrency === 'bs' && !(effectiveRate > 0)) return 'Configura la tasa de cambio para vender en Bs';
+        if (pricePerUnit <= 0) return 'Este producto no tiene precio unitario válido';
+        if (qtyPreview == null) return `El monto no alcanza para 0.001 ${unitLabel}`;
+        return `= ${formatStockDisplay(qtyPreview, true)} ${unitLabel} · $${formatUsd(amountUsdPreview)}${amountCurrency === 'bs' ? ` (${formatBs(parsedAmount)} Bs)` : ''}`;
+    })();
+
+    const handleAddByAmount = () => {
+        if (qtyPreview == null) return;
+        addToCart(weightPending, qtyPreview);
+        setWeightPending(null);
+    };
+
     return (
         <div className="absolute top-full mt-2 left-0 right-0 z-30 bg-white dark:bg-slate-900 border-2 border-amber-200 dark:border-amber-800 rounded-2xl shadow-2xl shadow-amber-500/10 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-100 dark:border-amber-800">
@@ -324,6 +358,48 @@ function WeightPopup({ weightPending, setWeightPending, addToCart }) {
                             {q} {unitLabel}
                         </button>
                     ))}
+                </div>
+                {/* GRANEL-MONEY: venta por monto — "dame 3$ de queso" / "dame 5000 Bs" */}
+                <div className="rounded-xl bg-amber-50/70 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800/60 p-2 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                        <div className="flex rounded-lg overflow-hidden border border-amber-200 dark:border-amber-700 shrink-0">
+                            <button type="button" onClick={() => setAmountCurrency('usd')}
+                                className={`px-3 py-2 text-xs font-black transition-colors ${amountCurrency === 'usd' ? 'bg-amber-500 text-white' : 'bg-white dark:bg-slate-800 text-amber-600 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-slate-700'}`}>
+                                $
+                            </button>
+                            <button type="button" onClick={() => setAmountCurrency('bs')}
+                                className={`px-3 py-2 text-xs font-black transition-colors ${amountCurrency === 'bs' ? 'bg-amber-500 text-white' : 'bg-white dark:bg-slate-800 text-amber-600 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-slate-700'}`}>
+                                Bs
+                            </button>
+                        </div>
+                        <div className="flex-1 min-w-0 flex items-center bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-700 rounded-lg px-2.5">
+                            <span className="text-xs font-black text-amber-600 dark:text-amber-400 shrink-0">
+                                {amountCurrency === 'bs' ? 'Bs' : '$'}
+                            </span>
+                            <input
+                                type="text"
+                                inputMode="decimal"
+                                value={amountInput}
+                                onChange={(e) => setAmountInput(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddByAmount(); } }}
+                                placeholder={amountCurrency === 'bs' ? 'Ej: 5000' : 'Ej: 3.00'}
+                                className="flex-1 min-w-0 bg-transparent text-center py-2 font-bold text-slate-700 dark:text-white outline-none text-sm placeholder:text-slate-400/50"
+                            />
+                        </div>
+                        <button
+                            type="button"
+                            onClick={handleAddByAmount}
+                            disabled={!qtyPreview}
+                            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-200 dark:disabled:bg-amber-900/40 disabled:text-amber-400 dark:disabled:text-amber-700 disabled:cursor-not-allowed text-white rounded-lg font-black text-xs active:scale-95 transition-all shrink-0"
+                        >
+                            Agregar
+                        </button>
+                    </div>
+                    {amountHint && (
+                        <p className={`text-[11px] font-bold text-center ${qtyPreview != null ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}`}>
+                            {amountHint}
+                        </p>
+                    )}
                 </div>
                 {/* Input manual con borrado al pulsar clic */}
                 <div className="flex gap-2 items-center">
