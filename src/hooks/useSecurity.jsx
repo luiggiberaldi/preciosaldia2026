@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, createContext, useContext } f
 import { storageService } from '../utils/storageService';
 import { supabase } from '../core/supabaseClient';
 import { verifyLicenseToken } from '../security/tokenCrypto';
-import { generateFingerprint, verifyStoredFingerprint } from '../security/deviceFingerprint';
+import { generateFingerprint, verifyStoredFingerprint, seedFingerprintAnchor } from '../security/deviceFingerprint';
 import { useLicenseMonitoring } from './useLicenseMonitoring';
 import { useDemoCountdown } from './useDemoCountdown';
 import { LICENSE_POLICY } from '../utils/securityConstants';
@@ -366,6 +366,11 @@ function useSecurityState() {
                 storedId = currentFp;
                 localStorage.setItem('pda_device_id', storedId);
             }
+            // SEC-008-r2: mantener la ancla de identidad fresca. Tras un match exacto
+            // lo es/actualiza verifyStoredFingerprint; aquí cubre el registro fresco y la
+            // rotación post-manipulación, de modo que el ID activo quede protegido
+            // contra drift futuro desde su primer día.
+            seedFingerprintAnchor(storedId, currentFp);
             setDeviceId(storedId);
 
             // Auto-registro: registrar dispositivo si no existe (sin importar licencia)

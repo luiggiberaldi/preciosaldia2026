@@ -5,7 +5,7 @@ import { hashPin, verifyPin } from '../src/utils/crypto';
 import { validatePin, LOGIN_RATE_LIMIT } from '../src/utils/securityConstants';
 import { escapeHtml } from '../src/utils/printerUtils';
 import { verifyLicenseToken, encodeToken, decodeToken } from '../src/security/tokenCrypto';
-import { generateFingerprint, verifyStoredFingerprint } from '../src/security/deviceFingerprint';
+import { generateFingerprint, verifyStoredFingerprint, getFingerprintAnchor, seedFingerprintAnchor } from '../src/security/deviceFingerprint';
 
 // ─── verifyLicenseToken (SEC-001/SEC-007) ────────────────────────────────────
 
@@ -351,6 +351,94 @@ describe('SEC-008: Fingerprint robusto', () => {
     expect(await verifyStoredFingerprint('')).toBe(false);
     expect(await verifyStoredFingerprint(null)).toBe(false);
     expect(await verifyStoredFingerprint('not-a-pda-id')).toBe(false);
+  });
+});
+
+// ─── SEC-008-r2: ancla de identidad (tolerancia a drift legítimo) ───────────
+
+describe('SEC-008-r2: la recarga legítima no cierra la sesión', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  it('escenario de recarga: match exacto el día 1, drift el día 2 → true y NO revoca', async () => {
+    const fpDia1 = await generateFingerprint();
+    localStorage.setItem('pda_device_id', fpDia1);
+    expect(await verifyStoredFingerprint(fpDia1)).toBe(true); // acuña ancla
+    expect(getFingerprintAnchor()?.anchor).toBe(fpDia1);
+
+    // "Otro día": componentes volátiles cambiaron (VM, RFP, etc.) → otro fingerprint.
+    // El storedId NO cambia (vive en localStorage); el drift llega como currentFp,
+    // exactamente como lo invoca useSecurity.initDeviceId.
+    const drift = 'PDA-V2-' + 'F'.repeat(32);
+    expect(drift).not.toBe(fpDia1);
+    expect(await verifyStoredFingerprint(fpDia1, drift)).toBe(true); // tolerado por ancla
+    expect(getFingerprintAnchor()?.lastSeen).toBe(drift); // lastSeen refrescado
+  });
+
+  it('storedId reemplazado por otro válido post-anclaje → false (manipulación del ID)', async () => {
+    const fpDia1 = await generateFingerprint();
+    localStorage.setItem('pda_device_id', fpDia1);
+    expect(await verifyStoredFingerprint(fpDia1)).toBe(true); // acuña ancla
+
+    const drift = 'PDA-V2-' + 'F'.repeat(32);
+    // Alguien reescribió el ID almacenado → ni match exacto ni ancla → revocar.
+    expect(await verifyStoredFingerprint(drift)).toBe(false);
+  });
+
+  it('ID foráneo bien formado SIN ancla y SIN continuidad → false (perfil limpio con ID inyectado)', async () => {
+    expect(await verifyStoredFingerprint('PDA-V2-' + 'A'.repeat(32))).toBe(false);
+    expect(getFingerprintAnchor()).toBeNull(); // nada fue acuñado
+  });
+
+  it('ID foráneo SIN ancla PERO con continuidad de instalación → TOFU: adopta y true (migración pre-ancla)', async () => {
+    localStorage.setItem('business_name', 'Bodega La Esquina');
+    localStorage.setItem('pda_sales_history', '[{"id":"s1"}]');
+    localStorage.setItem('restaurant_name', 'La Esquina');
+
+    const legacyId = 'PDA-' + 'B'.repeat(8); // instalación legacy real, sin ancla
+    expect(await verifyStoredFingerprint(legacyId)).toBe(true);
+    expect(getFingerprintAnchor()?.anchor).toBe(legacyId); // adoptado como ancla
+  });
+
+  it('manipulación: ancla A, storedId B bien formado → false', async () => {
+    const fp = await generateFingerprint();
+    localStorage.setItem('pda_device_id', fp);
+    expect(await verifyStoredFingerprint(fp)).toBe(true);
+
+    const foreign = 'PDA-V2-' + 'C'.repeat(32);
+    expect(await verifyStoredFingerprint(foreign)).toBe(false); // ancla ≠ storedId
+  });
+
+  it('formato inválido sigue rechazándose (PDA-DEAD, vacío, no-string)', async () => {
+    expect(await verifyStoredFingerprint('PDA-DEAD')).toBe(false);
+    expect(await verifyStoredFingerprint('')).toBe(false);
+    expect(await verifyStoredFingerprint(null)).toBe(false);
+    expect(await verifyStoredFingerprint('not-a-pda-id')).toBe(false);
+  });
+
+  it('seedFingerprintAnchor escribe ancla legible y verifyStoredFingerprint la respeta sin recalcular', async () => {
+    const id = 'PDA-V2-' + 'D'.repeat(32);
+    seedFingerprintAnchor(id, id);
+    expect(getFingerprintAnchor()?.anchor).toBe(id);
+
+    const drift = 'PDA-V2-' + 'E'.repeat(32);
+    expect(await verifyStoredFingerprint(drift, drift)).toBe(true); // usa currentFp sin recalcular
+  });
+
+  it('ancla corrupta en localStorage se ignora de forma segura', async () => {
+    localStorage.setItem('pda_fp_anchor_v1', '{not json');
+    expect(getFingerprintAnchor()).toBeNull();
+
+    const fp = await generateFingerprint();
+    localStorage.setItem('pda_device_id', fp);
+    expect(await verifyStoredFingerprint(fp)).toBe(true); // match exacto, sin ancla
+  });
+
+  it('ancla de otro ID no valida un storedId distinto (anti-robo de ID intacto)', async () => {
+    seedFingerprintAnchor('PDA-V2-' + '1'.repeat(32), 'PDA-V2-' + '1'.repeat(32));
+    expect(await verifyStoredFingerprint('PDA-V2-' + '2'.repeat(32))).toBe(false);
   });
 });
 

@@ -13,12 +13,83 @@
  *     dificulta la falsificación sencilla vía DevTools (`localStorage.setItem('pda_device_id', 'PDA-DEAD')`).
  *   - La fuente autoritativa de identidad es la fila `licenses.device_id` en el backend.
  *
+ * Tolerancia a drift (SEC-008-r2):
+ *   - Componentes como hardwareConcurrency/deviceMemory/colorDepth pueden cambiar entre
+ *     sesiones en navegadores con privacidad reforzada (Firefox RFP, Brave) o VMs. Un
+ *     match exacto estricto cerraba la sesión de usuarios legítimos al recargar.
+ *   - `verifyStoredFingerprint` ahora tolera drift cuando existe un ANCLA
+ *     (`pda_fp_anchor_v1`) que prueba que ese ID se acuñó en esta instalación: la ancla
+ *     solo se escribe tras un match exacto o un registro fresco.
+ *   - Un ID foráneo bien formado se adopta (TOFU) únicamente si hay continuidad de
+ *     instalación (estado real de la app en localStorage) y no existe ancla — cubre la
+ *     migración de instalaciones pre-ancla sin destruir su licencia.
+ *
  * @module security/deviceFingerprint
  */
 
 const FP_HASH_LENGTH = 32; // 32 hex chars = 128 bits (antes 8 = 32 bits).
 const FP_PREFIX = 'PDA-';
 const FP_PREFIX_V2 = 'PDA-V2-';
+
+// ─── Ancla de identidad (SEC-008-r2) ─────────────────────────────────────────
+const FP_ANCHOR_KEY = 'pda_fp_anchor_v1';
+// IDs válidos: legacy `PDA-<8..64 hex>` y actual `PDA-V2-<8..64 hex>`.
+const FP_VALID_ID_RE = /^PDA(?:-V2)?-[0-9A-F]{8,64}$/;
+// Continuidad de instalación: claves que solo existen en un uso real de la app.
+const FP_CONTINUITY_RE = /^(pda_|bodega_|restaurant_|business_|marketing_|cart_)/;
+const FP_CONTINUITY_MIN_KEYS = 3;
+
+/**
+ * Detecta continuidad de instalación: si localStorage contiene suficiente estado
+ * real de la app, este perfil no es un navegador limpio con un ID inyectado.
+ * @returns {boolean}
+ */
+function _hasInstallContinuity() {
+    try {
+        let count = 0;
+        for (let i = 0; i < localStorage.length; i++) {
+            if (FP_CONTINUITY_RE.test(localStorage.key(i) || '')) {
+                count++;
+                if (count >= FP_CONTINUITY_MIN_KEYS) return true;
+            }
+        }
+    } catch { /* storage bloqueado → sin continuidad */ }
+    return false;
+}
+
+/**
+ * Lee la ancla de identidad, si existe.
+ * @returns {{anchor: string, lastSeen?: string, updatedAt?: number} | null}
+ */
+export function getFingerprintAnchor() {
+    try {
+        const raw = localStorage.getItem(FP_ANCHOR_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return (parsed && typeof parsed.anchor === 'string' && FP_VALID_ID_RE.test(parsed.anchor))
+            ? parsed
+            : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Escribe/refresca la ancla de identidad. Solo debe invocarse tras un match
+ * exacto, un registro fresco del ID, o una adopción TOFU verificada.
+ * @param {string} storedId - ID canónico de la instalación.
+ * @param {string} [currentFp] - Fingerprint visto en este momento.
+ * @returns {void}
+ */
+export function seedFingerprintAnchor(storedId, currentFp) {
+    try {
+        localStorage.setItem(FP_ANCHOR_KEY, JSON.stringify({
+            anchor: storedId,
+            lastSeen: currentFp || storedId,
+            updatedAt: Date.now(),
+        }));
+    } catch { /* storage lleno/bloqueado → sin ancla, el match exacto sigue funcionando */ }
+}
 
 /**
  * Genera una representación estable del User Agent (OS y Navegador, sin versiones de parche/menor).
@@ -121,23 +192,61 @@ export async function generateFingerprint() {
 }
 
 /**
- * Verifica que el fingerprint almacenado coincide con el fingerprint actual.
+ * Verifica que el fingerprint almacenado corresponde a esta instalación.
  *
- * NOTA: Para evitar que actualizaciones de navegadores, cambios de zona horaria o de idioma
- * revoquen e invaliden de manera destructiva la licencia premium de usuarios legítimos,
- * permitimos cualquier ID almacenado que tenga el formato válido de instalación de PreciosAlDía.
+ * Política (en orden):
+ *   1. Formato inválido → `false` (ID inyectado con basura, p.ej. 'PDA-DEAD').
+ *   2. Match exacto → `true` y refresca la ancla.
+ *   3. Drift (ID anclado, fingerprint actual distinto) → `true`: componentes volátiles
+ *      cambiaron en la MISMA instalación (recarga legítima en navegador privacidad-
+ *      reforzada, VM, etc.). La ancla prueba procedencia. Actualiza `lastSeen`.
+ *   4. Sin ancla + continuidad de instalación (migración pre-ancla) → adopta el ID
+ *      como ancla y `true`. Un navegador limpio con ID inyectado NO pasa aquí.
+ *   5. Cualquier otro caso (ancla presente y desigual, o ID foráneo en perfil limpio)
+ *      → `false`: manipulación o robo de ID entre equipos.
  *
  * @param {string} storedId - ID almacenado en localStorage.
  * @param {string} [currentFp] - Fingerprint ya calculado (opcional, para ahorrar cómputo).
- * @returns {Promise<boolean>} `true` si coinciden, `false` si difieren o el formato es inválido.
+ * @returns {Promise<boolean>} `true` si el ID pertenece a esta instalación.
  */
 export async function verifyStoredFingerprint(storedId, currentFp) {
-    if (typeof storedId !== 'string') {
+    if (typeof storedId !== 'string' || !FP_VALID_ID_RE.test(storedId)) {
         return false;
     }
-    // SEC-008: Verificar que el ID almacenado coincida exactamente con el fingerprint calculado
     const fp = currentFp || await generateFingerprint();
-    return storedId === fp;
+
+    // 2. Match exacto.
+    if (storedId === fp) {
+        seedFingerprintAnchor(storedId, fp);
+        return true;
+    }
+
+    // 3. Drift tolerado por ancla.
+    const anchor = getFingerprintAnchor();
+    if (anchor && anchor.anchor === storedId) {
+        try {
+            localStorage.setItem(FP_ANCHOR_KEY, JSON.stringify({
+                ...anchor,
+                lastSeen: fp,
+                updatedAt: Date.now(),
+            }));
+        } catch { /* ignorado */ }
+        return true;
+    }
+
+    // 4. Migración TOFU de instalaciones pre-ancla con estado real.
+    if (!anchor && _hasInstallContinuity()) {
+        seedFingerprintAnchor(storedId, fp);
+        return true;
+    }
+
+    // 5. Manipulación / ID foráneo.
+    return false;
 }
 
-export default { generateFingerprint, verifyStoredFingerprint };
+export default {
+    generateFingerprint,
+    verifyStoredFingerprint,
+    getFingerprintAnchor,
+    seedFingerprintAnchor,
+};
