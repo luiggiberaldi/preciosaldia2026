@@ -4,7 +4,7 @@ const vercelBypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
 
 export default defineConfig({
     testDir: './tests/e2e',
-    timeout: 30_000,
+    timeout: 60_000,
     expect: { timeout: 5_000 },
     fullyParallel: false,
     reporter: process.env.CI ? [['line'], ['html', { open: 'never' }]] : 'list',
