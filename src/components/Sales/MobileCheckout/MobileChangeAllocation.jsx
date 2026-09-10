@@ -3,13 +3,14 @@ import { HandCoins, CheckCircle, Wallet, AlertTriangle, X } from 'lucide-react';
 import { formatBs } from '../../../utils/calculatorUtils';
 
 /**
- * MobileChangeAllocation — Fase 2 (vuelto progresivo).
+ * MobileChangeAllocation — Fase 2 (vuelto progresivo) + VUELTO-REALISTA.
  *
  * Dos superficies a partir de la MISMA lógica financiera (cero duplicación):
  *
  * 1. mode="inline" — fila progresiva del footer del CheckoutModal:
- *    - state="pending":  "Vuelto $X · [Entregar todo]" (1 pulsación, caso normal)
- *                        + "Personalizar" abre el sheet.
+ *    - state="pending":  "Vuelto $X → $Y en billetes + Bs Z · [Entregar así]"
+ *                        (1 pulsación con el desglose REAL: el USD circulante
+ *                        es solo billetes, la fracción sale en Bs) + "Personalizar".
  *    - state="partial":  "Falta $X · [Continuar asignando]" → abre el sheet.
  *    - state="complete": "✓ Vuelto asignado · [Editar]" → abre el sheet.
  *
@@ -20,6 +21,7 @@ import { formatBs } from '../../../utils/calculatorUtils';
  * Guardarraíles: el componente NO calcula nada financiero. Recibe de
  * CheckoutModal los valores ya validados por useCheckoutCalculations
  * (FIN-034: mismo vuelto expresado en $ y Bs sin doble conteo).
+ * El desglose propuesto llega en `realisticSplit` (utils/changeSplit.js).
  */
 export default function MobileChangeAllocation({
     mode = 'inline',
@@ -29,6 +31,8 @@ export default function MobileChangeAllocation({
     changeUsd = 0,
     changeBs = 0,
     changeRemainder = { remainingUsd: 0, remainingBs: 0 },
+    // Desglose realista propuesto (computeRealisticSplit); opcional.
+    realisticSplit = null,
     // Acciones (definidas en CheckoutModal con la lógica existente)
     onDeliverAll,
     onOpenSheet,
@@ -60,23 +64,50 @@ export default function MobileChangeAllocation({
         if (changeUsd <= 0.009) return null;
 
         if (state === 'pending') {
+            // Propuesta realista visible ANTES de pulsar: el cajero sabe exactamente
+            // qué se va a registrar. Sin split (tasa ausente) cae al texto simple.
+            const hasProposal = realisticSplit
+                && (realisticSplit.usdPart > 0 || realisticSplit.bsPart > 0)
+                && realisticSplit.remainderUsd <= 0.005;
+            const proposalParts = hasProposal
+                ? [
+                    realisticSplit.usdPart > 0 ? `$${realisticSplit.usdPart.toFixed(2)}` : null,
+                    realisticSplit.bsPart > 0 ? `Bs ${formatBs(realisticSplit.bsPart)}` : null,
+                ].filter(Boolean)
+                : [];
             return (
                 <div className="px-4 pt-2 pb-1">
-                    <div className="flex items-center gap-2">
-                        <div className="flex items-baseline gap-1.5 min-w-0">
-                            <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Vuelto</span>
-                            <span className="text-lg font-black text-emerald-700 dark:text-emerald-400 leading-none">
-                                ${changeUsd.toFixed(2)}
-                            </span>
-                            <span className="text-[10px] font-bold text-emerald-700 whitespace-nowrap">· Bs {formatBs(changeBs)}</span>
+                    {/* Layout en 2 líneas (VUELTO-REALISTA-responsivo): el monto y la
+                        propuesta viven en una columna propia con truncate, el botón
+                        nunca compite por el ancho ni se aplasta en 320-430px. */}
+                    <div className="flex items-center justify-between gap-2">
+                        <div className="flex flex-col min-w-0 gap-0.5">
+                            <div className="flex items-baseline gap-1.5 min-w-0">
+                                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400 shrink-0">Vuelto</span>
+                                <span className="text-lg font-black text-emerald-700 dark:text-emerald-400 leading-none">
+                                    ${changeUsd.toFixed(2)}
+                                </span>
+                            </div>
+                            {hasProposal ? (
+                                <span
+                                    className="text-[11px] font-black text-slate-600 dark:text-slate-300 truncate max-w-[220px]"
+                                    title={`→ ${proposalParts.join(' + ')}`}
+                                >
+                                    → {proposalParts.join(' + ')}
+                                </span>
+                            ) : (
+                                <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 truncate max-w-[220px]">
+                                    · Bs {formatBs(changeBs)}
+                                </span>
+                            )}
                         </div>
                         <button
                             type="button"
                             onClick={onDeliverAll}
-                            className="ml-auto shrink-0 min-h-11 px-4 rounded-xl font-black text-xs bg-emerald-700 text-white shadow-md shadow-emerald-700/25 active:scale-[0.97] transition-all flex items-center gap-1.5"
+                            className="ml-auto shrink-0 min-h-11 px-3 rounded-xl font-black text-xs bg-emerald-700 text-white shadow-md shadow-emerald-700/25 active:scale-[0.97] transition-all flex items-center gap-1.5 whitespace-nowrap"
                         >
-                            <HandCoins size={14} />
-                            Entregar todo
+                            <HandCoins size={14} className="shrink-0" />
+                            <span className="truncate">{hasProposal ? 'Entregar así' : 'Entregar en Bs'}</span>
                         </button>
                     </div>
                     <button
@@ -87,7 +118,10 @@ export default function MobileChangeAllocation({
                         Personalizar (caja parcial, Bs, billetera)
                     </button>
                     <div aria-live="polite" className="sr-only">
-                        Vuelto de {changeUsd.toFixed(2)} dólares pendiente. Pulsa Entregar todo para asignarlo completo.
+                        Vuelto de {changeUsd.toFixed(2)} dólares pendiente.
+                        {hasProposal
+                            ? ` Propuesta: ${realisticSplit.usdPart.toFixed(2)} dólares en billetes y ${realisticSplit.bsPart} bolívares. Pulsa Entregar así para asignarlo.`
+                            : ' Pulsa Entregar en Bs para asignarlo completo en bolívares.'}
                     </div>
                 </div>
             );

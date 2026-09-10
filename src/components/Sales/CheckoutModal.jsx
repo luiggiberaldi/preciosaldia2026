@@ -1,8 +1,9 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { X, Users, Receipt, ArrowLeftRight, AlertTriangle, Smartphone, Lock, LayoutGrid, HandCoins, CheckCircle, Wallet, Zap, ChevronDown } from 'lucide-react';
 import CasheaIcon from '../CasheaIcon';
 import { formatBs, formatCop } from '../../utils/calculatorUtils';
 import { mulR, divR, subR, round2, calculateChangeRemainder } from '../../utils/dinero';
+import { computeRealisticSplit } from '../../utils/changeSplit';
 import { FINANCIAL_EPSILON } from '../../utils/securityConstants';
 import { useCheckoutCalculations } from '../../hooks/useCheckoutCalculations';
 import CheckoutPaymentBars from './CheckoutPaymentBars';
@@ -144,11 +145,32 @@ export default function CheckoutModal({
     // "Personalizar" abre exclusivamente el bottom sheet (que contiene el
     // mismo desglose) para no apilar dos sistemas de vuelto en pantalla.
     const showAdvancedChangeResolved = tipConfirmPending || Number(tipAmountUsd) > 0;
-    const deliverAllChange = () => {
+    // ── VUELTO-REALISTA: propuesta de desglose billetes USD + resto en Bs ──
+    // Reemplaza al viejo "Entregar todo" (que registraba changeUsdGiven = vuelto
+    // completo, físicamente imposible: el USD circulante es solo billetes).
+    const realisticSplit = useMemo(() => computeRealisticSplit({
+        changeUsd: changeToDeliverUsd,
+        rate: safeRate,
+        smallestUsdBill: 1,
+        bsRoundStep: 0,
+        floatUsd: currentFloatUsd > 0 ? currentFloatUsd : Infinity,
+    // eslint-disable-next-line react-hooks/preserve-manual-memoization -- dependencias son valores derivados inmutables por render
+    }), [changeToDeliverUsd, safeRate, currentFloatUsd]);
+
+    const deliverRealisticChange = () => {
+        triggerHaptic && triggerHaptic();
+        setChangeUsdGiven(realisticSplit.usdPart > 0 ? realisticSplit.usdPart.toFixed(2) : '');
+        setChangeBsGiven(realisticSplit.bsPart > 0 ? realisticSplit.bsPart.toFixed(2) : '');
+    };
+
+    // "Todo en dólares": opción explícita (en Personalizar) para el único caso
+    // ejecutable: vuelto entero. La fracción de dólar no circula como moneda.
+    const deliverAllUsdChange = () => {
         triggerHaptic && triggerHaptic();
         setChangeUsdGiven(changeToDeliverUsd.toFixed(2));
         setChangeBsGiven('');
     };
+
     const tipToggle = () => {
         if (!isTipDonated) {
             handleTipAmountChange(changeToDeliverUsd.toFixed(2));
@@ -468,12 +490,13 @@ export default function CheckoutModal({
                         changeUsd={changeUsd}
                         changeBs={changeBs}
                         changeRemainder={changeRemainder}
+                        realisticSplit={realisticSplit}
                         isTipDonated={isTipDonated}
                         cashKeptUsd={cashKeptUsd}
                         isChangeCredited={isChangeCredited}
                         changeUsdGiven={changeUsdGiven}
                         changeBsGiven={changeBsGiven}
-                        onDeliverAll={deliverAllChange}
+                        onDeliverAll={deliverRealisticChange}
                         onOpenSheet={() => setShowChangeSheet(true)}
                     />
                     )}
@@ -864,6 +887,8 @@ export default function CheckoutModal({
                     changeAllocationComplete={changeAllocationComplete}
                     changeDestinationSelected={changeDestinationSelected}
                     isChangeCredited={isChangeCredited}
+                    realisticSplit={realisticSplit}
+                    onDeliverAllUsd={deliverAllUsdChange}
                     onCancel={() => setChangeConfirmation(null)}
                     onConfirm={() => {
                         const pending = changeConfirmation;

@@ -16,11 +16,17 @@ export default function ChangeConfirmationModal({
     changeAllocationComplete,
     changeDestinationSelected,
     isChangeCredited,
+    realisticSplit = null,
+    onDeliverAllUsd,
     onCancel,
     onConfirm,
     isProcessing = false,
 }) {
     const hasExplicitPhysical = distVueltoUSD !== '' || distVueltoBS !== '';
+    // VUELTO-REALISTA: con fracción de dólar, ofrece el desglose realista
+    // ($ enteros + resto en Bs) como corrección de un toque.
+    const showRealisticFixup = typeof onDeliverAllUsd === 'function'
+        && realisticSplit && (Number(distVueltoUSD) || 0) + (Number(distVueltoBS) || 0) / Math.max(1, Number(tasaSegura) || 1) < Number(cambioUSD || 0) - 0.005;
     const physicalLabel = !changeDestinationSelected
         ? 'Sin definir'
         : hasExplicitPhysical
@@ -88,9 +94,21 @@ export default function ChangeConfirmationModal({
                 </div>
 
                 {!changeAllocationComplete && (
-                    <div className="mx-4 sm:mx-5 mt-3 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-xs font-bold text-amber-700 dark:text-amber-300">
-                        <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-                        <span>{!changeDestinationSelected ? 'Selecciona si el cambio se entrega en $ o en Bs.' : `Falta asignar ${money(unallocatedChangeUsd)} del vuelto.`}</span>
+                    <div className="mx-4 sm:mx-5 mt-3 flex flex-col gap-2">
+                        <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-xs font-bold text-amber-700 dark:text-amber-300">
+                            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                            <span>{!changeDestinationSelected ? 'Selecciona si el cambio se entrega en $ o en Bs.' : `Falta asignar ${money(unallocatedChangeUsd)} del vuelto.`}</span>
+                        </div>
+                        {showRealisticFixup && realisticSplit && (
+                            <button
+                                type="button"
+                                onClick={onDeliverAllUsd}
+                                className="w-full min-h-[44px] inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 text-xs font-black text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-700 active:scale-[0.99] transition-all"
+                            >
+                                <HandCoins size={15} />
+                                {`Entregar realista: ${money(realisticSplit.usdPart)} + ${formatBs(realisticSplit.bsPart)}`}
+                            </button>
+                        )}
                     </div>
                 )}
 

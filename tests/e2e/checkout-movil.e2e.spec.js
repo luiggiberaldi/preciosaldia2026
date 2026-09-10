@@ -123,8 +123,9 @@ test('vuelto simple: pago con $5 sobre $3 genera vuelto $2 y confirma tras asign
     await expect(cta).toBeDisabled();
     await expect(cta).toContainText('ASIGNA EL VUELTO');
 
-    // El caso normal se resuelve en 1 pulsación con "Entregar todo".
-    await page.getByRole('button', { name: /Entregar todo/ }).click();
+    // El caso normal se resuelve en 1 pulsación con "Entregar así" (VUELTO-REALISTA:
+    // el desglose propuesto $2.00 + Bs 0 es exacto porque el vuelto es entero).
+    await page.getByRole('button', { name: /Entregar así|Entregar todo/ }).click();
 
     // Con el vuelto asignado, el CTA se habilita.
     await expect(cta).toBeEnabled();

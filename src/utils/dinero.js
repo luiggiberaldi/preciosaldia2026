@@ -78,6 +78,36 @@ export const ceilR = (n) => {
 };
 
 /**
+ * Redondea hacia abajo (floor) al múltiplo de `step` más cercano.
+ * Política del POS para el desglose del vuelto en Bs (VUELTO-REALISTA) en modo
+ * 'floor' (a favor de la tienda): nunca se registra más Bs de los que físicamente
+ * se entregan (Bs 15,95 con paso 1 → Bs 15).
+ * @param {number} n   Monto a redondear.
+ * @param {number} step Paso de redondeo (> 0; ej. 1 = bolívar entero).
+ * @returns {number} El mayor múltiplo de `step` que es ≤ n.
+ */
+export const floorR = (n, step = 1) => {
+    if (!Number.isFinite(n) || !Number.isFinite(step) || step <= 0) return 0;
+    const s = step;
+    return round2(Math.floor(n / s + 1e-9) * s);
+};
+
+/**
+ * Redondea hacia arriba (ceil) al múltiplo de `step` más cercano.
+ * Política del POS para el desglose del vuelto en Bs (VUELTO-REALISTA) en modo
+ * 'ceil' (default, a favor del cliente): el cliente nunca recibe menos por el
+ * redondeo (Bs 15,95 con paso 1 → Bs 16).
+ * @param {number} n   Monto a redondear.
+ * @param {number} step Paso de redondeo (> 0; ej. 1 = bolívar entero).
+ * @returns {number} El menor múltiplo de `step` que es ≥ n.
+ */
+export const ceilStepR = (n, step = 1) => {
+    if (!Number.isFinite(n) || !Number.isFinite(step) || step <= 0) return 0;
+    const s = step;
+    return round2(Math.ceil(n / s - 1e-9) * s);
+};
+
+/**
  * Multiplica dos números y redondea a 2 decimales.
  * Para cadenas como precio * cantidad * tasa, encadenar: mulR(mulR(price, qty), rate)
  * @param {number} a
