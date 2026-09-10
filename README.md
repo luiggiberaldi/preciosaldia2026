@@ -98,7 +98,23 @@ Este módulo forma parte de la suite corporativa integrada y está preparado par
 | `bun run test`      | Vitest en modo run-once.                               |
 | `bun run test:watch`| Vitest en modo watch.                                  |
 | `bun run test:coverage` | Vitest con coverage (V8).                          |
+| `bun run test:e2e` | Suite e2e completa de Playwright (`tests/e2e`).        |
+| `bun run test:e2e:checkout` | Solo la suite e2e del checkout móvil (11 casos). |
 | `bun run typecheck` | TypeScript sin emitir (JS con `--checkJs`).            |
+| `bun run hooks:install` | Reactiva el gate de git hooks (`core.hooksPath`).  |
+
+### Gate de calidad en git (pre-commit / pre-push)
+
+Los hooks versionados en `githooks/` se activan automáticamente al correr
+`bun install` (script `prepare`) — o manualmente con `bun run hooks:install`.
+
+| Hook       | Qué corre                                        | Cuándo conviene saltarlo |
+| ---        | ---                                              | ---                      |
+| `pre-commit` | ESLint sobre los archivos staged + `tsc --noEmit` | Nunca — tarda segundos y detecta identificadores eliminados, imports rotos y errores de tipos (p. ej. un estado React borrado por una edición que esbuild compila feliz y explota en runtime). |
+| `pre-push` | `bun run test:e2e:checkout` (11 casos, ~2 min)   | Emergencias — cubre la zona de cobro en móvil de punta a punta. |
+
+Para saltar un gate puntual: `git commit --no-verify` / `git push --no-verify`.
+Para desactivar el gate por completo: `git config --unset core.hooksPath`.
 
 ### Auditoría de dependencias (INFRA-026)
 
