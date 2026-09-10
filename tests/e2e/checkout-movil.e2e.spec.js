@@ -75,7 +75,7 @@ const bsAmountInput = (page) =>
 
 // El botón final del modo básico cambia de texto según el estado.
 const confirmButton = (page) =>
-    page.getByRole('button', { name: /CONFIRMAR VENTA|INGRESA LOS PAGOS|FIAR RESTANTE|CONFIRMA CÓMO ENTREGAS EL CAMBIO|ERROR DE TASA|COMPLETAR CUOTA INICIAL/ });
+    page.getByRole('button', { name: /CONFIRMAR VENTA|INGRESA LOS PAGOS|FIAR RESTANTE|CONFIRMA EL CAMBIO|ERROR DE TASA|COMPLETAR CUOTA INICIAL/ });
 
 // ════════════════════════════════════════════════════════════════════════
 // CASO 1 — Cobro simple exacto (pago completo, sin vuelto)
@@ -121,7 +121,7 @@ test('vuelto simple: pago con $5 sobre $3 genera vuelto $2 y confirma tras asign
     // Mientras haya vuelto sin asignar, el CTA está bloqueado con copy instructivo.
     const cta = confirmButton(page);
     await expect(cta).toBeDisabled();
-    await expect(cta).toContainText('CONFIRMA CÓMO ENTREGAS EL CAMBIO');
+    await expect(cta).toContainText('CONFIRMA EL CAMBIO');
 
     // El caso normal se resuelve en 1 pulsación con "Entregar así" (VUELTO-REALISTA:
     // el desglose propuesto $2.00 + Bs 0 es exacto porque el vuelto es entero).
@@ -138,6 +138,47 @@ test('vuelto simple: pago con $5 sobre $3 genera vuelto $2 y confirma tras asign
     // modo case-insensitive.
     await page.getByRole('button', { name: 'Confirmar venta', exact: true }).click();
 
+    await expect(page.getByText('Tasa BCV Aplicada')).toBeVisible({ timeout: 10_000 });
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// CASO 2b — Steppers ± (VUELTO-REALISTA Fase 2): el cajero no tiene el billete
+// que propone el desglose → un toque de "−" ajusta USD y recalcula los Bs.
+// ════════════════════════════════════════════════════════════════════════
+test('stepper de vuelto: sin billete de $1, un toque resta USD y lo pasa a Bs', async ({ page }) => {
+    await goToSales(page);
+    await addProductBySearch(page, 'Caraota E2E');        // $5.00
+    await openCheckout(page);
+
+    await usdAmountInput(page).fill('10.00');             // vuelto $5 → propuesta $5 + Bs 0
+
+    // Propuesta pendiente con stepper "−" visible.
+    const stepperDown = page.getByLabel(/Restar un billete/);
+    await expect(stepperDown).toBeVisible();
+    await expect(page.getByText('→ $5.00', { exact: false })).toBeVisible();
+
+    // Un toque de "−": SOLO PREVISUALIZA "→ $4.00 + Bs 40,00" (a tasa 40) en la
+    // fila. Contrato clave del fix: ± NO completa la asignación — el CTA sigue
+    // bloqueado ("CONFIRMA EL CAMBIO") y la fila sigue en pendiente hasta pulsar
+    // "Entregar así", que es quien compromete el desglose a la venta.
+    await stepperDown.click();
+    const cta = confirmButton(page);
+    await expect(page.getByText('→ $4.00 + Bs 40,00')).toBeVisible();
+    await expect(cta).toBeDisabled();
+    await expect(cta).toContainText('CONFIRMA EL CAMBIO');
+
+    // "Entregar así" compromete el desglose previsualizado: fila en complete
+    // ("Vuelto asignado") y CTA habilitado — ese ES el flujo de una pulsación.
+    await page.getByRole('button', { name: /Entregar así/ }).click();
+    await expect(page.getByText(/Vuelto asignado: \$5\.00/)).toBeVisible();
+    await expect(cta).toBeEnabled();
+
+    // Última puerta: el modal de distribución debe reflejar el desglose ajustado
+    // (ambio físico = $4.00 + Bs 40,00 = $5.00 equivalentes).
+    await cta.click();
+    await expect(page.getByRole('heading', { name: /Confirmar distribución/i })).toBeVisible();
+    await expect(page.getByText(/\$4\.00 \+ Bs 40,00/)).toBeVisible();
+    await page.getByRole('button', { name: 'Confirmar venta', exact: true }).click();
     await expect(page.getByText('Tasa BCV Aplicada')).toBeVisible({ timeout: 10_000 });
 });
 

@@ -3,7 +3,7 @@ import { X, Users, Receipt, ArrowLeftRight, AlertTriangle, Smartphone, Lock, Lay
 import CasheaIcon from '../CasheaIcon';
 import { formatBs, formatCop } from '../../utils/calculatorUtils';
 import { mulR, divR, subR, round2, calculateChangeRemainder } from '../../utils/dinero';
-import { computeRealisticSplit } from '../../utils/changeSplit';
+import { computeRealisticSplit, stepSplitDown, stepSplitUp } from '../../utils/changeSplit';
 import { FINANCIAL_EPSILON } from '../../utils/securityConstants';
 import { useCheckoutCalculations } from '../../hooks/useCheckoutCalculations';
 import CheckoutPaymentBars from './CheckoutPaymentBars';
@@ -148,19 +148,39 @@ export default function CheckoutModal({
     // ── VUELTO-REALISTA: propuesta de desglose billetes USD + resto en Bs ──
     // Reemplaza al viejo "Entregar todo" (que registraba changeUsdGiven = vuelto
     // completo, físicamente imposible: el USD circulante es solo billetes).
-    const realisticSplit = useMemo(() => computeRealisticSplit({
-        changeUsd: changeToDeliverUsd,
-        rate: safeRate,
-        smallestUsdBill: 1,
-        bsRoundStep: 0,
-        floatUsd: currentFloatUsd > 0 ? currentFloatUsd : Infinity,
-    // eslint-disable-next-line react-hooks/preserve-manual-memoization -- dependencias son valores derivados inmutables por render
-    }), [changeToDeliverUsd, safeRate, currentFloatUsd]);
+    // VUELTO-REALISTA Fase 3: preferencias por tienda (Configuración → Ventas →
+    // Desglose del Cambio). Leídas por render: el modal es efímero, el coste es
+    // trivial y evita estado desincronizado si la config cambia con el modal abierto.
+    // Guardarraíles del parseo: NaN/negativos caen al default (un paso de
+    // redondeo negativo desplazaría dinero del cliente hacia la tienda).
+    const _billRaw = parseFloat(localStorage.getItem('checkout_smallest_usd_bill'));
+    const storeBillPref = Number.isFinite(_billRaw) && _billRaw > 0 ? _billRaw : 1;
+    const _stepRaw = parseFloat(localStorage.getItem('checkout_bs_round_step'));
+    const storeRoundStep = Number.isFinite(_stepRaw) && _stepRaw >= 0 ? _stepRaw : 0;
+    const storeRoundMode = localStorage.getItem('checkout_bs_round_mode') === 'floor' ? 'floor' : 'ceil';
+
+    const realisticSplit = useMemo(
+        () => computeRealisticSplit({
+            changeUsd: changeToDeliverUsd,
+            rate: safeRate,
+            smallestUsdBill: storeBillPref,
+            bsRoundStep: storeRoundStep,
+            bsRoundMode: storeRoundMode,
+            floatUsd: currentFloatUsd > 0 ? currentFloatUsd : Infinity,
+        }),
+        // eslint-disable-next-line react-hooks/preserve-manual-memoization -- dependencias son derivados inmutables por render
+        [changeToDeliverUsd, safeRate, currentFloatUsd, storeBillPref, storeRoundStep, storeRoundMode],
+    );
 
     const deliverRealisticChange = () => {
         triggerHaptic && triggerHaptic();
-        setChangeUsdGiven(realisticSplit.usdPart > 0 ? realisticSplit.usdPart.toFixed(2) : '');
-        setChangeBsGiven(realisticSplit.bsPart > 0 ? realisticSplit.bsPart.toFixed(2) : '');
+        // VUELTO-REALISTA-fix: aplica el split PREVISUALIZADO (si el cajero ajustó
+        // con ±) o la propuesta original. Único punto donde el desglose se
+        // compromete a los campos de la venta.
+        const s = steppedSplit || realisticSplit;
+        setChangeUsdGiven(s.usdPart > 0 ? s.usdPart.toFixed(2) : '');
+        setChangeBsGiven(s.bsPart > 0 ? s.bsPart.toFixed(2) : '');
+        setSteppedSplit(null);
     };
 
     // "Todo en dólares": opción explícita (en Personalizar) para el único caso
@@ -213,6 +233,39 @@ export default function CheckoutModal({
             setChangeUsdGiven(maxChangeUsdGiven.toString());
         }
     }, [changeUsdGiven, changeBsGiven, maxChangeUsdGiven, maxChangeBsGiven]);
+
+    // ── Steppers ± (Fase 2): ajustar la parte USD un billete cuando en caja no
+    // está el billete que la propuesta asume (ej. sin $1). Recalculan los Bs al
+    // instante. SOLO PREVISUALIZAN (steppedSplit): no tocan los campos de la
+    // venta hasta pulsar "Entregar así" — un toque de ± no debe completar la
+    // asignación ni desbloquear el CTA (fix: antes escribían directo en
+    // changeUsdGiven/changeBsGiven y "CONFIRMA EL CAMBIO" se soltaba solo).
+    // (Va DESPUÉS de changeProgressState: TDZ — el E2E lo detectó.)
+    const splitEditable = changeProgressState === 'pending';
+    const [steppedSplit, setSteppedSplit] = useState(null);
+    // El preview es efímero: se descarta si el vuelto desaparece (pagos
+    // editados) o la asignación ya no está pendiente (sheet, propina, entregado).
+    useEffect(() => {
+        if (!isPaid || changeToDeliverUsd <= 0.009 || changeProgressState !== 'pending') {
+            setSteppedSplit(null);
+        }
+    }, [isPaid, changeToDeliverUsd, changeProgressState]);
+    // Split activo en la fila: el previsualizado (±) o la propuesta original.
+    const activeSteppedSplit = steppedSplit || realisticSplit;
+    const canStepDown = splitEditable && activeSteppedSplit.usdPart > 0;
+    const steppedUpPreview = stepSplitUp({ changeUsd: changeToDeliverUsd, split: activeSteppedSplit, rate: safeRate, smallestUsdBill: storeBillPref, bsRoundStep: storeRoundStep, bsRoundMode: storeRoundMode });
+    const canStepUp = splitEditable
+        && steppedUpPreview.usdPart > activeSteppedSplit.usdPart
+        && steppedUpPreview.remainderUsd <= 0.005;
+    const stepDown = () => {
+        triggerHaptic && triggerHaptic();
+        const next = stepSplitDown({ changeUsd: changeToDeliverUsd, split: activeSteppedSplit, rate: safeRate, smallestUsdBill: storeBillPref, bsRoundStep: storeRoundStep, bsRoundMode: storeRoundMode });
+        setSteppedSplit(next);
+    };
+    const stepUp = () => {
+        triggerHaptic && triggerHaptic();
+        setSteppedSplit(steppedUpPreview);
+    };
 
     useEffect(() => {
         if (casheaEnabled && selectedCustomer) {
@@ -490,7 +543,11 @@ export default function CheckoutModal({
                         changeUsd={changeUsd}
                         changeBs={changeBs}
                         changeRemainder={changeRemainder}
-                        realisticSplit={realisticSplit}
+                        realisticSplit={activeSteppedSplit}
+                        onStepDown={stepDown}
+                        onStepUp={stepUp}
+                        canStepDown={canStepDown}
+                        canStepUp={canStepUp}
                         isTipDonated={isTipDonated}
                         cashKeptUsd={cashKeptUsd}
                         isChangeCredited={isChangeCredited}
@@ -715,7 +772,7 @@ export default function CheckoutModal({
                             <><AlertTriangle size={18} /> ERROR DE TASA</>
                         ) : isPaid ? (
                             !changeAllocationComplete ? (
-                                <><AlertTriangle size={18} /> CONFIRMA CÓMO ENTREGAS EL CAMBIO</>
+                                <><AlertTriangle size={18} className="shrink-0" /> CONFIRMA EL CAMBIO</>
                             ) : casheaActive ? (
                                 <><Receipt size={18} /> CONFIRMAR VENTA CASHEA</>
                             ) : (

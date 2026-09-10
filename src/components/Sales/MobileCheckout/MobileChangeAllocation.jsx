@@ -1,5 +1,5 @@
 import React from 'react';
-import { HandCoins, CheckCircle, Wallet, AlertTriangle, X, Scissors } from 'lucide-react';
+import { HandCoins, CheckCircle, Wallet, AlertTriangle, X, Scissors, Minus, Plus } from 'lucide-react';
 import { formatBs } from '../../../utils/calculatorUtils';
 
 /**
@@ -33,6 +33,13 @@ export default function MobileChangeAllocation({
     changeRemainder = { remainingUsd: 0, remainingBs: 0 },
     // Desglose realista propuesto (computeRealisticSplit); opcional.
     realisticSplit = null,
+    // Steppers ± (VUELTO-REALISTA Fase 2): ajustar la parte USD un billete cuando
+    // la propuesta no es entregable (falta un billete). Recalculan los Bs al
+    // instante. Opcionales; si no llegan, los controles no se muestran.
+    onStepDown,
+    onStepUp,
+    canStepDown = false,
+    canStepUp = false,
     // Acciones (definidas en CheckoutModal con la lógica existente)
     onDeliverAll,
     onOpenSheet,
@@ -77,40 +84,71 @@ export default function MobileChangeAllocation({
                 : [];
             return (
                 <div className="px-4 pt-2 pb-1">
-                    {/* Layout en 2 líneas (VUELTO-REALISTA-responsivo): el monto y la
-                        propuesta viven en una columna propia con truncate, el botón
-                        nunca compite por el ancho ni se aplasta en 320-430px.
-                        Sin repetir el monto: la propuesta ya lo implica. */}
-                    <div className="flex items-center justify-between gap-2">
-                        <div className="flex flex-col min-w-0 gap-0.5">
+                    {/* Layout en 2 filas (VUELTO-REALISTA-responsivo-2): la propuesta
+                        vive en su propia fila entre los steppers (sin competir por
+                        ancho: a 320px tiene ~240px reales, sin truncate) y el botón
+                        pasa a fila completa debajo — target táctil más grande y cero
+                        overflow/scrollbar fantasma en 320-430px. */}
+                    {hasProposal ? (
+                        <>
+                            <div className="flex items-center gap-2">
+                                {canStepDown && (
+                                    <button
+                                        type="button"
+                                        onClick={onStepDown}
+                                        aria-label="Restar un billete de dólar al cambio y entregar más en bolívares"
+                                        className="shrink-0 h-9 w-9 inline-flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 active:scale-90 transition-transform"
+                                    >
+                                        <Minus size={14} strokeWidth={3} />
+                                    </button>
+                                )}
+                                <span
+                                    className={`flex-1 min-w-0 text-sm font-black text-slate-700 dark:text-slate-200 truncate text-center ${!canStepDown && !canStepUp ? 'text-left' : ''}`}
+                                    title={`→ ${proposalParts.join(' + ')}`}
+                                >
+                                    → {proposalParts.join(' + ')}
+                                </span>
+                                {canStepUp && (
+                                    <button
+                                        type="button"
+                                        onClick={onStepUp}
+                                        aria-label="Sumar un billete de dólar al cambio y entregar menos en bolívares"
+                                        className="shrink-0 h-9 w-9 inline-flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 active:scale-90 transition-transform"
+                                    >
+                                        <Plus size={14} strokeWidth={3} />
+                                    </button>
+                                )}
+                            </div>
+                            <button
+                                type="button"
+                                onClick={onDeliverAll}
+                                className="mt-2 w-full min-h-11 px-3 rounded-xl font-black text-sm bg-emerald-700 text-white shadow-md shadow-emerald-700/25 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 whitespace-nowrap"
+                            >
+                                <HandCoins size={15} className="shrink-0" />
+                                Entregar así
+                            </button>
+                        </>
+                    ) : (
+                        <>
                             <div className="flex items-baseline gap-1.5 min-w-0">
                                 <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400 shrink-0">Vuelto</span>
                                 <span className="text-lg font-black text-emerald-700 dark:text-emerald-400 leading-none">
                                     ${changeUsd.toFixed(2)}
                                 </span>
-                            </div>
-                            {hasProposal ? (
-                                <span
-                                    className="text-[11px] font-black text-slate-600 dark:text-slate-300 truncate max-w-[220px]"
-                                    title={`→ ${proposalParts.join(' + ')}`}
-                                >
-                                    → {proposalParts.join(' + ')}
-                                </span>
-                            ) : (
-                                <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 truncate max-w-[220px]">
+                                <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 truncate min-w-0">
                                     · Bs {formatBs(changeBs)}
                                 </span>
-                            )}
-                        </div>
-                        <button
-                            type="button"
-                            onClick={onDeliverAll}
-                            className="ml-auto shrink-0 min-h-11 px-3 rounded-xl font-black text-xs bg-emerald-700 text-white shadow-md shadow-emerald-700/25 active:scale-[0.97] transition-all flex items-center gap-1.5 whitespace-nowrap"
-                        >
-                            <HandCoins size={14} className="shrink-0" />
-                            <span className="truncate">{hasProposal ? 'Entregar así' : 'Entregar en Bs'}</span>
-                        </button>
-                    </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={onDeliverAll}
+                                className="mt-2 w-full min-h-11 px-3 rounded-xl font-black text-sm bg-emerald-700 text-white shadow-md shadow-emerald-700/25 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 whitespace-nowrap"
+                            >
+                                <HandCoins size={15} className="shrink-0" />
+                                Entregar en Bs
+                            </button>
+                        </>
+                    )}
                     {/* Opción secundaria (VUELTO-REALISTA-UX): botón real de tono neutro,
                         con copy que parte de la situación que lo origina (el cliente pide
                         otro destino) y subtítulo que enseña los destinos en palabras de
@@ -118,9 +156,11 @@ export default function MobileChangeAllocation({
                     <button
                         type="button"
                         onClick={onOpenSheet}
-                        className="mt-2 w-full text-left rounded-xl border border-dashed border-slate-300 dark:border-slate-600 bg-white/60 dark:bg-slate-900/60 hover:border-slate-400 dark:hover:border-slate-500 active:scale-[0.99] transition-all px-3 py-2 flex items-center gap-2.5 min-h-[46px]"
+                        className="mt-2 w-full text-left rounded-xl border border-dashed border-slate-300 dark:border-slate-600 bg-white/60 dark:bg-slate-900/60 hover:border-slate-400 dark:hover:border-slate-500 active:scale-[0.99] transition-all pl-2.5 pr-3 py-2 flex items-center gap-2 min-h-[46px]"
                     >
-                        <Scissors size={15} className="text-slate-400 shrink-0" />
+                        <span className="shrink-0 h-7 w-7 inline-flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800">
+                            <Scissors size={13} className="text-slate-500 dark:text-slate-400" />
+                        </span>
                         <span className="min-w-0 flex-1">
                             <span className="block text-[11px] font-black text-slate-700 dark:text-slate-200 leading-tight">
                                 ¿El cliente lo quiere de otra forma?

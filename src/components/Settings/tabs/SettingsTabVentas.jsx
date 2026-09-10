@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Package, CreditCard, FileText, DollarSign, LayoutGrid, SlidersHorizontal, ShieldCheck, Zap, Smartphone, Monitor, Check } from 'lucide-react';
+import { Package, CreditCard, FileText, DollarSign, LayoutGrid, SlidersHorizontal, ShieldCheck, Zap, Smartphone, Monitor, Check, HandCoins } from 'lucide-react';
 import { SectionCard, Toggle } from '../../SettingsShared';
 import PaymentMethodsManager from '../PaymentMethodsManager';
 import CasheaIcon from '../../CasheaIcon';
@@ -21,6 +21,16 @@ export default function SettingsTabVentas({
         const stored = parseFloat(localStorage.getItem('cash_advance_default_pct') || '10');
         return isNaN(stored) || stored < 0 ? '10' : stored.toString();
     });
+    // VUELTO-REALISTA Fase 3: desglose del cambio ajustable por tienda.
+    const [smallestUsdBill, setSmallestUsdBill] = useState(() => {
+        const stored = parseFloat(localStorage.getItem('checkout_smallest_usd_bill') || '1');
+        return isNaN(stored) || stored <= 0 ? '1' : stored.toString();
+    });
+    const [bsRoundStep, setBsRoundStep] = useState(() => {
+        const stored = parseFloat(localStorage.getItem('checkout_bs_round_step') || '0');
+        return isNaN(stored) || stored < 0 ? '0' : stored.toString();
+    });
+    const [bsRoundMode, setBsRoundMode] = useState(() => localStorage.getItem('checkout_bs_round_mode') || 'ceil');
 
     const handleCasheaMinAmountChange = (e) => {
         let val = e.target.value.replace('-', '');
@@ -74,6 +84,29 @@ export default function SettingsTabVentas({
             setCashAdvancePct(parsed.toString());
             localStorage.setItem('cash_advance_default_pct', parsed.toString());
         }
+    };
+
+    // ── VUELTO-REALISTA Fase 3: handlers de desglose del cambio ──
+    const persistBill = (val) => {
+        const parsed = parseFloat(val);
+        const safe = isNaN(parsed) || parsed <= 0 ? 1 : parsed;
+        setSmallestUsdBill(safe.toString());
+        localStorage.setItem('checkout_smallest_usd_bill', safe.toString());
+        forceHeartbeat();
+    };
+    const persistRoundStep = (val) => {
+        const parsed = parseFloat(val);
+        const safe = isNaN(parsed) || parsed < 0 ? 0 : parsed;
+        setBsRoundStep(safe.toString());
+        localStorage.setItem('checkout_bs_round_step', safe.toString());
+        forceHeartbeat();
+    };
+    const persistRoundMode = (mode) => {
+        setBsRoundMode(mode);
+        localStorage.setItem('checkout_bs_round_mode', mode);
+        forceHeartbeat();
+        showToast(mode === 'ceil' ? 'Redondeo a favor del cliente' : 'Redondeo a favor de la tienda', 'success');
+        triggerHaptic?.();
     };
 
     return (
@@ -338,6 +371,98 @@ export default function SettingsTabVentas({
                         </div>
                     </SectionCard>
                 </div>
+            </div>
+
+            {/* BLOQUE 2b: DESGLOSE DEL CAMBIO (VUELTO-REALISTA Fase 3) */}
+            <div>
+                <div className="flex items-center gap-2 mb-3 px-1">
+                    <HandCoins size={16} className="text-emerald-600" />
+                    <h2 className="text-xs font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                        Desglose del Cambio (Vuelto)
+                    </h2>
+                </div>
+                <SectionCard
+                    icon={HandCoins}
+                    title="Cómo entrega la caja el cambio"
+                    subtitle="Ajusta la propuesta automática a lo que realmente hay en caja"
+                    iconColor="text-emerald-600"
+                >
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {/* Billete más pequeño */}
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-3">
+                                <div>
+                                    <p className="text-xs font-extrabold text-slate-700 dark:text-slate-200">Billete más pequeño ($)</p>
+                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">El menor que manejas en caja</p>
+                                </div>
+                                <div className="relative flex items-center shrink-0">
+                                    <span className="absolute left-2.5 text-xs font-black text-emerald-600 dark:text-emerald-400 pointer-events-none">$</span>
+                                    <input
+                                        type="number"
+                                        min="0.01"
+                                        step="0.5"
+                                        inputMode="decimal"
+                                        value={smallestUsdBill}
+                                        onChange={(e) => { setSmallestUsdBill(e.target.value); }}
+                                        onBlur={(e) => persistBill(e.target.value)}
+                                        aria-label="Valor del billete de dólar más pequeño disponible en caja"
+                                        className="w-24 text-right font-black text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-xl pl-6 pr-3 py-2 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all shadow-inner"
+                                    />
+                                </div>
+                            </div>
+                            <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 rounded-lg border border-emerald-100 dark:border-emerald-900/30">
+                                💡 Sin billetes de $1: pon <strong>5</strong> — la propuesta dará más cambio en bolívares.
+                            </p>
+                        </div>
+
+                        {/* Redondeo en Bs */}
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-3">
+                                <div>
+                                    <p className="text-xs font-extrabold text-slate-700 dark:text-slate-200">Redondeo en Bs</p>
+                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">0 = monto exacto; 1, 5, 10…</p>
+                                </div>
+                                <div className="relative flex items-center shrink-0">
+                                    <span className="absolute left-2.5 text-xs font-black text-blue-600 dark:text-blue-400 pointer-events-none">Bs</span>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="1"
+                                        inputMode="numeric"
+                                        value={bsRoundStep}
+                                        onChange={(e) => { setBsRoundStep(e.target.value); }}
+                                        onBlur={(e) => persistRoundStep(e.target.value)}
+                                        aria-label="Paso de redondeo en bolívares para el cambio"
+                                        className="w-24 text-right font-black text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-xl pl-8 pr-3 py-2 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all shadow-inner"
+                                    />
+                                </div>
+                            </div>
+                            {parseFloat(bsRoundStep || '0') > 0 && (
+                                <div className="flex items-center justify-between gap-2 pt-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => persistRoundMode('ceil')}
+                                        aria-pressed={bsRoundMode === 'ceil'}
+                                        className={`flex-1 min-h-[34px] px-2 rounded-lg text-[10px] font-black transition-all active:scale-[0.98] border ${bsRoundMode === 'ceil' ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'}`}
+                                    >
+                                        A favor del cliente
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => persistRoundMode('floor')}
+                                        aria-pressed={bsRoundMode === 'floor'}
+                                        className={`flex-1 min-h-[34px] px-2 rounded-lg text-[10px] font-black transition-all active:scale-[0.98] border ${bsRoundMode === 'floor' ? 'bg-slate-700 text-white border-slate-700 shadow-sm' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'}`}
+                                    >
+                                        A favor de la tienda
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-3 leading-relaxed">
+                        Ejemplo: cambio de $6.20 · billete $1 · redondeo Bs 1 a favor del cliente → la caja entrega <strong>$6 + Bs 16</strong> (Bs 15,95 redondeados a 16).
+                    </p>
+                </SectionCard>
             </div>
 
             {/* BLOQUE 3: MÉTODOS DE PAGO */}
