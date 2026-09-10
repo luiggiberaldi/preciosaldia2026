@@ -3,6 +3,8 @@ import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { fetchBcvRates } from './api/bcvRatesHelper.js';
+// Fuente única del system prompt — la misma que usa api/chat.js en Vercel.
+import { CHAT_SYSTEM_PROMPT } from './src/services/chatSystemPrompt.js';
 
 // Versión del package.json para cacheId estable (INFRA-006).
 import pkg from './package.json' with { type: 'json' };
@@ -146,17 +148,32 @@ export default defineConfig(({ mode }) => {
                 return;
               }
 
-              const groqKeysStr = env.GROQ_KEYS || '';
-              const allKeys = groqKeysStr.split(',').map(k => k.trim()).filter(Boolean);
+              // ── Proveedor multi-tenant (OpenAI-compatible) ──
+              // AI_BASE_URL  → endpoint base (default: Groq). Cualquier proveedor
+              //                que hable /chat/completions estilo OpenAI sirve.
+              // AI_MODEL     → modelo a usar (default: llama-3.3-70b-versatile).
+              // AI_API_KEYS  → claves separadas por coma (alias retrocompatible:
+              //                GROQ_KEYS sigue funcionando).
+              const aiBaseUrl = (env.AI_BASE_URL || 'https://api.groq.com/openai/v1').replace(/\/$/, '');
+              const aiModel = env.AI_MODEL || 'llama-3.3-70b-versatile';
+              const aiKeysStr = env.AI_API_KEYS || env.GROQ_KEYS || '';
+              const allKeys = aiKeysStr.split(',').map(k => k.trim()).filter(Boolean);
               if (allKeys.length === 0) {
                 res.statusCode = 500;
-                res.end(JSON.stringify({ error: 'GROQ_KEYS no configuradas en .env' }));
+                res.end(JSON.stringify({ error: 'AI_API_KEYS (o GROQ_KEYS) no configuradas en .env' }));
                 return;
               }
 
+              // Blindaje de paridad con producción: se descarta cualquier "system"
+              // del cliente y siempre se inyecta el prompt compartido primero.
+              const safeMessages = [
+                { role: 'system', content: CHAT_SYSTEM_PROMPT },
+                ...messages.filter(m => m && m.role !== 'system'),
+              ];
+
               const requestBody = JSON.stringify({
-                model: 'llama-3.3-70b-versatile',
-                messages,
+                model: aiModel,
+                messages: safeMessages,
                 temperature: 0.7,
                 max_tokens: 2048,
                 stream: true,
@@ -164,12 +181,13 @@ export default defineConfig(({ mode }) => {
 
               const startIndex = Math.floor(Math.random() * allKeys.length);
               let lastError = null;
+              const keyResults = [];
 
               for (let attempt = 0; attempt < allKeys.length; attempt++) {
                 const apiKey = allKeys[(startIndex + attempt) % allKeys.length];
                 let groqRes;
                 try {
-                  groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                  groqRes = await fetch(`${aiBaseUrl}/chat/completions`, {
                     method: 'POST',
                     headers: {
                       'Authorization': `Bearer ${apiKey}`,
@@ -177,7 +195,9 @@ export default defineConfig(({ mode }) => {
                     },
                     body: requestBody,
                   });
+                  keyResults.push({ key: `...${apiKey.slice(-4)}`, code: groqRes.status });
                 } catch (fetchErr) {
+                  keyResults.push({ key: `...${apiKey.slice(-4)}`, code: 'network' });
                   lastError = fetchErr.message;
                   continue;
                 }
@@ -208,10 +228,14 @@ export default defineConfig(({ mode }) => {
                 return;
               }
 
+              const allBlocked403 = keyResults.length > 0 && keyResults.every(r => r.code === 403);
               res.statusCode = 503;
               res.end(JSON.stringify({
-                error: 'Servicio de IA saturado. Intenta en unos segundos.',
+                error: allBlocked403
+                  ? 'Todas las claves de IA fueron rechazadas (403). La organización del proveedor parece bloqueada o suspendida — revisa la consola del proveedor o cambia AI_BASE_URL/AI_API_KEYS en .env.'
+                  : 'Servicio de IA no disponible. Intenta en unos segundos.',
                 detail: lastError,
+                keys: keyResults,
               }));
             } catch (err) {
               res.statusCode = 500;

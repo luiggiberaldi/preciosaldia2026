@@ -3,7 +3,7 @@
 
 import { storageService } from '../utils/storageService';
 
-export async function processDeterministicOfflineQuery(userQuery, { effectiveRate, tasaCop, products, cart, usuarioActivo }) {
+export async function processDeterministicOfflineQuery(userQuery, { effectiveRate, tasaCop, products, cart, usuarioActivo, offlineReason = 'no_internet' }) {
     const q = userQuery.toLowerCase().trim();
     const timestampStr = new Date().toLocaleString('es-VE', { timeZone: 'America/Caracas' });
     const isCajero = (usuarioActivo?.rol || 'CAJERO') === 'CAJERO';
@@ -25,13 +25,16 @@ export async function processDeterministicOfflineQuery(userQuery, { effectiveRat
         if (amountUsd > 0 && rateBcv > 0) {
             const equivBs = amountUsd * rateBcv;
             const equivCop = amountUsd * rateCopVal;
-            responseMd += `\n\n### 💵 Vuelto para $${amountUsd.toFixed(2)} USD:\n- **En Bolívares (BCV)**: Bs. ${equivBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+            // Paridad con el POS: los Bs se redondean hacia arriba al entero (CurrencyService).
+            const equivBsCeil = Math.ceil(equivBs);
+            responseMd += `\n\n### 💵 Equivalente de $${amountUsd.toFixed(2)} USD:\n- **En Bolívares (BCV)**: Bs. ${equivBsCeil.toLocaleString('es-VE')} (el POS redondea los Bs hacia arriba al entero)\n`;
             if (rateCopVal > 0) {
-                responseMd += `- **En Pesos Colombianos (COP)**: $${equivCop.toLocaleString('es-CO', { minimumFractionDigits: 0 })} COP\n`;
+                responseMd += `- **En Pesos Colombianos (COP)**: ${equivCop.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} COP\n`;
             }
+            responseMd += `\n**Para el vuelto real**: ingresa los billetes recibidos en la pantalla de cobro y el POS calcula y reparte el cambio por ti.`;
         }
 
-        responseMd += `\n## Recomendación\nUsa la pantalla de cobro del carrito para ingresar exactamente los billetes recibidos y registrar el método de pago.\n\nFuente: Datos locales del POS (Modo Offline) · ${timestampStr}`;
+        responseMd += `\n## Recomendación\nUsa la pantalla de cobro para registrar el pago exacto; ahí se calcula el vuelto automáticamente.\n\nFuente: Datos locales del POS (Modo Offline) · ${timestampStr}`;
         return responseMd;
     }
 
@@ -111,13 +114,22 @@ Fuente: Datos locales del POS (Modo Offline) · ${timestampStr}`;
     }
 
     // 4. RESPUESTA POR DEFECTO MODO LOCAL
+    // El encabezado debe reflejar la causa real: no es lo mismo "sin internet"
+    // (offline de verdad) que "el servicio de IA no respondió" (hay internet,
+    // pero Groq falla — 403/429/500, saturación, etc.).
+    const headerLine = offlineReason === 'ai_service_error'
+        ? '- **Conexión**: A internet ✅ — el servicio de IA no está disponible en este momento.'
+        : '- **Conexión**: Sin conexión a internet.';
+    const aiNote = offlineReason === 'ai_service_error'
+        ? 'El asistente responde con datos locales porque el servicio de IA no está disponible (clave suspendida, cuota agotada o error del proveedor). Revisa GROQ_KEYS o reintenta más tarde.'
+        : 'Conéctate a internet si deseas realizar preguntas complejas a la Inteligencia Artificial.';
     return `## Estado actual (Modo Local Offline)
 
-- **Conexión**: Sin conexión a internet.
+${headerLine}
 - **Asistente en Modo Local**: El bot está procesando tus consultas directamente con los datos locales del dispositivo.
 
 ## Recomendación
-Puedes consultar sobre vuelto cambiario, inventario bajo de stock o resumen de ventas del turno. Conéctate a internet si deseas realizar preguntas complejas a la Inteligencia Artificial.
+Puedes consultar sobre vuelto cambiario, inventario bajo de stock o resumen de ventas del turno. ${aiNote}
 
 Fuente: Datos locales del POS (Modo Offline) · ${timestampStr}`;
 }

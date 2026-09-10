@@ -228,13 +228,16 @@ export default function AIAssistantWidget() {
                 });
                 return;
             }
-            // Fallback seguro a respuesta determinista local en caso de fallo de red/IA
+            // Fallback seguro a respuesta determinista local en caso de fallo de red/IA.
+            // Distinguimos la causa: si hay internet pero /api/chat falló, el problema
+            // es el servicio de IA (no la conexión) y el mensaje debe decirlo.
             const fallbackOfflineReply = await processDeterministicOfflineQuery(messageText, {
                 effectiveRate,
                 tasaCop,
                 products,
                 cart,
-                usuarioActivo
+                usuarioActivo,
+                offlineReason: (typeof navigator !== 'undefined' && !navigator.onLine) ? 'no_internet' : 'ai_service_error'
             });
 
             setMessages(prev => {

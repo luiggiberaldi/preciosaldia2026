@@ -1,3 +1,5 @@
+import { CHAT_SYSTEM_PROMPT as CHAT_SYSTEM } from '../src/services/chatSystemPrompt.js';
+
 // Vercel Serverless Function — Proxy seguro para el Chatbot del POS Precios al Día
 // Realiza rotación aleatoria (óptima para entornos serverless sin estado) y oculta las API keys de Groq.
 //
@@ -9,40 +11,8 @@
 // - Sin fugas de errores internos al cliente (los bodies de Groq solo van al log del servidor).
 // - reasoning_effort "low" (los tokens de razonamiento de gpt-oss consumen max_tokens) y timeouts.
 
-const CHAT_SYSTEM = `Eres un asistente inteligente y experto integrado en "Precios al Día", el sistema de punto de venta (POS) y gestión de inventario offline-first para bodegas, abastos y comercios en Venezuela.
-
-## CONTEXTO OPERATIVO DE VENEZUELA:
-- Tasas de cambio: Se manejan múltiples monedas. Principalmente Dólares (USD) como moneda de valor de referencia, y Bolívares (Bs) y Pesos Colombianos (COP) para pagos.
-- La tasa de cambio oficial es fijada por el Banco Central de Venezuela (BCV). Los comercios actualizan esta tasa diariamente en Configuración -> Tasas.
-- La tasa de Pesos Colombianos (COP) puede calcularse automáticamente usando la TRM diaria y brechas cambiarias o definirse de forma manual.
-- El vuelto en efectivo es un problema común. El sistema ayuda a calcular vuelto mixto (ej. pagar con USD y dar cambio en Bs por pago móvil o efectivo).
-
-## CARACTERÍSTICAS DEL POS (Precios al Día):
-1. Offline-First: Funciona sin internet mediante IndexedDB. Las ventas se sincronizan automáticamente con Supabase (en la nube) cuando hay señal.
-2. Seguridad de Acceso: Cada usuario entra con su PIN (6 dígitos para Admin, 4 para Cajero). Por razones de seguridad (SEC-002), los hashes de los PINs se almacenan estrictamente de forma local en IndexedDB y jamás se sincronizan a internet.
-3. Gestión de Usuarios: Los administradores tienen acceso total (reportes, configuraciones, usuarios). Los cajeros tienen acceso restringido (solo ventas, clientes e inventario en modo de lectura).
-4. Inventario (Módulo Productos): Permite registrar nombre, código de barras (opcional), precio de venta en USD y Bs (se calculan automáticamente entre sí), precio de costo (opcional), stock (opcional), unidad (Unidad, Caja/Bulto, Kilogramo, Litro), categoría y foto. Los ÚNICOS campos obligatorios para guardar un producto son: Nombre y Precio de venta (USD o Bs). Todos los demás son opcionales. Los productos tipo "Caja/Bulto" pueden configurar el número de unidades por caja y un "precio por unidad" dentro del MISMO producto — esto permite vender la caja completa (al mayor) Y vender unidades sueltas (al detal) sin necesidad de crear dos productos separados. Los precios se recalculan automáticamente según la tasa cambiaria del día. Los cajeros no pueden ver costos ni márgenes de ganancia.
-5. Ventas (Módulo Ventas): Se buscan productos por nombre, categoría, código de barras (incluyendo escáner físico y balanza electrónica PLU) o por voz. Se agregan al carrito. Se pueden aplicar descuentos (monto fijo o porcentaje) antes de cobrar. En el checkout se selecciona el método de pago. Los métodos de pago disponibles por defecto son: Efectivo en Bolívares, Pago Móvil, Punto de Venta, Efectivo en Dólares, Efectivo en Pesos y Transferencia COP. Se pueden crear métodos de pago personalizados (ej. Zinli, Binance, etc.) en Configuración -> Ventas -> Métodos de Pago. El sistema calcula el vuelto mixto automáticamente (ej. paga con USD y el cambio en Bs).
-6. Cierre de Caja: Al final del día, el administrador ejecuta el cierre de caja desde el módulo DASHBOARD (NO desde Ventas). El sistema calcula el dinero esperado y el cajero ingresa el dinero real contado. El sistema detecta sobrantes o faltantes. Se genera un reporte PDF. Al iniciar el día se realiza una "Apertura de Caja" (disponible en el Dashboard o en el módulo de Ventas) donde se declara el fondo inicial.
-6. Auditoría Financiera e IA integrada: El módulo Dev Panel (Tester) realiza una auditoría 100% matemática y determinista sobre las transacciones del local. La IA evalúa este diagnóstico final y genera un informe narrativo detallando recomendaciones útiles para el negocio.
-7. Módulo de Financiamiento Cashea (Registrar compras en cuotas):
-   - Se puede activar o desactivar en "Configuración -> Ventas" (sección Financiamiento Cashea). Se puede configurar un monto mínimo en dólares para permitir su uso.
-   - ¡IMPORTANTE!: Para que la opción de cobro con Cashea se active e ilustre en la pantalla de cobro (checkout), se debe seleccionar un cliente primero en la zona de cobro. El sistema activará el financiamiento si el cliente seleccionado tiene un Nivel de Cashea (del 1 al 6) y la venta cumple con el monto mínimo.
-   - Al seleccionar Cashea en el checkout, el cliente paga una inicial (ej. 60% o 40%) en caja y la porción restante es financiada por Cashea.
-   - Es obligatorio seleccionar un Cliente para cobros con Cashea, ya que el monto financiado se registra automáticamente como una deuda por cobrar (deuda de Cashea) en su perfil.
-   - En el Dashboard y Cierre de Caja, el dinero financiado se registra bajo la categoría VENTA_CASHEA como cobro pendiente para no descuadrar el efectivo.
-8. Modo Supervisor (Monitoreo Remoto en Vivo):
-   - Permite enlazar un segundo dispositivo (teléfono, tablet o PC) como pantalla espejo para el dueño/supervisor.
-   - Muestra las ventas en dólares, bolívares y ganancias del turno activo en vivo, además de un listado de transacciones recientes.
-   - Al realizar un cierre de caja en la Caja principal, se actualizará y mostrará automáticamente una zona de resumen de cierre en la pantalla del Supervisor con los totales definitivos conciliados.
-   - ¡IMPORTANTE!: A diferencia del POS principal que funciona 100% sin conexión (offline-first), la transmisión y recepción del Modo Supervisor requiere obligatoriamente que ambos dispositivos (la Caja principal y el celular del supervisor) estén conectados a internet (WiFi o Datos Móviles) para transmitir las actualizaciones.
-   - Vinculación: En el dispositivo principal (Caja) como Admin, ir a Configuración (icono engranaje) -> pestaña 'Sistema' -> sección 'Celular del Supervisor' -> pulsar 'Vincular Monitor' para obtener el código QR o manual de 6 dígitos. En el dispositivo del supervisor, en la pantalla inicial de inicio de sesión, pulsar el botón 'Modo Supervisor (Ver Monitoreo)' e ingresar dicho código.
-
-## REGLAS DE RESPUESTA:
-- Sé amable, práctico, directo y habla en español de Venezuela ("tú", términos de comercio local como "bodega", "vuelto", "pago móvil", "fiado", "abasto").
-- Si el usuario te envía un "CONTEXTO DE LA APLICACIÓN" o "CONTEXTO EN TIEMPO REAL DEL POS" en la consulta, utilízalo para responder de forma precisa a su negocio. No inventes datos que contradigan ese contexto.
-- Usa formato Markdown simple (negritas, listas, saltos de línea).
-`;
+// CHAT_SYSTEM vive en src/services/chatSystemPrompt.js — fuente única compartida
+// con el proxy dev (vite.config.js) para que dev y producción nunca diverjan.
 
 // ── Blindaje: constantes y helpers ──────────────────────────────────────────
 
@@ -211,7 +181,11 @@ export default async function handler(req, res) {
             }
         }
 
-        const groqKeysStr = process.env.GROQ_KEYS || '';
+        // ── Proveedor multi-tenant (OpenAI-compatible) ──
+        // AI_BASE_URL / AI_MODEL / AI_API_KEYS (GROQ_KEYS sigue siendo alias).
+        const aiBaseUrl = (process.env.AI_BASE_URL || 'https://api.groq.com/openai/v1').replace(/\/$/, '');
+        const aiModel = process.env.AI_MODEL || 'openai/gpt-oss-120b';
+        const groqKeysStr = process.env.AI_API_KEYS || process.env.GROQ_KEYS || '';
         const allKeys = groqKeysStr.split(',').map(k => k.trim()).filter(Boolean);
 
         if (allKeys.length === 0) {
@@ -224,7 +198,7 @@ export default async function handler(req, res) {
         const formattedMessages = [{ role: 'system', content: CHAT_SYSTEM }, ...userMessages];
 
         const requestBody = JSON.stringify({
-            model: 'openai/gpt-oss-120b',
+            model: aiModel,
             messages: formattedMessages,
             temperature: 0.4,
             max_tokens: 4096,
@@ -246,7 +220,7 @@ export default async function handler(req, res) {
             const groqController = new AbortController();
             const connectTimeout = setTimeout(() => groqController.abort(), GROQ_CONNECT_TIMEOUT_MS);
             try {
-                response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                response = await fetch(`${aiBaseUrl}/chat/completions`, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${apiKey}`,
@@ -303,10 +277,15 @@ export default async function handler(req, res) {
             return; // salir del handler
         }
 
-        // Si llegamos aquí, todas las keys fallaron — sin detalles internos al cliente
-        console.error('[Chat API] Todas las keys de Groq fallaron:', lastError);
+        // Si llegamos aquí, todas las keys fallaron — sin detalles internos al cliente.
+        // Si TODAS dieron 403, la organización del proveedor está bloqueada: damos una
+        // pista accionable en el mensaje (sin exponer claves ni bodies crudos).
+        const allBlocked403 = /HTTP 403/.test(lastError || '');
+        console.error('[Chat API] Todas las keys de IA fallaron:', lastError);
         return res.status(503).json({
-            error: 'El servicio de IA está temporalmente saturado. Por favor intenta en unos segundos.',
+            error: allBlocked403
+                ? 'El servicio de IA rechazó todas las claves (403). La organización del proveedor parece bloqueada o suspendida — revisa la consola del proveedor o configura otro proveedor (AI_BASE_URL / AI_API_KEYS).'
+                : 'El servicio de IA está temporalmente saturado. Por favor intenta en unos segundos.',
         });
     } catch (error) {
         console.error('[Chat API] Error inesperado:', error?.message || error);
