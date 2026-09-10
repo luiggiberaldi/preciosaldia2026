@@ -80,4 +80,8 @@ $RECYCLE.BIN/
 *.tmp
 *.bak
 
+# ── Test y herramientas ──
+test-results/
+supabase/.temp/
+
 .vercel
