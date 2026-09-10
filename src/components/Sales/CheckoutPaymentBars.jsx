@@ -11,7 +11,7 @@ const SECTION_STYLES = {
         titleBg: 'bg-emerald-100 dark:bg-emerald-900/50',
         inputBorder: 'border-emerald-200 dark:border-emerald-800 focus:border-emerald-500 focus:ring-emerald-500/20',
         inputActive: 'border-emerald-400 dark:border-emerald-600 bg-emerald-50 dark:bg-emerald-950/30',
-        btnBg: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 active:bg-emerald-300',
+        btnBg: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-900 dark:text-emerald-300 hover:bg-emerald-200 active:bg-emerald-300',
     },
     BS: {
         bg: 'bg-brand-light/50 dark:bg-surface-950/20',
@@ -48,7 +48,7 @@ function PaymentBar({ method, styles, barValues, effectiveRate, tasaCop, onBarCh
         <div className="mb-3 last:mb-0">
             <div className="flex items-center gap-2 mb-1 ml-0.5">
                 {MIcon ? <MIcon size={16} className={hasValue ? '' : 'text-slate-400'} /> : <span className="text-base">{method.icon}</span>}
-                <span className={`text-[11px] font-bold uppercase tracking-wide ${hasValue ? styles.title : 'text-slate-400 dark:text-slate-500'}`}>
+                <span className={`text-[11px] font-bold uppercase tracking-wide ${hasValue ? styles.title : 'text-slate-500 dark:text-slate-400'}`}>
                     {method.label}
                 </span>
                 {method.isInternalCredit && (
@@ -72,14 +72,14 @@ function PaymentBar({ method, styles, barValues, effectiveRate, tasaCop, onBarCh
                     />
                     <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black px-2 py-0.5 rounded-md border ${hasValue
                         ? `${styles.titleBg} ${styles.title} ${styles.border}`
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
                         }`}>
                         {method.currency === 'USD' ? 'USD' : method.currency === 'COP' ? 'COP' : 'Bs'}
                     </span>
                 </div>
                 <button
                     onClick={() => onFillBar(method.id, method.currency)}
-                    className={`shrink-0 py-3 px-3.5 rounded-xl font-black text-xs transition-all active:scale-95 flex items-center gap-1 ${styles.btnBg}`}
+                    className={`shrink-0 py-2.5 min-h-11 px-3.5 rounded-xl font-black text-xs transition-all active:scale-95 flex items-center gap-1 ${styles.btnBg}`}
                 >
                     <Zap size={14} fill="currentColor" /> Total
                 </button>
@@ -150,7 +150,7 @@ export default function CheckoutPaymentBars({
                             role="tab"
                             aria-selected={mobileCurrency === currency}
                             onClick={() => setMobileCurrency(currency)}
-                            className={`min-h-[42px] shrink-0 px-4 rounded-xl text-xs font-black transition-colors ${mobileCurrency === currency
+                            className={`min-h-11 shrink-0 px-4 rounded-xl text-xs font-black transition-colors ${mobileCurrency === currency
                                 ? 'bg-brand text-white shadow-sm'
                                 : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300'
                             }`}

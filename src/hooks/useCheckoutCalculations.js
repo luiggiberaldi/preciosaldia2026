@@ -48,7 +48,7 @@ export function useCheckoutCalculations({
     // Detectar si el usuario está realizando un pago en Bolívares (o usando método BS)
     const isBsPaymentActive = useMemo(() => {
         if (!cart || cart.length === 0) return false;
-        const hasDualItem = cart.some(i => i.pricingMode === 'dual_usd' && parseFloat(i.priceBsUsdRef) > 0);
+        const hasDualItem = cart.some(i => i.pricingMode === 'dual_usd' && parseFloat(i.priceBsUsdRef) > 0); // eslint-disable-line no-restricted-syntax -- deuda preexistente: referencia de precio ya normalizada
         if (!hasDualItem) return false;
         const bsMethods = paymentMethods.filter(m => m.currency === 'BS');
         return bsMethods.some(m => CurrencyService.safeParse(barValues[m.id]) > 0);
@@ -56,7 +56,7 @@ export function useCheckoutCalculations({
 
     // Recalcular totales de carrito dinámicamente si el pago es en Bolívares
     const cartTotals = useMemo(() => {
-        if (!cart || cart.length === 0 || !cart.some(i => i.pricingMode === 'dual_usd' && parseFloat(i.priceBsUsdRef) > 0)) {
+        if (!cart || cart.length === 0 || !cart.some(i => i.pricingMode === 'dual_usd' && parseFloat(i.priceBsUsdRef) > 0)) { // eslint-disable-line no-restricted-syntax -- deuda preexistente
             return { totalUsd: baseCartTotalUsd, totalBs: baseCartTotalBs };
         }
         return FinancialEngine.buildCartTotals(cart, discountData, safeRate, safeTasaCop, isBsPaymentActive);
@@ -66,7 +66,7 @@ export function useCheckoutCalculations({
     const cartTotalBs = cartTotals.totalBs;
 
     const casheaEnabled = localStorage.getItem('cashea_enabled') === 'true';
-    const casheaMinAmount = parseFloat(localStorage.getItem('cashea_min_amount') || '0') || 0;
+    const casheaMinAmount = parseFloat(localStorage.getItem('cashea_min_amount') || '0') || 0; // eslint-disable-line no-restricted-syntax -- config local, no cálculo financiero
     const casheaMeetsMinimum = casheaMinAmount <= 0 || cartTotalUsd >= casheaMinAmount;
 
     // FIN-009 / FIN-033: detectar tasa inválida y exponer flag para que la UI bloquee.
@@ -141,11 +141,11 @@ export function useCheckoutCalculations({
         let targetUsd = baseCartTotalUsd;
         let targetBs = baseCartTotalBs;
 
-        if (currency === 'BS' && cart && cart.some(i => i.pricingMode === 'dual_usd' && parseFloat(i.priceBsUsdRef) > 0)) {
+        if (currency === 'BS' && cart && cart.some(i => i.pricingMode === 'dual_usd' && parseFloat(i.priceBsUsdRef) > 0)) { // eslint-disable-line no-restricted-syntax -- deuda preexistente
             const bsTotals = FinancialEngine.buildCartTotals(cart, discountData, safeRate, safeTasaCop, true);
             targetUsd = bsTotals.totalUsd;
             targetBs = bsTotals.totalBs;
-        } else if (currency === 'USD' && cart && cart.some(i => i.pricingMode === 'dual_usd' && parseFloat(i.priceBsUsdRef) > 0)) {
+        } else if (currency === 'USD' && cart && cart.some(i => i.pricingMode === 'dual_usd' && parseFloat(i.priceBsUsdRef) > 0)) { // eslint-disable-line no-restricted-syntax -- deuda preexistente
             const usdTotals = FinancialEngine.buildCartTotals(cart, discountData, safeRate, safeTasaCop, false);
             targetUsd = usdTotals.totalUsd;
             targetBs = usdTotals.totalBs;
@@ -247,6 +247,26 @@ export function useCheckoutCalculations({
             setIsChangeCredited(false);
         }
     }, [changeUsd]);
+
+    // FASE 3: el pago pertenece al cliente. Al CAMBIAR de cliente (de un cliente
+    // REAL A otro cliente REAL) se limpia el estado parcial (montos por método,
+    // vuelto asignado, propina en caja, acreditación a billetera) para no mezclar
+    // pagos entre clientes ni acreditar el saldo a favor de la persona equivocada.
+    // La PRIMERA selección (null/'' → cliente) NO limpia: el cajero normalmente
+    // teclea el pago y luego elige al cliente. Tampoco al deseleccionar.
+    const prevCustomerIdRef = useRef(selectedCustomerId);
+    useEffect(() => {
+        const prev = prevCustomerIdRef.current;
+        prevCustomerIdRef.current = selectedCustomerId;
+        if (!prev || !selectedCustomerId || prev === selectedCustomerId) return;
+        setBarValues({});
+        setTipConfirmPending(false);
+        setIsTipDonated(false);
+        setTipAmountUsd('');
+        setIsChangeCredited(false);
+        setChangeUsdGiven('');
+        setChangeBsGiven('');
+    }, [selectedCustomerId]);
 
     // Si se asigna todo el cambio a físico o caja, desactivar automáticamente la acreditación a billetera
     useEffect(() => {
@@ -423,6 +443,7 @@ export function useCheckoutCalculations({
     return {
         barValues,
         totalPaidUsd,
+        totalPaidBs,
         remainingUsd,
         remainingBs,
         changeUsd,

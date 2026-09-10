@@ -61,7 +61,7 @@ const SearchBar = forwardRef(function SearchBar({
                     onPointerLeave={(e) => { if (isRecording) stopRecording(); }}
                     // Prevenir el menú contextual en móvil al mantener presionado
                     onContextMenu={(e) => e.preventDefault()}
-                    className={`p-1.5 rounded-full transition-all flex items-center justify-center select-none ${isRecording
+                    className={`p-[13px] -m-[7px] rounded-full transition-all flex items-center justify-center select-none ${isRecording
                         ? 'bg-red-100 text-red-500 shadow-inner animate-pulse scale-110'
                         : isProcessingAudio
                             ? 'bg-amber-100 text-amber-500'

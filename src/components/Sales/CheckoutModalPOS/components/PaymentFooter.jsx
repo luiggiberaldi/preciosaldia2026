@@ -35,7 +35,7 @@ export default function PaymentFooter({
                 aria-disabled={disabled}
                 className={`px-4 sm:px-10 py-3.5 min-h-[52px] rounded-xl font-black text-sm sm:text-base flex items-center gap-2 shadow-lg transition-all active:scale-[0.97] flex-1 max-w-none sm:max-w-xs justify-center
                     ${disabled
-                        ? 'bg-slate-100 dark:bg-slate-800 text-slate-450 dark:text-slate-500 cursor-not-allowed shadow-none'
+                        ? 'bg-slate-100 dark:bg-slate-800 !text-slate-500 cursor-not-allowed shadow-none'
                         : modo === 'credito'
                             ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-amber-500/25'
                             : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/25'

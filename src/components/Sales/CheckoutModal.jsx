@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { X, Users, Receipt, ArrowLeftRight, AlertTriangle, Smartphone, Lock, LayoutGrid, HandCoins, CheckCircle, Wallet, Zap } from 'lucide-react';
+import { X, Users, Receipt, ArrowLeftRight, AlertTriangle, Smartphone, Lock, LayoutGrid, HandCoins, CheckCircle, Wallet, Zap, ChevronDown } from 'lucide-react';
 import CasheaIcon from '../CasheaIcon';
 import { formatBs, formatCop } from '../../utils/calculatorUtils';
 import { mulR, divR, subR, round2, calculateChangeRemainder } from '../../utils/dinero';
@@ -9,6 +9,7 @@ import CheckoutPaymentBars from './CheckoutPaymentBars';
 import CheckoutCustomerPicker from './CheckoutCustomerPicker';
 import PaymentWarningModal from './PaymentWarningModal';
 import ChangeConfirmationModal from './CheckoutModalPOS/components/ChangeConfirmationModal';
+import { MobileChangeAllocation, PaymentStatusSummary } from './MobileCheckout';
 
 /**
  * CheckoutModal — Zona de Cobro con Barras de Pago (Estilo Listo POS)
@@ -55,6 +56,7 @@ export default function CheckoutModal({
     const {
         barValues,
         totalPaidUsd,
+        totalPaidBs,
         remainingUsd,
         remainingBs,
         changeUsd,
@@ -92,6 +94,7 @@ export default function CheckoutModal({
         rateError,
         copRateError,
         safeRate,
+        safeTasaCop,
         cartTotalUsd,
         cartTotalBs,
     } = useCheckoutCalculations({
@@ -131,6 +134,34 @@ export default function CheckoutModal({
         || hasPhysicalDistribution
         || isChangeCredited;
     const changeAllocationComplete = changeDestinationSelected && unallocatedChangeUsd <= 0.01;
+
+    // ── FASE 2: vuelto progresivo (fila inline + bottom sheet) ──────────
+    const [showChangeSheet, setShowChangeSheet] = useState(false);
+    // FASE 3: "Más opciones" — Cashea vive colapsado para no ensuciar cada venta.
+    const [showMoreOptions, setShowMoreOptions] = useState(false);
+    // El desglose legacy solo aparece cuando el flujo de propina necesita
+    // confirmación en el footer (auto-confirm del hook) o hay parcial en caja.
+    // "Personalizar" abre exclusivamente el bottom sheet (que contiene el
+    // mismo desglose) para no apilar dos sistemas de vuelto en pantalla.
+    const showAdvancedChangeResolved = tipConfirmPending || Number(tipAmountUsd) > 0;
+    const deliverAllChange = () => {
+        triggerHaptic && triggerHaptic();
+        setChangeUsdGiven(changeToDeliverUsd.toFixed(2));
+        setChangeBsGiven('');
+    };
+    const tipToggle = () => {
+        if (!isTipDonated) {
+            handleTipAmountChange(changeToDeliverUsd.toFixed(2));
+        } else {
+            handleTipAmountChange('');
+        }
+        toggleTipDonated();
+    };
+    const changeProgressState = (() => {
+        if (changeAllocationComplete) return 'complete';
+        if (hasPhysicalDistribution || isTipDonated) return 'partial';
+        return 'pending';
+    })();
     changeSummaryRef.current = { changeUsd };
     // El mismo vuelto puede repartirse entre USD y Bs. Mostramos el remanente
     // convertido en ambas monedas sin rellenar automáticamente el otro campo.
@@ -186,70 +217,33 @@ export default function CheckoutModal({
 
             {/* --- HEADER --- */}
             <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">
-                <button onClick={onClose} className="p-2 -ml-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                <button onClick={onClose} aria-label="Cerrar" className="p-3 -m-1.5 rounded-xl text-slate-500 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                     <X size={22} />
                 </button>
                 <h2 className="text-base font-black text-slate-800 dark:text-white tracking-wide">COBRAR</h2>
                 <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-900 px-2.5 py-1 rounded-lg">
+                    <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900 px-2.5 py-1 rounded-lg">
                         {formatBs(effectiveRate)} Bs/$
                     </span>
                 </div>
             </div>
 
-            {/* --- COMPACT STICKY TOTAL BAR --- */}
-            <div className="shrink-0 bg-slate-50 dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 px-4 py-2.5 flex items-center justify-between">
-                <div className="flex flex-col">
-                    <div className="flex items-baseline gap-2">
-                        <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                            {discountData?.active ? 'Total Final:' : 'Total:'}
-                        </span>
-                        {copEnabled && tasaCop > 0 ? (
-                            copPrimary ? (
-                                <span className={`text-xl sm:text-2xl font-black ${discountData?.active ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
-                                    {formatCop(cartTotalCop || Math.round(cartTotalUsd * tasaCop))} COP
-                                </span>
-                            ) : (
-                                <span className={`text-xl sm:text-2xl font-black ${discountData?.active ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>
-                                    ${cartTotalUsd.toFixed(2)}
-                                </span>
-                            )
-                        ) : (
-                            <span className={`text-xl sm:text-2xl font-black ${discountData?.active ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>
-                                ${cartTotalUsd.toFixed(2)}
-                            </span>
-                        )}
-                        {discountData?.active && (
-                            <span className="text-[10px] font-black text-amber-600 dark:text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded">
-                                -{discountData.type === 'percentage' ? `${discountData.value}%` : `$${discountData.amountUsd.toFixed(2)}`}
-                            </span>
-                        )}
-                    </div>
-                    {discountData?.active && (
-                        <span className="text-[10px] text-slate-400 font-bold">
-                            Subtotal: {copEnabled && tasaCop > 0 ? (copPrimary ? `${formatCop(cartSubtotalUsd * tasaCop)} COP` : `$${cartSubtotalUsd.toFixed(2)}`) : `$${cartSubtotalUsd.toFixed(2)}`}
-                        </span>
-                    )}
-                </div>
-                
-                <div className="text-right flex flex-col justify-center">
-                    {copEnabled && tasaCop > 0 ? (
-                        copPrimary ? (
-                            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                                ${cartTotalUsd.toFixed(2)} · Bs {formatBs(cartTotalBs)}
-                            </span>
-                        ) : (
-                            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                                {formatCop(cartTotalCop || Math.round(cartTotalUsd * tasaCop))} COP · Bs {formatBs(cartTotalBs)}
-                            </span>
-                        )
-                    ) : (
-                        <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                            Bs {formatBs(cartTotalBs)}
-                        </span>
-                    )}
-                </div>
-            </div>
+            {/* --- BARRA DE ESTADO ÚNICA (Fase 1): el único lugar con Total→Pagado→Resta/Vuelto --- */}
+            <PaymentStatusSummary
+                cartTotalUsd={cartTotalUsd}
+                cartTotalBs={cartTotalBs}
+                totalPaidUsd={totalPaidUsd}
+                totalPaidBs={totalPaidBs}
+                isPaid={isPaid}
+                remainingUsd={remainingUsd}
+                remainingBs={remainingBs}
+                changeUsd={changeUsd}
+                changeBs={changeBs}
+                discountData={discountData}
+                copEnabled={copEnabled}
+                copPrimary={copPrimary}
+                tasaCop={tasaCop}
+            />
 
             {/* --- SCROLLABLE BODY --- */}
             <div className="flex-1 overflow-y-auto overscroll-contain pb-28">
@@ -278,10 +272,27 @@ export default function CheckoutModal({
                     showSaldoFavor={remainingUsd > 0.01 || Number(barValues.saldo_favor) > 0.01}
                 />
 
-                {/* -- CASHEA PANEL -- */}
+                {/* FASE 3: CASHEA PANEL — secundario, colapsado por defecto */}
                 {casheaEnabled && (
                     <div className="px-3 py-2">
-                        <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
+                        <button
+                            type="button"
+                            onClick={() => setShowMoreOptions(o => !o)}
+                            aria-expanded={showMoreOptions}
+                            className="w-full min-h-[44px] px-3 flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 active:scale-[0.99] transition-all"
+                        >
+                            <LayoutGrid size={16} className="text-purple-500 shrink-0" />
+                            <span className="text-xs font-black">Más opciones</span>
+                            {casheaActive && (
+                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">Cashea activo</span>
+                            )}
+                            {!casheaActive && selectedCustomer?.casheaLevel && (
+                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">Nivel {selectedCustomer.casheaLevel}</span>
+                            )}
+                            <ChevronDown size={16} className={`ml-auto transition-transform ${showMoreOptions ? 'rotate-180' : ''}`} />
+                        </button>
+                        {showMoreOptions && (
+                        <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 mt-2">
                             <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2">
                                     <CasheaIcon size={20} />
@@ -378,6 +389,7 @@ export default function CheckoutModal({
                                 </div>
                             )}
                         </div>
+                        )}
                     </div>
                 )}
 
@@ -409,21 +421,21 @@ export default function CheckoutModal({
                     
                     <div className="flex items-center justify-between">
                         <div className="flex items-baseline gap-2">
-                            <span className={`text-[10px] font-black uppercase tracking-wider ${isPaid ? 'text-emerald-600 dark:text-emerald-400' : 'text-orange-600 dark:text-orange-400'}`}>
+                            <span className={`text-[10px] font-black uppercase tracking-wider ${isPaid ? 'text-emerald-700 dark:text-emerald-400' : 'text-orange-700 dark:text-orange-400'}`}>
                                 {isPaid ? 'Vuelto:' : 'Resta:'}
                             </span>
                             {copEnabled && tasaCop > 0 ? (
                                 copPrimary ? (
-                                    <span className={`text-lg font-black ${isPaid ? 'text-emerald-600 dark:text-emerald-400' : 'text-orange-600 dark:text-orange-400'}`}>
+                                    <span className={`text-lg font-black ${isPaid ? 'text-emerald-700 dark:text-emerald-400' : 'text-orange-700 dark:text-orange-400'}`}>
                                         {formatCop((isPaid ? changeUsd : remainingUsd) * tasaCop)} COP
                                     </span>
                                 ) : (
-                                    <span className={`text-lg font-black ${isPaid ? 'text-emerald-600 dark:text-emerald-400' : 'text-orange-600 dark:text-orange-400'}`}>
+                                    <span className={`text-lg font-black ${isPaid ? 'text-emerald-700 dark:text-emerald-400' : 'text-orange-700 dark:text-orange-400'}`}>
                                         ${isPaid ? changeUsd.toFixed(2) : remainingUsd.toFixed(2)}
                                     </span>
                                 )
                             ) : (
-                                <span className={`text-lg font-black ${isPaid ? 'text-emerald-600 dark:text-emerald-400' : 'text-orange-600 dark:text-orange-400'}`}>
+                                <span className={`text-lg font-black ${isPaid ? 'text-emerald-700 dark:text-emerald-400' : 'text-orange-700 dark:text-orange-400'}`}>
                                     ${isPaid ? changeUsd.toFixed(2) : remainingUsd.toFixed(2)}
                                 </span>
                             )}
@@ -432,24 +444,42 @@ export default function CheckoutModal({
                         <div className="text-right">
                             {copEnabled && tasaCop > 0 ? (
                                 copPrimary ? (
-                                    <span className={`text-xs font-bold ${isPaid ? 'text-emerald-500' : 'text-orange-500'}`}>
+                                    <span className={`text-xs font-bold ${isPaid ? 'text-emerald-700' : 'text-orange-700'}`}>
                                         ${isPaid ? changeUsd.toFixed(2) : remainingUsd.toFixed(2)} · Bs {formatBs(isPaid ? changeBs : remainingBs)}
                                     </span>
                                 ) : (
-                                    <span className={`text-xs font-bold ${isPaid ? 'text-emerald-500' : 'text-orange-500'}`}>
+                                    <span className={`text-xs font-bold ${isPaid ? 'text-emerald-700' : 'text-orange-700'}`}>
                                         {formatCop((isPaid ? changeUsd : remainingUsd) * tasaCop)} COP · Bs {formatBs(isPaid ? changeBs : remainingBs)}
                                     </span>
                                 )
                             ) : (
-                                <span className={`text-xs font-bold ${isPaid ? 'text-emerald-500' : 'text-orange-500'}`}>
+                                <span className={`text-xs font-bold ${isPaid ? 'text-emerald-700' : 'text-orange-700'}`}>
                                     Bs {formatBs(isPaid ? changeBs : remainingBs)}
                                 </span>
                             )}
                         </div>
                     </div>
 
-                    {/* DESGLOSE DE VUELTO COMPACTO CON BOTONES INTEGRADOS */}
-                    {isPaid && changeUsd > 0.009 && (
+                    {/* FASE 2: fila progresiva — oculta mientras el desglose legacy esté visible (exclusión mutua). */}
+                    {!showAdvancedChangeResolved && (
+                    <MobileChangeAllocation
+                        mode="inline"
+                        state={changeProgressState}
+                        changeUsd={changeUsd}
+                        changeBs={changeBs}
+                        changeRemainder={changeRemainder}
+                        isTipDonated={isTipDonated}
+                        cashKeptUsd={cashKeptUsd}
+                        isChangeCredited={isChangeCredited}
+                        changeUsdGiven={changeUsdGiven}
+                        changeBsGiven={changeBsGiven}
+                        onDeliverAll={deliverAllChange}
+                        onOpenSheet={() => setShowChangeSheet(true)}
+                    />
+                    )}
+
+                    {/* DESGLOSE AVANZADO (legacy): solo cuando el operador eligió personalizar */}
+                    {showAdvancedChangeResolved && isPaid && changeUsd > 0.009 && (
                         <div className="mt-1.5 pt-1.5 border-t border-emerald-200/50 dark:border-emerald-800/30 flex flex-col gap-1">
                             {/* TIP: el cliente deja el cambio. Paridad con el modo POS. */}
                             <button
@@ -610,52 +640,7 @@ export default function CheckoutModal({
                                     </div>
                                 </div>
                             </div>
-                            <div
-                                role="status"
-                                aria-live="polite"
-                                className={`mt-2 px-3 py-2.5 rounded-xl border ${
-                                    changeRemainder.remainingUsd > 0.001
-                                        ? 'bg-red-50 dark:bg-red-950/25 border-red-300 dark:border-red-800/60'
-                                        : 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/40'
-                                }`}
-                            >
-                                <div className="flex items-start gap-2.5">
-                                    <span className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
-                                        changeRemainder.remainingUsd > 0.001
-                                            ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
-                                            : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
-                                    }`}>
-                                        {changeRemainder.remainingUsd > 0.001
-                                            ? <AlertTriangle size={14} strokeWidth={2.5} />
-                                            : <CheckCircle size={14} strokeWidth={2.5} />}
-                                    </span>
-                                    <div className="min-w-0 flex-1">
-                                        <p className={`text-[10px] font-black uppercase tracking-wide leading-tight ${
-                                            changeRemainder.remainingUsd > 0.001 ? 'text-red-700 dark:text-red-300' : 'text-emerald-700 dark:text-emerald-300'
-                                        }`}>
-                                            {isChangeCredited ? 'Se acreditará a billetera' : changeRemainder.remainingUsd > 0.001 ? 'Vuelto pendiente' : 'Vuelto asignado'}
-                                        </p>
-                                        <div className={`mt-1 grid grid-cols-2 divide-x ${changeRemainder.remainingUsd > 0.001 ? 'divide-red-200 dark:divide-red-800/60' : 'divide-emerald-200 dark:divide-emerald-800/40'}`}>
-                                            <div className="min-w-0 pr-3">
-                                                <span className={`block text-[9px] font-black uppercase tracking-wide ${changeRemainder.remainingUsd > 0.001 ? 'text-red-500 dark:text-red-300' : 'text-emerald-500 dark:text-emerald-300'}`}>Dólares</span>
-                                                <strong className={`block mt-0.5 text-xl leading-none font-black tracking-tight ${
-                                                    changeRemainder.remainingUsd > 0.001 ? 'text-red-700 dark:text-red-300' : 'text-emerald-700 dark:text-emerald-300'
-                                                }`}>
-                                                    ${changeRemainder.remainingUsd.toFixed(2)}
-                                                </strong>
-                                            </div>
-                                            <div className="min-w-0 pl-3">
-                                                <span className={`block text-[9px] font-black uppercase tracking-wide ${changeRemainder.remainingUsd > 0.001 ? 'text-red-500 dark:text-red-300' : 'text-emerald-500 dark:text-emerald-300'}`}>Bolívares</span>
-                                                <strong className={`block mt-0.5 text-sm leading-tight font-black break-words ${
-                                                    changeRemainder.remainingUsd > 0.001 ? 'text-red-600 dark:text-red-300' : 'text-emerald-600 dark:text-emerald-300'
-                                                }`}>
-                                                    Bs {formatBs(changeRemainder.remainingBs)}
-                                                </strong>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                            {/* Estado del vuelto: ya lo comunica la barra superior y el CTA deshabilitado. */}
 
                             {/* FLOAT WARNINGS */}
                             {(parseFloat(changeUsdGiven) > currentFloatUsd + 0.05 || parseFloat(changeBsGiven) > currentFloatBs + 1) && (
@@ -690,14 +675,15 @@ export default function CheckoutModal({
                         disabled={isProcessing || rateError || (copEnabled && copRateError) || (!isPaid && casheaActive) || (!selectedCustomerId && remainingUsd > 0.01) || (isPaid && !changeAllocationComplete)}
                         className={`w-full py-4 text-white font-black text-base rounded-2xl shadow-lg transition-all tracking-wide flex items-center justify-center gap-2 ${
                             isProcessing || rateError || (copEnabled && copRateError)
-                                ? 'bg-slate-300 dark:bg-slate-800 text-slate-450 dark:text-slate-500 cursor-not-allowed shadow-none'
-                                : isPaid
-                                    ? casheaActive
-                                        ? 'bg-purple-600 hover:bg-purple-700 shadow-purple-500/25 active:scale-[0.98]'
-                                        : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/25 active:scale-[0.98]'
+                                ? 'bg-slate-300 dark:bg-slate-800 !text-slate-500 cursor-not-allowed shadow-none'                                    : isPaid
+                                        ? !changeAllocationComplete
+                                            ? 'bg-slate-300 dark:bg-slate-800 !text-slate-500 shadow-none cursor-not-allowed'
+                                            : casheaActive
+                                                ? 'bg-purple-600 hover:bg-purple-700 shadow-purple-500/25 active:scale-[0.98]'
+                                                : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/25 active:scale-[0.98]'
                                     : selectedCustomerId
                                         ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/25 active:scale-[0.98]'
-                                        : 'bg-slate-300 dark:bg-slate-800 text-slate-500 shadow-none cursor-not-allowed'
+                                        : 'bg-slate-300 dark:bg-slate-800 !text-slate-500 shadow-none cursor-not-allowed'
                         }`}
                     >
                         {isProcessing ? (
@@ -722,6 +708,31 @@ export default function CheckoutModal({
                     </button>
                 </div>
             </div>
+            {/* FASE 2: bottom sheet de asignación del vuelto */}
+            <MobileChangeAllocation
+                mode="sheet"
+                open={showChangeSheet}
+                onClose={() => setShowChangeSheet(false)}
+                changeUsd={changeUsd}
+                changeBs={changeBs}
+                changeRemainder={changeRemainder}
+                isTipDonated={isTipDonated}
+                tipAmountUsd={tipAmountUsd}
+                handleTipAmountChange={handleTipAmountChange}
+                cashKeptUsd={cashKeptUsd}
+                onToggleTip={tipToggle}
+                changeUsdGiven={changeUsdGiven}
+                changeBsGiven={changeBsGiven}
+                setChangeUsdGiven={setChangeUsdGiven}
+                setChangeBsGiven={setChangeBsGiven}
+                maxChangeUsdGiven={maxChangeUsdGiven}
+                maxChangeBsGiven={maxChangeBsGiven}
+                isChangeCredited={isChangeCredited}
+                setIsChangeCredited={setIsChangeCredited}
+                hasCustomer={!!selectedCustomerId}
+                currentFloatUsd={currentFloatUsd}
+                currentFloatBs={currentFloatBs}
+            />
             {confirmFiar && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setConfirmFiar(false)}>
                     <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 max-w-sm sm:max-w-md w-full shadow-2xl border border-slate-200 dark:border-slate-800" onClick={e => e.stopPropagation()}>

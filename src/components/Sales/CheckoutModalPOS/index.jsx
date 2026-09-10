@@ -635,6 +635,8 @@ export default function CheckoutModalPOS({
                 <div className="flex flex-col lg:flex-row flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
                     <PaymentLeftColumn
                         className="order-2 lg:order-1"
+                        currentFloatUsd={currentFloatUsd}
+                        currentFloatBs={currentFloatBs}
                         totalUSD={dynamicCartTotals.totalUsd}
                         totalBS={dynamicCartTotals.totalBs}
                         discountData={discountData}

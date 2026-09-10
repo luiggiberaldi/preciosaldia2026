@@ -74,10 +74,13 @@ export function ProductProvider({ children }) {
         localStorage.setItem('checkout_mode', mode);
     };
 
-    // Resuelve dinámicamente si el modal de cobro activo debe ser 'basic' (Móvil) o 'pos' (PC)
+    // Resuelve dinámicamente si el modal de cobro activo debe ser 'basic' (Móvil) o 'pos' (PC).
+    // FASE 5 — feature flag `checkout_shell_v2`: en 'true' fuerza el modo 'basic'
+    // (shell móvil del rediseño) incluso en pantallas ≥1024px. Palanca de
+    // rollback/soporte en campo: apagar el flag restaura el comportamiento previo.
     const effectiveCheckoutMode = useMemo(() => {
         if (checkoutMode === 'basic') return 'basic';
-        if (checkoutMode === 'pos') return 'pos';
+        if (checkoutMode === 'pos' && localStorage.getItem('checkout_shell_v2') !== 'true') return 'pos';
         if (typeof window === 'undefined') return 'basic';
 
         const isMobile = window.innerWidth < 1024 ||
