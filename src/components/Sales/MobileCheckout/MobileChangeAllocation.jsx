@@ -1,5 +1,5 @@
 import React from 'react';
-import { HandCoins, CheckCircle, Wallet, AlertTriangle, X } from 'lucide-react';
+import { HandCoins, CheckCircle, Wallet, AlertTriangle, X, Scissors } from 'lucide-react';
 import { formatBs } from '../../../utils/calculatorUtils';
 
 /**
@@ -79,7 +79,8 @@ export default function MobileChangeAllocation({
                 <div className="px-4 pt-2 pb-1">
                     {/* Layout en 2 líneas (VUELTO-REALISTA-responsivo): el monto y la
                         propuesta viven en una columna propia con truncate, el botón
-                        nunca compite por el ancho ni se aplasta en 320-430px. */}
+                        nunca compite por el ancho ni se aplasta en 320-430px.
+                        Sin repetir el monto: la propuesta ya lo implica. */}
                     <div className="flex items-center justify-between gap-2">
                         <div className="flex flex-col min-w-0 gap-0.5">
                             <div className="flex items-baseline gap-1.5 min-w-0">
@@ -110,12 +111,24 @@ export default function MobileChangeAllocation({
                             <span className="truncate">{hasProposal ? 'Entregar así' : 'Entregar en Bs'}</span>
                         </button>
                     </div>
+                    {/* Opción secundaria (VUELTO-REALISTA-UX): botón real de tono neutro,
+                        con copy que parte de la situación que lo origina (el cliente pide
+                        otro destino) y subtítulo que enseña los destinos en palabras de
+                        gente — sin jerga de "billetera/caja parcial". */}
                     <button
                         type="button"
                         onClick={onOpenSheet}
-                        className="mt-1 w-full text-center text-[11px] font-bold text-slate-600 hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-200 transition-colors min-h-11 flex items-center justify-center"
+                        className="mt-2 w-full text-left rounded-xl border border-dashed border-slate-300 dark:border-slate-600 bg-white/60 dark:bg-slate-900/60 hover:border-slate-400 dark:hover:border-slate-500 active:scale-[0.99] transition-all px-3 py-2 flex items-center gap-2.5 min-h-[46px]"
                     >
-                        Personalizar (caja parcial, Bs, billetera)
+                        <Scissors size={15} className="text-slate-400 shrink-0" />
+                        <span className="min-w-0 flex-1">
+                            <span className="block text-[11px] font-black text-slate-700 dark:text-slate-200 leading-tight">
+                                ¿El cliente lo quiere de otra forma?
+                            </span>
+                            <span className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 leading-tight truncate">
+                                Darlo en Bs, acreditarlo a su cuenta o dejarlo en caja
+                            </span>
+                        </span>
                     </button>
                     <div aria-live="polite" className="sr-only">
                         Vuelto de {changeUsd.toFixed(2)} dólares pendiente.

@@ -52,7 +52,7 @@ export default function PaymentFooter({
                 ) : (
                     changeAllocationComplete
                         ? <><CheckCircle size={20} /> PAGAR (LISTO)</>
-                        : <><Wallet size={20} /> ASIGNA EL VUELTO</>
+                        : <><Wallet size={20} /> CONFIRMA EL CAMBIO</>
                 )}
             </button>
         </div>

@@ -75,7 +75,7 @@ const bsAmountInput = (page) =>
 
 // El botón final del modo básico cambia de texto según el estado.
 const confirmButton = (page) =>
-    page.getByRole('button', { name: /CONFIRMAR VENTA|INGRESA LOS PAGOS|FIAR RESTANTE|ASIGNA EL VUELTO|ERROR DE TASA|COMPLETAR CUOTA INICIAL/ });
+    page.getByRole('button', { name: /CONFIRMAR VENTA|INGRESA LOS PAGOS|FIAR RESTANTE|CONFIRMA CÓMO ENTREGAS EL CAMBIO|ERROR DE TASA|COMPLETAR CUOTA INICIAL/ });
 
 // ════════════════════════════════════════════════════════════════════════
 // CASO 1 — Cobro simple exacto (pago completo, sin vuelto)
@@ -118,10 +118,10 @@ test('vuelto simple: pago con $5 sobre $3 genera vuelto $2 y confirma tras asign
     // Aparece la sección de vuelto en el footer y la fila progresiva (Fase 2).
     await expect(page.getByText('Vuelto:', { exact: false })).toBeVisible();
 
-    // Mientras haya vuelto sin asignar, el CTA está bloqueado con "ASIGNA EL VUELTO".
+    // Mientras haya vuelto sin asignar, el CTA está bloqueado con copy instructivo.
     const cta = confirmButton(page);
     await expect(cta).toBeDisabled();
-    await expect(cta).toContainText('ASIGNA EL VUELTO');
+    await expect(cta).toContainText('CONFIRMA CÓMO ENTREGAS EL CAMBIO');
 
     // El caso normal se resuelve en 1 pulsación con "Entregar así" (VUELTO-REALISTA:
     // el desglose propuesto $2.00 + Bs 0 es exacto porque el vuelto es entero).
@@ -153,8 +153,10 @@ test('vuelto combinado: declarar Bs del vuelto acota el campo USD al remanente',
     await usdAmountInput(page).fill('10.00');
     await page.getByText('Vuelto:', { exact: false }).waitFor();
 
-    // Abrir el bottom sheet "Personalizar" (campos con aria-label único).
-    await page.getByRole('button', { name: /Personalizar/ }).click();
+    // Abrir el bottom sheet de asignación (antes "Personalizar") — el botón
+    // secundario con copy "¿El cliente lo quiere de otra forma?" (campos con
+    // aria-label único dentro del sheet).
+    await page.getByRole('button', { name: /otra forma/ }).click();
 
     // Declarar Bs 120 del vuelto en "Cambio en Bs".
     const bsChange = page.getByLabel('Cambio a entregar en bolívares');

@@ -715,7 +715,7 @@ export default function CheckoutModal({
                             <><AlertTriangle size={18} /> ERROR DE TASA</>
                         ) : isPaid ? (
                             !changeAllocationComplete ? (
-                                <><AlertTriangle size={18} /> ASIGNA EL VUELTO</>
+                                <><AlertTriangle size={18} /> CONFIRMA CÓMO ENTREGAS EL CAMBIO</>
                             ) : casheaActive ? (
                                 <><Receipt size={18} /> CONFIRMAR VENTA CASHEA</>
                             ) : (
