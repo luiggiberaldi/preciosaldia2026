@@ -23,7 +23,7 @@ más capturas/traza de Playwright cuando algo falla.
 | Excepciones no capturadas (pageerror) | 0 |
 | Respuestas locales ≥ 400 | 0 |
 | Desbordes horizontales a 360 px | 0 (6 vistas + 5 secciones de Ajustes + cesta + resumen de cierre) |
-| Hallazgos | **3** (1 bug de React, 1 decisión de semántica de cartera, 1 función ausente en el checkout móvil) + 1 nota de infra del arnés |
+| Hallazgos | **2 reales** (1 bug de React **corregido**, 1 decisión de semántica de cartera) + 1 falso hallazgo retirado + 1 nota de infra del arnés |
 
 ## Matriz de cobertura
 
@@ -41,12 +41,12 @@ más capturas/traza de Playwright cuando algo falla.
 | **F9** Navegación | Las 6 vistas de la barra inferior responden y ninguna desborda | Inicio/Vender/Inventario/Clientes/Reportes/Ajustes: 0 px de desborde |
 | **F10** Anular venta + reciclaje | Anulación desde el historial de Reportes, stock devuelto, oferta de reciclaje del carrito | venta marcada **ANULADA**; stock 49 → **50**; oferta de reciclaje del ítem anulado |
 | **F11** Gasto interno que afecta caja | Gasto de Bs 200 desde el dashboard y su efecto en el arqueo del cierre | bolsillo USD intacto ($100,00); bolsillo Bs **4.000 → 3.800** esperados por el sistema |
-| **F12** Saldo a favor en checkout básico | Intento de aplicar el favor de un cliente al pagar en el modal móvil | **hallazgo H3**: el modo básico no ofrece la opción (verificado como funcionando en F12b) |
+| **F12** Saldo a favor en checkout básico | Aplicar el favor del cliente como pago en el modal móvil (sección «Crédito interno») | venta de $5 pagada con saldo a favor; favor **$18,50 → $13,50**, deuda $0; pago interno `saldo_favor` registrado |
 | **F12b** Saldo a favor en modo POS | Pago real de una venta de $5 con saldo a favor en el checkout POS | favor **$18,50 → $13,50**; venta con pago interno `saldo_favor` de $5 y **0** pagos en efectivo; sin desborde a 360 px |
 
 ## Hallazgos
 
-### H1 · P2 — Hooks después de un `return` condicional (React)
+### H1 · P2 — Hooks después de un `return` condicional (React) — ✅ CORREGIDO
 
 `src/views/CustomersView.jsx` — `CustomerDetailSheet`:
 
@@ -67,6 +67,9 @@ estado de la mini-paginación del historial puede quedar desincronizado.
 *Corrección*: mover la salida temprana **debajo** de los hooks y usar `customer?.id` en la
 dependencia. Es el único caso del repo (barrido sobre `components/` y `views/`).
 
+> **Estado**: corregido y verificado con el arnés — F3 vuelve a correr sin errores de
+> consola (el `finding` desapareció de la evidencia).
+
 ### H2 · P1 (semántica) — Un fiado a un cliente con saldo a favor no crea deuda
 
 La cartera es un **saldo neto** (`favor − deuda`). Al fiar $3 a un cliente con $18,50 a
@@ -84,23 +87,27 @@ financiero. El riesgo es de lectura: cualquier superficie que sume `customer.deu
 mientras el reporte de fiados sí lo cuenta. Es una decisión de producto: ¿fiar debe
 ampliar la deuda bruta, o está bien que consuma primero el saldo a favor?
 
-*Estado*: documentado y con test que lo reproduce; no se cambió comportamiento.
+*Estado*: documentado y con test que lo reproduce; la **matemática no cambió**. Como
+mitigación de UX, la venta congela la cartera previa (`walletSnapshot`) y el recibo ahora
+muestra **«Saldo a favor aplicado: $X»** con la explicación, para que el fiado consumido
+sea evidente en caja (verificado en F3b).
 
-### H3 · P2 — El checkout móvil (modo básico) no permite aplicar el saldo a favor
+### H3 · RETIRADO — falso hallazgo: el checkout básico SÍ aplica el saldo a favor
 
-En el modal de cobro **básico** (el que usa la app móvil a 360 px) no existe ninguna vía
-para aplicar el saldo a favor de un cliente a la venta: `CheckoutModal.jsx` eliminó
-explícitamente el botón «Usar Saldo a Favor» y la `WalletSection` solo existe en
-`CheckoutModalPOS`. El cliente con crédito interno a favor solo puede gastarlo si el
-cajero cambia a modo POS.
+El F12 original buscaba el texto de la wallet del POS («Saldo a Favor · Método de pago»)
+para decidir si el modo básico ofrecía la función. No lo encontró y concluyó —mal— que
+el checkout móvil no permitía usar el favor. En realidad el modal básico lo expone de
+otra manera: como **sección «Crédito interno»** de las barras de pago
+(`CheckoutPaymentBars`), con el método virtual `saldo_favor` y tope
+`min(favor, pendiente)` ya implementados en `useCheckoutCalculations`.
 
-- **F12** reproduce el caso: cliente con $18,50 a favor, venta en modo básico → el favor
-  queda intacto y no hay control donde usarlo.
-- **F12b** verifica que la función sí existe y funciona en modo POS: venta de $5 pagada
-  con el favor ($18,50 → $13,50), pago interno registrado y 0 efectivo.
+El F12 corregido **usa la función de verdad**: aplica $5, confirma la venta y audita el
+estado persistido (favor 18,50 → 13,50, deuda $0, pago interno registrado). F12b conserva
+la cobertura del camino POS. Lección para el arnés: un «no aparece X» solo es hallazgo
+después de descartar que la función viaje con otro nombre.
 
-*Decisión de producto*: o se porta la `WalletSection` al modal básico, o se documenta que
-el favor solo se aplica en POS. El arnés queda listo para validar cualquiera de las dos.
+> **Estado**: retirado como hallazgo; sin cambio de producto. El test quedó como
+> verificación e2e del pago con saldo a favor en modo básico.
 
 ### Nota de infra — el auto-backup apunta a producción desde cualquier entorno
 

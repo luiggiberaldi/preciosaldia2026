@@ -9,6 +9,7 @@ import { withLock } from './withLock.js';          // FIN-007: feature detection
 import { deepFreeze } from './deepFreeze.js';      // FIN-008: deep freeze (no solo shallow).
 import { FINANCIAL_EPSILON } from './securityConstants.js';
 import { FinancialEngine } from '../core/FinancialEngine.js';
+import { CurrencyService } from '../services/CurrencyService.js';
 
 const SALES_KEY = 'bodega_sales_v1';
 const PRODUCTS_KEY = 'bodega_products_v1';
@@ -35,8 +36,8 @@ export async function processSaleTransaction({
     const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
 
     // Detectar si el pago recibido es en Bolívares y recalcular cartTotals dinámicamente si hay Doble Precio
-    const isBsPayment = payments && payments.some(p => p.currency === 'BS' && parseFloat(p.amountBs || 0) > 0);
-    const hasDualItem = cart && cart.some(i => i.pricingMode === 'dual_usd' && parseFloat(i.priceBsUsdRef) > 0);
+    const isBsPayment = payments && payments.some(p => p.currency === 'BS' && CurrencyService.safeParse(p.amountBs) > 0);
+    const hasDualItem = cart && cart.some(i => i.pricingMode === 'dual_usd' && CurrencyService.safeParse(i.priceBsUsdRef) > 0);
 
     let activeCartTotalUsd = cartTotalUsd;
     let activeCartTotalBs = cartTotalBs;
@@ -87,7 +88,7 @@ export async function processSaleTransaction({
     if (changeBreakdown?.esCredito === true && changeUsd > FINANCIAL_EPSILON.PAYMENT_ZERO) {
         return {
             success: false,
-            error: `En modo crédito el pago excede la venta en $${changeUsd.toFixed(2)}. Cambia a Contado para gestionar el vuelto o registra un abono desde Cartera.`,
+            error: `En modo crédito el pago excede la venta en $${round2(changeUsd)}. Cambia a Contado para gestionar el vuelto o registra un abono desde Cartera.`,
         };
     }
 
@@ -193,7 +194,7 @@ export async function processSaleTransaction({
     if (hasExplicitChangeAllocation && unallocatedChangeUsd > FINANCIAL_EPSILON.PAYMENT_ZERO) {
         return {
             success: false,
-            error: `Vuelto sin asignar: $${unallocatedChangeUsd.toFixed(2)}. Entrégalo, déjalo en caja o acredita el resto a la billetera.`,
+            error: `Vuelto sin asignar: $${round2(unallocatedChangeUsd)}. Entrégalo, déjalo en caja o acredita el resto a la billetera.`,
         };
     }
 
@@ -279,10 +280,11 @@ export async function processSaleTransaction({
         const existingSales = await storageService.getItem(SALES_KEY, []);
         const saleNumber = existingSales.reduce((mx, s) => Math.max(mx, s.saleNumber || 0), 0) + 1;
         // FIN-008: deep-freeze el sale persistido final.
-        const finalPersistedSale = deepFreeze({ ...sale, saleNumber });
+        let finalPersistedSale = deepFreeze({ ...sale, saleNumber });
 
         // Validación financiera dentro del lock y contra el snapshot más fresco,
         // antes de persistir venta o stock.
+        let walletSnapshot = null;
         if (selectedCustomerId) {
             const validationCustomers = await storageService.getItem(CUSTOMERS_KEY, customers);
             const validationCustomer = validationCustomers.find(c => c.id === selectedCustomerId);
@@ -293,6 +295,19 @@ export async function processSaleTransaction({
             if (internalCreditUsd > (Number(normalizedValidationCustomer.favor) || 0) + FINANCIAL_EPSILON.PAYMENT_ZERO) {
                 return { success: false, error: `El saldo a favor disponible es insuficiente. Disponible: $${round2(Number(normalizedValidationCustomer.favor) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.` };
             }
+            // AVISO-CARTERA: congelar la cartera previa en la venta para que el
+            // recibo pueda explicar consumos de saldo a favor (H2: un fiado a un
+            // cliente con favor consume el favor y la deuda no aumenta).
+            walletSnapshot = {
+                favorAntes: round2(Number(normalizedValidationCustomer.favor) || 0),
+                deudaAntes: round2(Number(normalizedValidationCustomer.deuda) || 0),
+            };
+        }
+
+        // AVISO-CARTERA: el snapshot viaja en el documento que se persiste y se
+        // devuelve (el recibo lo lee de ahí).
+        if (walletSnapshot) {
+            finalPersistedSale = deepFreeze({ ...finalPersistedSale, walletSnapshot });
         }
 
         await storageService.setItem(SALES_KEY, [finalPersistedSale, ...existingSales]);

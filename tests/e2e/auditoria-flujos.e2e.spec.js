@@ -234,6 +234,9 @@ test('F3b fiado a cliente con saldo a favor', async ({ page }) => {
     await page.getByRole('button', { name: /FIAR RESTANTE/ }).click();
     await page.getByRole('button', { name: 'Confirmar fiado' }).click();
     await expect(page.getByText('Tasa BCV Aplicada')).toBeVisible({ timeout: 15_000 });
+    // AVISO-CARTERA (H2): el recibo explica que el fiado consumió el favor.
+    await expect(page.getByText('Saldo a favor aplicado')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/Este fiado se cubrió con el saldo a favor/)).toBeVisible();
     await closeReceipt(page);
 
     await expect.poll(async () => {
@@ -247,7 +250,7 @@ test('F3b fiado a cliente con saldo a favor', async ({ page }) => {
     const mov = ledger.find(m => m.type === 'VENTA_FIADA');
 
     record('F3b fiado a cliente con saldo a favor', 'finding',
-        `el fiado de $3 NO aparece como deuda: el saldo a favor bajó de $18,50 a $${juan.favor} y la deuda quedó en $${juan.deuda} (la cartera es neta; el ledger sí registra el movimiento)`, 
+        `el fiado de $3 NO aparece como deuda: el saldo a favor bajó de $18,50 a $${juan.favor} y la deuda quedó en $${juan.deuda} (la cartera es neta; el ledger sí registra el movimiento y el recibo ya lo explica con «Saldo a favor aplicado»)`, 
         { deuda: juan.deuda, favor: juan.favor, ledgerBalanceAfter: mov?.balanceAfterUsd, ledgerType: mov?.type });
     await auditOverflow(page, 'F3b fiado a cliente con saldo a favor', 'Vender');
     closeFlow(log, 'F3b fiado a cliente con saldo a favor');
@@ -640,14 +643,35 @@ test('F12 pago con saldo a favor en el checkout', async ({ page }) => {
     await page.getByText('Juan E2E').first().click();
     await expect(page.getByText(/Favor \$18\.50/).first()).toBeVisible();
 
-    // El checkout móvil (modo basic) NO monta la WalletSection: el cajero no
-    // puede aplicar el saldo a favor del cliente. El modo POS sí (ver F12b).
-    const walletEnBasic = await page.getByText('Saldo a Favor · Método de pago').count();
-    record('F12 pago con saldo a favor en el checkout', walletEnBasic > 0 ? 'ok' : 'finding',
-        walletEnBasic > 0
-            ? 'el checkout móvil ofrece aplicar el saldo a favor del cliente'
-            : 'el checkout móvil (modo basic) NO ofrece aplicar el saldo a favor: el cliente con crédito interno a favor no puede usarlo en caja',
-        { nota: 'CheckoutModal.jsx:492 (A-2) eliminó el botón «Usar Saldo a Favor»; WalletSection solo existe en CheckoutModalPOS. Verificado funcionando en F12b.' });
+    // El checkout básico expone el saldo a favor como método de pago propio:
+    // sección «Crédito interno» de las barras (el método virtual viaja en
+    // paymentMethods y el hook le aplica tope min(favor, pendiente)). Se usa
+    // de verdad: $5 = total de la venta, luego se audita el estado persistido.
+    const inputCredito = page.locator('div:has(> h3:text-is("Crédito interno")) input').first();
+    await expect(inputCredito).toBeVisible({ timeout: 10_000 });
+    await inputCredito.fill('5');
+    await expect(inputCredito).toHaveValue('5');
+    await expect(confirmButton(page)).toBeEnabled();
+    await confirmButton(page).click();
+    await expect(page.getByText('Tasa BCV Aplicada')).toBeVisible({ timeout: 15_000 });
+
+    const [sales, customers] = await Promise.all([
+        readIdb(page, 'bodega_sales_v1'),
+        readIdb(page, 'bodega_customers_v1'),
+    ]);
+    const venta = (sales || []).find(s => s.tipo === 'VENTA');
+    expect(venta, 'la venta quedó persistida').toBeTruthy();
+    const pagoFavor = (venta.payments || []).find(p => p.methodId === 'saldo_favor');
+    const juan = (customers || []).find(c => c.name === 'Juan E2E');
+    const favorOk = Boolean(pagoFavor)
+        && Math.abs(Number(pagoFavor.amountUsd) - 5) < 0.001
+        && Math.abs((juan?.favor || 0) - 13.5) < 0.001
+        && (juan?.deuda || 0) === 0;
+    record('F12 pago con saldo a favor en el checkout', favorOk ? 'ok' : 'finding',
+        favorOk
+            ? `venta de $5 pagada con saldo a favor en el checkout básico: pago interno registrado y el favor bajó de $18,50 a $${juan.favor}`
+            : `estado inesperado al pagar con saldo a favor en básico: pagoFavor=${JSON.stringify(pagoFavor)} favor=${juan?.favor} deuda=${juan?.deuda}`,
+        { methods: venta.payments?.map(p => p.methodId), favor: juan?.favor, deuda: juan?.deuda });
     await auditOverflow(page, 'F12 pago con saldo a favor en el checkout', 'checkout');
     closeFlow(log, 'F12 pago con saldo a favor en el checkout');
 });

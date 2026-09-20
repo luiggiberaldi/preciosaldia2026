@@ -243,6 +243,72 @@ describe('Cartera: validación de sobrepago en venta fiada', () => {
     });
 });
 
+// ════════════════════════════════════════════════════════════════════════
+// AVISO-CARTERA (H2, auditoría E2E) — la venta congela la cartera previa para
+// que el recibo pueda explicar el consumo de saldo a favor.
+// ════════════════════════════════════════════════════════════════════════
+describe('AVISO-CARTERA: snapshot de cartera previa en la venta', () => {
+    const baseFavor = { id: 'c-favor', name: 'Juan', deuda: 0, favor: 18.5 };
+
+    it('fiado total con favor: congela favorAntes/deudaAntes y consume el favor', async () => {
+        _memoryStore.set(CUSTOMERS_KEY, [{ ...baseFavor }]);
+        const result = await processSaleTransaction(baseOpts({
+            cart: [{ id: 'p1', name: 'Prestobarba', qty: 1, priceUsd: 3, costUsd: 1, costBs: 0, isWeight: false }],
+            cartTotalUsd: 3,
+            cartTotalBs: 120,
+            cartSubtotalUsd: 3,
+            payments: [],
+            changeBreakdown: { esCredito: true },
+            selectedCustomerId: baseFavor.id,
+            customers: [{ ...baseFavor }],
+        }));
+
+        expect(result.success).toBe(true);
+        expect(result.sale.tipo).toBe('VENTA_FIADA');
+        expect(result.sale.walletSnapshot).toEqual({ favorAntes: 18.5, deudaAntes: 0 });
+        // Semántica de cartera neta: el fiado consumió el favor, la deuda no aumenta.
+        expect(_memoryStore.get(CUSTOMERS_KEY)[0]).toMatchObject({ deuda: 0, favor: 15.5 });
+    });
+
+    it('fiado parcialmente cubierto: el snapshot conserva ambos componentes', async () => {
+        _memoryStore.set(CUSTOMERS_KEY, [{ id: 'c-favor', name: 'Juan', deuda: 0, favor: 2 }]);
+        const result = await processSaleTransaction(baseOpts({
+            cart: [{ id: 'p1', name: 'Producto', qty: 1, priceUsd: 5, costUsd: 2, costBs: 0, isWeight: false }],
+            cartTotalUsd: 5,
+            cartTotalBs: 200,
+            cartSubtotalUsd: 5,
+            payments: [],
+            changeBreakdown: { esCredito: true },
+            selectedCustomerId: 'c-favor',
+            customers: [{ id: 'c-favor', name: 'Juan', deuda: 0, favor: 2 }],
+        }));
+
+        expect(result.success).toBe(true);
+        expect(result.sale.walletSnapshot).toEqual({ favorAntes: 2, deudaAntes: 0 });
+        // Cartera neta: el favor se agota ($2) y el resto queda como deuda ($3).
+        expect(_memoryStore.get(CUSTOMERS_KEY)[0]).toMatchObject({ deuda: 3, favor: 0 });
+    });
+
+    it('venta cobrada a cliente con favor: snapshot presente aunque no se use', async () => {
+        _memoryStore.set(CUSTOMERS_KEY, [{ id: 'c-favor', name: 'Juan', deuda: 0, favor: 18.5 }]);
+        const result = await processSaleTransaction(baseOpts({
+            selectedCustomerId: 'c-favor',
+            customers: [{ id: 'c-favor', name: 'Juan', deuda: 0, favor: 18.5 }],
+        }));
+
+        expect(result.success).toBe(true);
+        expect(result.sale.tipo).toBe('VENTA');
+        expect(result.sale.walletSnapshot).toEqual({ favorAntes: 18.5, deudaAntes: 0 });
+        expect(_memoryStore.get(CUSTOMERS_KEY)[0]).toMatchObject({ favor: 18.5 });
+    });
+
+    it('venta sin cliente: no hay snapshot', async () => {
+        const result = await processSaleTransaction(baseOpts({}));
+        expect(result.success).toBe(true);
+        expect(result.sale.walletSnapshot).toBeUndefined();
+    });
+});
+
 describe('Cambio parcial dejado en caja', () => {
     const customer = { id: 'c-change', name: 'Ana', deuda: 0, favor: 0 };
 

@@ -313,6 +313,32 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                             </div>
                         )}
 
+                        {/* AVISO-CARTERA (H2): un fiado a un cliente con saldo a favor
+                            consume el favor antes de crear deuda (la cartera es neta).
+                            Sin esta nota, el cliente ve un fiado que «no aumentó» su
+                            deuda y el cajero no puede explicarlo. Va FUERA del bloque
+                            de pagos porque una venta 100% fiada no registra pagos. */}
+                        {(() => {
+                            const ws = receipt.walletSnapshot;
+                            const fiado = Number(receipt.fiadoUsd) || 0;
+                            if (!ws || !(ws.favorAntes > 0.001) || !(fiado > 0.001)) return null;
+                            const consumido = Math.min(ws.favorAntes, fiado);
+                            const cubiertoTotalmente = consumido >= fiado - 0.001;
+                            return (
+                                <div className="mt-4 pt-4 border-t border-slate-200 text-sm">
+                                    <div className="flex justify-between text-sky-700 dark:text-sky-400 font-bold">
+                                        <span className="flex items-center gap-1.5"><Wallet size={14} /> Saldo a favor aplicado:</span>
+                                        <span>${consumido.toFixed(2)}</span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 text-left leading-snug">
+                                        {cubiertoTotalmente
+                                            ? 'Este fiado se cubrió con el saldo a favor del cliente: la deuda no aumentó.'
+                                            : `Los primeros $${consumido.toFixed(2)} del fiado se cubrieron con su saldo a favor; el resto ($${(fiado - consumido).toFixed(2)}) quedó como deuda.`}
+                                    </p>
+                                </div>
+                            );
+                        })()}
+
                         <div className="mt-6 flex flex-col items-center gap-1">
                             <p className="text-center text-[10px] text-slate-400 uppercase tracking-wider font-bold">
                                 Tasa BCV Aplicada: {formatBs(receipt.rate)} Bs/$
