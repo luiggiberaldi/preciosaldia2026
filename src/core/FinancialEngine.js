@@ -157,6 +157,12 @@ export class FinancialEngine {
         const anomalies = [];
 
         salesArray.forEach(sale => {
+            // ── FIA-REPORT-001: una venta ANULADA no aporta ni caja ni cuenta por cobrar.
+            // Los reportes ya filtraban antes de llamar, pero el fondo de caja del POS
+            // (`SalesView.currentFloat`) no lo hacía: una venta anulada seguía sumando
+            // efectivo al cajón. `getGeneratedWalletCredit` ya tenía este guardarraíl.
+            if (sale?.status === 'ANULADA') return;
+
             // ── APERTURA DE CAJA: add opening float to cash buckets (not revenue) ──
             if (sale.tipo === 'APERTURA_CAJA') {
                 if (sale.openingUsd > 0) {
@@ -235,10 +241,24 @@ export class FinancialEngine {
                     isWalletCredit: true,
                     isCash: false,
                     isRevenue: false,
+                    // FIA-REPORT-001 (H7): este bucket suma dos orígenes distintos
+                    // (vuelto acreditado de una venta y excedente de un abono). La metadata
+                    // los separa sin crear buckets nuevos ni romper el contrato existente.
+                    origins: { vueltoMonederoUsd: 0, excedenteAbonoUsd: 0 },
                 };
-                breakdown['_saldo_favor_generado'].total = round2(
-                    breakdown['_saldo_favor_generado'].total + generatedWalletCredit
+                const walletBucket = breakdown['_saldo_favor_generado'];
+                if (!walletBucket.origins) {
+                    walletBucket.origins = { vueltoMonederoUsd: 0, excedenteAbonoUsd: 0 };
+                }
+                const fromMonedero = round2(Math.min(
+                    generatedWalletCredit,
+                    Math.max(0, Number(sale.vueltoParaMonedero) || 0)
+                ));
+                walletBucket.origins.vueltoMonederoUsd = round2(walletBucket.origins.vueltoMonederoUsd + fromMonedero);
+                walletBucket.origins.excedenteAbonoUsd = round2(
+                    walletBucket.origins.excedenteAbonoUsd + round2(subR(generatedWalletCredit, fromMonedero))
                 );
+                walletBucket.total = round2(walletBucket.total + generatedWalletCredit);
             }
 
             // Fiado sales: bucket "fiado" tracks the *outstanding debt* generated (fiadoUsd),
@@ -274,6 +294,42 @@ export class FinancialEngine {
             }
 
             if (!sale.payments || sale.payments.length === 0) {
+                // ── FIA-REPORT-001 (H9): una venta a crédito SIN pagos no es flujo de caja ──
+                // La cuenta por cobrar ya quedó registrada arriba (bucket `fiado`/`cashea`).
+                // Antes este bloque legacy sumaba `sale.totalBs` al método por defecto
+                // (`efectivo_bs`), contando el fiado COMPLETO como efectivo recibido: inflaba
+                // los reportes, el cierre de caja y el fondo de caja del POS.
+                if (sale.tipo === 'VENTA_FIADA' || sale.tipo === 'VENTA_CASHEA') {
+                    const creditMethod = String(sale.paymentMethod || '').toLowerCase();
+                    const isCreditMethod = !creditMethod
+                        || creditMethod === 'fiado'
+                        || creditMethod === 'cashea'
+                        || creditMethod.includes('credito')
+                        || creditMethod.includes('crédito');
+                    // Sin método de cobro explícito (o con uno de crédito): cero efectivo.
+                    if (isCreditMethod) return;
+
+                    // Venta a crédito legacy con un método de cobro explícito: solo la parte
+                    // realmente cobrada (total − fiado/cashea) es flujo de caja.
+                    const creditUsd = sale.fiadoUsd != null ? sale.fiadoUsd : (sale.casheaUsd || 0);
+                    const paidUsd = round2(subR(sale.totalUsd || 0, creditUsd));
+                    if (paidUsd <= FINANCIAL_EPSILON.PAYMENT_ZERO) return;
+                    const legacyRate = sale.rate
+                        || (sale.totalUsd > 0 ? divR(sale.totalBs || 0, sale.totalUsd) : 0)
+                        || 1;
+                    const isUsdMethod = creditMethod.includes('usd') || creditMethod.includes('zelle') || creditMethod.includes('binance');
+                    const isCopMethod = creditMethod.includes('cop');
+                    const legacyCurrency = isUsdMethod ? 'USD' : (isCopMethod ? 'COP' : 'BS');
+                    const legacyValue = isUsdMethod
+                        ? paidUsd
+                        : (isCopMethod ? mulR(paidUsd, sale.tasaCop || 0) : mulR(paidUsd, legacyRate));
+                    if (!breakdown[creditMethod]) {
+                        breakdown[creditMethod] = { total: 0, currency: legacyCurrency, label: _resolveMethodLabel(creditMethod) };
+                    }
+                    breakdown[creditMethod].total = round2(breakdown[creditMethod].total + legacyValue);
+                    return;
+                }
+
                 // V1 Legacy Sales & Cobro Deudas
                 const method = sale.paymentMethod || 'efectivo_bs';
                 let currency = 'BS';
@@ -456,6 +512,35 @@ export class FinancialEngine {
             }
         });
 
+        // ── FIA-REPORT-001 (H8): peso en Bs de las cuentas por cobrar con la TASA DE CADA
+        // VENTA, no con la tasa de hoy. Aditivo: no altera `total` (USD) ni el resto del
+        // contrato; los consumidores que lo ignoren siguen viendo el comportamiento previo.
+        salesArray.forEach(sale => {
+            if (!sale || sale.status === 'ANULADA') return;
+            const rate = sale.rate || 0;
+            if (!rate) return;
+            const addBsAtSaleRate = (key, usd, sign = 1) => {
+                if (!breakdown[key]) return;
+                breakdown[key].bsAtSaleRate = round2(
+                    (breakdown[key].bsAtSaleRate || 0) + sign * mulR(usd, rate)
+                );
+            };
+            if (sale.tipo === 'VENTA_FIADA') {
+                addBsAtSaleRate('fiado', round2(sale.fiadoUsd != null ? sale.fiadoUsd : (sale.totalUsd || 0)));
+            } else if (sale.tipo === 'COBRO_DEUDA') {
+                addBsAtSaleRate('fiado', round2(sale.totalUsd || 0), -1);
+            } else if (sale.tipo === 'VENTA_CASHEA') {
+                const casheaUsd = round2(sale.casheaUsd != null
+                    ? sale.casheaUsd
+                    : (sale.payments || [])
+                        .filter(p => p.methodId === 'cashea')
+                        .reduce((s, p) => s + (p.amountUsd || 0), 0));
+                addBsAtSaleRate('cashea', casheaUsd);
+            } else if (sale.tipo === 'COBRO_CASHEA') {
+                addBsAtSaleRate('cashea', round2(sale.totalUsd || 0), -1);
+            }
+        });
+
         // Final pass: round all totals strictly and filter out zeroes
         const finalBreakdown = {};
         Object.keys(breakdown).forEach(k => {
@@ -493,7 +578,7 @@ export class FinancialEngine {
         const subtotalUsd = sumR(lineItemsUsd);
 
         const lineItemsBs = cartItems.map((item, idx) => {
-            if (isBsPayment && item.pricingMode === 'dual_usd' && parseFloat(item.priceBsUsdRef) > 0) {
+            if (isBsPayment && item.pricingMode === 'dual_usd' && Number(item.priceBsUsdRef) > 0) {
                 return mulR(mulR(item.priceBsUsdRef, item.qty), bcvRate);
             }
             if (item.exactBs != null && !isBsPayment) {

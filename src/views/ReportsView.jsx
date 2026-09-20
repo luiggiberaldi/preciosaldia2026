@@ -10,6 +10,11 @@ import ConfirmModal from '../components/ConfirmModal';
 import { getLocalISODate, getDateRange } from '../utils/dateHelpers';
 import { calculateReportsData, groupSalesByCierreId } from '../utils/reportsProcessor';
 import { processVoidSale } from '../utils/voidSaleProcessor';
+import { CUSTOMER_LEDGER_KEY, rebuildCustomersFromLedger } from '../utils/customerLedger';
+import { reconcileCustomersWithLedger } from '../utils/pocketReconciliation';
+import { logEvent } from '../services/auditService';
+import { useAuthStore } from '../hooks/store/useAuthStore';
+import ReconciliationNotice from '../components/Reports/ReconciliationNotice';
 import { useReportExport } from '../hooks/useReportExport';
 import ReportsMetricsTab from '../components/Reports/ReportsMetricsTab';
 import ReportsHistoryTab from '../components/Reports/ReportsHistoryTab';
@@ -33,6 +38,12 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
     const { products, setProducts, effectiveRate: bcvRate, copEnabled, copPrimary, tasaCop } = useProductContext();
     const { loadCart } = useCart();
     const [allSales, setAllSales] = useState([]);
+    // FIA-REPORT-001: la cartera de clientes permite mostrar «Cartera al cierre»
+    // (stock acumulado) sin confundirla con el flujo del período.
+    const [customers, setCustomers] = useState([]);
+    // FIA-REPORT-001 (H5): el ledger de movimientos es la tercera fuente de verdad.
+    const [ledger, setLedger] = useState([]);
+    const [isRepairingLedger, setIsRepairingLedger] = useState(false);
     const [activeTab, setActiveTab] = useState('metrics');
     const [selectedRange, setSelectedRange] = useState('week');
     const [customFrom, setCustomFrom] = useState('');
@@ -67,9 +78,15 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
         if (isActive === false) return; // Si es explicitamente false, abortamos
         let mounted = true;
         const load = async () => {
-            const saved = await storageService.getItem(SALES_KEY, []);
+            const [saved, savedCustomers, savedLedger] = await Promise.all([
+                storageService.getItem(SALES_KEY, []),
+                storageService.getItem('bodega_customers_v1', []),
+                storageService.getItem(CUSTOMER_LEDGER_KEY, []),
+            ]);
             if (mounted) {
                 setAllSales(saved);
+                setCustomers(Array.isArray(savedCustomers) ? savedCustomers : []);
+                setLedger(Array.isArray(savedLedger) ? savedLedger : []);
                 setIsLoading(false);
             }
         };
@@ -97,12 +114,18 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
         totalItems,
         profit,
         paymentBreakdown,
+        receivables,
+        receivablePayments,
+        carteraUsd,
         topProducts,
         salesByDay,
         expensesList,
         expensesUsd,
         expensesBs
-    } = useMemo(() => calculateReportsData(allSales, from, to, bcvRate, products), [allSales, from, to, bcvRate, products]);
+    } = useMemo(
+        () => calculateReportsData(allSales, from, to, bcvRate, products, customers),
+        [allSales, from, to, bcvRate, products, customers]
+    );
 
     const groupedClosings = useMemo(() => {
         if (activeTab === 'history') {
@@ -112,6 +135,41 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
     }, [allSales, from, to, activeTab]);
 
     const maxDayTotal = Math.max(...salesByDay.map(d => d.total), 1);
+
+    // ── FIA-REPORT-001 (H5): la cartera guardada vs el ledger de movimientos ──
+    const reconciliation = useMemo(
+        () => reconcileCustomersWithLedger(customers, ledger),
+        [customers, ledger]
+    );
+    // El botón de reparación está apagado por defecto: es una escritura sobre
+    // cartera, así que exige (1) activarlo en Configuración y (2) rol no-cajero.
+    const canRepairLedger = useMemo(() => {
+        if (typeof localStorage === 'undefined') return false;
+        if (localStorage.getItem('reportes_reparacion_ledger') !== 'true') return false;
+        const rol = useAuthStore.getState().usuarioActivo?.rol;
+        return rol !== 'CAJERO';
+    }, []);
+
+    const handleRepairLedger = async () => {
+        setIsRepairingLedger(true);
+        try {
+            // Solo reescribe el snapshot de cada cliente con el último saldo del
+            // ledger. NO borra ni modifica movimientos.
+            const rebuilt = rebuildCustomersFromLedger(customers, ledger);
+            await storageService.setItem('bodega_customers_v1', rebuilt);
+            setCustomers(rebuilt);
+            logEvent(
+                'CONFIG',
+                'LEDGER_RECONCILED',
+                `Cartera reconstruida desde el ledger (${reconciliation.drift.length} clientes)`,
+                useAuthStore.getState().usuarioActivo
+            );
+        } catch (error) {
+            console.error('Error reconstruyendo cartera desde el ledger:', error);
+        } finally {
+            setIsRepairingLedger(false);
+        }
+    };
 
     const onExportPDF = () => {
         handleExportPDF({
@@ -242,6 +300,13 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                 </div>
             )}
 
+            <ReconciliationNotice
+                reconciliation={reconciliation}
+                canRepair={canRepairLedger}
+                onRepair={handleRepairLedger}
+                isRepairing={isRepairingLedger}
+            />
+
             {activeTab === 'metrics' && (
                 <ReportsMetricsTab
                     salesForStats={salesForStats}
@@ -253,6 +318,9 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                     totalItems={totalItems}
                     profit={profit}
                     paymentBreakdown={paymentBreakdown}
+                    receivables={receivables}
+                    receivablePayments={receivablePayments}
+                    carteraUsd={carteraUsd}
                     topProducts={topProducts}
                     salesByDay={salesByDay}
                     maxDayTotal={maxDayTotal}
@@ -292,6 +360,9 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                     totalItems={totalItems}
                     profit={profit}
                     paymentBreakdown={paymentBreakdown}
+                    receivables={receivables}
+                    receivablePayments={receivablePayments}
+                    carteraUsd={carteraUsd}
                     topProducts={topProducts}
                     salesByDay={salesByDay}
                     maxDayTotal={maxDayTotal}

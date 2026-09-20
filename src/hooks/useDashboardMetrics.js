@@ -1,5 +1,6 @@
 import { useMemo, useCallback } from 'react';
 import { FinancialEngine } from '../core/FinancialEngine';
+import { computeReceivablesMovements } from '../utils/receivablesReport';
 import { sumR, mulR } from '../utils/dinero';
 import { getLocalISODate } from '../utils/dateHelpers';
 
@@ -174,6 +175,14 @@ export function useDashboardMetrics(sales, customers, products, bcvRate) {
         return FinancialEngine.calculatePaymentBreakdown(todayCashFlow);
     }, [todayCashFlow]);
 
+    // FIA-REPORT-001 (H1/H2): movimientos de cuentas por cobrar del turno. El bucket
+    // `fiado` del motor trae el NETO y el motor descarta los buckets en 0, así que la
+    // vista no puede depender de él para decidir si hubo movimientos.
+    const todayReceivables = useMemo(
+        () => computeReceivablesMovements(todayCashFlow),
+        [todayCashFlow]
+    );
+
     // Top productos vendidos HOY (para cierre del día — excluye Venta Libre)
     // FIN-019: usar mulR + round2 en vez de multiplicación raw.
     const todayTopProducts = useMemo(() => {
@@ -242,6 +251,7 @@ export function useDashboardMetrics(sales, customers, products, bcvRate) {
         totalDeudas,
         topProducts,
         paymentBreakdown,
+        todayReceivables,
         todayTopProducts,
         inventoryMetrics,
     };

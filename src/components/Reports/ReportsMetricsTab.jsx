@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Calendar, DollarSign, TrendingUp, TrendingDown, ShoppingBag, Package, ChevronDown, ChevronUp, Clock, Send, Ban, Shuffle, Search, X, Recycle, LockIcon, CornerDownLeft, Printer, Lightbulb, Car, User, Wrench, FileText } from 'lucide-react';
 import { formatBs, formatCop } from '../../utils/calculatorUtils';
+import { buildPaymentBreakdownRows, toBsEquivalent } from '../../utils/paymentBreakdownView';
+import { buildReceivablesView } from '../../utils/receivablesReport';
 import { getPaymentLabel, getPaymentMethod, PAYMENT_ICONS, toTitleCase, getPaymentIcon } from '../../config/paymentMethods';
 import { generateTicketPDF, printThermalTicket } from '../../utils/ticketGenerator';
 import EmptyState from '../EmptyState';
@@ -286,6 +288,8 @@ export default function ReportsMetricsTab({
     totalItems,
     profit,
     paymentBreakdown,
+    receivables = null,
+    carteraUsd = null,
     topProducts,
     salesByDay,
     maxDayTotal,
@@ -362,12 +366,34 @@ export default function ReportsMetricsTab({
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     {/* Medios de Pago */}
                     {Object.keys(paymentBreakdown).length > 0 && (() => {
-                        const allEntries = Object.entries(paymentBreakdown).filter(([, d]) => d.total > 0);
+                        // FIA-REPORT-001 (H4): el desglose se arma con el núcleo compartido
+                        // (src/utils/paymentBreakdownView). El denominador de los % son SOLO
+                        // medios de pago reales: el fiado, el crédito interno, la propina y el
+                        // vuelto ya no diluyen los porcentajes.
+                        const breakdownView = buildPaymentBreakdownRows(paymentBreakdown, { bcvRate, tasaCop });
+                        const allEntries = breakdownView.rows.map(row => [row.key, {
+                            ...paymentBreakdown[row.key],
+                            pct: row.pct,
+                            amountBs: row.amountBs,
+                            isReceivable: row.isReceivable,
+                            hasMovement: row.hasMovement,
+                        }]);
                         // Paridad literal con DashboardPaymentBreakdown.jsx: Cashea es una
                         // cuenta por cobrar (Cashea le remesa a la bodega), nunca ingreso USD.
                         // TIP-005 (D1): la propina no es un método de pago. Ver
                         // DashboardPaymentBreakdown.jsx para el razonamiento completo.
-                        const fiadoMethods = allEntries.filter(([method, d]) => (d.currency === 'FIADO' || method === 'cashea') && !d.isChange && !d.isTip);
+                        // H1: la sección de cuentas por cobrar ya NO se deriva del bucket
+                        // `fiado` — el motor descarta un neto de 0 y antes la UI filtraba por
+                        // signo, así que desaparecía justo cuando había más cobranzas que fiado.
+                        // Ahora se arma con `receivables`, que conoce cada movimiento.
+                        // Flag de escape (G3): con `reportes_fiado_split=false` la sección vuelve
+                        // al comportamiento anterior (sin bloque de cuentas por cobrar) sin redeploy.
+                        const fiadoSplitEnabled = typeof localStorage === 'undefined'
+                            || localStorage.getItem('reportes_fiado_split') !== 'false';
+                        const receivablesView = buildReceivablesView(
+                            fiadoSplitEnabled ? receivables : null,
+                            { carteraUsd }
+                        );
                         const internalCreditMethods = allEntries.filter(([, d]) => d.isInternalCredit || d.currency === 'INTERNAL_CREDIT');
                         const internalCreditUsed = internalCreditMethods.filter(([, d]) => !d.isWalletCredit);
                         const internalCreditGenerated = internalCreditMethods.filter(([, d]) => d.isWalletCredit);
@@ -386,16 +412,11 @@ export default function ReportsMetricsTab({
                         const netoBs  = subtotalBs - totalVueltoBs;
                         const netoUsd = subtotalUsd - totalVueltoUsd;
 
-                        const toBsEquiv = (data) => {
-                            if (data.currency === 'INTERNAL_CREDIT') return 0;
-                            if (data.currency === 'USD' || data.currency === 'FIADO') return data.total * bcvRate;
-                            if (data.currency === 'COP') return tasaCop > 0 ? (data.total / tasaCop) * bcvRate : 0;
-                            return data.total;
-                        };
+                        const toBsEquiv = (data) => (Number.isFinite(data?.amountBs)
+                            ? data.amountBs
+                            : toBsEquivalent(data, { bcvRate, tasaCop }));
 
-                        const grandTotalBsEquiv = allEntries
-                            .filter(([, d]) => !d.isChange && !d.isTip && !d.isInternalCredit)
-                            .reduce((s, [, d]) => s + toBsEquiv(d), 0);
+                        const grandTotalBsEquiv = breakdownView.denominatorBs;
 
                         const renderMethod = ([method, data]) => {
                             const label = toTitleCase(getPaymentLabel(method, data.label));
@@ -474,15 +495,59 @@ export default function ReportsMetricsTab({
                                     </div>
                                 )}
 
-                                {fiadoMethods.length > 0 && (
-                                    <div className="mb-5">
-                                        <div className="flex items-center justify-between mb-3">
-                                            <span className="text-[11px] font-bold text-amber-500 uppercase tracking-wider">Por Cobrar</span>
-                                            <span className="text-xs font-black text-amber-600 dark:text-amber-400">{copEnabled && copPrimary && tasaCop > 0 ? `${formatCop(fiadoMethods.reduce((s, [,d]) => s + d.total, 0) * tasaCop)} COP` : `USD ${fiadoMethods.reduce((s, [,d]) => s + d.total, 0).toFixed(2)}`}</span>
+                                {receivablesView.hasMovement && (() => {
+                                    const netoRow = receivablesView.rows.find(r => r.key === 'neto');
+                                    const netoUsd = netoRow ? netoRow.amountUsd : 0;
+                                    return (
+                                        <div className="mb-5" data-testid="reporte-cuentas-por-cobrar">
+                                            <div className="flex items-center justify-between mb-3">
+                                                <span className="text-[11px] font-bold text-amber-500 uppercase tracking-wider">Cuentas por cobrar</span>
+                                                <span className={`text-xs font-black ${netoUsd < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                                                    {netoUsd < 0 ? '−' : ''}USD {Math.abs(netoUsd).toFixed(2)} neto
+                                                </span>
+                                            </div>
+                                            <div className="space-y-2">
+                                                {receivablesView.rows.map(row => (
+                                                    <div key={row.key} className="flex items-center justify-between text-sm gap-2">
+                                                        <span className={`font-medium truncate ${row.isStock ? 'text-slate-500 dark:text-slate-400' : 'text-slate-600 dark:text-slate-300'}`}>
+                                                            {row.label}
+                                                            {row.count > 0 && <span className="text-[10px] text-slate-400"> ({row.count})</span>}
+                                                            <span className="block text-[9px] text-slate-400 font-normal">{row.hint}</span>
+                                                        </span>
+                                                        <span className={`font-bold shrink-0 ${row.amountUsd < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-700 dark:text-white'}`}>
+                                                            {row.amountUsd < 0 ? '−' : ''}USD {Math.abs(row.amountUsd).toFixed(2)}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            {receivablesView.cobranzas.length > 0 && (
+                                                <div className="mt-3 pt-3 border-t border-dashed border-amber-200 dark:border-amber-800/40">
+                                                    <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Detalle de cobranzas</p>
+                                                    <div className="space-y-1.5">
+                                                        {receivablesView.cobranzas.slice(0, 5).map(cobranza => (
+                                                            <div key={cobranza.saleId || `${cobranza.cliente}-${cobranza.timestamp}`} className="flex items-center justify-between text-xs gap-2">
+                                                                <span className="text-slate-500 dark:text-slate-400 truncate">
+                                                                    {cobranza.cliente}
+                                                                    {cobranza.saleNumber ? ` · #${cobranza.saleNumber}` : ''}
+                                                                    {cobranza.methodId ? ` · ${toTitleCase(getPaymentLabel(cobranza.methodId))}` : ''}
+                                                                </span>
+                                                                <span className="text-slate-600 dark:text-slate-300 font-medium shrink-0">
+                                                                    {formatBs(cobranza.montoBs)} Bs
+                                                                    {cobranza.saldoFavorGeneradoUsd > 0 && (
+                                                                        <span className="text-emerald-500 dark:text-emerald-400"> +USD {cobranza.saldoFavorGeneradoUsd.toFixed(2)} a favor</span>
+                                                                    )}
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                        {receivablesView.cobranzas.length > 5 && (
+                                                            <p className="text-[10px] text-slate-400">y {receivablesView.cobranzas.length - 5} más…</p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
-                                        <div className="space-y-4">{fiadoMethods.map(e => renderMethod(e))}</div>
-                                    </div>
-                                )}
+                                    );
+                                })()}
 
                                 {(bsMethods.length > 0 || vueltoBs.length > 0) && (
                                     <div className="mb-5">

@@ -150,6 +150,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         todayExpenses, todayExpensesUsd, todayGastos, todayGastosUsd, todayProfit,
         getRecentSales, weekData, outOfStockProducts, lowStockProducts,
         totalDeudas, topProducts, paymentBreakdown, todayTopProducts, inventoryMetrics,
+        todayReceivables,
     } = useDashboardMetrics(sales, customers, products, bcvRate);
 
     // Gastos Internos
@@ -298,6 +299,9 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 todayItemsSold,
                 reconData,
                 apertura: todayApertura,
+                // FIA-CIERRE-001: la cartera al cierre (stock) no se puede derivar de
+                // las ventas del día; se pasa desde las métricas de clientes.
+                carteraUsd: totalDeudas?.totalUsd ?? null,
                 copEnabled,
                 tasaCop,
                 advances: {
@@ -621,6 +625,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 {/* Pago por Metodo */}
                 <DashboardPaymentBreakdown
                     paymentBreakdown={paymentBreakdown}
+                    receivables={todayReceivables}
                     todayTotalBs={todayTotalBs}
                     bcvRate={bcvRate}
                     copEnabled={copEnabled}

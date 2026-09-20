@@ -2,17 +2,30 @@ import React from 'react';
 import { DollarSign } from 'lucide-react';
 import { formatBs, formatCop } from '../../utils/calculatorUtils';
 import { getPaymentLabel, toTitleCase, getPaymentIcon, PAYMENT_ICONS } from '../../config/paymentMethods';
+import { buildPaymentBreakdownRows, toBsEquivalent } from '../../utils/paymentBreakdownView';
+import { buildReceivablesView } from '../../utils/receivablesReport';
 
 export default function DashboardPaymentBreakdown({
-    paymentBreakdown, todayTotalBs, bcvRate, copEnabled, copPrimary, tasaCop,
+    paymentBreakdown, todayTotalBs, bcvRate, copEnabled, copPrimary, tasaCop, receivables = null,
 }) {
     if (Object.keys(paymentBreakdown).length === 0) return null;
 
-    const allEntries = Object.entries(paymentBreakdown).filter(([, d]) => d.total > 0);
+    // FIA-REPORT-001 (H4): núcleo compartido con el reporte. El denominador de los %
+    // son SOLO medios de pago reales (sin fiado, crédito interno, propina ni vuelto).
+    const breakdownView = buildPaymentBreakdownRows(paymentBreakdown, { bcvRate, tasaCop });
+    const allEntries = breakdownView.rows.map(row => [row.key, {
+        ...paymentBreakdown[row.key],
+        pct: row.pct,
+        amountBs: row.amountBs,
+        isReceivable: row.isReceivable,
+        hasMovement: row.hasMovement,
+    }]);
+    // H1: las cuentas por cobrar se arman con sus movimientos, no con el bucket
+    // (que puede venir en 0 o descartado y antes se filtraba por signo).
+    const receivablesView = buildReceivablesView(receivables, {});
     // TIP-005 (D1): `isTip` se excluye de TODOS los métodos de pago. La propina
     // ya está dentro del efectivo (no se restó como vuelto); sumarla otra vez
     // como método inflaría el ingreso. Se muestra aparte, solo informativa.
-    const fiadoMethods = allEntries.filter(([method, d]) => (d.currency === 'FIADO' || method === 'cashea') && !d.isChange && !d.isTip);
     const internalCreditMethods = allEntries.filter(([, d]) => d.isInternalCredit || d.currency === 'INTERNAL_CREDIT');
     const internalCreditUsed = internalCreditMethods.filter(([, d]) => !d.isWalletCredit);
     const internalCreditGenerated = internalCreditMethods.filter(([, d]) => d.isWalletCredit);
@@ -36,16 +49,11 @@ export default function DashboardPaymentBreakdown({
     const isCop = copEnabled && tasaCop > 0;
 
     // Convert any amount to Bs equivalent for consistent % calculation
-    const toBsEquiv = (data) => {
-        if (data.currency === 'INTERNAL_CREDIT') return 0;
-        if (data.currency === 'USD' || data.currency === 'FIADO') return data.total * bcvRate;
-        if (data.currency === 'COP') return tasaCop > 0 ? (data.total / tasaCop) * bcvRate : 0;
-        return data.total;
-    };
+    const toBsEquiv = (data) => (Number.isFinite(data?.amountBs)
+        ? data.amountBs
+        : toBsEquivalent(data, { bcvRate, tasaCop }));
 
-    const grandTotalBsEquiv = allEntries
-        .filter(([, d]) => !d.isChange && !d.isTip && !d.isInternalCredit)
-        .reduce((s, [, d]) => s + toBsEquiv(d), 0);
+    const grandTotalBsEquiv = breakdownView.denominatorBs;
 
     const renderMethod = ([method, data]) => {
         const label = toTitleCase(getPaymentLabel(method, data.label));
@@ -132,16 +140,28 @@ export default function DashboardPaymentBreakdown({
                 </div>
             )}
 
-            {fiadoMethods.length > 0 && (
+            {receivablesView.hasMovement && (
                 <div className="mb-4">
                     <div className="flex items-center justify-between mb-2">
-                        <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Por Cobrar</span>
+                        <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Cuentas por cobrar</span>
                         <span className="text-xs font-black text-amber-600 dark:text-amber-400">
-                                USD {fiadoMethods.reduce((s, [,d]) => s + d.total, 0).toFixed(2)}
-                            </span>
+                            USD {receivablesView.rows.find(r => r.key === 'neto')?.amountUsd.toFixed(2) || '0.00'} neto
+                        </span>
                     </div>
-                    <div className="space-y-3 pl-1 border-l-2 border-amber-200 dark:border-amber-800/40">
-                        <div className="pl-3 space-y-3">{fiadoMethods.map(e => renderMethod(e))}</div>
+                    <div className="space-y-2 pl-1 border-l-2 border-amber-200 dark:border-amber-800/40">
+                        <div className="pl-3 space-y-2">
+                            {receivablesView.rows.map(row => (
+                                <div key={row.key} className="flex items-center justify-between text-sm gap-2">
+                                    <span className="text-slate-600 dark:text-slate-300 font-medium truncate">
+                                        {row.label}
+                                        {row.count > 0 && <span className="text-[10px] text-slate-400"> ({row.count})</span>}
+                                    </span>
+                                    <span className={`font-bold shrink-0 ${row.amountUsd < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-700 dark:text-white'}`}>
+                                        {row.amountUsd < 0 ? '−' : ''}USD {Math.abs(row.amountUsd).toFixed(2)}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
             )}

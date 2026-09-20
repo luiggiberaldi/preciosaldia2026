@@ -6,6 +6,7 @@ import EmptyState from '../EmptyState';
 import { printerSerial } from '../../services/PrinterSerial';
 import { showToast } from '../Toast';
 import CasheaIcon from '../CasheaIcon';
+import { filterHistoryByKind } from '../../utils/receivablesReport';
 import { usePagination } from '../../hooks/usePagination';
 import PaginationBar from '../PaginationBar';
 
@@ -45,7 +46,20 @@ export default function SalesHistory({
         return recentSales || [];
     }, [recentSales]);
 
-    const currentBaseSales = historyTab === 'turno' ? shiftSales : allSales;
+    // FIA-REPORT-001 (H3): las cobranzas (COBRO_DEUDA / COBRO_CASHEA) no son ventas.
+    // Antes se mezclaban con las transacciones de venta en esta lista; ahora se
+    // separan por tipo y el default las excluye.
+    const [kindFilter, setKindFilter] = useState('ventas'); // 'ventas' | 'cobranzas' | 'todo'
+
+    const collectionCount = useMemo(() => filterHistoryByKind(
+        historyTab === 'turno' ? shiftSales : allSales,
+        'cobranzas'
+    ).length, [historyTab, shiftSales, allSales]);
+
+    const currentBaseSales = useMemo(
+        () => filterHistoryByKind(historyTab === 'turno' ? shiftSales : allSales, kindFilter),
+        [historyTab, shiftSales, allSales, kindFilter]
+    );
 
     // Motor de búsqueda inteligente con normalización y puntuación de relevancia
     const filteredSales = useMemo(() => {
@@ -287,6 +301,28 @@ export default function SalesHistory({
                     </span>
                 </button>
             </div>
+
+            {(collectionCount > 0 || kindFilter !== 'ventas') && (
+                <div className="flex items-center gap-1.5 mb-3">
+                    {[
+                        { id: 'ventas', label: 'Ventas' },
+                        { id: 'cobranzas', label: `Cobranzas${collectionCount > 0 ? ` (${collectionCount})` : ''}` },
+                        { id: 'todo', label: 'Todo' },
+                    ].map(option => (
+                        <button
+                            key={option.id}
+                            onClick={() => setKindFilter(option.id)}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                                kindFilter === option.id
+                                    ? 'bg-amber-500 text-white'
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                            }`}
+                        >
+                            {option.label}
+                        </button>
+                    ))}
+                </div>
+            )}
 
             {/* Barra de Búsqueda Inteligente */}
             <div className="relative mb-3">

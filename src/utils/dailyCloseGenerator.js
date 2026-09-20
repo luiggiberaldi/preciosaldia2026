@@ -2,6 +2,85 @@ import { jsPDF } from 'jspdf';
 import { formatBs, formatCop, formatUsd } from './calculatorUtils';
 import { getPaymentLabel, toTitleCase } from '../config/paymentMethods';
 import { round2, mulR, divR } from './dinero';
+import { buildCloseDaySummary } from './closeDaySummary';
+
+/**
+ * FIA-DETALLE-001: formatea un bucket del desglose respetando su moneda real.
+ *
+ * Las cuentas por cobrar (fiado, Cashea) viajan con `currency: 'FIADO'` pero su
+ * `total` está en USD. Sin esta rama caían en el caso por defecto y se imprimían
+ * como «Bs 139,28» cuando en realidad eran «$139,28»: la deuda del día aparecía
+ * 850 veces más pequeña (y con la moneda equivocada).
+ */
+export function formatBreakdownValue(data = {}) {
+    const total = Number(data.total) || 0;
+    if (data.isInternalCredit || data.currency === 'INTERNAL_CREDIT') return `$${formatUsd(total)} (crédito interno)`;
+    if (data.isReceivable || data.currency === 'FIADO') return `$${formatUsd(total)} (por cobrar)`;
+    if (data.currency === 'USD') return `$${formatUsd(total)}`;
+    if (data.currency === 'COP') return `${total.toLocaleString('es-CO')} COP`;
+    return `Bs ${formatBs(total)}`;
+}
+
+/**
+ * FIA-DETALLE-002: describe CÓMO se liquidó una transacción.
+ *
+ * Una venta 100% fiada se persiste con `payments: []` (no hubo pago), así que el
+ * detalle individual no mostraba método de pago alguno y una venta a crédito era
+ * indistinguible de una cobrada en efectivo. Aquí se resuelven, en una sola
+ * fuente: los métodos reales usados, el importe que quedó por cobrar y una
+ * etiqueta corta para marcar la fila.
+ */
+export function describeSaleSettlement(sale = {}) {
+    const paid = Array.isArray(sale.payments) ? sale.payments.filter(Boolean) : [];
+    const rate = Number(sale.rate) || 0;
+
+    const creditUsd = sale.tipo === 'VENTA_FIADA'
+        ? round2(sale.fiadoUsd != null ? sale.fiadoUsd : (sale.totalUsd || 0))
+        : sale.tipo === 'VENTA_CASHEA'
+            ? round2(sale.casheaUsd != null
+                ? sale.casheaUsd
+                : paid.filter(p => p.methodId === 'cashea').reduce((sum, p) => sum + (Number(p.amountUsd) || 0), 0))
+            : 0;
+
+    const methods = paid
+        .filter(p => p.methodId && p.methodId !== 'cashea')
+        .map(p => ({
+            label: toTitleCase(p.methodLabel || getPaymentLabel(p.methodId) || p.methodId || 'Pago'),
+            amountText: p.currency === 'USD' ? `$${formatUsd(p.amountUsd || 0)}` : `Bs ${formatBs(p.amountBs || 0)}`,
+        }));
+
+    if (methods.length === 0 && creditUsd <= 0 && sale.paymentMethod) {
+        methods.push({
+            label: toTitleCase(getPaymentLabel(sale.paymentMethod) || sale.paymentMethod),
+            amountText: `$${formatUsd(sale.totalUsd || 0)}`,
+        });
+    }
+
+    const creditLabel = creditUsd > 0
+        ? (sale.tipo === 'VENTA_CASHEA' ? 'CASHEA (Por Cobrar)' : 'FIADO (Por Cobrar)')
+        : null;
+
+    // Etiquetas visibles junto al cliente: hacen evidente la fila de un vistazo.
+    const tags = [];
+    if (sale.status === 'ANULADA') tags.push({ text: 'ANULADA', tone: 'danger' });
+    if (creditLabel) tags.push({ text: `${creditLabel.replace(' (Por Cobrar)', '')} $${formatUsd(creditUsd)}`, tone: 'credit' });
+    else if (sale.tipo === 'COBRO_DEUDA') tags.push({ text: 'ABONO DE DEUDA', tone: 'info' });
+    else if (sale.tipo === 'COBRO_CASHEA') tags.push({ text: 'REMESA CASHEA', tone: 'info' });
+
+    return {
+        creditUsd,
+        creditBs: creditUsd > 0 && rate > 0 ? round2(mulR(creditUsd, rate)) : 0,
+        creditLabel,
+        methods,
+        methodLine: (() => {
+            const parts = methods.map(m => `${m.label} ${m.amountText}`);
+            if (creditLabel) parts.push(`${creditLabel} $${formatUsd(creditUsd)}`);
+            if (parts.length === 0) parts.push(sale.tipo === 'APERTURA_CAJA' ? 'Fondo inicial' : '—');
+            return parts.join(' + ');
+        })(),
+        tags,
+    };
+}
 
 /**
  * Genera un PDF de Cierre del Día con reporte detallado.
@@ -22,6 +101,8 @@ export async function generateDailyClosePDF({
     todayItemsSold = 0,
     reconData = null, // Datos del cuadre físico
     apertura = null,  // Registro de apertura de caja
+    carteraUsd = null, // Deuda pendiente acumulada (stock) para el cierre
+
     copEnabled: copEnabledParam,
     tasaCop: tasaCopParam,
     action = 'share', // 'share' | 'print' | 'download'
@@ -67,6 +148,19 @@ export async function generateDailyClosePDF({
         (s.tipo === 'GASTO_INTERNO' || s.tipo === 'PAGO_PROVEEDOR') && s.status !== 'ANULADA'
     );
 
+    // ── FIA-CIERRE-001: resumen del día (ventas netas / créditos / ganancia) ──
+    // Se calcula aquí una sola vez porque lo usan las dos variantes del PDF y
+    // el alto del ticket depende de cuántas filas tenga.
+    const daySummary = buildCloseDaySummary({
+        allSales,
+        bcvRate,
+        todayTotalUsd,
+        todayTotalBs,
+        todayProfit,
+        carteraUsd,
+    });
+    const daySummaryRows = daySummary.hasMovement ? daySummary.rows.length : 0;
+
     // Detección de configuración de COP
     let isCop = false;
     let tasaCop = 0;
@@ -87,6 +181,7 @@ export async function generateDailyClosePDF({
     const MUTED = [134, 142, 150];
     const GREEN = [16, 124, 65];
     const RED = [220, 53, 69];
+    const ORANGE = [194, 65, 12]; // Cuentas por cobrar (fiado / Cashea)
     const BLUE = [1, 105, 111]; // Tono brand "Precios Al Día"
     const RULE = [222, 226, 230];
     const BG_CARD = [248, 249, 250];
@@ -341,16 +436,10 @@ export async function generateDailyClosePDF({
         const paymentEntries = Object.entries(paymentBreakdown);
         if (paymentEntries.length > 0) {
             const payH = 10 + (paymentEntries.length * 4.5);
-            contentY = drawCard(colR_X, rightY, colW, payH, 'Ingresos por Método');
+            contentY = drawCard(colR_X, rightY, colW, payH, 'Desglose por Método');
             paymentEntries.forEach(([methodId, data]) => {
                 const label = toTitleCase(getPaymentLabel(methodId, data.label));
-                const val = data.currency === 'INTERNAL_CREDIT' || data.isInternalCredit
-                    ? `${fmtUsd(data.total)} (crédito interno)`
-                    : data.currency === 'USD'
-                    ? fmtUsd(data.total)
-                    : data.currency === 'COP'
-                    ? `${data.total.toLocaleString('es-CO')} COP`
-                    : `Bs ${formatBs(data.total)}`;
+                const val = formatBreakdownValue(data);
 
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(7.5);
@@ -518,7 +607,15 @@ export async function generateDailyClosePDF({
             doc.setFontSize(9.5);
             doc.setTextColor(...BLUE);
             doc.text('DETALLE INDIVIDUAL DE TRANSACCIONES', M, y);
-            y += 5;
+            y += 4.5;
+
+            // FIA-DETALLE-002: leyenda que explica la columna de método y distingue
+            // una cuenta por cobrar de un cobro real.
+            doc.setFont('helvetica', 'italic');
+            doc.setFontSize(6.8);
+            doc.setTextColor(...MUTED);
+            doc.text('«Método» indica cómo se pagó cada transacción. FIADO y CASHEA son cuentas por cobrar: no entraron a la caja.', M, y);
+            y += 4.5;
 
             // Dibujar cabecera de la tabla
             const drawTableHeaders = (yy) => {
@@ -531,8 +628,8 @@ export async function generateDailyClosePDF({
                 doc.setFontSize(7.5);
                 doc.setTextColor(...BLUE);
                 doc.text('Hora', M + 4, yy + 0.2);
-                doc.text('Cliente / Estado', M + 18, yy + 0.2);
-                doc.text('Artículos / Desglose de Pago', M + 68, yy + 0.2);
+                doc.text('Cliente / Condición', M + 18, yy + 0.2);
+                doc.text('Artículos / Método de Pago', M + 68, yy + 0.2);
                 doc.text('Total (USD / Bs)', RIGHT - 4, yy + 0.2, { align: 'right' });
             };
 
@@ -562,16 +659,11 @@ export async function generateDailyClosePDF({
                     }).join(', ');
                 }
 
-                // Pagos
-                let paymentsText = '';
-                if (s.payments && s.payments.length > 0) {
-                    paymentsText = 'Pagos: ' + s.payments.map(p => {
-                        const label = toTitleCase(p.methodLabel || getPaymentLabel(p.methodId) || 'Pago');
-                        const val = p.currency === 'USD' ? fmtUsd(p.amountUsd) : `Bs ${formatBs(p.amountBs)}`;
-                        return `${label} (${val})`;
-                    }).join(' • ');
-                }
-
+                // FIA-DETALLE-002: método de pago SIEMPRE visible, y el importe fiado
+                // nombrado de forma explícita (antes una venta 100% fiada no imprimía
+                // ninguna línea de pago y parecía cobrada).
+                const settlement = describeSaleSettlement(s);
+                let paymentsText = `Método: ${settlement.methodLine}`;
                 // Vuelto
                 if (s.changeUsd > 0 || s.changeBs > 0) {
                     let changeStr = 'Vuelto: ';
@@ -592,7 +684,10 @@ export async function generateDailyClosePDF({
 
                 const fullDetail = `${itemsText}\n${paymentsText}`;
                 const detailLines = doc.splitTextToSize(fullDetail, 105);
-                const rowHeight = Math.max(12, detailLines.length * 4.2 + 4);
+                // FIA-DETALLE-002: las etiquetas (FIADO / ANULADA / ABONO) van debajo del
+                // nombre, así que la altura de la fila debe reservarles espacio.
+                const clientLines = 1 + settlement.tags.length;
+                const rowHeight = Math.max(12, detailLines.length * 4.2 + 4, clientLines * 4 + 4);
 
                 checkPageBreak(rowHeight);
 
@@ -615,14 +710,20 @@ export async function generateDailyClosePDF({
                 doc.text(hora, M + 4, y);
 
                 // Cliente
-                if (isCanceled) {
-                    doc.setTextColor(...RED);
-                    doc.setFont('helvetica', 'bold');
-                    doc.text(`${cliente}\n(ANULADA)`, M + 18, y);
-                } else {
-                    doc.setTextColor(...BODY);
-                    doc.setFont('helvetica', 'normal');
-                    doc.text(cliente, M + 18, y);
+                doc.setTextColor(...(isCanceled ? RED : BODY));
+                doc.setFont('helvetica', isCanceled ? 'bold' : 'normal');
+                doc.text(cliente.length > 34 ? `${cliente.slice(0, 33)}…` : cliente, M + 18, y);
+
+                // Condición de la fila: FIADO / CASHEA / ABONO / ANULADA, en su propio renglón
+                if (settlement.tags.length > 0) {
+                    const TONE_COLORS = { danger: RED, credit: ORANGE, info: BLUE };
+                    settlement.tags.forEach((tag, tagIdx) => {
+                        doc.setFont('helvetica', 'bold');
+                        doc.setFontSize(6.5);
+                        doc.setTextColor(...(TONE_COLORS[tag.tone] || BODY));
+                        doc.text(tag.text, M + 18, y + 3.6 * (tagIdx + 1));
+                    });
+                    doc.setFontSize(7.5);
                 }
 
                 // Detalle
@@ -647,6 +748,81 @@ export async function generateDailyClosePDF({
 
                 y += rowHeight;
             });
+        }
+
+        // 5. FIA-CIERRE-001: Resumen del día (ventas netas / créditos / ganancia)
+        // El puente que faltaba entre «Ingresos brutos» (devengado) y el efectivo
+        // esperado del arqueo: explica por qué la caja no coincide con las ventas.
+        if (daySummary.hasMovement) {
+            // Dos columnas (mismo bento que el resto del reporte): el bloque cabe
+            // sin empujar el PDF a una segunda página casi vacía.
+            const sumColW = 90;
+            const sumColR_X = M + sumColW + 5.9;
+            const blockH = Math.max(...daySummary.columns.map(col => 10 + col.rows.length * 5));
+            checkPageBreak(blockH + 16);
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(9.5);
+            doc.setTextColor(...BLUE);
+            doc.text('RESUMEN DEL DÍA (DEVENGADO Y CAJA)', M, y);
+            y += 5.5;
+
+            const TONE_COLORS_SUM = { credit: ORANGE, green: GREEN, muted: BODY, ink: INK };
+
+            const drawSummaryColumn = (col, x) => {
+                const h = 10 + col.rows.length * 5;
+                doc.setFillColor(...BG_CARD);
+                doc.rect(x, y, sumColW, h, 'F');
+                doc.setDrawColor(...BORDER_CARD);
+                doc.setLineWidth(0.25);
+                doc.rect(x, y, sumColW, h, 'S');
+                doc.setFillColor(...BLUE);
+                doc.rect(x, y, sumColW, 1.2, 'F');
+
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(7.5);
+                doc.setTextColor(...BLUE);
+                doc.text(col.title.toUpperCase(), x + 3, y + 5);
+
+                let rowY = y + 10.5;
+                col.rows.forEach(row => {
+                    const indent = x + 3 + (row.level > 0 ? 3 : 0);
+                    doc.setFont('helvetica', row.level > 0 ? 'normal' : 'bold');
+                    doc.setFontSize(7);
+                    doc.setTextColor(...(row.level > 0 ? BODY : INK));
+                    doc.text(row.label, indent, rowY);
+
+                    const usdText = `${row.usd < 0 ? '-' : ''}$${formatUsd(Math.abs(row.usd))}`;
+                    doc.setFont('helvetica', 'bold');
+                    doc.setTextColor(...(TONE_COLORS_SUM[row.tone] || INK));
+                    doc.text(usdText, x + sumColW - 3, rowY, { align: 'right' });
+
+                    if (Math.abs(row.bs) > 0) {
+                        const usdW = doc.getTextWidth(usdText);
+                        doc.setFont('helvetica', 'normal');
+                        doc.setFontSize(5.8);
+                        doc.setTextColor(...MUTED);
+                        doc.text(`Bs ${formatBs(row.bs)}`, x + sumColW - 5 - usdW, rowY, { align: 'right' });
+                    }
+
+                    rowY += 5;
+                });
+            };
+
+            drawSummaryColumn(daySummary.columns[0], M);
+            drawSummaryColumn(daySummary.columns[1], sumColR_X);
+
+            y += blockH + 3.5;
+
+            doc.setFont('helvetica', 'italic');
+            doc.setFontSize(6.4);
+            doc.setTextColor(...MUTED);
+            const noteLines = doc.splitTextToSize(
+                'Solo lo cobrado de las ventas y las cobranzas entraron a la caja. FIADO y CASHEA son cuentas por cobrar: no forman parte del efectivo esperado del arqueo.',
+                RIGHT - M
+            );
+            doc.text(noteLines, M, y);
+            y += noteLines.length * 3.2 + 4;
         }
 
         // Agregar footer final y descargar
@@ -693,11 +869,22 @@ export async function generateDailyClosePDF({
     }
     if (totalAutoconsumoUsd > 0) egresosRowCount += 5; // title + value + note + sep
 
+    // Altura de la nueva sección RESUMEN DEL DÍA en el ticket (FIA-CIERRE-001)
+    let daySummaryRowsCount = 0;
+    if (daySummary.hasMovement) {
+        daySummary.rows.forEach(r => {
+            daySummaryRowsCount += 1;
+            if (Math.abs(r.bs) > 0 && r.level === 0) daySummaryRowsCount += 1;
+        });
+        daySummaryRowsCount += 1; // título + separador
+    }
+
     const H = 100
         + (expectedStatsRowsCount * 5.2)
         + (egresosRowCount * 5.2)
         + (paymentRows * 6.5)
         + (topProdRows * 9.5)
+        + (daySummaryRowsCount * 5.2)
         + (apertura ? 24 : 0)
         + (reconData ? 32 : 0);
 
@@ -889,17 +1076,11 @@ export async function generateDailyClosePDF({
 
     // Desglose por método de pago
     if (paymentRows > 0) {
-        y = sectionTitle('INGRESOS POR MÉTODO', y);
+        y = sectionTitle('DESGLOSE POR MÉTODO', y);
 
         Object.entries(paymentBreakdown).forEach(([methodId, data]) => {
             const label = toTitleCase(getPaymentLabel(methodId, data.label));
-            const val = data.currency === 'INTERNAL_CREDIT' || data.isInternalCredit
-                ? `${fmtUsd(data.total)} (crédito interno)`
-                : data.currency === 'USD'
-                ? fmtUsd(data.total)
-                : data.currency === 'COP'
-                ? `${data.total.toLocaleString('es-CO')} COP`
-                : `Bs ${formatBs(data.total)}`;
+            const val = formatBreakdownValue(data);
 
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(fBody);
@@ -984,6 +1165,41 @@ export async function generateDailyClosePDF({
             doc.setTextColor(...MUTED);
             doc.text(`${p.qty} vend. · ${fmtUsd(p.revenue)} · Bs ${formatBs(mulR(p.revenue, bcvRate))}`, M + 5, y);
             y += 5.5;
+        });
+
+        y += 1;
+        dash(y); y += 6;
+    }
+
+    // ── RESUMEN DEL DÍA (FIA-CIERRE-001) ──
+    if (daySummary.hasMovement) {
+        y = sectionTitle('RESUMEN DEL DÍA', y);
+
+        daySummary.rows.forEach(row => {
+            // Etiqueta corta para el ancho del ticket (58/80 mm).
+            const label = row.short || row.label;
+            const indent = M + (row.level > 0 ? 2.5 : 0);
+            const tone = row.tone === 'credit' ? ORANGE : row.tone === 'green' ? GREEN : row.tone === 'muted' ? BODY : INK;
+
+            doc.setFont('helvetica', row.level > 0 ? 'normal' : 'bold');
+            doc.setFontSize(row.level > 0 ? fMuted : fBody);
+            doc.setTextColor(...(row.level > 0 ? BODY : INK));
+            doc.text(label, indent, y);
+
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...tone);
+            doc.text(`${row.usd < 0 ? '-' : ''}$${formatUsd(Math.abs(row.usd))}`, VALUE_RIGHT, y, { align: 'right' });
+            y += 5;
+
+            // Las filas principales llevan su equivalente en Bs en un renglón
+            // discreto; las de desglose quedan solo en USD para no alargar el ticket.
+            if (Math.abs(row.bs) > 0 && row.level === 0) {
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(fMuted);
+                doc.setTextColor(...MUTED);
+                doc.text(`Bs ${formatBs(row.bs)}`, VALUE_RIGHT, y, { align: 'right' });
+                y += 5;
+            }
         });
 
         y += 1;

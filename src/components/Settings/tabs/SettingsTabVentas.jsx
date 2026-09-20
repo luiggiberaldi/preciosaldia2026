@@ -16,6 +16,13 @@ export default function SettingsTabVentas({
         return isNaN(stored) || stored < 0 ? '0' : stored.toString();
     });
     const [receiptCurrency, setReceiptCurrency] = useState(() => localStorage.getItem('receipt_currency_mode') || 'bs');
+    // SYNC-CESTA-001: flag de escape de la re-sincronización viva cesta↔inventario.
+    const [liveCartResync, setLiveCartResync] = useState(() => localStorage.getItem('cart_live_resync') !== 'false');
+    // FIA-REPORT-001: flag de escape de la sección de cuentas por cobrar del reporte.
+    const [fiadoSplit, setFiadoSplit] = useState(() => localStorage.getItem('reportes_fiado_split') !== 'false');
+    // FIA-REPORT-001 (H5): reconstruir la cartera desde el ledger es una escritura
+    // sobre datos de clientes ⇒ apagado por defecto y solo para no-cajeros.
+    const [ledgerRepair, setLedgerRepair] = useState(() => localStorage.getItem('reportes_reparacion_ledger') === 'true');
     const [cashAdvanceEnabled, setCashAdvanceEnabled] = useState(() => localStorage.getItem('allow_cash_advance') === 'true');
     const [cashAdvancePct, setCashAdvancePct] = useState(() => {
         const stored = parseFloat(localStorage.getItem('cash_advance_default_pct') || '10');
@@ -264,6 +271,54 @@ export default function SettingsTabVentas({
                                     localStorage.setItem('allow_negative_stock', newVal.toString());
                                     forceHeartbeat();
                                     showToast(newVal ? 'Se permite vender sin stock' : 'No se permite vender sin stock', 'success');
+                                    triggerHaptic?.();
+                                }}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between py-1 mt-2 border-t border-slate-100 dark:border-slate-800">
+                            <div>
+                                <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Cesta viva</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Reflejar cambios de inventario (precio, doble precio) en los ítems ya cargados</p>
+                            </div>
+                            <Toggle
+                                enabled={liveCartResync}
+                                onChange={() => {
+                                    const newVal = !liveCartResync;
+                                    setLiveCartResync(newVal);
+                                    localStorage.setItem('cart_live_resync', newVal.toString());
+                                    showToast(newVal ? 'La cesta reflejará el inventario vigente' : 'La cesta conservará el precio con el que se agregó cada ítem', 'success');
+                                    triggerHaptic?.();
+                                }}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between py-1 mt-2 border-t border-slate-100 dark:border-slate-800">
+                            <div>
+                                <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Fiados y cobranzas en el reporte</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Mostrar fiado otorgado, cobranzas y cartera por separado</p>
+                            </div>
+                            <Toggle
+                                enabled={fiadoSplit}
+                                onChange={() => {
+                                    const newVal = !fiadoSplit;
+                                    setFiadoSplit(newVal);
+                                    localStorage.setItem('reportes_fiado_split', newVal.toString());
+                                    showToast(newVal ? 'El reporte separará fiados y cobranzas' : 'El reporte volverá al desglose anterior', 'success');
+                                    triggerHaptic?.();
+                                }}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between py-1 mt-2 border-t border-slate-100 dark:border-slate-800">
+                            <div>
+                                <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Reparar cartera desde el ledger</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Habilita la reconstrucción de saldos cuando el reporte detecte un descuadre (no para cajeros)</p>
+                            </div>
+                            <Toggle
+                                enabled={ledgerRepair}
+                                onChange={() => {
+                                    const newVal = !ledgerRepair;
+                                    setLedgerRepair(newVal);
+                                    localStorage.setItem('reportes_reparacion_ledger', newVal.toString());
+                                    showToast(newVal ? 'El reporte podrá reconstruir saldos desde el ledger' : 'La reconstrucción desde el ledger queda deshabilitada', 'success');
                                     triggerHaptic?.();
                                 }}
                             />

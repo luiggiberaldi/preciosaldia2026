@@ -1,8 +1,15 @@
 import { FinancialEngine } from '../core/FinancialEngine';
 import { getLocalISODate } from './dateHelpers';
 import { mulR, sumR, round2 } from './dinero';
+import { computeCarteraUsd, computeReceivablesMovements } from './receivablesReport';
 
-export function calculateReportsData(allSales, from, to, bcvRate, products) {
+// FIA-REPORT-001 (H1/H2/H3): el reporte ahora expone las cuentas por cobrar como
+// movimientos (fiado otorgado / cobranzas / neto) más la cartera acumulada, en vez
+// de dejar que la UI interprete el bucket `fiado` del motor. Los campos nuevos son
+// aditivos: ningún consumidor existente cambia de forma.
+//
+// @param {Array} [customers] - Cartera de clientes, solo para «Cartera al cierre».
+export function calculateReportsData(allSales, from, to, bcvRate, products, customers = []) {
     // Ventas de Mercancía (para Totales, Profit, Top Productos)
     const salesForStats = allSales.filter(s => {
         if (s.status === 'ANULADA' || (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'VENTA_CASHEA')) return false;
@@ -68,10 +75,20 @@ export function calculateReportsData(allSales, from, to, bcvRate, products) {
     const expensesUsd = sumR(expensesList.filter(s => s.afectaCaja !== false).map(s => Math.abs(s.totalUsd || 0)));
     const expensesBs = sumR(expensesList.filter(s => s.afectaCaja !== false).map(s => Math.abs(s.totalBs || 0)));
 
+    // Cuentas por cobrar del período (movimientos) y cartera acumulada (stock).
+    const receivables = computeReceivablesMovements(salesForCashFlow, { from, to });
+    const receivablePayments = receivables.cobranzas;
+    const carteraUsd = Array.isArray(customers) && customers.length > 0
+        ? computeCarteraUsd(customers)
+        : null;
+
     return {
         salesForStats,
         salesForCashFlow,
         historySales,
+        receivables,
+        receivablePayments,
+        carteraUsd,
         totalUsd,
         totalBs,
         totalCop,
