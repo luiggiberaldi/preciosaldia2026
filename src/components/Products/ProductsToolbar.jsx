@@ -31,6 +31,9 @@ const ProductsToolbar = ({
     const { inventoryFinancials, effectiveRate, copEnabled, tasaCop } = useProductContext();
     const [showFinancials, setShowFinancials] = useState(false);
     const [showToolsMenu, setShowToolsMenu] = useState(false);
+    // Posición fixed calculada al abrir: en móviles angostos el ancla `absolute right-0`
+    // hacía que el menú de 256px se saliera del viewport por la izquierda.
+    const [toolsMenuPos, setToolsMenuPos] = useState(null);
     const toolsMenuRef = useRef(null);
 
     // Cerrar menú de herramientas al hacer clic fuera
@@ -48,6 +51,33 @@ const ProductsToolbar = ({
             document.removeEventListener('touchstart', handleClickOutside);
         };
     }, [showToolsMenu]);
+
+    // El menú es fixed: si la página hace scroll o el viewport cambia, se
+    // despegaría del botón → cerrarlo en lugar de quedar flotando huérfano.
+    useEffect(() => {
+        if (!showToolsMenu) return;
+        const close = () => setShowToolsMenu(false);
+        window.addEventListener('scroll', close, true);
+        window.addEventListener('resize', close);
+        return () => {
+            window.removeEventListener('scroll', close, true);
+            window.removeEventListener('resize', close);
+        };
+    }, [showToolsMenu]);
+
+    // Abrir midiendo el botón: el menú se pega debajo y se ajusta (clamp) para
+    // no desbordar nunca los bordes izquierdo/derecho del viewport.
+    const toggleToolsMenu = () => {
+        if (!showToolsMenu) {
+            const rect = toolsMenuRef.current?.getBoundingClientRect();
+            if (rect) {
+                const menuWidth = Math.min(256, window.innerWidth - 16);
+                const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8));
+                setToolsMenuPos({ left, top: rect.bottom + 6 });
+            }
+        }
+        setShowToolsMenu(prev => !prev);
+    };
 
     const {
         totalRetailUsd = 0,
@@ -155,7 +185,7 @@ const ProductsToolbar = ({
                             <button
                                 type="button"
                                 onClick={() => {
-                                    setShowToolsMenu(prev => !prev);
+                                    toggleToolsMenu();
                                     triggerHaptic && triggerHaptic();
                                 }}
                                 className={`flex items-center gap-1.5 px-2.5 py-1.5 sm:py-2 rounded-xl text-xs font-bold transition-all border shadow-2xs active:scale-95 cursor-pointer ${
@@ -172,7 +202,10 @@ const ProductsToolbar = ({
 
                             {/* Dropdown Menu */}
                             {showToolsMenu && (
-                                <div className="absolute right-0 top-full mt-1.5 w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-150">
+                                <div
+                                    className="fixed z-50 w-64 max-w-[calc(100vw-1rem)] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-1.5 animate-in fade-in zoom-in-95 duration-150"
+                                    style={toolsMenuPos || undefined}
+                                >
                                     <div className="px-2.5 py-1.5 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
                                         Acciones de Inventario
                                     </div>
