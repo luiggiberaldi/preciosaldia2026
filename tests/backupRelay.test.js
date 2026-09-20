@@ -25,6 +25,49 @@ describe('getEstacionApiUrl', () => {
     });
 });
 
+describe('getEstacionApiUrl — guardarraíl de entorno (E2E-AUDIT H-infra)', () => {
+    const ENV = import.meta.env;
+    const URL_ENV_KEY = 'VITE_ESTACION_API_URL';
+
+    afterEach(() => {
+        // Los demás tests de este archivo exigen el BASE configurado.
+        ENV[URL_ENV_KEY] = BASE;
+    });
+
+    it('SIN env en un build de producción apunta a producción', () => {
+        delete ENV[URL_ENV_KEY];
+        ENV.PROD = true;
+        expect(getEstacionApiUrl()).toBe('https://estacion-2026.vercel.app');
+    });
+
+    it('SIN env fuera de producción devuelve "" y el relay se salta (nunca toca producción)', () => {
+        delete ENV[URL_ENV_KEY];
+        ENV.PROD = false;
+        expect(getEstacionApiUrl()).toBe('');
+    });
+
+    it('el flag PROD no puede falsear un env configurado', () => {
+        ENV[URL_ENV_KEY] = 'https://staging.example';
+        ENV.PROD = false;
+        expect(getEstacionApiUrl()).toBe('https://staging.example');
+    });
+
+    it('relayUploadBackup con URL vacía NO llama a fetch', async () => {
+        delete ENV[URL_ENV_KEY];
+        ENV.PROD = false;
+        const fetchSpy = vi.fn();
+        vi.stubGlobal('fetch', fetchSpy);
+        try {
+            const res = await relayUploadBackup('PDA-TEST', { hola: 1 });
+            expect(res.skipped).toBe(true);
+            expect(res.ok).toBe(false);
+            expect(fetchSpy).not.toHaveBeenCalled();
+        } finally {
+            vi.unstubAllGlobals();
+        }
+    });
+});
+
 describe('relayUploadBackup', () => {
     beforeEach(() => {
         vi.stubGlobal('fetch', vi.fn());
@@ -53,7 +96,7 @@ describe('relayUploadBackup', () => {
         expect(body.backup_data.compressed).toBe(true);
     });
 
-    error_case: it('error HTTP del relay se propaga sin lanzar', async () => {
+    it('error HTTP del relay se propaga sin lanzar', async () => {
         fetch.mockResolvedValue({
             ok: false,
             status: 500,

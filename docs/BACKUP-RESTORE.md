@@ -94,7 +94,9 @@ pasa a ser red de seguridad inactiva.
 - CORS abierto (`*`), normalización y validación de `deviceId`.
 
 **Cliente (lado bodega):** `src/utils/backupRelay.js`
-- URL base: `VITE_ESTACION_API_URL` (default `https://estacion-2026.vercel.app`).
+- URL base: `VITE_ESTACION_API_URL`. El default `https://estacion-2026.vercel.app`
+  **solo aplica en builds de producción**: en dev/pruebas sin env configurado la URL
+  queda vacía y el relay se salta (ningún entorno de prueba toca el backend real).
 
 ### Cuándo entra en juego
 `useCloudBackup` lo usa **automáticamente** como fallback:

@@ -152,28 +152,34 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                     };
 
                     // Notificar metadatos a la API de Estación Maestra o Supabase
-                    const ESTACION_API = import.meta.env.VITE_ESTACION_API_URL || 'https://estacion-2026.vercel.app';
+                    // Guardarraíl: solo hay default a producción en builds de producción;
+                    // en dev/test sin env el fetch no se intenta (URL vacía) y el
+                    // fallback a Supabase sigue disponible.
+                    const ESTACION_API = import.meta.env.VITE_ESTACION_API_URL
+                        || (import.meta.env.PROD ? 'https://estacion-2026.vercel.app' : '');
                     let apiSuccess = false;
-                    try {
-                        const res = await fetch(`${ESTACION_API}/api/backup/complete`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'text/plain',
-                                // Shared secret exigido por el endpoint (blindaje anti-escritura pública)
-                                'x-backup-secret': import.meta.env.VITE_ESTACION_BACKUP_SECRET || '',
-                            },
-                            body: JSON.stringify({
-                                deviceId: devId,
-                                driveUrl: metadataPayload.drive_url,
-                                sizeBytes: metadataPayload.size_bytes,
-                                productCount: metadataPayload.product_count,
-                                salesCount: metadataPayload.sales_count,
-                                customerCount: metadataPayload.customer_count
-                            })
-                        }).catch(() => null);
-                        if (res?.ok) apiSuccess = true;
-                    } catch {
-                        apiSuccess = false;
+                    if (ESTACION_API) {
+                        try {
+                            const res = await fetch(`${ESTACION_API}/api/backup/complete`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'text/plain',
+                                    // Shared secret exigido por el endpoint (blindaje anti-escritura pública)
+                                    'x-backup-secret': import.meta.env.VITE_ESTACION_BACKUP_SECRET || '',
+                                },
+                                body: JSON.stringify({
+                                    deviceId: devId,
+                                    driveUrl: metadataPayload.drive_url,
+                                    sizeBytes: metadataPayload.size_bytes,
+                                    productCount: metadataPayload.product_count,
+                                    salesCount: metadataPayload.sales_count,
+                                    customerCount: metadataPayload.customer_count
+                                })
+                            }).catch(() => null);
+                            if (res?.ok) apiSuccess = true;
+                        } catch {
+                            apiSuccess = false;
+                        }
                     }
 
                     // Fallback directo a Supabase en cloud_backups (con manejo silencioso de 403/RLS)

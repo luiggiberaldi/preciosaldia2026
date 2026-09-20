@@ -12,11 +12,27 @@
  * @module utils/backupRelay
  */
 
-/** URL base de la API de Estación Maestra (configurable vía env, leída por llamada para testabilidad). */
+/**
+ * true cuando el bundle corre en un build de producción (vite define PROD).
+ * En dev y en pruebas el valor de import.meta.env.PROD es false.
+ */
+function isProdBuild() {
+    return import.meta.env?.PROD === true;
+}
+
+/**
+ * URL base de la API de Estación Maestra.
+ *
+ * Guardarraíl de entorno: el default a producción SOLO aplica en builds de
+ * producción. En desarrollo/pruebas sin VITE_ESTACION_API_URL se devuelve ""
+ * para que ningún entorno de prueba pueda tocar el backend real (hallazgo de
+ * la auditoría E2E: el auto-backup llamaba a producción desde el test).
+ * Lectura por llamada para testabilidad.
+ */
 export function getEstacionApiUrl() {
     return (
         import.meta.env?.VITE_ESTACION_API_URL ||
-        'https://estacion-2026.vercel.app'
+        (isProdBuild() ? 'https://estacion-2026.vercel.app' : '')
     );
 }
 
