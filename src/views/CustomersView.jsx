@@ -821,15 +821,18 @@ function buildCustomerStatementWhatsAppUrl(customer, sales, bcvRate) {
 
 // ─── Sub-componente: Bottom Sheet de Detalle ────────────────
 function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, onReset, onSaldarCashea, onEdit, onDelete, bcvRate, tasaCop, copEnabled, copPrimary, sales, onSelectTransaction }) {
-    if (!isOpen || !customer) return null;
-
+    // ⚠️ Reglas de los Hooks: TODOS los hooks van antes de cualquier salida
+    // temprana; si no, la cantidad de hooks cambia entre renders y React
+    // emite "Expected static flag was missing" (hallazgo H1 de la auditoría E2E).
     // Mini-paginación del historial
     const [historyPage, setHistoryPage] = useState(1);
-    
+
     // Resetear página de historial cuando cambia el cliente
     useEffect(() => {
         setHistoryPage(1);
-    }, [customer.id]);
+    }, [customer?.id]);
+
+    if (!isOpen || !customer) return null;
 
     const createdDate = customer.createdAt
         ? new Date(customer.createdAt).toLocaleDateString('es-VE', { month: 'long', year: 'numeric' })
