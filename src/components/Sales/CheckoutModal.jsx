@@ -11,6 +11,7 @@ import CheckoutCustomerPicker from './CheckoutCustomerPicker';
 import PaymentWarningModal from './PaymentWarningModal';
 import ChangeConfirmationModal from './CheckoutModalPOS/components/ChangeConfirmationModal';
 import { MobileChangeAllocation, PaymentStatusSummary } from './MobileCheckout';
+import RepriceNotice from './RepriceNotice';
 
 /**
  * CheckoutModal — Zona de Cobro con Barras de Pago (Estilo Listo POS)
@@ -98,6 +99,7 @@ export default function CheckoutModal({
         safeTasaCop,
         cartTotalUsd,
         cartTotalBs,
+        repricedActive,
     } = useCheckoutCalculations({
         paymentMethods,
         effectiveRate,
@@ -318,6 +320,14 @@ export default function CheckoutModal({
                 copEnabled={copEnabled}
                 copPrimary={copPrimary}
                 tasaCop={tasaCop}
+            />
+
+            {/* AVISO-REPRECIO (PLAN-AVISO-REPRECIO-BS · Trabajo 1): explica por qué el
+                total cambia al entrar un pago en Bs (precio de referencia dual). */}
+            <RepriceNotice
+                repricedActive={repricedActive}
+                totalUsd={cartTotalUsd}
+                baseTotalUsd={baseCartTotalUsd}
             />
 
             {/* --- SCROLLABLE BODY --- */}

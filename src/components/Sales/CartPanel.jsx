@@ -169,6 +169,24 @@ export default function CartPanel({
                                         <div className="flex-1 min-w-0">
                                             <p className={`text-xs font-bold text-slate-800 dark:text-slate-100 leading-tight mb-0.5 ${isCashAdvance ? 'break-words' : 'truncate'}`}>{item.name}</p>
                                             <div className={`flex items-center flex-wrap ${isCashAdvance ? 'gap-1' : 'gap-1'}`}>
+                                                {/* SYNC-CESTA-001: el producto salió del catálogo con la línea ya cargada. */}
+                                                {!isCashAdvance && item._productMissing && (
+                                                    <p
+                                                        title="El producto ya no existe en el inventario. La línea conserva los datos con los que se agregó."
+                                                        className="text-[10px] font-black text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 px-1 py-0.2 rounded"
+                                                    >
+                                                        Producto ya no existe
+                                                    </p>
+                                                )}
+                                                {/* AVISO-REPRECIO: si el cliente paga en Bs, este ítem se cobra a su Ref. */}
+                                                {!isCashAdvance && item.pricingMode === 'dual_usd' && parseFloat(item.priceBsUsdRef) > 0 && (
+                                                    <p
+                                                        title={`Si el cliente paga en Bs, este ticket se cobra a $${formatUsd(item.priceBsUsdRef)} Ref`}
+                                                        className="text-[10px] font-black text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/30 px-1 py-0.2 rounded cursor-help"
+                                                    >
+                                                        Ref Bs
+                                                    </p>
+                                                )}
                                                 {isCashAdvance ? (
                                                     <>
                                                         <p className="text-[10px] font-black text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-1 py-0.2 rounded">

@@ -13,6 +13,7 @@ import { ShoppingCart, X, DollarSign, CheckCircle2, Trash2 } from 'lucide-react'
 import { useCart } from '../context/CartContext';
 import { useProductContext } from '../context/ProductContext';
 import { isGranelProduct, parseCartQuantity, adjustStockValue } from '../utils/granel'; // GRANEL-001
+import { deriveCartFields, resyncCartItems } from '../utils/cartSync'; // SYNC-CESTA-001
 
 // Components
 import SalesHeader from '../components/Sales/SalesHeader';
@@ -440,10 +441,12 @@ export default function SalesView({ triggerHaptic, isActive }) {
         const productIsGranel = isGranelProduct(product);
         if (productIsGranel && !qtyOverride) { setWeightPending(product); return; }
 
+        // SYNC-CESTA-001: los campos derivados de la línea salen de la MISMA
+        // función que usa la re-sincronización viva (utils/cartSync.js), para que
+        // el ítem cargado y el catálogo vigente nunca diverjan.
+        const derived = deriveCartFields(product, forceMode === 'unit' ? 'unit' : 'package', product.unitsPerPackage, { tasaCop, effectiveRate });
         // When priceCop is the source of truth, derive USD from COP at current rate
-        let priceToUse = (product.priceCop && tasaCop > 0)
-            ? product.priceCop / tasaCop
-            : (parseFloat(product.priceUsdt) || 0);
+        let priceToUse = derived.priceUsd;
         let cartId = product.id;
         let cartName = product.name;
         const qtyToAdd = parseCartQuantity(qtyOverride ?? 1, productIsGranel);
@@ -457,8 +460,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
         }
 
         if (forceMode === 'unit') {
-            const unitCop = product.unitPriceCop || (product.priceCop ? Math.round(product.priceCop / (product.unitsPerPackage || 1)) : null);
-            priceToUse = (unitCop && tasaCop > 0) ? unitCop / tasaCop : product.unitPriceUsd;
+            // El precio unitario ya viene derivado por deriveCartFields.
             cartId = product.id + '_unit';
             cartName = product.name + ' (Ud.)';
         }
@@ -513,16 +515,13 @@ export default function SalesView({ triggerHaptic, isActive }) {
                 );
             }
 
-            const itemCostBs = product.costBs || (product.costUsd ? product.costUsd * effectiveRate : 0);
-            const itemPriceCop = forceMode === 'unit'
-                ? (product.unitPriceCop || (product.priceCop ? Math.round(product.priceCop / (product.unitsPerPackage || 1)) : null))
-                : (product.priceCop || null);
             return [{
-                ...product, id: cartId, name: cartName, priceUsd: priceToUse,
-                priceCop: itemPriceCop,
-                exactBs: product.exactBs || null,
-                costBs: forceMode === 'unit' ? itemCostBs / (product.unitsPerPackage || 1) : itemCostBs,
-                costUsd: forceMode === 'unit' ? (product.costUsd || 0) / (product.unitsPerPackage || 1) : (product.costUsd || 0),
+                ...product, id: cartId, name: cartName,
+                priceUsd: derived.priceUsd,
+                priceCop: derived.priceCop,
+                exactBs: derived.exactBs,
+                costBs: derived.costBs,
+                costUsd: derived.costUsd,
                 qty: qtyToAdd, isWeight: productIsGranel,
                 _originalId: product.id, _mode: forceMode || 'package', _unitsPerPackage: product.unitsPerPackage || 1,
             }, ...prev];
@@ -543,20 +542,24 @@ export default function SalesView({ triggerHaptic, isActive }) {
         }, 50);
     }, [triggerHaptic, effectiveRate, tasaCop]);
 
-    // Recalculate priceUsd for cart items with priceCop when tasaCop changes
+    // ── SYNC-CESTA-001: la cesta refleja el catálogo vigente ────────────────
+    // El ítem de cesta es un snapshot del producto al agregarlo: sin esto, editar
+    // el producto (precio, doble precio, costos) no llegaba a las líneas ya
+    // cargadas y el cajero debía eliminar/re-agregar el ítem. Absorbe además el
+    // antiguo efecto de `tasaCop` (mismo recálculo de items con priceCop, ahora
+    // con un único escritor del carrito). Flag de escape: `cart_live_resync`.
     useEffect(() => {
-        if (!tasaCop || tasaCop <= 0) return;
-        setCart(prev => {
-            const needsUpdate = prev.some(i => i.priceCop && i.priceCop > 0);
-            if (!needsUpdate) return prev;
-            return prev.map(i => {
-                if (i.priceCop && i.priceCop > 0) {
-                    return { ...i, priceUsd: i.priceCop / tasaCop };
-                }
-                return i;
-            });
-        });
-    }, [tasaCop]);
+        if (localStorage.getItem('cart_live_resync') === 'false') return;
+        const result = resyncCartItems(cart, products, { tasaCop, effectiveRate });
+        if (!result) return;
+        setCart(result.cart);
+        if (result.priceChanges.length === 1) {
+            const { name, from, to } = result.priceChanges[0];
+            showToast(`Precio de ${name} actualizado: $${from.toFixed(2)} → $${to.toFixed(2)}`, 'info');
+        } else if (result.priceChanges.length > 1) {
+            showToast(`${result.priceChanges.length} precios actualizados en la cesta`, 'info');
+        }
+    }, [cart, products, tasaCop, effectiveRate, setCart]);
 
     const updateQty = useCallback((id, delta) => {
         triggerHaptic && triggerHaptic();

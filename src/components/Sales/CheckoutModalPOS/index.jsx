@@ -18,6 +18,8 @@ import PaymentInputs from './components/PaymentInputs';
 import PaymentFooter from './components/PaymentFooter';
 import ChangeConfirmationModal from './components/ChangeConfirmationModal';
 import WalletSection from './components/WalletSection';
+import RepriceNotice from '../RepriceNotice';
+import { isTicketRepriced } from '../../../utils/reprice.js';
 
 /**
  * CheckoutModalPOS — Modo de cobro profesional (estilo Listo POS, dos columnas).
@@ -155,6 +157,13 @@ export default function CheckoutModalPOS({
         return FinancialEngine.buildCartTotals(cart, discountData, effectiveRate, tasaCop, isBsPaymentActive);
     }, [cart, discountData, effectiveRate, tasaCop, isBsPaymentActive, cartTotalUsd, cartTotalBs]);
 
+    // AVISO-REPRECIO (PLAN-AVISO-REPRECIO-BS · Trabajo 1): el total cambia al
+    // aplicar el precio de referencia en Bs de los ítems con Doble Precio.
+    const repricedActive = isTicketRepriced({
+        isBsPaymentActive,
+        baseTotalUsd: cartTotalUsd,
+        newTotalUsd: dynamicCartTotals.totalUsd,
+    });
     const casheaMeetsMinimum = casheaMinAmount <= 0 || dynamicCartTotals.totalUsd >= casheaMinAmount;
 
     // M-2: paridad con el modo básico — bloquear el cobro si la tasa BCV es inválida.
@@ -703,6 +712,11 @@ export default function CheckoutModalPOS({
                                 </div>
                             </div>
 
+                            <RepriceNotice
+                                repricedActive={repricedActive}
+                                totalUsd={dynamicCartTotals.totalUsd}
+                                baseTotalUsd={cartTotalUsd}
+                            />
                             <div className="lg:hidden mb-2.5">
                                 <CheckoutCustomerPicker customers={customers} selectedCustomerId={clienteSeleccionado} setSelectedCustomerId={handleSetCliente} effectiveRate={effectiveRate} onCreateCustomer={onCreateCustomer} />
                             </div>

@@ -3,6 +3,7 @@ import { round2, divR, mulR, subR, sumR } from '../utils/dinero';
 import { FINANCIAL_EPSILON } from '../utils/securityConstants';
 import { CurrencyService } from '../services/CurrencyService';
 import { FinancialEngine } from '../core/FinancialEngine';
+import { isTicketRepriced, repriceDeltaUsd } from '../utils/reprice.js';
 
 /**
  * Hook de cálculos de checkout con soporte para Doble Precio dinámico.
@@ -63,6 +64,17 @@ export function useCheckoutCalculations({
     }, [cart, discountData, safeRate, safeTasaCop, isBsPaymentActive, baseCartTotalUsd, baseCartTotalBs]);
 
     const cartTotalUsd = cartTotals.totalUsd;
+
+    // ── AVISO-REPRECIO: señal del re-precio por Doble Precio ───────────────
+    // Si la cesta tiene ítems dual_usd y entra un pago en Bs, el total pasa a
+    // ser el del precio de referencia. La UI avisa para que el cajero no lo lea
+    // como un cálculo roto (la matemática es correcta por diseño).
+    const repricedActive = isTicketRepriced({
+        isBsPaymentActive,
+        baseTotalUsd: baseCartTotalUsd,
+        newTotalUsd: cartTotals.totalUsd,
+    });
+    const repricedDeltaUsd = repriceDeltaUsd(baseCartTotalUsd, cartTotals.totalUsd);
     const cartTotalBs = cartTotals.totalBs;
 
     const casheaEnabled = localStorage.getItem('cashea_enabled') === 'true';
@@ -473,6 +485,9 @@ export function useCheckoutCalculations({
         // ESTOS, no los props crudos, o el operador ve un total distinto al que se cobra.
         cartTotalUsd,
         cartTotalBs,
+        // AVISO-REPRECIO: el total vigente difiere del base por aplicar el precio dual en Bs.
+        repricedActive,
+        repricedDeltaUsd,
         safeTasaCop,
         // FIN-009 / FIN-033: exponer errores de tasa para que la UI bloquee el cobro.
         rateError,
