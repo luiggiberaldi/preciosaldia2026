@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 // v1.2.0: useReveal hook para animaciones reveal-on-scroll (design system "Precios al Día")
 import { useReveal } from '../hooks/useReveal';
 import { Users, Plus, Search, User, X, Trash2, Pencil, Phone, RefreshCw, Save, ArrowDownRight, ArrowUpRight, Clock, CheckCircle2, CreditCard, ShoppingBag, Truck, Smartphone, Download } from 'lucide-react';
@@ -6,7 +6,8 @@ import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
 import { formatBs, formatUsd, formatCop } from '../utils/calculatorUtils';
 import { applyCustomerMovement } from '../services/customerWalletService';
-import { CUSTOMER_MOVEMENT_TYPES } from '../utils/customerLedger';
+import { CUSTOMER_MOVEMENT_TYPES, CUSTOMER_LEDGER_KEY } from '../utils/customerLedger';
+import { buildCustomerCreditLens, fiadoCustomerIds } from '../utils/customerCreditLens';
 import TransactionModal from '../components/Customers/TransactionModal';
 import { processCustomerTransaction } from '../utils/customerTransactionProcessor';
 import { DEFAULT_PAYMENT_METHODS } from '../config/paymentMethods';
@@ -33,7 +34,8 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
     const revealRef = useReveal();
     const [customers, setCustomers] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
-    const [filterType, setFilterType] = useState('all'); // 'all' | 'deuda' | 'favor'
+    const [filterType, setFilterType] = useState('all'); // 'all' | 'deuda' | 'favor' | 'fiadoMes'
+    const [ledger, setLedger] = useState([]);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
     const usuarioActivo = useAuthStore(state => state.usuarioActivo);
@@ -93,15 +95,17 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
     } = useSupplierManagement({ bcvRate, tasaCop, copEnabled, triggerHaptic, auditLog });
 
     const loadData = async () => {
-        const [savedCustomers, savedSuppliers, savedInvoices, savedMethods] = await Promise.all([
+        const [savedCustomers, savedSuppliers, savedInvoices, savedMethods, savedLedger] = await Promise.all([
             storageService.getItem('bodega_customers_v1', []),
             storageService.getItem('bodega_suppliers_v1', []),
             storageService.getItem('bodega_supplier_invoices_v1', []),
-            getActivePaymentMethods()
+            getActivePaymentMethods(),
+            storageService.getItem(CUSTOMER_LEDGER_KEY, [])
         ]);
         setCustomers(savedCustomers);
         hydrateSuppliers(savedSuppliers, savedInvoices);
         setActivePaymentMethods(savedMethods);
+        setLedger(savedLedger);
     };
 
     useEffect(() => {
@@ -119,11 +123,18 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
         await storageService.setItem('bodega_customers_v1', updatedCustomers);
     };
 
+    // LENTE-CREDITO (H2, opción C): solo lectura del ledger. Expone el crédito
+    // extendido del mes aunque la cartera neta no muestre deuda (fiado consumido
+    // por saldo a favor). Ver PLAN-LENS-CREDITO-EXTENDIDO.md.
+    const creditLens = useMemo(() => buildCustomerCreditLens(ledger, customers), [ledger, customers]);
+    const fiadoIdsMes = useMemo(() => fiadoCustomerIds(creditLens), [creditLens]);
+
     const filteredCustomers = customers.filter(c => {
         const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) || (c.phone && c.phone.includes(searchTerm));
         if (!matchesSearch) return false;
         if (filterType === 'deuda') return c.deuda > 0.01;
         if (filterType === 'favor') return c.favor > 0.01;
+        if (filterType === 'fiadoMes') return fiadoIdsMes.includes(c.id);
         return true;
     });
 
@@ -402,6 +413,16 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                         className="input w-full bg-surface dark:bg-surface-900 border border-surface-200 dark:border-surface-800 rounded-2xl pl-11 pr-4 text-surface-700 dark:text-white placeholder:text-surface-400 focus:ring-2 focus:ring-brand/50 shadow-tone-sm"
                     />
                 </div>
+                {/* LENTE-CREDITO: resumen del mes (solo si hubo fiados). */}
+                {creditLens.totalFiadoMes > 0.001 && (
+                    <p className="text-[11px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1.5 flex-wrap">
+                        <Clock size={12} aria-hidden="true" />
+                        <span>
+                            Crédito extendido este mes: {formatUsd(creditLens.totalFiadoMes)}
+                            {creditLens.totalConsumoFavorMes > 0.001 && ` · ${formatUsd(creditLens.totalConsumoFavorMes)} cubierto con saldo a favor`}
+                        </span>
+                    </p>
+                )}
                 {/* Filtros tipo Chips */}
                 {/* v1.2.0: chips con min-h-[40px] (a11y) + surface tokens + .badge classes opcional. */}
                 <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide pb-1">
@@ -424,6 +445,13 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                     >
                         <div className={`w-2 h-2 rounded-full ${filterType === 'favor' ? 'bg-white' : 'bg-emerald-500'}`}></div>
                         Saldo a Favor
+                    </button>
+                    <button
+                        onClick={() => { setFilterType('fiadoMes'); triggerHaptic && triggerHaptic(); }}
+                        className={`px-4 py-2 min-h-[40px] rounded-full text-sm font-bold whitespace-nowrap transition-colors flex items-center gap-1.5 ${filterType === 'fiadoMes' ? 'bg-amber-500 text-white shadow-tone-sm' : 'bg-surface dark:bg-surface-900 text-surface-600 dark:text-surface-400 border border-surface-200 dark:border-surface-800'}`}
+                    >
+                        <div className={`w-2 h-2 rounded-full ${filterType === 'fiadoMes' ? 'bg-white' : 'bg-amber-500'}`}></div>
+                        Fiados del mes
                     </button>
                 </div>
             </div>
@@ -456,6 +484,7 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                             >
                                 <CustomerCard
                                     customer={customer}
+                                    creditLensEntry={creditLens.byCustomer[customer.id]}
                                     bcvRate={bcvRate}
                                     tasaCop={tasaCop}
                                     copEnabled={copEnabled}
@@ -643,7 +672,7 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
 }
 
 // ─── Sub-componente: Tarjeta Compacta ───────────────────────
-function CustomerCard({ customer, bcvRate, tasaCop, copEnabled, copPrimary, onClick, onDelete }) {
+function CustomerCard({ customer, creditLensEntry, bcvRate, tasaCop, copEnabled, copPrimary, onClick, onDelete }) {
     return (
         // v1.2.0: surface tokens + shadow-tone-sm (warm shadow) en vez de shadow-sm.
         <article className="reveal bg-white dark:bg-surface-900 rounded-2xl px-4 py-3 border border-slate-200 dark:border-slate-700 shadow-sm transition-all active:scale-[0.98] flex items-center gap-2 relative">
@@ -674,6 +703,12 @@ function CustomerCard({ customer, bcvRate, tasaCop, copEnabled, copPrimary, onCl
                         {customer.phone && (
                             <span className="text-[9px] font-bold text-slate-500 dark:text-slate-300 flex items-center gap-0.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-200/55 dark:border-slate-800/50 px-1.5 py-0.5 rounded-md leading-none shrink-0">
                                 <Phone size={9} aria-hidden="true" /> {customer.phone}
+                            </span>
+                        )}
+                        {creditLensEntry && creditLensEntry.fiadoMes > 0.001 && (
+                            <span className="text-[9px] font-black text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30 px-1.5 py-0.5 rounded-md leading-none">
+                                Fiado este mes: {formatUsd(creditLensEntry.fiadoMes)}
+                                {creditLensEntry.consumoFavorMes > 0.001 && ` · ${formatUsd(creditLensEntry.consumoFavorMes)} de su saldo a favor`}
                             </span>
                         )}
                     </div>

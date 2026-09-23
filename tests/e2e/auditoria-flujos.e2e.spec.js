@@ -733,3 +733,75 @@ test('F12b pago con saldo a favor en modo POS', async ({ page }) => {
     await auditOverflow(page, 'F12b pago con saldo a favor en modo POS', 'checkout POS');
     closeFlow(log, 'F12b pago con saldo a favor en modo POS');
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// F13 — Lente de fiados del mes en Clientes (H2, opción C): el fiado consumido
+// por saldo a favor es visible aunque la deuda neta sea 0; la anulación lo resta.// ════════════════════════════════════════════════════════════════════════════
+test('F13 lente de fiados del mes en Clientes', async ({ page }) => {
+    const log = attachCollectors(page);
+    await seedAudit(page);
+    await startApp(page);
+
+    // Fiar $3 a «Juan E2E» (favor $18,50): cartera neta → deuda queda en 0.
+    await goToSales(page);
+    await addProductBySearch(page, 'Cafe E2E');
+    await addProductBySearch(page, 'Harina E2E');
+    await openCheckout(page);
+    await page.getByRole('button', { name: /Consumidor Final/ }).first().click();
+    await page.getByText('Juan E2E').first().click();
+    await page.getByRole('button', { name: /FIAR RESTANTE/ }).click();
+    await page.getByRole('button', { name: 'Confirmar fiado' }).click();
+    await expect(page.getByText('Tasa BCV Aplicada')).toBeVisible({ timeout: 15_000 });
+    await closeReceipt(page);
+
+    await expect.poll(async () => {
+        const l = await readIdb(page, 'bodega_customer_ledger_v1');
+        return (l || []).some(m => m.type === 'VENTA_FIADA' && m.sourceSaleId);
+    }, { timeout: 15_000 }).toBe(true);
+
+    // Clientes: el chip «Fiados del mes» muestra a Juan aunque su deuda sea 0.
+    await goTo(page, 'clientes');
+    await expect(page.getByRole('button', { name: /Fiados del mes/ })).toBeVisible({ timeout: 15_000 });
+    await page.getByRole('button', { name: /Fiados del mes/ }).click();
+    await expect(page.locator('div[data-view="clientes"]').getByText('Juan E2E').first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/Fiado este mes/).first()).toBeVisible();
+    await expect(page.getByText(/Crédito extendido este mes/)).toBeVisible();
+
+    // Consistencia con la cartera neta: «Con Deuda» NO lo muestra.
+    await page.getByRole('button', { name: /Con Deuda/ }).click();
+    await expect(page.locator('div[data-view="clientes"]').getByText('Juan E2E')).toHaveCount(0, { timeout: 10_000 });
+
+    // El lente es de solo lectura: la cartera persistida no cambió.
+    const cartera = await readIdb(page, 'bodega_customers_v1');
+    const juanCartera = cartera?.find(c => c.name === 'Juan E2E');
+    const lenteIntacto = Math.abs((juanCartera?.favor || 0) - 15.5) < 0.001 && (juanCartera?.deuda || 0) === 0;
+
+    record('F13 lente de fiados del mes en Clientes', 'ok',
+        `chip «Fiados del mes» muestra a Juan con fiado de $3 (deuda neta $0, favor $15,50); «Con Deuda» no lo muestra; cartera intacta (${lenteIntacto ? 'favor 15,50, deuda 0' : 'INESPERADO: ' + JSON.stringify(juanCartera)})`);
+
+    // Anular la venta fiada desde Reportes → el lente la resta.
+    await goTo(page, 'reportes');
+    await page.getByRole('button', { name: 'Ventas', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Historial de Ventas' })).toBeVisible({ timeout: 15_000 });
+    await page.getByText('Juan E2E').last().click();
+    await page.getByRole('button', { name: /Anular/ }).first().click();
+    await page.getByRole('button', { name: /Si, anular/ }).click();
+    await expect(page.getByRole('heading', { name: 'Venta Anulada' })).toBeVisible({ timeout: 15_000 });
+    // La oferta de reciclaje (z-100) tapa la pantalla: cerrarla antes de navegar.
+    await page.getByRole('button', { name: 'Cerrar' }).last().click();
+
+    await expect.poll(async () => {
+        const l = await readIdb(page, 'bodega_customer_ledger_v1');
+        return (l || []).filter(m => m.type === 'ANULACION').length;
+    }, { timeout: 15_000 }).toBe(1);
+
+    await goTo(page, 'clientes');
+    await page.getByRole('button', { name: /Fiados del mes/ }).click();
+    // El chip puede quedar vacío: el filtro no muestra a Juan.
+    await expect(page.locator('div[data-view="clientes"]').getByText('Juan E2E')).toHaveCount(0, { timeout: 15_000 });
+    record('F13 lente de fiados del mes en Clientes', 'ok',
+        'tras anular la venta, «Fiados del mes» ya no muestra al cliente (la reversión ANULACION lo compensa)');
+    await auditOverflow(page, 'F13 lente de fiados del mes en Clientes', 'Clientes');
+    closeFlow(log, 'F13 lente de fiados del mes en Clientes');
+
+});

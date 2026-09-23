@@ -82,6 +82,9 @@ $RECYCLE.BIN/
 
 # ── Test y herramientas ──
 test-results/
+test-results-af/
 supabase/.temp/
+.freebuff/
 
 .vercel
+
