@@ -5,13 +5,34 @@ import { IDB_KEYS, LS_KEYS } from '../config/backupKeys';
 import { compressString, isCompressionSupported } from '../utils/compression';
 import { uploadToGoogleDrive } from '../utils/driveBackupUploader';
 import { validateBackupJson, applyBackupToStorage } from '../utils/backupRestoreService';
-import { buildCloudBackupsRow } from '../config/cloudSchema';
 
 
 // ─── Configuración optimizada ───────────────────────────────────────────────
 const BACKUP_INTERVAL_MS = 30 * 60 * 1000; // 30 minutos
 const BACKUP_KEY = 'bodega_autobackup_v1';
 const LAST_UPLOAD_HASH_KEY = 'bodega_last_upload_hash';
+
+/**
+ * Marca una solicitud de respaldo como fallida con el motivo.
+ * Tolerante a que la columna `error` aún no exista (migración pendiente):
+ * si el UPDATE con `error` falla, reintenta solo con `status`.
+ */
+async function markBackupRequestFailed(requestId, reason) {
+    if (!supabaseCloud || !requestId) return;
+    const shortReason = String(reason ?? 'error desconocido').slice(0, 500);
+    const mark = async (withError) => supabaseCloud.from('backup_requests')
+        .update(withError ? { status: 'failed', error: shortReason } : { status: 'failed' })
+        .eq('id', requestId);
+    const first = await mark(true);
+    if (first.error) {
+        const second = await mark(false);
+        if (second.error) {
+            console.error(`[AutoBackup] No se pudo marcar la solicitud ${requestId} como fallida:`, second.error);
+            return;
+        }
+    }
+    console.warn(`[AutoBackup] Respaldo ${requestId} marcado como fallido: ${shortReason}`);
+}
 
 /** Hash ligero para detectar cambios sin comparar objetos enteros */
 function quickHash(obj) {
@@ -72,7 +93,7 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                     if (val !== null) { lsData[key] = val; hasData = true; }
                 }
 
-                if (!hasData && !forceUpload) return;
+                if (!hasData && !forceUpload) return { ok: false, error: 'Sin datos que respaldar' };
 
                 // ── Backup completo (formato v2.0) ────────────────────
                 const fullBackup = {
@@ -88,26 +109,26 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
 
                 // Subir a la nube solo si hay conexión, deviceId y emparejamiento/licencia cloud activa
                 // GUARDA-RAIL LICENCIA: los equipos en modo demo NO suben respaldos periódicos a Drive ni a la nube, salvo que sea una solicitud forzada
-                if (demo && !forceUpload) return;
+                if (demo && !forceUpload) return { ok: false, error: 'Equipo en demo: respaldo periódico omitido' };
 
                 const hasCloudPairing = localStorage.getItem('pda_cloud_session') || localStorage.getItem('pda_paired_device') || premium;
                 const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
                 // En entorno local (localhost) sin sesión de nube activa, omitir llamadas remotas para mantener la consola de desarrollo limpia
-                if (isLocalhost && !hasCloudPairing && !forceUpload) return;
+                if (isLocalhost && !hasCloudPairing && !forceUpload) return { ok: false, error: 'Localhost sin sesión de nube: respaldo remoto omitido' };
 
                 if (devId && supabaseCloud && (hasCloudPairing || forceUpload)) {
                     const todayStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
                     const lastDailyBackup = localStorage.getItem('bodega_last_daily_backup_date');
 
                     // Si no es premium y ya respaldó hoy, omitir para evitar peticiones redundantes
-                    if (!premium && lastDailyBackup === todayStr && !forceUpload) return;
+                    if (!premium && lastDailyBackup === todayStr && !forceUpload) return { ok: false, error: 'Ya respaldó hoy (no premium)' };
 
                     const currentHash = quickHash(idbData);
                     const lastHash = localStorage.getItem(LAST_UPLOAD_HASH_KEY);
 
                     // forceUpload=true omite la verificación de hash (solicitud manual)
-                    if (!forceUpload && currentHash === lastHash) return;
+                    if (!forceUpload && currentHash === lastHash) return { ok: false, error: 'Sin cambios desde el último respaldo' };
 
                     let payloadToUpload = fullBackup;
                     if (isCompressionSupported()) {
@@ -151,10 +172,9 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                         updated_at: new Date().toISOString()
                     };
 
-                    // Notificar metadatos a la API de Estación Maestra o Supabase
+                    // Notificar metadatos a la API de Estación Maestra (Service Key en Server Side).
                     // Guardarraíl: solo hay default a producción en builds de producción;
-                    // en dev/test sin env el fetch no se intenta (URL vacía) y el
-                    // fallback a Supabase sigue disponible.
+                    // en dev/test sin env el fetch no se intenta (URL vacía).
                     const ESTACION_API = import.meta.env.VITE_ESTACION_API_URL
                         || (import.meta.env.PROD ? 'https://estacion-2026.vercel.app' : '');
                     let apiSuccess = false;
@@ -182,28 +202,27 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                         }
                     }
 
-                    // Fallback directo a Supabase en cloud_backups (con manejo silencioso de 403/RLS)
-                    if (!apiSuccess && supabaseCloud) {
-                        try {
-                            const sessionRes = await supabaseCloud.auth.getSession().catch(() => null);
-                            if (sessionRes?.data?.session) {
-                                // Contrato de esquema: builder con allowlist de columnas.
-                                await supabaseCloud.from('cloud_backups').upsert(
-                                    buildCloudBackupsRow({ deviceId: devId, backupData: metadataPayload }),
-                                    { onConflict: 'device_id' }
-                                ).catch(() => null);
-                            }
-                        } catch (sErr) {
-                            // Omitir silenciosamente si no hay permisos/sesión activa
-                        }
-                    }
-
+                    // NOTA: el antiguo fallback directo a Supabase (cloud_backups) se eliminó:
+                    // requería una sesión Auth que no existe en la app y tragaba los
+                    // errores en silencio. Si la estación no acepta los metadatos, se
+                    // reporta el fallo honestamente en vez de fingir éxito.
                     localStorage.setItem(LAST_UPLOAD_HASH_KEY, currentHash);
                     localStorage.setItem('bodega_last_daily_backup_date', todayStr);
+
+                    if (!apiSuccess) {
+                        return {
+                            ok: false,
+                            driveUrl: driveResult?.downloadUrl || null,
+                            error: 'La estación rechazó los metadatos (401/403: secreto compartido no coincide o falta)'
+                        };
+                    }
+                    return { ok: true, driveUrl: driveResult?.downloadUrl || null, error: null };
                 }
 
+                return { ok: false, error: 'Sin deviceId o sin cliente de nube' };
             } catch (e) {
                 console.error('[AutoBackup] Error:', e);
+                return { ok: false, error: String(e?.message || e) };
             }
     }, []);
 
@@ -267,19 +286,28 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
 
                     try {
                         console.log(`[AutoBackup] Solicitud de backup pendiente detectada (${data.id}). Ejecutando...`);
-                        await performBackupRef.current?.(true);
+                        const result = await performBackupRef.current?.(true);
 
-                        // ARNES V3: marcar como procesado SOLO después de éxito
-                        processedIdsRef.current.add(data.id);
-                        if (typeof sessionStorage !== 'undefined') {
-                            try { sessionStorage.setItem(sessionKey, '1'); } catch {}
+                        if (result?.ok) {
+                            // ARNES V3: marcar como procesado SOLO después de éxito real
+                            processedIdsRef.current.add(data.id);
+                            if (typeof sessionStorage !== 'undefined') {
+                                try { sessionStorage.setItem(sessionKey, '1'); } catch {}
+                            }
+
+                            const upd = await supabaseCloud.from('backup_requests').update({
+                                status: 'completed',
+                                completed_at: new Date().toISOString()
+                            }).eq('id', data.id);
+                            if (upd.error) {
+                                console.error(`[AutoBackup] Respaldo ${data.id} completado pero NO se pudo marcar completed:`, upd.error);
+                            } else {
+                                console.log('[AutoBackup] Backup pendiente procesado.');
+                            }
+                        } else {
+                            // Fracaso honesto: la estación lo verá como fallido con el motivo.
+                            await markBackupRequestFailed(data.id, result?.error || 'error desconocido');
                         }
-
-                        await supabaseCloud.from('backup_requests').update({
-                            status: 'completed',
-                            completed_at: new Date().toISOString()
-                        }).eq('id', data.id);
-                        console.log('[AutoBackup] Backup pendiente procesado exitosamente.');
                     } catch (backupErr) {
                         console.error('[AutoBackup] Backup falló, se reintentará:', backupErr);
                     }
