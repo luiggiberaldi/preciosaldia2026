@@ -13,6 +13,7 @@ import { useSecurity } from '../hooks/useSecurity';
 import { useProductContext } from '../context/ProductContext';
 import ShareInventoryModal from '../components/ShareInventoryModal';
 import { useAudit } from '../hooks/useAudit';
+import { normalizeVzlaPhone, isValidVzlaPhone } from '../utils/phoneValidation';
 import SettingsTabNegocio from '../components/Settings/tabs/SettingsTabNegocio';
 import SettingsTabVentas from '../components/Settings/tabs/SettingsTabVentas';
 import SettingsTabUsuarios from '../components/Settings/tabs/SettingsTabUsuarios';
@@ -64,6 +65,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
     // Business Data
     const [businessName, setBusinessName] = useState(() => localStorage.getItem('business_name') || '');
     const [businessRif, setBusinessRif] = useState(() => localStorage.getItem('business_rif') || '');
+    const [businessPhone, setBusinessPhone] = useState(() => localStorage.getItem('business_phone') || '');
     const [paperWidth, setPaperWidth] = useState(() => localStorage.getItem('printer_paper_width') || '58');
     const [labelCurrencyMode, setLabelCurrencyMode] = useState(() => localStorage.getItem('label_currency_mode') || 'mixto');
 
@@ -204,8 +206,13 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
 
     // ─── HANDLERS ─────────────────────────────────────────
     const handleSaveBusinessData = () => {
+        if (businessPhone && !isValidVzlaPhone(businessPhone)) {
+            showToast('El teléfono debe ser un móvil venezolano válido (Ej: 0412 123 4567)', 'error');
+            return;
+        }
         localStorage.setItem('business_name', businessName);
         localStorage.setItem('business_rif', businessRif);
+        localStorage.setItem('business_phone', normalizeVzlaPhone(businessPhone) || '');
         localStorage.setItem('printer_paper_width', paperWidth);
         forceHeartbeat();
         showToast('Datos del negocio guardados', 'success');
@@ -295,6 +302,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                             <SettingsTabNegocio
                                 businessName={businessName} setBusinessName={setBusinessName}
                                 businessRif={businessRif} setBusinessRif={setBusinessRif}
+                                businessPhone={businessPhone} setBusinessPhone={setBusinessPhone}
                                 paperWidth={paperWidth} setPaperWidth={setPaperWidth}
                                 labelCurrencyMode={labelCurrencyMode} setLabelCurrencyMode={setLabelCurrencyMode}
                                 labelOffsetNameX={labelOffsetNameX} setLabelOffsetNameX={setLabelOffsetNameX}

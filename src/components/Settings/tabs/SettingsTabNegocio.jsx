@@ -90,6 +90,7 @@ const CalibratorSlider = ({ label, value, setValue, baseKey, mode, paperWidth, m
 export default function SettingsTabNegocio({
     businessName, setBusinessName,
     businessRif, setBusinessRif,
+    businessPhone, setBusinessPhone,
     paperWidth, setPaperWidth,
     labelCurrencyMode, setLabelCurrencyMode,
     labelOffsetNameX, setLabelOffsetNameX,
@@ -213,6 +214,19 @@ export default function SettingsTabNegocio({
                                 onChange={e => setBusinessRif(e.target.value)}
                                 className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand/30 transition-all"
                             />
+                        </div>
+                        <div>
+                            <label className="text-[11px] uppercase tracking-wider font-extrabold text-slate-500 dark:text-slate-400 block mb-1.5">Teléfono del Negocio</label>
+                            <input
+                                type="tel"
+                                inputMode="tel"
+                                autoComplete="tel"
+                                placeholder="Ej: 0412 123 4567"
+                                value={businessPhone}
+                                onChange={e => setBusinessPhone(e.target.value)}
+                                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand/30 transition-all"
+                            />
+                            <p className="text-[10px] text-slate-400 mt-1">Te contactaremos por WhatsApp sobre tu licencia, soporte y novedades.</p>
                         </div>
                         <button
                             onClick={handleSaveBusinessData}

@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { Check, FileText, ChevronDown, Store } from 'lucide-react';
+import { Check, FileText, ChevronDown, Store, Phone } from 'lucide-react';
+import { normalizeVzlaPhone, isValidVzlaPhone, displayVzlaPhone } from '../utils/phoneValidation';
 
 export default function TermsOverlay({ onAccept }) {
     const [hasAccepted, setHasAccepted] = useState(
@@ -7,6 +8,8 @@ export default function TermsOverlay({ onAccept }) {
     );
     const [step, setStep] = useState(1); // 1 = Términos, 2 = Configuración negocio
     const [businessName, setBusinessName] = useState('');
+    const [businessPhone, setBusinessPhone] = useState('');
+    const [phoneTouched, setPhoneTouched] = useState(false);
     const [marketingEmail, setMarketingEmail] = useState('');
     const [canAccept, setCanAccept] = useState(false);
     const scrollRef = useRef(null);
@@ -28,12 +31,22 @@ export default function TermsOverlay({ onAccept }) {
     const handleFinish = () => {
         const trimmedName = businessName.trim();
         const trimmedEmail = marketingEmail.trim();
+        const phoneDigits = normalizeVzlaPhone(businessPhone);
+        // El botón ya exige teléfono válido, esto es red de seguridad
+        if (!trimmedName || !isValidVzlaPhone(businessPhone)) {
+            setPhoneTouched(true);
+            return;
+        }
         localStorage.setItem('business_name', trimmedName);
+        localStorage.setItem('business_phone', phoneDigits);
         localStorage.setItem('marketing_email', trimmedEmail);
         localStorage.setItem('pda_terms_accepted', 'true');
         setHasAccepted(true);
         if (onAccept) onAccept();
     };
+
+    const phoneValid = isValidVzlaPhone(businessPhone);
+    const phoneError = phoneTouched && !phoneValid;
 
     if (hasAccepted) return null;
 
@@ -221,6 +234,34 @@ export default function TermsOverlay({ onAccept }) {
 
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] uppercase font-bold text-surface-500 block">
+                                        Número de Teléfono *
+                                    </label>
+                                    <div className="relative">
+                                        <Phone size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-surface-400 pointer-events-none" />
+                                        <input
+                                            type="tel"
+                                            inputMode="tel"
+                                            autoComplete="tel"
+                                            placeholder="Ej: 0412 123 4567"
+                                            value={businessPhone}
+                                            onChange={e => { setBusinessPhone(e.target.value); setPhoneTouched(true); }}
+                                            onBlur={e => { setPhoneTouched(true); setBusinessPhone(displayVzlaPhone(e.target.value)); }}
+                                            className={`w-full bg-slate-50 dark:bg-slate-900 border rounded-xl pl-10 pr-4 py-3 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 transition-all font-medium ${phoneError ? 'border-red-400 focus:ring-red-300' : 'border-slate-200 dark:border-slate-800 focus:ring-brand/30'}`}
+                                        />
+                                    </div>
+                                    {phoneError ? (
+                                        <p className="text-[10px] text-red-500 font-bold leading-tight">
+                                            Ingresa un número móvil venezolano válido (Ej: 0412 123 4567).
+                                        </p>
+                                    ) : (
+                                        <p className="text-[10px] text-surface-400 font-medium leading-tight">
+                                            Lo usaremos para comunicarnos contigo por WhatsApp sobre tu licencia, soporte y novedades.
+                                        </p>
+                                    )}
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] uppercase font-bold text-surface-500 block">
                                         Correo Electrónico (Opcional)
                                     </label>
                                     <input
@@ -241,8 +282,8 @@ export default function TermsOverlay({ onAccept }) {
                         <div className="px-6 py-4 border-t border-surface-200 dark:border-surface-700 bg-surface-200 shrink-0">
                             <button
                                 onClick={handleFinish}
-                                disabled={!businessName.trim()}
-                                className={`btn w-full ${businessName.trim() ? 'btn-primary' : 'bg-surface-300 dark:bg-surface-700 text-surface-500 dark:text-surface-400 cursor-not-allowed'} shadow-tone-md`}
+                                disabled={!(businessName.trim() && phoneValid)}
+                                className={`btn w-full ${(businessName.trim() && phoneValid) ? 'btn-primary' : 'bg-surface-300 dark:bg-surface-700 text-surface-500 dark:text-surface-400 cursor-not-allowed'} shadow-tone-md`}
                             >
                                 <Check size={20} strokeWidth={2.5} />
                                 <span>Finalizar Registro</span>

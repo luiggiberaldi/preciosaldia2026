@@ -4,6 +4,7 @@ import { storageService } from '../utils/storageService';
 import localforage from 'localforage';
 import { showToast } from '../components/Toast';
 import PaymentMethodsManager from './Settings/PaymentMethodsManager';
+import { normalizeVzlaPhone, isValidVzlaPhone } from '../utils/phoneValidation';
 
 import { useSecurity } from '../hooks/useSecurity';
 import { useProductContext } from '../context/ProductContext';
@@ -29,6 +30,7 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
     // Configuración del negocio (Ticket WhatsApp)
     const [businessName, setBusinessName] = useState(() => localStorage.getItem('business_name') || '');
     const [businessRif, setBusinessRif] = useState(() => localStorage.getItem('business_rif') || '');
+    const [businessPhone, setBusinessPhone] = useState(() => localStorage.getItem('business_phone') || '');
     const [paperWidth, setPaperWidth] = useState(() => localStorage.getItem('printer_paper_width') || '58');
 
     const handleNameChange = (e) => {
@@ -39,9 +41,18 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
         setBusinessRif(e.target.value);
     };
 
+    const handlePhoneChange = (e) => {
+        setBusinessPhone(e.target.value);
+    };
+
     const handleSaveBusinessData = () => {
+        if (businessPhone && !isValidVzlaPhone(businessPhone)) {
+            showToast("El teléfono debe ser un móvil venezolano válido (Ej: 0412 123 4567)", "error");
+            return;
+        }
         localStorage.setItem('business_name', businessName);
         localStorage.setItem('business_rif', businessRif);
+        localStorage.setItem('business_phone', normalizeVzlaPhone(businessPhone) || '');
         localStorage.setItem('printer_paper_width', paperWidth);
         forceHeartbeat();
         showToast("Datos del negocio guardados correctamente", "success");
@@ -225,6 +236,20 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
                                 onChange={handleRifChange}
                                 className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand/50"
                             />
+                        </div>
+
+                        <div>
+                            <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Teléfono del Negocio</label>
+                            <input 
+                                type="tel"
+                                inputMode="tel"
+                                autoComplete="tel"
+                                placeholder="Ej: 0412 123 4567" 
+                                value={businessPhone}
+                                onChange={handlePhoneChange}
+                                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand/50"
+                            />
+                            <p className="text-[10px] text-slate-400 mt-1">Se usa para contactarte por WhatsApp (licencia, soporte, novedades).</p>
                         </div>
 
                         <div>
