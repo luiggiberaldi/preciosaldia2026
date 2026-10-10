@@ -2,8 +2,22 @@ import { forwardRef, useState, useEffect, useRef } from 'react';
 import { Search, Mic, Package, X, Box } from 'lucide-react';
 import { BODEGA_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../config/categories';
 import { formatCop, formatUsd, getCop, getUsd } from '../../utils/calculatorUtils';
-import { parseMoneyAmount, bsToUsd, qtyFromMoneyAmount, formatStockDisplay } from '../../utils/granel'; // GRANEL-MONEY
+import {
+    parseMoneyAmount,
+    bsToUsd,
+    qtyFromMoneyAmount,
+    formatStockDisplay,
+    getGranelTitle,
+    getGranelQuickOptions,
+    getGranelStep,
+    getGranelDefaultQty,
+    parseWeightInput,
+    formatGranelDisplay,
+    isLiquidProduct,
+    useGranelUnitMode,
+} from '../../utils/granel';
 import SmartImage from '../SmartImage';
+import { showToast } from '../Toast';
 
 const formatBs = (n) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
@@ -226,28 +240,34 @@ const SearchBar = forwardRef(function SearchBar({
 
 // ─── SUBCOMPONENTE DE PESAJE CON BORRADO AUTOMÁTICO AL PULSAR CLIC ───
 function WeightPopup({ weightPending, setWeightPending, addToCart, effectiveRate = 0, tasaCop = 0 }) {
-    const [qty, setQty] = useState('1.00');
+    const [granelUnitMode] = useGranelUnitMode();
+    const isGramsMode = granelUnitMode === 'gr_ml';
+    const isLiquid = isLiquidProduct(weightPending);
+
+    const defaultQtyStr = getGranelDefaultQty(granelUnitMode);
+    const [qty, setQty] = useState(defaultQtyStr);
     const [isEditing, setIsEditing] = useState(false);
     const [draft, setDraft] = useState('');
-    const prevQtyRef = useRef('1.00');
+    const prevQtyRef = useRef(defaultQtyStr);
 
     // GRANEL-MONEY: venta por monto ("dame 3$ de queso", "dame 5000 Bs de jabón")
     const [amountInput, setAmountInput] = useState('');
     const [amountCurrency, setAmountCurrency] = useState('usd'); // 'usd' | 'bs'
 
-    // Reiniciar valores si cambia el producto a pesar
+    // Reiniciar valores si cambia el producto a pesar o el modo
     useEffect(() => {
-        setQty('1.00');
+        const initial = getGranelDefaultQty(granelUnitMode);
+        setQty(initial);
         setDraft('');
         setIsEditing(false);
         setAmountInput('');
-        prevQtyRef.current = '1.00';
-    }, [weightPending?.id]);
+        prevQtyRef.current = initial;
+    }, [weightPending?.id, granelUnitMode]);
 
     // Al hacer clic o foco: borra el número inmediatamente y muestra el anterior como placeholder tenue
     const handleFocus = () => {
         if (isEditing) return;
-        prevQtyRef.current = draft || qty || '1.00';
+        prevQtyRef.current = draft || qty || defaultQtyStr;
         setIsEditing(true);
         setDraft('');
     };
@@ -261,31 +281,39 @@ function WeightPopup({ weightPending, setWeightPending, addToCart, effectiveRate
         if (!draft || draft.trim() === '') {
             setQty(prevQtyRef.current);
         } else {
-            const parsed = parseFloat(draft.replace(',', '.'));
-            if (isNaN(parsed) || parsed <= 0) {
+            const parsedRes = parseWeightInput(draft, granelUnitMode);
+            if (!parsedRes || parsedRes.canonicalKg <= 0) {
                 setQty(prevQtyRef.current);
             } else {
-                setQty(parsed.toString());
+                setQty(String(parsedRes.displayQty));
             }
         }
     };
 
     const handleStep = (delta) => {
-        const current = parseFloat((isEditing ? draft : qty).replace(',', '.')) || parseFloat(prevQtyRef.current) || 1;
-        const next = Math.max(0.01, parseFloat((current + delta).toFixed(3)));
-        setQty(next.toString());
-        setDraft(next.toString());
+        const raw = isEditing ? draft : qty;
+        const parsed = parseWeightInput(raw, granelUnitMode);
+        const currentVal = parsed ? parsed.displayQty : (Number(prevQtyRef.current) || (isGramsMode ? 1000 : 1));
+        const nextRaw = currentVal + delta;
+        const minVal = isGramsMode ? 10 : 0.01;
+        const nextVal = isGramsMode ? Math.max(minVal, Math.round(nextRaw)) : Math.max(minVal, parseFloat(nextRaw.toFixed(3)));
+        setQty(String(nextVal));
+        setDraft(String(nextVal));
     };
 
     const handleSubmit = () => {
         const raw = isEditing ? draft : qty;
-        let parsed = parseFloat((raw || '').replace(',', '.'));
-        if (isNaN(parsed) || parsed <= 0) {
-            parsed = parseFloat(prevQtyRef.current) || 1;
-        }
-        if (parsed > 0) {
-            addToCart(weightPending, parsed);
+        const parsedRes = parseWeightInput(raw || prevQtyRef.current, granelUnitMode);
+        if (parsedRes && parsedRes.canonicalKg > 0) {
+            // Toda conversión gr -> kg se realiza antes de guardar: addToCart SIEMPRE recibe Kg/L canónicos
+            addToCart(weightPending, parsedRes.canonicalKg);
             setWeightPending(null);
+        } else {
+            // Entrada inválida: alertar al cajero y restablecer a valor seguro previo
+            showToast('Cantidad de pesaje inválida', 'warning');
+            setQty(prevQtyRef.current);
+            setDraft('');
+            setIsEditing(false);
         }
     };
 
@@ -293,13 +321,18 @@ function WeightPopup({ weightPending, setWeightPending, addToCart, effectiveRate
         if (e.key === 'Enter') {
             e.preventDefault();
             handleSubmit();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            setWeightPending(null);
         }
     };
 
-    const unitLabel = weightPending.unit === 'kg' ? 'kg' : weightPending.unit === 'litro' ? 'lt' : (weightPending.granelUnit || 'kg');
+    const quickOptions = getGranelQuickOptions(weightPending, granelUnitMode);
+    const titleText = getGranelTitle(weightPending, granelUnitMode);
+    const canonicalUnitLabel = isLiquid ? 'lt' : 'kg';
+    const stepDelta = getGranelStep(granelUnitMode);
 
     // ── GRANEL-MONEY: conversión monto → cantidad con preview en vivo ──
-    // Mismo precio efectivo que usa addToCart (priceCop tiene prioridad si hay tasa COP).
     const pricePerUnit = (weightPending.priceCop && tasaCop > 0)
         ? weightPending.priceCop / tasaCop
         : (parseFloat(weightPending.priceUsdt) || 0);
@@ -314,8 +347,9 @@ function WeightPopup({ weightPending, setWeightPending, addToCart, effectiveRate
         if (parsedAmount == null) return null;
         if (amountCurrency === 'bs' && !(effectiveRate > 0)) return 'Configura la tasa de cambio para vender en Bs';
         if (pricePerUnit <= 0) return 'Este producto no tiene precio unitario válido';
-        if (qtyPreview == null) return `El monto no alcanza para 0.001 ${unitLabel}`;
-        return `= ${formatStockDisplay(qtyPreview, true)} ${unitLabel} · $${formatUsd(amountUsdPreview)}${amountCurrency === 'bs' ? ` (${formatBs(parsedAmount)} Bs)` : ''}`;
+        if (qtyPreview == null) return `El monto no alcanza para la unidad mínima`;
+        const formattedQty = formatGranelDisplay(qtyPreview, weightPending, granelUnitMode);
+        return `= ${formattedQty} · $${formatUsd(amountUsdPreview)}${amountCurrency === 'bs' ? ` (${formatBs(parsedAmount)} Bs)` : ''}`;
     })();
 
     const handleAddByAmount = () => {
@@ -330,10 +364,10 @@ function WeightPopup({ weightPending, setWeightPending, addToCart, effectiveRate
                 <div className="flex items-center justify-between">
                     <div>
                         <p className="text-xs font-black text-amber-700 dark:text-amber-300 uppercase tracking-wider">
-                            ¿Cuántos {weightPending.unit === 'kg' ? 'kilos' : 'litros'}?
+                            {titleText}
                         </p>
                         <p className="text-[11px] text-amber-500/70 dark:text-amber-400/50 font-medium mt-0.5">
-                            {weightPending.name} · ${weightPending.priceUsdt?.toFixed(2)}/{unitLabel}
+                            {weightPending.name} · ${weightPending.priceUsdt?.toFixed(2)}/{canonicalUnitLabel}
                         </p>
                     </div>
                     <button
@@ -348,14 +382,14 @@ function WeightPopup({ weightPending, setWeightPending, addToCart, effectiveRate
             <div className="p-3 space-y-3">
                 {/* Botones rápidos */}
                 <div className="grid grid-cols-4 gap-2">
-                    {[0.25, 0.5, 1, 2].map(q => (
+                    {quickOptions.map(opt => (
                         <button
-                            key={q}
+                            key={opt.displayQty}
                             type="button"
-                            onClick={() => { addToCart(weightPending, q); setWeightPending(null); }}
+                            onClick={() => { addToCart(weightPending, opt.canonicalQty); setWeightPending(null); }}
                             className="py-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm font-black text-amber-700 dark:text-amber-300 hover:bg-amber-100 active:scale-95 transition-all"
                         >
-                            {q} {unitLabel}
+                            {opt.label}
                         </button>
                     ))}
                 </div>
@@ -381,7 +415,10 @@ function WeightPopup({ weightPending, setWeightPending, addToCart, effectiveRate
                                 inputMode="decimal"
                                 value={amountInput}
                                 onChange={(e) => setAmountInput(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddByAmount(); } }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') { e.preventDefault(); handleAddByAmount(); }
+                                    else if (e.key === 'Escape') { e.preventDefault(); setWeightPending(null); }
+                                }}
                                 placeholder={amountCurrency === 'bs' ? 'Ej: 5000' : 'Ej: 3.00'}
                                 className="flex-1 min-w-0 bg-transparent text-center py-2 font-bold text-slate-700 dark:text-white outline-none text-sm placeholder:text-slate-400/50"
                             />
@@ -406,7 +443,7 @@ function WeightPopup({ weightPending, setWeightPending, addToCart, effectiveRate
                     <div className="flex-1 flex items-center bg-amber-50 dark:bg-slate-800 border border-amber-200 dark:border-amber-700 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-amber-500/50 transition-all">
                         <button
                             type="button"
-                            onClick={() => handleStep(-0.1)}
+                            onClick={() => handleStep(-stepDelta)}
                             className="px-4 py-3 text-amber-600 hover:bg-amber-100/30 active:bg-amber-200/30 transition-colors font-black text-base select-none"
                         >
                             -
@@ -415,7 +452,7 @@ function WeightPopup({ weightPending, setWeightPending, addToCart, effectiveRate
                             type="text"
                             inputMode="decimal"
                             value={isEditing ? draft : qty}
-                            placeholder={prevQtyRef.current || '1.00'}
+                            placeholder={prevQtyRef.current || defaultQtyStr}
                             onFocus={handleFocus}
                             onClick={handleFocus}
                             onChange={handleChange}
@@ -426,7 +463,7 @@ function WeightPopup({ weightPending, setWeightPending, addToCart, effectiveRate
                         />
                         <button
                             type="button"
-                            onClick={() => handleStep(0.1)}
+                            onClick={() => handleStep(stepDelta)}
                             className="px-4 py-3 text-amber-600 hover:bg-amber-100/30 active:bg-amber-200/30 transition-colors font-black text-base select-none"
                         >
                             +

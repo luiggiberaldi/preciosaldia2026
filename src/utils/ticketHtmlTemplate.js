@@ -1,5 +1,6 @@
 import { formatBs, formatCop, formatUsd } from './calculatorUtils.js';
-import { mulR, divR } from './dinero.js';
+import { mulR, divR, round0 } from './dinero.js';
+import { getGranelUnitMode, formatGranelDisplay, isGranelProduct } from './granel.js';
 
 function escapeHtml(str) {
     if (str === null || str === undefined) return '';
@@ -35,17 +36,18 @@ export function buildTicketHtml(sale, bcvRate, paperConfig, settings) {
     const isBsSale = (sale.payments || []).some(p => {
         const isCop = p.currency === 'COP';
         const isBs = !isCop && (p.currency ? p.currency !== 'USD' : (p.methodId?.includes('_bs') || p.methodId === 'pago_movil'));
-        return isBs && parseFloat(p.amountBs || 0) > 0;
+        return isBs && (Number(p.amountBs) || 0) > 0;
     });
 
     // Generar filas de productos
     const itemsHtml = (sale.items || []).map(item => {
-        const isDualBs = item.pricingMode === 'dual_usd' && parseFloat(item.priceBsUsdRef) > 0 && isBsSale;
-        const effectivePriceUsd = isDualBs ? parseFloat(item.priceBsUsdRef) : item.priceUsd;
+        const isDualBs = item.pricingMode === 'dual_usd' && (Number(item.priceBsUsdRef) || 0) > 0 && isBsSale;
+        const effectivePriceUsd = isDualBs ? (Number(item.priceBsUsdRef) || 0) : item.priceUsd;
 
-        // FIN-024: formatUsd para qty peso, sin toFixed.
-        const qty = item.isWeight ? formatUsd(item.qty) : String(item.qty);
-        const unit = item.isWeight ? 'Kg' : 'u';
+        const granelMode = getGranelUnitMode();
+        const qtyUnit = isGranelProduct(item)
+            ? formatGranelDisplay(item.qty, item, granelMode)
+            : `${item.qty}u`;
         // FIN-024: mulR en vez de multiplicación raw.
         const itemExactBs = item.exactBs ?? (item.isCashAdvance && item.currency === 'BS' ? (item.montoEfectivo + item.montoComision) : null);
         const sub = itemExactBs != null ? (rate > 0 ? divR(itemExactBs, rate) : effectivePriceUsd) : mulR(effectivePriceUsd, item.qty);
@@ -65,7 +67,7 @@ export function buildTicketHtml(sale, bcvRate, paperConfig, settings) {
         } else {
             totalStr = fmtUsd(sub);
             unitPriceStr = isCop
-                ? 'USD ' + formatUsd(effectivePriceUsd) + ' (' + formatCop(item.priceCop || Math.round(effectivePriceUsd * sale.tasaCop)) + ' COP)'
+                ? 'USD ' + formatUsd(effectivePriceUsd) + ' (' + formatCop(item.priceCop || round0(mulR(effectivePriceUsd, sale.tasaCop))) + ' COP)'
                 : `$${formatUsd(effectivePriceUsd)}`;
         }
 
@@ -77,7 +79,7 @@ export function buildTicketHtml(sale, bcvRate, paperConfig, settings) {
             </tr>
             <tr>
                 <td style="text-align:left;font-size:${fSmall};color:#666;padding:1px 4px 6px 0;width:65%;vertical-align:middle;border-bottom:1px dotted #ccc;">
-                    ${qty}${unit} x ${unitPriceStr}
+                    ${qtyUnit} x ${unitPriceStr}
                 </td>
                 <td style="text-align:right;font-size:${fBase};font-weight:bold;padding:1px 0 6px 0;width:35%;vertical-align:middle;white-space:nowrap;border-bottom:1px dotted #ccc;">
                     ${totalStr}

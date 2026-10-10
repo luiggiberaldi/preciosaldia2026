@@ -64,7 +64,8 @@ function legacyReversalMovements(sale) {
     return movements;
 }
 
-export async function processVoidSale(sale, currentSales, currentProducts) {
+export async function processVoidSale(saleParam, currentSales, currentProducts) {
+    const sale = (saleParam && typeof saleParam === 'object' && saleParam.sale) ? saleParam.sale : saleParam;
     if (!sale) throw new Error('Sale object is required to void.');
     if (sale.status === 'ANULADA') throw new Error('Esta venta ya fue anulada.');
 
@@ -84,7 +85,7 @@ export async function processVoidSale(sale, currentSales, currentProducts) {
                 // GRANEL-001: la suma a restaurar se acumula a 3 decimales para no
                 // perder el tercer decimal del peso vendido (0.125 kg → 0.13 con sumR).
                 const totalToRestore = itemsInSale.reduce((sum, item) => {
-                    if (item.isWeight) return round3(sum + item.qty);
+                    if (isGranelProduct(item)) return round3(sum + item.qty);
                     if (item._mode === 'unit') return round3(sum + divR(item.qty, item._unitsPerPackage || 1));
                     return round3(sum + item.qty);
                 }, 0);
@@ -160,6 +161,6 @@ export async function processVoidSale(sale, currentSales, currentProducts) {
             { saleId: freshSale.id, tipo: freshSale.tipo, totalUsd: freshSale.totalUsd, tipDonatedUsd: tipDonadaUsd }
         );
 
-        return { updatedSales, updatedProducts, updatedCustomers };
+        return { success: true, updatedSales, updatedProducts, updatedCustomers };
     });
 }

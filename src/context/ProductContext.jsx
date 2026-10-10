@@ -7,7 +7,7 @@ import { useRateContext } from './RateContext';
 import { showToast } from '../components/Toast';
 import { Modal } from '../components/Modal';
 import { AlertTriangle, ShieldAlert, RotateCcw } from 'lucide-react';
-import { isGranelProduct, adjustStockValue, normalizeStockValue } from '../utils/granel.js'; // GRANEL-001
+import { isGranelProduct, adjustStockValue, normalizeStockValue, useGranelUnitMode } from '../utils/granel.js'; // GRANEL-001
 
 // Mantener una única instancia durante HMR y cargas lazy. Si Vite recarga este
 // módulo mientras una vista lazy conserva la versión anterior, un Context nuevo
@@ -73,6 +73,9 @@ export function ProductProvider({ children }) {
         setCheckoutModeState(mode);
         localStorage.setItem('checkout_mode', mode);
     };
+
+    // GRANEL UNIT MODE — 'kg_lt' (Decimal) | 'gr_ml' (Entero)
+    const [granelUnitMode, setGranelUnitMode] = useGranelUnitMode();
 
     // Resuelve dinámicamente si el modal de cobro activo debe ser 'basic' (Móvil) o 'pos' (PC).
     // FASE 5 — feature flag `checkout_shell_v2`: en 'true' fuerza el modo 'basic'
@@ -334,6 +337,8 @@ export function ProductProvider({ children }) {
         checkoutMode,
         effectiveCheckoutMode,
         setCheckoutMode,
+        granelUnitMode,
+        setGranelUnitMode,
         adjustStock,
         setDirectStock,
         restoreShadowBackup,
@@ -345,6 +350,9 @@ export function ProductProvider({ children }) {
         isLoadingProducts,
         checkoutMode,
         effectiveCheckoutMode,
+        setCheckoutMode,
+        granelUnitMode,
+        setGranelUnitMode,
         adjustStock,
         setDirectStock,
         restoreShadowBackup,

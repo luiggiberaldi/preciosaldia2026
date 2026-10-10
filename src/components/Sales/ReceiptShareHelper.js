@@ -1,4 +1,5 @@
 import { formatBs } from '../../utils/calculatorUtils';
+import { formatGranelDisplay, getGranelUnitMode, isGranelProduct } from '../../utils/granel';
 
 /**
  * Builds a WhatsApp-ready receipt URL for sharing a sale.
@@ -19,10 +20,10 @@ export function buildReceiptWhatsAppUrl(receipt, currentRate) {
 
     const receiptCurrencyMode = localStorage.getItem('receipt_currency_mode') || 'bs';
 
-    // Items
+    const receiptGranelMode = getGranelUnitMode();
     const itemsLines = (r.items ?? []).map(item => {
-        const qty = item.isWeight
-            ? `${parseFloat(item.qty).toFixed(3)} kg`
+        const qty = isGranelProduct(item)
+            ? formatGranelDisplay(item.qty, item, receiptGranelMode)
             : `${item.qty} und`;
         const subUsd = (item.priceUsd * item.qty).toFixed(2);
         const unitPriceUsd = parseFloat(item.priceUsd).toFixed(2);

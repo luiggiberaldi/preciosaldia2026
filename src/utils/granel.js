@@ -1,16 +1,96 @@
-// GRANEL-001: Módulo canónico de detección y guardarraíles para productos a granel.
+// GRANEL-001 / GRANEL-DUAL: Módulo canónico de detección, unidades duales y guardarraíles para granel.
 //
 // REGLA DE ORO DEL SISTEMA:
-//   - Productos a GRANEL (kg, litro, gr, g, ml, soldByWeight…) → stock con hasta 3 decimales.
-//   - TODO lo demás (unidad, paquete/bulto, lote, suelto) → stock ESTRICTAMENTE entero.
-//
-// Toda lectura, parseo, redondeo y formateo de cantidades de stock DEBE pasar por
-// este módulo. Nunca usar Math.round / parseInt / parseFloat directos sobre stock.
+//   - Almacenamiento, inventario y cálculos SIEMPRE canónicos en Kg / Litros (hasta 3 decimales).
+//   - Unidades en UI configurables:
+//       'kg_lt': Kilogramos y Litros (decimales estándar: 0.5 kg, 0.8 L).
+//       'gr_ml': Gramos y Mililitros (enteros adaptados: 500 g, 800 ml).
+//   - Guardarraíl anti-error en modo gramos: si se ingresa < 1 (ej: 0.5 o 0.8), se interpreta
+//     automáticamente como 500 g y 800 g en lugar de fracción infinitesimal.
+//   - Toda conversión gr -> kg o ml -> L se realiza antes del guardado / addToCart (qty = gramos / 1000).
+//   - No granel (unidad, paquete, lote) -> estrictamente enteros.
 
 import { round2, round3, round0 } from './dinero.js';
+import { useState, useEffect, useCallback } from 'react';
+
+export const GRANEL_STORAGE_KEY = 'granel_unit_mode';
+export const GRANEL_MODE_KG_LT = 'kg_lt';
+export const GRANEL_MODE_GR_ML = 'gr_ml';
+/** Techo de cordura de pesaje en punto de venta (5,000 kg = 5 toneladas) para impedir desbordamientos o escaneos accidentales de códigos de barra. */
+export const MAX_GRANEL_KG = 5000;
 
 /** Unidades legacy que identifican un producto vendido por peso/volumen. */
-const GRANEL_LEGACY_UNITS = ['kg', 'litro', 'gr', 'g', 'ml', 'l'];
+const GRANEL_LEGACY_UNITS = ['kg', 'kgs', 'kilo', 'kilos', 'litro', 'litros', 'lt', 'lts', 'l', 'gr', 'grs', 'g', 'gramo', 'gramos', 'ml', 'mls'];
+const GRANEL_LIQUID_UNITS = ['litro', 'litros', 'lt', 'lts', 'l', 'ml', 'mls'];
+
+/**
+ * Obtiene la preferencia de unidad de granel configurada ('kg_lt' | 'gr_ml').
+ * Default: 'kg_lt'.
+ */
+export const getGranelUnitMode = () => {
+    if (typeof localStorage === 'undefined') return GRANEL_MODE_KG_LT;
+    try {
+        const mode = localStorage.getItem(GRANEL_STORAGE_KEY);
+        return mode === GRANEL_MODE_GR_ML ? GRANEL_MODE_GR_ML : GRANEL_MODE_KG_LT;
+    } catch {
+        return GRANEL_MODE_KG_LT;
+    }
+};
+
+/**
+ * Persiste la preferencia de unidad de granel y emite evento para reactividad inmediata.
+ */
+export const setGranelUnitMode = (mode) => {
+    const safeMode = mode === GRANEL_MODE_GR_ML ? GRANEL_MODE_GR_ML : GRANEL_MODE_KG_LT;
+    if (typeof localStorage !== 'undefined') {
+        try {
+            localStorage.setItem(GRANEL_STORAGE_KEY, safeMode);
+        } catch {
+            // Storage quota or security error fallback (modo incógnito estricto)
+        }
+    }
+    if (typeof window !== 'undefined') {
+        try {
+            window.dispatchEvent(new CustomEvent('granel_unit_mode_changed', { detail: safeMode }));
+        } catch {
+            // Event dispatch fallback
+        }
+    }
+    return safeMode;
+};
+
+/**
+ * Hook reactivo para leer y actualizar la modalidad de granel sin recargar página.
+ */
+export function useGranelUnitMode() {
+    const [mode, setMode] = useState(() => getGranelUnitMode());
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const onCustom = (e) => {
+            const next = e?.detail || getGranelUnitMode();
+            setMode(next);
+        };
+        const onStorage = (e) => {
+            if (e.key === GRANEL_STORAGE_KEY) {
+                setMode(getGranelUnitMode());
+            }
+        };
+        window.addEventListener('granel_unit_mode_changed', onCustom);
+        window.addEventListener('storage', onStorage);
+        return () => {
+            window.removeEventListener('granel_unit_mode_changed', onCustom);
+            window.removeEventListener('storage', onStorage);
+        };
+    }, []);
+
+    const updateMode = useCallback((newMode) => {
+        const persisted = setGranelUnitMode(newMode);
+        setMode(persisted);
+    }, []);
+
+    return [mode, updateMode];
+}
 
 /**
  * Detector canónico de producto a granel.
@@ -20,8 +100,14 @@ const GRANEL_LEGACY_UNITS = ['kg', 'litro', 'gr', 'g', 'ml', 'l'];
  */
 export const isGranelProduct = (p) => {
     if (!p) return false;
+    if (typeof p === 'string') {
+        return GRANEL_LEGACY_UNITS.includes(p.toLowerCase().trim());
+    }
     const unit = String(p.unit || '').toLowerCase().trim();
     const pkgType = String(p.packagingType || '').toLowerCase().trim();
+    if (pkgType === 'suelto' || pkgType === 'lote') {
+        return false;
+    }
     return (
         pkgType === 'granel' ||
         GRANEL_LEGACY_UNITS.includes(unit) ||
@@ -32,18 +118,257 @@ export const isGranelProduct = (p) => {
 };
 
 /**
- * Unidad de medida corta para mostrar en UI ("kg", "L", "g", "ml" o "UND").
- * @param {object|null} p
+ * Determina si el producto granel es líquido/volumen (litros/ml).
+ * @param {object|string|null} p
+ * @returns {boolean}
+ */
+export const isLiquidProduct = (p) => {
+    if (!p) return false;
+    const raw = typeof p === 'string'
+        ? p
+        : String(p.granelUnit || p.unit || '').toLowerCase().trim();
+    return GRANEL_LIQUID_UNITS.includes(raw.toLowerCase().trim());
+};
+
+/**
+ * Unidad de medida corta canónica ("kg", "L", "g", "ml" o "UND").
+ * @param {object|string|null} p
  * @returns {string}
  */
 export const granelUnitLabel = (p) => {
     if (!p) return 'UND';
-    const raw = String(p.granelUnit || p.unit || '').toLowerCase().trim();
-    if (raw === 'kg') return 'kg';
-    if (raw === 'litro' || raw === 'l') return 'L';
-    if (raw === 'gr' || raw === 'g') return 'g';
-    if (raw === 'ml') return 'ml';
+    const raw = typeof p === 'string'
+        ? p.toLowerCase().trim()
+        : String(p.granelUnit || p.unit || '').toLowerCase().trim();
+    if (['kg', 'kgs', 'kilo', 'kilos'].includes(raw)) return 'kg';
+    if (['litro', 'litros', 'lt', 'lts', 'l'].includes(raw)) return 'L';
+    if (['gr', 'grs', 'g', 'gramo', 'gramos'].includes(raw)) return 'g';
+    if (['ml', 'mls'].includes(raw)) return 'ml';
     return 'UND';
+};
+
+/**
+ * Unidad adaptada al modo activo ('kg_lt' vs 'gr_ml').
+ * @param {object|string|null} p
+ * @param {'kg_lt'|'gr_ml'} [mode]
+ * @returns {string}
+ */
+export const getGranelUnitLabel = (p, mode = getGranelUnitMode()) => {
+    const isLiquid = isLiquidProduct(p);
+    if (mode === GRANEL_MODE_GR_ML) {
+        return isLiquid ? 'ml' : 'g';
+    }
+    return isLiquid ? 'L' : 'kg';
+};
+
+/**
+ * Título interactivo adaptado para el modal de pesaje.
+ * @param {object|string|null} p
+ * @param {'kg_lt'|'gr_ml'} [mode]
+ * @returns {string}
+ */
+export const getGranelTitle = (p, mode = getGranelUnitMode()) => {
+    const isLiquid = isLiquidProduct(p);
+    if (mode === GRANEL_MODE_GR_ML) {
+        return isLiquid ? '¿Cuántos mililitros?' : '¿Cuántos gramos?';
+    }
+    return isLiquid ? '¿Cuántos litros?' : '¿Cuántos kilos?';
+};
+
+/**
+ * Opciones rápidas para el popup de pesaje según el modo activo.
+ * @param {object|string|null} p
+ * @param {'kg_lt'|'gr_ml'} [mode]
+ * @returns {Array<{ label: string, displayQty: number, canonicalQty: number }>}
+ */
+export const getGranelQuickOptions = (p, mode = getGranelUnitMode()) => {
+    const unit = getGranelUnitLabel(p, mode);
+    if (mode === GRANEL_MODE_GR_ML) {
+        return [
+            { displayQty: 250, canonicalQty: 0.25, label: `250 ${unit}` },
+            { displayQty: 500, canonicalQty: 0.5, label: `500 ${unit}` },
+            { displayQty: 1000, canonicalQty: 1.0, label: `1000 ${unit}` },
+            { displayQty: 2000, canonicalQty: 2.0, label: `2000 ${unit}` },
+        ];
+    }
+    return [
+        { displayQty: 0.25, canonicalQty: 0.25, label: `0.25 ${unit}` },
+        { displayQty: 0.5, canonicalQty: 0.5, label: `0.5 ${unit}` },
+        { displayQty: 1, canonicalQty: 1.0, label: `1 ${unit}` },
+        { displayQty: 2, canonicalQty: 2.0, label: `2 ${unit}` },
+    ];
+};
+
+/**
+ * Paso de incremento/decremento (+ / -).
+ * En gr_ml: 100 g/ml. En kg_lt: 0.1 kg/L.
+ */
+export const getGranelStep = (mode = getGranelUnitMode()) =>
+    mode === GRANEL_MODE_GR_ML ? 100 : 0.1;
+
+/**
+ * Valor inicial por defecto para el input de pesaje.
+ */
+export const getGranelDefaultQty = (mode = getGranelUnitMode()) =>
+    mode === GRANEL_MODE_GR_ML ? '1000' : '1.00';
+
+// ─────────────────────────────────────────────────────────────
+// CONVERSIONES BIDIRECCIONALES EXACTAS (Gramos ↔ Kg, Ml ↔ L)
+// ─────────────────────────────────────────────────────────────
+
+export const gramsToKg = (grams) => {
+    const n = Number(grams);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return round3(n / 1000);
+};
+
+export const kgToGrams = (kg) => {
+    const n = Number(kg);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return round0(round3(n) * 1000);
+};
+
+export const mlToLiters = (ml) => {
+    const n = Number(ml);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return round3(n / 1000);
+};
+
+export const litersToMl = (liters) => {
+    const n = Number(liters);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return round0(round3(n) * 1000);
+};
+
+/**
+ * PARSEO ADAPTATIVO CON GUARDARRAÍLES ANTI-CONFUSIÓN
+ *
+ * En modo gr_ml:
+ *   - Entradas enteras (500, 1250) -> 500 g (0.5 kg), 1250 g (1.25 kg).
+ *   - Guardarraíl anti-error: Si el usuario ingresa un decimal menor a 1
+ *     (0.5, 0.8, 0.75, ,5), el sistema detecta la confusión del cajero y lo
+ *     interpreta automáticamente como gramos enteros (500 g, 800 g, 750 g).
+ * En modo kg_lt:
+ *   - Decimal estándar (0.5 -> 0.5 kg, 1 -> 1.0 kg).
+ *
+ * @param {string|number} rawInput
+ * @param {'kg_lt'|'gr_ml'} [mode]
+ * @returns {{ displayQty: number, canonicalKg: number, grams: number }|null}
+ */
+export const parseWeightInput = (rawInput, mode = getGranelUnitMode()) => {
+    if (rawInput === null || rawInput === undefined) return null;
+    let cleaned = String(rawInput).trim().replace(/\s/g, '');
+    if (cleaned === '') return null;
+
+    // Detectar si el usuario incluyó una unidad explícita (ej: "500g", "0.5kg", "800ml", "1L", "2kgs", "500grs", "1k")
+    const unitMatch = cleaned.match(/(kilos?|kgs?|k|gramos?|grs?|g|litros?|lts?|lt|l|mls?|ml)$/i);
+    let explicitUnit = null;
+    if (unitMatch) {
+        explicitUnit = unitMatch[0].toLowerCase();
+        cleaned = cleaned.slice(0, -unitMatch[0].length);
+    }
+
+    cleaned = cleaned.replace(/,/g, '.');
+    if (cleaned === '') return null;
+    if (cleaned.startsWith('.')) cleaned = '0' + cleaned;
+    const n = Number(cleaned);
+    if (!Number.isFinite(n) || n <= 0) return null;
+
+    // Si el usuario especificó explícitamente la unidad, respetamos su intención
+    const isExplicitGrams = explicitUnit && /^(gramos?|grs?|g|mls?|ml)$/i.test(explicitUnit);
+    const isExplicitKg = explicitUnit && /^(kilos?|kgs?|k|litros?|lts?|lt|l)$/i.test(explicitUnit);
+
+    const effectiveMode = isExplicitGrams
+        ? GRANEL_MODE_GR_ML
+        : isExplicitKg
+            ? GRANEL_MODE_KG_LT
+            : mode;
+
+    if (effectiveMode === GRANEL_MODE_GR_ML) {
+        let grams;
+        if (n < 1 && !isExplicitGrams) {
+            // Guardarraíl: decimal menor a 1 ingresado en modo gramos
+            // ej: 0.5 -> 500g, 0.8 -> 800g, 0.75 -> 750g, 0.125 -> 125g
+            grams = round3(n * 1000);
+        } else {
+            grams = round3(n);
+        }
+        const canonicalKg = round3(grams / 1000);
+        if (canonicalKg <= 0 || canonicalKg > MAX_GRANEL_KG || grams <= 0) return null;
+        return {
+            grams,
+            canonicalKg,
+            displayQty: grams,
+        };
+    } else {
+        const canonicalKg = round3(n);
+        const grams = round3(n * 1000);
+        if (canonicalKg <= 0 || canonicalKg > MAX_GRANEL_KG || grams <= 0) return null;
+        return {
+            grams,
+            canonicalKg,
+            displayQty: canonicalKg,
+        };
+    }
+};
+
+/**
+ * Convierte un input de pesaje directamente a su valor canónico en Kg/L
+ * aplicando los guardarraíles correspondientes al modo.
+ * @param {string|number} rawInput
+ * @param {'kg_lt'|'gr_ml'} [mode]
+ * @returns {number|null}
+ */
+export const parseWeightToCanonical = (rawInput, mode = getGranelUnitMode()) => {
+    const res = parseWeightInput(rawInput, mode);
+    return res ? res.canonicalKg : null;
+};
+
+/**
+ * Formatea una cantidad canónica en Kg/L para visualización en cesta, tickets y modales.
+ * @param {number} canonicalQty - Cantidad canónica en kg o L
+ * @param {object|string|null} productOrUnit
+ * @param {'kg_lt'|'gr_ml'} [mode]
+ * @returns {string} Ej: "500 g", "750 ml", "0.500 kg" o "0.5 kg"
+ */
+export const formatGranelDisplay = (canonicalQty, productOrUnit, mode = getGranelUnitMode()) => {
+    const isLiquid = isLiquidProduct(productOrUnit);
+    const unit = isLiquid ? (mode === GRANEL_MODE_GR_ML ? 'ml' : 'L') : (mode === GRANEL_MODE_GR_ML ? 'g' : 'kg');
+    const n = Number(canonicalQty);
+    if (!Number.isFinite(n) || n <= 0) return `0 ${unit}`;
+
+    if (mode === GRANEL_MODE_GR_ML) {
+        const inGrams = round3(n * 1000);
+        return `${formatStockDisplay(inGrams, false)} ${unit}`;
+    }
+
+    const inKg = normalizeStockValue(n, true);
+    return `${formatStockDisplay(inKg, true)} ${unit}`;
+};
+
+/**
+ * Extrae y parsea códigos de barra EAN-13 de balanza electrónica (prefijo 21).
+ * Formato estándar: 21 + 5 dígitos PLU + 5 dígitos peso en gramos + 1 dígito checksum.
+ * @param {string} barcode
+ * @returns {{ pluCode: string, weightKg: number, grams: number }|null}
+ */
+export const parseEan13ScaleBarcode = (barcode) => {
+    if (!barcode) return null;
+    const str = String(barcode).trim();
+    if (!str.startsWith('21') || str.length < 13 || !/^\d{13,}$/.test(str)) return null;
+
+    const pluCode = parseInt(str.substring(2, 7), 10).toString();
+    const grams = parseInt(str.substring(7, 12), 10);
+    if (!Number.isFinite(grams) || grams <= 0) return null;
+
+    const weightKg = round3(grams / 1000);
+    if (weightKg <= 0 || weightKg > MAX_GRANEL_KG) return null;
+
+    return {
+        pluCode,
+        grams,
+        weightKg,
+    };
 };
 
 /**
@@ -69,7 +394,7 @@ export const normalizeStockValue = (value, isGranel) => {
  */
 export const parseStockInput = (raw, isGranel) => {
     if (raw === null || raw === undefined) return null;
-    const cleaned = String(raw).trim().replace(/\s/g, '').replace(',', '.');
+    const cleaned = String(raw).trim().replace(/\s/g, '').replace(/,/g, '.');
     if (cleaned === '') return null;
     const n = Number(cleaned);
     if (!Number.isFinite(n)) return null;
@@ -85,11 +410,12 @@ export const parseStockInput = (raw, isGranel) => {
  */
 export const parseCartQuantity = (raw, isGranel) => {
     if (raw === null || raw === undefined) return null;
-    const cleaned = String(raw).trim().replace(/\s/g, '').replace(',', '.');
+    const cleaned = String(raw).trim().replace(/\s/g, '').replace(/,/g, '.');
     if (cleaned === '') return null;
     const n = Number(cleaned);
     if (!Number.isFinite(n) || n <= 0) return null;
     if (!isGranel && !Number.isInteger(n)) return null;
+    if (isGranel && n > MAX_GRANEL_KG) return null;
     return normalizeStockValue(n, isGranel);
 };
 
@@ -105,7 +431,7 @@ export const normalizeCartQuantity = (raw, productOrIsGranel) => {
     const isGranel = typeof productOrIsGranel === 'boolean'
         ? productOrIsGranel
         : isGranelProduct(productOrIsGranel);
-    const cleaned = String(raw ?? '').trim().replace(/\s/g, '').replace(',', '.');
+    const cleaned = String(raw ?? '').trim().replace(/\s/g, '').replace(/,/g, '.');
     const n = Number(cleaned);
     if (!Number.isFinite(n) || n <= 0) return 0;
     return normalizeStockValue(n, isGranel);
@@ -131,6 +457,7 @@ export const adjustStockValue = (stock, delta, isGranel) =>
 export const formatStockDisplay = (value, isGranel) => {
     const v = normalizeStockValue(value, isGranel);
     if (!isGranel) return String(v);
+    // eslint-disable-next-line no-restricted-syntax -- Formateo de stock de producto (no dinero)
     return String(Number(v.toFixed(3)));
 };
 
@@ -149,7 +476,7 @@ export const formatStockDisplay = (value, isGranel) => {
  */
 export const parseMoneyAmount = (raw) => {
     if (raw === null || raw === undefined) return null;
-    const cleaned = String(raw).trim().replace(/\s/g, '').replace(',', '.');
+    const cleaned = String(raw).trim().replace(/\s/g, '').replace(/,/g, '.');
     if (cleaned === '') return null;
     const n = Number(cleaned);
     if (!Number.isFinite(n) || n <= 0) return null;
@@ -170,11 +497,6 @@ export const bsToUsd = (amountBs, rate) =>
  * el guardarraíl canónico de 3 decimales.
  *
  *   cantidad = montoUsd / precioPorUnidadUsd  → round3
- *
- * La red de seguridad anti-bucle es el propio guardarraíl: si el monto es
- * minúsculo frente al precio unitario (ej: $0.01 para queso a $10/kg), la
- * cantidad redondeada a 3 decimales cae a 0 y la venta se rechaza en UI con
- * "el monto no alcanza ni para la unidad mínima".
  *
  * @param {number} amount   Monto en USD (si currency='usd') o Bs (si 'bs')
  * @param {string} currency 'usd' | 'bs'

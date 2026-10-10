@@ -1,11 +1,11 @@
 import React from 'react';
 import { ShoppingCart, Plus, Minus, X, CheckCircle, Package, Trash2, DollarSign, Percent, Search, Pause } from 'lucide-react';
 import { formatBs, formatCop, getCop, formatUsd } from '../../utils/calculatorUtils';
-import { mulR } from '../../utils/dinero';
+import { mulR, round3 } from '../../utils/dinero';
 import SmartImage from '../SmartImage';
 import { FinancialEngine } from '../../core/FinancialEngine';
 import { showToast } from '../Toast';
-import { isGranelProduct, granelUnitLabel, parseCartQuantity, formatStockDisplay } from '../../utils/granel'; // GRANEL-001
+import { isGranelProduct, granelUnitLabel, parseCartQuantity, formatStockDisplay, useGranelUnitMode, formatGranelDisplay, parseWeightToCanonical } from '../../utils/granel'; // GRANEL-001
 
 export default function CartPanel({
     cart,
@@ -31,6 +31,7 @@ export default function CartPanel({
     const [editingQtyId, setEditingQtyId] = React.useState(null);
     const [tempQty, setTempQty] = React.useState('');
     const inputRef = React.useRef(null);
+    const [granelUnitMode] = useGranelUnitMode();
 
     // Calcular el total en Bolívares para mostrar en la cesta usando la tasa de referencia si hay Doble Precio
     const displayCartTotalBs = React.useMemo(() => {
@@ -60,7 +61,23 @@ export default function CartPanel({
         if (!tempQty || tempQty.trim() === '') return; // Si no ingresó nada, conserva la cantidad previa
 
         const itemIsGranel = isGranelProduct(item);
-        const normalizedRaw = String(tempQty).trim().replace(/\s/g, '').replace(',', '.');
+        if (itemIsGranel) {
+            // Parse adaptativo con guardarraíles anti-error (0.5 -> 500g en modo gr, etc.)
+            const canonicalParsed = parseWeightToCanonical(tempQty, granelUnitMode);
+            if (canonicalParsed === null || canonicalParsed <= 0) {
+                showToast('Cantidad inválida', 'warning');
+                setTempQty('');
+                return;
+            }
+            const diff = round3(canonicalParsed - (Number(item.qty) || 0));
+            if (diff !== 0) {
+                updateQty(item.id, diff);
+            }
+            setTempQty('');
+            return;
+        }
+
+        const normalizedRaw = String(tempQty).trim().replace(/\s/g, '').replace(/,/g, '.');
         const rawNumber = Number(normalizedRaw);
 
         if (!Number.isFinite(rawNumber) || rawNumber <= 0) {
@@ -71,13 +88,13 @@ export default function CartPanel({
         // GRANEL-001: el editor de cesta NO permite fracciones para unidad/bulto/lote.
         // No redondeamos silenciosamente 0.5 a 1: rechazamos la entrada y conservamos
         // la cantidad previa para que el cajero no cobre una cantidad inesperada.
-        if (!itemIsGranel && !Number.isInteger(rawNumber)) {
+        if (!Number.isInteger(rawNumber)) {
             showToast('Este producto solo acepta cantidades enteras', 'warning');
             setTempQty('');
             return;
         }
 
-        const parsed = parseCartQuantity(tempQty, itemIsGranel);
+        const parsed = parseCartQuantity(tempQty, false);
         if (parsed === null || parsed <= 0) {
             setTempQty('');
             return;
@@ -118,11 +135,8 @@ export default function CartPanel({
                         {cart.map((item, idx) => {
                             if (!item) return null;
                             const itemIsGranel = isGranelProduct(item);
-                            const itemUnitLabel = itemIsGranel
-                                ? (granelUnitLabel(item) === 'UND' ? 'kg' : granelUnitLabel(item))
-                                : 'un.';
                             const qtyDisplay = itemIsGranel
-                                ? `${formatStockDisplay(item.qty || 0, true)} ${itemUnitLabel}`
+                                ? formatGranelDisplay(item.qty || 0, item, granelUnitMode)
                                 : String(item.qty ?? 1);
                             const isCustomProduct = (item?.id?.toString() || '').startsWith('custom_') || item?.name === 'Venta Libre';
                             const isCashAdvance = item.isCashAdvance === true;
@@ -244,7 +258,7 @@ export default function CartPanel({
                                         ) : (
                                             <div className="flex items-center gap-1">
                                                 <span className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md">
-                                                    {itemIsGranel ? `1 ${itemUnitLabel}` : '1 un.'}
+                                                    {itemIsGranel ? formatGranelDisplay(1, item, granelUnitMode) : '1 un.'}
                                                 </span>
                                             </div>
                                         )}
@@ -268,21 +282,20 @@ export default function CartPanel({
                                                     {isEditing ? (
                                                         <input
                                                             ref={inputRef}
-                                                            type="number"
+                                                            type="text"
                                                             value={tempQty}
                                                             onChange={e => setTempQty(e.target.value)}
                                                             onFocus={e => e.target.select()}
                                                             onBlur={() => submitCustomQty(item)}
                                                             onKeyDown={e => { if (e.key === 'Enter') submitCustomQty(item) }}
-                                                            placeholder={item.qty.toString()}
-                                                            className="w-10 h-7 text-center font-black text-slate-700 bg-white dark:bg-slate-900 dark:text-white border border-emerald-500 rounded-md text-xs outline-none"
-                                                            step={itemIsGranel ? "0.001" : "1"}
+                                                            placeholder={itemIsGranel && granelUnitMode === 'gr_ml' ? String(Math.round((item.qty || 0) * 1000)) : String(item.qty ?? 1)}
+                                                            className="min-w-[3.5rem] w-auto h-7 px-1 text-center font-black text-slate-700 bg-white dark:bg-slate-900 dark:text-white border border-emerald-500 rounded-md text-xs outline-none"
                                                             inputMode={itemIsGranel ? "decimal" : "numeric"}
                                                         />
                                                     ) : (
                                                         <span 
                                                             onClick={() => handleQtyClick(item)} 
-                                                            className="w-7 text-center font-black text-slate-800 dark:text-white text-xs cursor-pointer hover:text-emerald-500 transition-colors"
+                                                            className="min-w-[2.5rem] px-1 text-center font-black text-slate-800 dark:text-white text-xs cursor-pointer hover:text-emerald-500 transition-colors whitespace-nowrap"
                                                         >
                                                             {qtyDisplay}
                                                         </span>

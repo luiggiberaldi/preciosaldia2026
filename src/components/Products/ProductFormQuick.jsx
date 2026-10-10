@@ -4,7 +4,14 @@ import { useProductContext } from '../../context/ProductContext';
 import CustomSelect from '../CustomSelect';
 import { showToast } from '../Toast';
 import PricingModeSelector from './PricingModeSelector';
-import { granelUnitLabel } from '../../utils/granel'; // GRANEL-001
+import {
+    granelUnitLabel,
+    useGranelUnitMode,
+    GRANEL_MODE_GR_ML,
+    GRANEL_MODE_KG_LT,
+    parseWeightInput,
+    isLiquidProduct,
+} from '../../utils/granel'; // GRANEL-001 / GRANEL-DUAL
 
 const PACKAGING_TYPES = [
     { id: 'suelto', label: 'Suelto', Icon: Tag, desc: 'Unidad individual', color: 'emerald' },
@@ -53,6 +60,7 @@ export default function ProductFormQuick({
 }) {
     const fileInputRef = useRef(null);
     const [showSummary, setShowSummary] = useState(false);
+    const [granelMode] = useGranelUnitMode();
     
     // Categorías en línea
     const { setCategories } = useProductContext();
@@ -102,14 +110,14 @@ export default function ProductFormQuick({
     const alertLotesCalc = parsedUnits > 0 ? (parsedAlert / parsedUnits) : 0;
 
     // Unit label for granel
-    const granelLabel = granelUnit === 'kg' ? 'Kilo' : 'Litro';
+    const granelLabel = isLiquidProduct(granelUnit) ? 'Litro' : 'Kilo';
 
     const priceSuffix = isLote ? ' / Bulto' : isGranel ? ` / ${granelLabel}` : '';
 
-    // GRANEL-001: atributos condicionales de tipado numérico.
+    // GRANEL-001 / GRANEL-DUAL: atributos condicionales de tipado numérico adaptados al modo de unidad.
     const stockStep = isGranel ? 'any' : '1';
-    const stockInputMode = isGranel ? 'decimal' : 'numeric';
-    const stockPlaceholder = isGranel ? '0.000' : '0';
+    const stockInputMode = isGranel ? (granelMode === GRANEL_MODE_GR_ML ? 'numeric' : 'decimal') : 'numeric';
+    const stockPlaceholder = isGranel ? (granelMode === GRANEL_MODE_GR_ML ? '1000' : '0.000') : '0';
 
     return (
         <div className="space-y-4">
@@ -279,25 +287,33 @@ export default function ProductFormQuick({
                                         }`}>
                                     <pt.Icon size={22} strokeWidth={2} className={selected ? textColor[pt.color] : 'text-slate-400'} />
                                     <span className={`text-[10px] font-black uppercase ${selected ? textColor[pt.color] : 'text-slate-500'}`}>{pt.label}</span>
-                                    <span className="text-[8px] text-slate-400 leading-tight text-center">{pt.desc}</span>
+                                    <span className="text-[8px] text-slate-400 leading-tight text-center">{pt.id === 'granel' && granelMode === GRANEL_MODE_GR_ML ? 'Por Gramo o Ml' : pt.desc}</span>
                                 </button>
                             );
                         })}
                     </div>
                 </div>
 
-                {/* ─── GRANEL: Unit selector ─── */}
+                {/* ─── GRANEL: Unit selector adaptativo (R1) ─── */}
                 {isGranel && (
                     <div className="flex gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
-                        {['kg', 'litro'].map(u => (
-                            <button key={u} type="button" onClick={() => setGranelUnit(u)}
-                                className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95 ${granelUnit === u
-                                    ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30'
-                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'
-                                    }`}>
-                                {u === 'kg' ? <><Scale size={14} className="inline -mt-0.5" /> Kilogramo</> : <><Droplets size={14} className="inline -mt-0.5" /> Litro</>}
-                            </button>
-                        ))}
+                        {['kg', 'litro'].map(u => {
+                            const isLiquidBtn = u === 'litro';
+                            const isSelected = (isLiquidBtn && isLiquidProduct(granelUnit)) || (!isLiquidBtn && !isLiquidProduct(granelUnit));
+                            const label = granelMode === GRANEL_MODE_GR_ML
+                                ? (isLiquidBtn ? 'Mililitros (ml)' : 'Gramos (g)')
+                                : (isLiquidBtn ? 'Litro (L)' : 'Kilogramo (kg)');
+                            const Icon = isLiquidBtn ? Droplets : Scale;
+                            return (
+                                <button key={u} type="button" onClick={() => setGranelUnit(u)}
+                                    className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95 flex items-center justify-center gap-1.5 ${isSelected
+                                        ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30'
+                                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                        }`}>
+                                    <Icon size={14} className="inline" /> {label}
+                                </button>
+                            );
+                        })}
                     </div>
                 )}
 
@@ -439,6 +455,23 @@ export default function ProductFormQuick({
                             )}
                         </div>
                     </div>
+
+                    {/* Referencia opcional $ / 100g o 100ml para modo gramos (R4) */}
+                    {isGranel && parsedPrice > 0 && granelMode === GRANEL_MODE_GR_ML && (
+                        <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200/70 dark:border-amber-800/40 rounded-xl px-2.5 py-1.5 flex items-center justify-between text-[11px] animate-in fade-in">
+                            <span className="text-amber-800 dark:text-amber-300 font-semibold">
+                                Equiv. ref. por {isLiquidProduct(granelUnit) ? '100 ml' : '100 g'}:
+                            </span>
+                            <span className="font-black text-amber-900 dark:text-amber-200">
+                                ${(parsedPrice / 10).toFixed(2)} / {isLiquidProduct(granelUnit) ? '100ml' : '100g'}
+                                {effectiveRate > 0 && (
+                                    <span className="text-[10px] text-amber-700 dark:text-amber-400 font-bold ml-1.5">
+                                        ({((parsedPrice * effectiveRate) / 10).toFixed(2)} Bs)
+                                    </span>
+                                )}
+                            </span>
+                        </div>
+                    )}
 
                     {/* ─── OPCCIÓN LEGIBLE Y EXPLICATIVA: DOBLE PRECIO ─── */}
                     <div className="pt-2 border-t border-emerald-500/20">
@@ -699,7 +732,13 @@ export default function ProductFormQuick({
                 ) : (
                     <div className="grid grid-cols-2 gap-3 animate-in fade-in duration-200">
                         <div>
-                            <label className="text-xs font-bold text-slate-400 ml-1 mb-1 block uppercase">Stock{isGranel ? ` (${granelUnitLabel({ unit: granelUnit, packagingType })})` : ''}</label>
+                            <label className="text-xs font-bold text-slate-400 ml-1 mb-1 block uppercase">
+                                {isGranel
+                                    ? (granelMode === GRANEL_MODE_GR_ML
+                                        ? (isLiquidProduct(granelUnit) ? 'Stock Inicial (ml)' : 'Stock Inicial (gramos)')
+                                        : (isLiquidProduct(granelUnit) ? 'Stock Inicial (Litro)' : 'Stock Inicial (Kg)'))
+                                    : 'Stock'}
+                            </label>
                             <input 
                                 type="number" 
                                 step={stockStep}
@@ -709,6 +748,59 @@ export default function ProductFormQuick({
                                 placeholder={stockPlaceholder}
                                 className="w-full bg-slate-50 dark:bg-slate-800 p-3.5 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 text-sm" 
                             />
+                            {/* Asistencia inmediata de equivalencia canónica en vivo (R2) */}
+                            {isGranel && granelMode === GRANEL_MODE_GR_ML && stock !== '' && stock !== null && stock !== undefined && (() => {
+                                const canonicalUnit = isLiquidProduct(granelUnit) ? 'L' : 'kg';
+                                const displayUnit = isLiquidProduct(granelUnit) ? 'ml' : 'g';
+                                const cleaned = String(stock).trim().replace(/\s/g, '').replace(/,/g, '.');
+                                const num = parseFloat(cleaned);
+                                if (!Number.isFinite(num) || num < 0) return null;
+                                if (num === 0) {
+                                    return (
+                                        <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold mt-1 ml-1 animate-in fade-in duration-200">
+                                            = 0.000 {canonicalUnit} en inventario
+                                        </p>
+                                    );
+                                }
+
+                                const parsed = parseWeightInput(stock, GRANEL_MODE_GR_ML);
+                                if (!parsed) return null;
+
+                                const { grams, canonicalKg } = parsed;
+                                const isDecimalUnderOne = num < 1;
+
+                                if (isDecimalUnderOne) {
+                                    return (
+                                        <div className="flex flex-wrap items-center gap-1 mt-1 ml-1 text-[10px] text-amber-600 dark:text-amber-400 font-bold animate-in fade-in duration-200">
+                                            <span>💡 = {canonicalKg.toFixed(3)} {canonicalUnit} en inventario (detectado como {grams} {displayUnit})</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setStock(String(grams))}
+                                                className="underline hover:text-amber-700 dark:hover:text-amber-300 font-black cursor-pointer ml-1"
+                                            >
+                                                Fijar {grams} {displayUnit}
+                                            </button>
+                                        </div>
+                                    );
+                                }
+
+                                return (
+                                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold mt-1 ml-1 animate-in fade-in duration-200">
+                                        = {canonicalKg.toFixed(3)} {canonicalUnit} en inventario
+                                    </p>
+                                );
+                            })()}
+                            {isGranel && granelMode === GRANEL_MODE_KG_LT && stock !== '' && stock !== null && stock !== undefined && (() => {
+                                const canonicalUnit = isLiquidProduct(granelUnit) ? 'L' : 'kg';
+                                const cleaned = String(stock).trim().replace(/\s/g, '').replace(/,/g, '.');
+                                const num = parseFloat(cleaned);
+                                if (!Number.isFinite(num) || num < 0) return null;
+                                return (
+                                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold mt-1 ml-1 animate-in fade-in duration-200">
+                                        = {num.toFixed(3)} {canonicalUnit} en inventario
+                                    </p>
+                                );
+                            })()}
                             {!isLote && parsedUnits > 1 && (parseInt(stock) || 0) > 0 && (() => {
                                 const parsedStock = parseInt(stock) || 0;
                                 const bultos = Math.floor(parsedStock / parsedUnits);
@@ -733,12 +825,12 @@ export default function ProductFormQuick({
                         </div>
                         <div>
                             <label className="text-xs font-bold text-amber-500 ml-1 mb-1 block uppercase flex items-center gap-1">
-                                <AlertTriangle size={10} /> Alerta mín.
+                                <AlertTriangle size={10} /> Alerta mín. {isGranel ? `(${isLiquidProduct(granelUnit) ? 'L' : 'kg'})` : '(Uds)'}
                             </label>
                             <input 
                                 type="number" 
                                 step={stockStep}
-                                inputMode={stockInputMode} 
+                                inputMode={isGranel ? 'decimal' : 'numeric'} 
                                 value={lowStockAlert} 
                                 onChange={e => setLowStockAlert(e.target.value)} 
                                 placeholder={isGranel ? '2.5' : '5'}
@@ -761,13 +853,40 @@ export default function ProductFormQuick({
                                 <div className="flex justify-between"><span className="text-slate-400">Nombre:</span><span className="font-bold text-slate-700 dark:text-white">{name}</span></div>
                                 <div className="flex justify-between"><span className="text-slate-400">Categoría:</span><span className="font-bold text-slate-700 dark:text-white">{categories.find(c => c.id === category)?.label || category}</span></div>
                                 <div className="flex justify-between"><span className="text-slate-400">Tipo:</span><span className="font-bold text-slate-700 dark:text-white">{PACKAGING_TYPES.find(p => p.id === packagingType)?.label}</span></div>
-                                <div className="flex justify-between"><span className="text-slate-400">Precio USD/BS:</span><span className="font-bold text-emerald-600">${parsedPrice.toFixed(2)}{priceSuffix} / {(parsedPrice * effectiveRate).toFixed(2)} Bs</span></div>
+                                <div className="flex justify-between"><span className="text-slate-400">Precio USD/BS:</span><span className="font-bold text-emerald-600">${parsedPrice.toFixed(2)}{priceSuffix} / {(parsedPrice * effectiveRate).toFixed(2)} Bs{isGranel && parsedPrice > 0 && granelMode === GRANEL_MODE_GR_ML && ` ($${(parsedPrice / 10).toFixed(2)} / ${isLiquidProduct(granelUnit) ? '100ml' : '100g'})`}</span></div>
                                 {copEnabled && tasaCop > 0 && <div className="flex justify-between"><span className="text-amber-500/80">Precio COP:</span><span className="font-bold text-amber-600">{(priceCop && parseFloat(priceCop) > 0 ? Math.round(parseFloat(priceCop)) : Math.round(parsedPrice * tasaCop)).toLocaleString('es-CO')} COP{priceSuffix}</span></div>}
                                 {parsedCost > 0 && <div className="flex justify-between"><span className="text-slate-400">Costo:</span><span className="font-bold text-slate-600">${parsedCost.toFixed(2)}{priceSuffix}</span></div>}
                                 {mainMarginPct !== null && <div className="flex justify-between"><span className="text-slate-400">Margen:</span><span className={`font-black ${mainMarginPct >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{mainMarginPct.toFixed(1)}%</span></div>}
                                 {isLote && <div className="flex justify-between"><span className="text-slate-400">Uds/Bulto:</span><span className="font-bold text-brand">{parsedUnits}</span></div>}
                                 {isLote && sellByUnit && <div className="flex justify-between"><span className="text-slate-400">Venta suelta:</span><span className="font-bold text-brand">Sí — ${effectiveUnitPrice.toFixed(2)}/ud</span></div>}
-                                <div className="flex justify-between"><span className="text-slate-400">Stock:</span><span className="font-bold text-slate-700 dark:text-white">{isLote ? `${parsedStockLotes} bultos (${stockUnitsCalc} uds)` : `${stock || 0}`}</span></div>
+                                <div className="flex justify-between">
+                                    <span className="text-slate-400">Stock:</span>
+                                    <span className="font-bold text-slate-700 dark:text-white">
+                                        {isLote
+                                            ? `${parsedStockLotes} bultos (${stockUnitsCalc} uds)`
+                                            : isGranel && granelMode === GRANEL_MODE_GR_ML
+                                                ? (() => {
+                                                    const cleaned = String(stock ?? '').trim().replace(/\s/g, '').replace(/,/g, '.');
+                                                    const num = parseFloat(cleaned);
+                                                    const cUnit = isLiquidProduct(granelUnit) ? 'L' : 'kg';
+                                                    const dUnit = isLiquidProduct(granelUnit) ? 'ml' : 'g';
+                                                    if (!Number.isFinite(num) || num <= 0) return `0 ${dUnit} (= 0.000 ${cUnit})`;
+                                                    const pWeight = parseWeightInput(stock, GRANEL_MODE_GR_ML);
+                                                    const cKg = pWeight ? pWeight.canonicalKg : 0;
+                                                    const dQty = pWeight ? pWeight.grams : 0;
+                                                    return `${dQty} ${dUnit} (= ${cKg.toFixed(3)} ${cUnit})`;
+                                                })()
+                                                : isGranel && granelMode === GRANEL_MODE_KG_LT
+                                                    ? (() => {
+                                                        const cleaned = String(stock ?? '').trim().replace(/\s/g, '').replace(/,/g, '.');
+                                                        const num = parseFloat(cleaned);
+                                                        const cUnit = isLiquidProduct(granelUnit) ? 'L' : 'kg';
+                                                        if (!Number.isFinite(num) || num <= 0) return `0.000 ${cUnit}`;
+                                                        return `${num.toFixed(3)} ${cUnit}`;
+                                                    })()
+                                                    : `${stock || 0}`}
+                                    </span>
+                                </div>
                                 {barcode && <div className="flex justify-between"><span className="text-slate-400">Código:</span><span className="font-bold text-slate-700 dark:text-white">{barcode}</span></div>}
                             </div>
                         )}

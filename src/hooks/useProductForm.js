@@ -1,5 +1,13 @@
 import { useReducer, useCallback } from 'react';
 import { unShiftBarcode } from '../utils/barcodeNormalizer';
+import {
+    getGranelUnitMode,
+    GRANEL_MODE_GR_ML,
+    isGranelProduct,
+    isLiquidProduct,
+    kgToGrams,
+    formatStockDisplay,
+} from '../utils/granel';
 
 /**
  * Hook para el formulario de producto.
@@ -51,6 +59,91 @@ function reducer(state, action) {
     return state;
 }
 
+/**
+ * Prepara el estado inicial del formulario a partir de un producto existente.
+ * Soporta modo dual de granel ('kg_lt' vs 'gr_ml'):
+ *   - En modo gr_ml, el stock en kg (ej. 2.500) se presenta en gramos enteros (2500).
+ *   - En modo kg_lt, el stock se mantiene en decimal estándar (2.5).
+ */
+export function prepareProductFormState(product, effectiveRate, granelMode = getGranelUnitMode()) {
+    const currentPriceUsd = product.priceUsdt || product.priceUsd || 0;
+    const currentCostUsd = product.costUsd || (product.costBs && effectiveRate > 0 ? product.costBs / effectiveRate : 0);
+    const currentCostBs = currentCostUsd > 0 && effectiveRate > 0 ? (currentCostUsd * effectiveRate) : (product.costBs || 0);
+
+    const u = product.unit || 'unidad';
+    const isGranel = product.packagingType === 'granel' ||
+        (product.packagingType !== 'suelto' && product.packagingType !== 'lote' && (
+            isGranelProduct(product) ||
+            u === 'kg' || u === 'litro' ||
+            Boolean(product.isWeight) ||
+            Boolean(product.granelUnit)
+        ));
+
+    let initialStock = product.stock ?? '';
+    if (isGranel && product.stock !== undefined && product.stock !== null && product.stock !== '') {
+        const cleanedStock = String(product.stock).trim().replace(/\s/g, '').replace(/,/g, '.');
+        const numStock = Number(cleanedStock);
+        if (Number.isFinite(numStock)) {
+            if (granelMode === GRANEL_MODE_GR_ML) {
+                // Si el modo es gr_ml, el stock almacenado en kg (ej. 2.500 kg)
+                // se presenta en el campo como 2500 (gramos) para edición cómoda.
+                initialStock = numStock > 0 ? String(kgToGrams(numStock)) : '0';
+            } else {
+                // Si el modo es kg_lt, se mantiene la visualización estándar decimal (2.500).
+                initialStock = formatStockDisplay(numStock, true);
+            }
+        }
+    }
+
+    const patch = {
+        editingId: product.id,
+        name: product.name,
+        barcode: product.barcode || '',
+        priceUsd: currentPriceUsd > 0 ? currentPriceUsd.toString() : '',
+        priceBs: currentPriceUsd > 0 ? (currentPriceUsd * effectiveRate).toFixed(2) : '',
+        pricingMode: product.pricingMode || (product.priceBsUsdRef > 0 ? 'dual_usd' : 'tasa_dia'),
+        priceBsUsdRef: product.priceBsUsdRef != null ? product.priceBsUsdRef.toString() : '',
+        costUsd: currentCostUsd > 0 ? currentCostUsd.toFixed(2) : '',
+        costBs: currentCostBs > 0 ? currentCostBs.toFixed(2) : '',
+        stock: initialStock,
+        unit: product.unit || 'unidad',
+        unitsPerPackage: product.unitsPerPackage || '',
+        sellByUnit: product.sellByUnit || false,
+        unitPriceUsd: product.unitPriceUsd ? product.unitPriceUsd.toString() : '',
+        category: product.category || 'otros',
+        lowStockAlert: product.lowStockAlert ?? 5,
+        image: product.image,
+    };
+
+    // Derive packagingType from legacy unit
+    if (product.packagingType) {
+        patch.packagingType = product.packagingType;
+    } else if (u === 'paquete') {
+        patch.packagingType = 'lote';
+    } else if (isGranel) {
+        patch.packagingType = 'granel';
+    } else {
+        patch.packagingType = 'suelto';
+    }
+
+    if (isGranel || patch.packagingType === 'granel') {
+        patch.granelUnit = isLiquidProduct(product) ? 'litro' : 'kg';
+    } else {
+        patch.granelUnit = 'kg';
+    }
+
+    // Stock in lotes
+    if (product.stockInLotes) {
+        patch.stockInLotes = product.stockInLotes.toString();
+    } else if (u === 'paquete' && product.unitsPerPackage && product.stock) {
+        patch.stockInLotes = Math.floor(product.stock / (product.unitsPerPackage || 1)).toString();
+    } else {
+        patch.stockInLotes = '';
+    }
+
+    return patch;
+}
+
 export function useProductForm() {
     const [state, dispatch] = useReducer(reducer, INITIAL_STATE);
 
@@ -89,58 +182,8 @@ export function useProductForm() {
         dispatch({ type: 'RESET' });
     }, []);
 
-    const populateForm = useCallback((product, effectiveRate) => {
-        // HOOK-029: usar PATCH para actualizar todos los campos en una sola
-        // dispatch (un único re-render en vez de 17).
-        const currentPriceUsd = product.priceUsdt || product.priceUsd || 0;
-        const currentCostUsd = product.costUsd || (product.costBs && effectiveRate > 0 ? product.costBs / effectiveRate : 0);
-        const currentCostBs = currentCostUsd > 0 && effectiveRate > 0 ? (currentCostUsd * effectiveRate) : (product.costBs || 0);
-
-        const u = product.unit || 'unidad';
-
-        const patch = {
-            editingId: product.id,
-            name: product.name,
-            barcode: product.barcode || '',
-            priceUsd: currentPriceUsd > 0 ? currentPriceUsd.toString() : '',
-            priceBs: currentPriceUsd > 0 ? (currentPriceUsd * effectiveRate).toFixed(2) : '',
-            pricingMode: product.pricingMode || (product.priceBsUsdRef > 0 ? 'dual_usd' : 'tasa_dia'),
-            priceBsUsdRef: product.priceBsUsdRef != null ? product.priceBsUsdRef.toString() : '',
-            costUsd: currentCostUsd > 0 ? currentCostUsd.toFixed(2) : '',
-            costBs: currentCostBs > 0 ? currentCostBs.toFixed(2) : '',
-            stock: product.stock ?? '',
-            unit: product.unit || 'unidad',
-            unitsPerPackage: product.unitsPerPackage || '',
-            sellByUnit: product.sellByUnit || false,
-            unitPriceUsd: product.unitPriceUsd ? product.unitPriceUsd.toString() : '',
-            category: product.category || 'otros',
-            lowStockAlert: product.lowStockAlert ?? 5,
-            image: product.image,
-        };
-
-        // Derive packagingType from legacy unit
-        if (product.packagingType) {
-            patch.packagingType = product.packagingType;
-        } else if (u === 'paquete') {
-            patch.packagingType = 'lote';
-        } else if (u === 'kg' || u === 'litro') {
-            patch.packagingType = 'granel';
-            patch.granelUnit = u;
-        } else {
-            patch.packagingType = 'suelto';
-        }
-
-        // Stock in lotes
-        if (product.stockInLotes) {
-            patch.stockInLotes = product.stockInLotes.toString();
-        } else if (u === 'paquete' && product.unitsPerPackage && product.stock) {
-            patch.stockInLotes = Math.floor(product.stock / (product.unitsPerPackage || 1)).toString();
-        } else {
-            patch.stockInLotes = '';
-        }
-
-        if (u === 'kg' || u === 'litro') patch.granelUnit = u;
-
+    const populateForm = useCallback((product, effectiveRate, granelMode) => {
+        const patch = prepareProductFormState(product, effectiveRate, granelMode);
         dispatch({ type: 'PATCH', patch });
     }, []);
 

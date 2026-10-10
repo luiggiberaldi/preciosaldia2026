@@ -3,6 +3,7 @@ import { CheckCircle, Wallet, Send, X, Printer } from 'lucide-react';
 import { formatBs, formatCop } from '../../utils/calculatorUtils';
 import { printThermalTicket } from '../../utils/ticketGenerator';
 import CasheaIcon from '../CasheaIcon';
+import { formatGranelDisplay, getGranelUnitMode, isGranelProduct } from '../../utils/granel';
 
 export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, currentRate, copPrimary }) {
     if (!receipt) return null;
@@ -127,6 +128,7 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                                 const itemPriceUsd = isDualBs ? parseFloat(item.priceBsUsdRef) : item.priceUsd;
                                 const priceBs = itemPriceUsd * (receipt.rate || 0);
                                 const totalBs = itemPriceUsd * item.qty * (receipt.rate || 0);
+                                const qtyStr = isGranelProduct(item) ? formatGranelDisplay(item.qty, item, getGranelUnitMode()) : `${item.qty} u`;
 
                                 if (item.isCashAdvance) {
                                     return (
@@ -161,7 +163,7 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                                         <div key={i} className="flex justify-between items-start text-sm border-b border-slate-200/50 pb-2 last:border-0 last:pb-0">
                                             <div className="flex-1 pr-4">
                                                 <span className="font-bold text-slate-700 block leading-tight">{item.name}</span>
-                                                <span className="text-xs text-slate-400">{item.isWeight ? `${item.qty.toFixed(3)} Kg` : `${item.qty} u`} × ${itemPriceUsd.toFixed(2)}</span>
+                                                <span className="text-xs text-slate-400">{qtyStr} × ${itemPriceUsd.toFixed(2)}</span>
                                             </div>
                                             <div className="text-right">
                                                 <span className="font-black text-slate-900">${(itemPriceUsd * item.qty).toFixed(2)}</span>
@@ -175,7 +177,7 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                                         <div key={i} className="flex justify-between items-start text-sm border-b border-slate-200/50 pb-2 last:border-0 last:pb-0">
                                             <div className="flex-1 pr-4">
                                                 <span className="font-bold text-slate-700 block leading-tight">{item.name}</span>
-                                                <span className="text-xs text-slate-400">{item.isWeight ? `${item.qty.toFixed(3)} Kg` : `${item.qty} u`} × Bs {formatBs(priceBs)}</span>
+                                                <span className="text-xs text-slate-400">{qtyStr} × Bs {formatBs(priceBs)}</span>
                                             </div>
                                             <div className="text-right">
                                                 <span className="font-black text-brand">Bs {formatBs(totalBs)}</span>
@@ -192,21 +194,21 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                                             {isCop ? (
                                                 copPrimary ? (
                                                     <>
-                                                        <span className="text-xs text-slate-400">{item.isWeight ? `${item.qty.toFixed(3)} Kg` : `${item.qty} u`} × {formatCop(item.priceCop || Math.round(itemPriceUsd * receipt.tasaCop))} COP</span>
+                                                        <span className="text-xs text-slate-400">{qtyStr} × {formatCop(item.priceCop || Math.round(itemPriceUsd * receipt.tasaCop))} COP</span>
                                                         <span className="text-xs text-slate-400 block">
                                                             <span className="text-emerald-600">${itemPriceUsd.toFixed(2)} USD</span> · <span className="text-brand">{formatBs(priceBs)} Bs</span> c/u
                                                         </span>
                                                     </>
                                                 ) : (
                                                     <>
-                                                        <span className="text-xs text-slate-400">{item.isWeight ? `${item.qty.toFixed(3)} Kg` : `${item.qty} u`} × ${itemPriceUsd.toFixed(2)}</span>
+                                                        <span className="text-xs text-slate-400">{qtyStr} × ${itemPriceUsd.toFixed(2)}</span>
                                                         <span className="text-xs text-slate-400 block">
                                                             <span className="text-amber-600">{formatCop(item.priceCop || Math.round(itemPriceUsd * receipt.tasaCop))} COP</span> · <span className="text-brand">{formatBs(priceBs)} Bs</span> c/u
                                                         </span>
                                                     </>
                                                 )
                                             ) : (
-                                                <span className="text-xs text-slate-400">{item.isWeight ? `${item.qty.toFixed(3)} Kg` : `${item.qty} u`} × ${itemPriceUsd.toFixed(2)}</span>
+                                                <span className="text-xs text-slate-400">{qtyStr} × ${itemPriceUsd.toFixed(2)}</span>
                                             )}
                                         </div>
                                         <div className="text-right">

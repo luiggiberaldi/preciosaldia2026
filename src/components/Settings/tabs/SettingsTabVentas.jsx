@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Package, CreditCard, FileText, DollarSign, LayoutGrid, SlidersHorizontal, ShieldCheck, Zap, Smartphone, Monitor, Check, HandCoins, Printer } from 'lucide-react';
+import { Package, CreditCard, FileText, DollarSign, LayoutGrid, SlidersHorizontal, ShieldCheck, Zap, Smartphone, Monitor, Check, HandCoins, Printer, Scale } from 'lucide-react';
 import { SectionCard, Toggle } from '../../SettingsShared';
 import PaymentMethodsManager from '../PaymentMethodsManager';
 import CasheaIcon from '../../CasheaIcon';
@@ -11,7 +11,7 @@ export default function SettingsTabVentas({
     forceHeartbeat, showToast, triggerHaptic,
     paperWidth, setPaperWidth,
 }) {
-    const { checkoutMode, setCheckoutMode } = useProductContext();
+    const { checkoutMode, setCheckoutMode, granelUnitMode, setGranelUnitMode } = useProductContext();
     const [casheaEnabled, setCasheaEnabled] = useState(localStorage.getItem('cashea_enabled') === 'true');
     const [casheaMinAmount, setCasheaMinAmount] = useState(() => {
         const stored = parseFloat(localStorage.getItem('cashea_min_amount') || '0');
@@ -128,7 +128,7 @@ export default function SettingsTabVentas({
                         Interfaz & Comprobantes
                     </h2>
                 </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
                     {/* Modo de Cobro */}
                     <SectionCard icon={LayoutGrid} title="Modo de Cobro (Interfaz)" subtitle="Selecciona la pantalla de pago activa para esta caja" iconColor="text-indigo-500">
                         <div className="space-y-3 flex flex-col justify-between h-full">
@@ -240,6 +240,60 @@ export default function SettingsTabVentas({
                                             }`}
                                         >
                                             {opt.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </SectionCard>
+
+                    {/* Unidad de Granel y Pesaje */}
+                    <SectionCard icon={Scale} title="Unidad de Granel" subtitle="Pesaje y fraccionamiento" iconColor="text-amber-500">
+                        <div className="space-y-3 flex flex-col justify-between h-full">
+                            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                Elige cómo registrar y visualizar los productos por peso o volumen en ventas y tickets:
+                            </p>
+                            <div className="grid grid-cols-2 gap-2 pt-1">
+                                {[
+                                    {
+                                        id: 'kg_lt',
+                                        label: 'Kg / Litros',
+                                        desc: 'Decimales (ej: 0.5 kg, 0.8 L)',
+                                    },
+                                    {
+                                        id: 'gr_ml',
+                                        label: 'Gramos / ml',
+                                        desc: 'Enteros (ej: 500 g, 800 ml)',
+                                    }
+                                ].map(opt => {
+                                    const isSelected = (granelUnitMode || 'kg_lt') === opt.id;
+                                    return (
+                                        <button
+                                            key={opt.id}
+                                            type="button"
+                                            onClick={() => {
+                                                setGranelUnitMode(opt.id);
+                                                forceHeartbeat();
+                                                showToast(`Unidad de granel: ${opt.label}`, 'success');
+                                                triggerHaptic?.();
+                                            }}
+                                            className={`p-3 rounded-xl text-left transition-all border flex flex-col justify-between cursor-pointer active:scale-[0.98] ${
+                                                isSelected
+                                                    ? 'bg-amber-600 text-white border-transparent shadow-sm ring-2 ring-amber-500/30'
+                                                    : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-amber-400'
+                                            }`}
+                                        >
+                                            <div className="flex items-center justify-between mb-1">
+                                                <span className="text-xs font-black">{opt.label}</span>
+                                                {isSelected && (
+                                                    <span className="text-[9px] font-black bg-white text-amber-700 px-1.5 py-0.5 rounded-full">
+                                                        Activo
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className={`text-[9px] leading-tight ${isSelected ? 'text-amber-100' : 'text-slate-400 dark:text-slate-500'}`}>
+                                                {opt.desc}
+                                            </p>
                                         </button>
                                     );
                                 })}

@@ -30,7 +30,7 @@ import { useProductFiltering } from '../hooks/useProductFiltering';
 import { useProductForm } from '../hooks/useProductForm';
 import { useProductSorting } from '../hooks/useProductSorting';
 import { buildProductPayload } from '../utils/productProcessor';
-import { isGranelProduct, formatStockDisplay } from '../utils/granel'; // GRANEL-001
+import { isGranelProduct, formatStockDisplay, getGranelUnitMode } from '../utils/granel'; // GRANEL-001 / GRANEL-DUAL
 import { uploadProductImage, migrateProductImagesToStorage } from '../utils/imageUpload';
 // useAuthStore removed - single-user app
 import { useAudit } from '../hooks/useAudit';
@@ -387,7 +387,8 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         const productData = buildProductPayload({
             name, barcode, priceUsd, priceBs, pricingMode, priceBsUsdRef, priceCop, costUsd, costBs, stock, stockInLotes,
             packagingType, unitsPerPackage, granelUnit, sellByUnit, unitPriceUsd, unitPriceCop,
-            category, lowStockAlert
+            category, lowStockAlert,
+            granelUnitMode: getGranelUnitMode()
         }, effectiveRate);
 
         // Advertencia si el precio parece inusualmente alto

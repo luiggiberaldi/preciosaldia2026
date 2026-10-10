@@ -335,7 +335,7 @@ export async function processSaleTransaction({
                 // GRANEL-001: la suma de cantidades deducidas se acumula a 3 decimales.
                 // sumR (round2) convertía 0.125 kg en 0.13 antes de restar → stock erróneo.
                 const totalDeducted = cartItemsForThisProduct.reduce((sum, item) => {
-                    if (item.isWeight)        return round3(sum + item.qty);
+                    if (isGranelProduct(item)) return round3(sum + item.qty);
                     if (item._mode === 'unit') return round3(sum + divR(item.qty, item._unitsPerPackage || 1));
                     return round3(sum + item.qty);
                 }, 0);

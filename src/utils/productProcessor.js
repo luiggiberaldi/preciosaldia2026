@@ -1,9 +1,16 @@
 // FIN-017: Reemplaza Math.round(raw/safeRate*100)/100 por divR + round2 de dinero.js.
 // FIN-030: Mantiene `priceUsdt` (typo histórico) pero añade alias `priceUsd` (mismo valor)
 //          para migración gradual hacia el nombre canónico.
-import { round2, divR, mulR } from './dinero.js';
+import { round2, divR, mulR, round0 } from './dinero.js';
 import { CurrencyService } from '../services/CurrencyService.js'; // FIN-017-pattern: safeParse en vez de parseFloat.
-import { isGranelProduct, parseStockInput } from './granel.js'; // GRANEL-001: decimales SOLO para productos a granel.
+import {
+    isGranelProduct,
+    isLiquidProduct,
+    parseStockInput,
+    getGranelUnitMode,
+    GRANEL_MODE_GR_ML,
+    parseWeightToCanonical,
+} from './granel.js'; // GRANEL-001 / GRANEL-DUAL: decimales SOLO para productos a granel y conversión dual.
 
 export function buildProductPayload(formData, effectiveRate) {
     const {
@@ -49,7 +56,7 @@ export function buildProductPayload(formData, effectiveRate) {
     // Map packagingType → unit legacy
     let legacyUnit = 'unidad';
     if (packagingType === 'lote') legacyUnit = 'paquete';
-    else if (packagingType === 'granel') legacyUnit = granelUnit;
+    else if (packagingType === 'granel') legacyUnit = isLiquidProduct(granelUnit) ? 'litro' : 'kg';
 
     const isLote = packagingType === 'lote';
     // Para productos de tipo Suelto o Granel, también guardamos unitsPerPackage si fue
@@ -65,12 +72,32 @@ export function buildProductPayload(formData, effectiveRate) {
             ? divR(finalPriceCop, parsedUnitsPerPkg)
             : null);
 
-    // GRANEL-001: Solo los productos a granel aceptan decimales en stock (hasta 3).
+    // GRANEL-001 / GRANEL-DUAL: Solo los productos a granel aceptan decimales en stock (hasta 3).
+    // En modo gr_ml, las entradas en gramos o mililitros se convierten canónicamente a kg / Litros.
     // Todo lo demás (unidad, paquete, lote, suelto) permanece estrictamente entero.
-    const isGranel = isGranelProduct({ packagingType, granelUnit, unit: legacyUnit });
-    let finalStock = stock ? (parseStockInput(stock, isGranel) ?? 0) : 0;
+    const isGranel = packagingType
+        ? packagingType === 'granel'
+        : isGranelProduct({ packagingType, granelUnit, unit: legacyUnit });
+    let finalStock = 0;
     if (isLote && stockInLotes && parsedUnitsPerPkg > 0) {
-        finalStock = Math.round(parseFloat(stockInLotes) * parsedUnitsPerPkg);
+        finalStock = round0((Number(stockInLotes) || 0) * parsedUnitsPerPkg);
+    } else if (stock !== null && stock !== undefined && stock !== '') {
+        if (isGranel) {
+            const activeGranelMode = formData.granelUnitMode || getGranelUnitMode();
+            if (activeGranelMode === GRANEL_MODE_GR_ML) {
+                const cleaned = String(stock).trim().replace(/\s/g, '').replace(/,/g, '.');
+                const num = Number(cleaned);
+                if (Number.isFinite(num) && num === 0) {
+                    finalStock = 0;
+                } else {
+                    finalStock = parseWeightToCanonical(stock, GRANEL_MODE_GR_ML) ?? 0;
+                }
+            } else {
+                finalStock = parseStockInput(stock, true) ?? 0;
+            }
+        } else {
+            finalStock = parseStockInput(stock, false) ?? 0;
+        }
     }
 
     // GRANEL-001: alerta de stock bajo con el mismo guardarraíl de tipado
@@ -107,6 +134,7 @@ export function buildProductPayload(formData, effectiveRate) {
         stock: finalStock,
         unit: legacyUnit,
         packagingType: packagingType,
+        granelUnit: isGranel ? (isLiquidProduct(granelUnit) ? 'litro' : 'kg') : null,
         unitsPerPackage: parsedUnitsPerPkg,
         sellByUnit: isLote ? sellByUnit : false,
         unitPriceUsd: isLote && sellByUnit ? finalUnitPrice : null,

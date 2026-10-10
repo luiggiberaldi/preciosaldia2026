@@ -8,6 +8,7 @@ import {
 import { buildTicketHtml } from './ticketHtmlTemplate';
 import { openPrintWindow } from './printerUtils';
 import { mulR, divR } from './dinero';
+import { getGranelUnitMode, formatGranelDisplay, isGranelProduct } from './granel';
 
 // Re-export generarEtiquetas so existing imports keep working
 export { generarEtiquetas } from './labelGenerator';
@@ -122,15 +123,17 @@ export async function generateTicketPDF(sale, bcvRate) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(6.5);
     doc.setTextColor(...MUTED);
+    const descColOffset = is80 ? 16 : 13;
+    const descX = M + descColOffset;
     doc.text('CANT', M, y);
-    doc.text('DESCRIPCIÓN', M + 10, y);
+    doc.text('DESCRIPCIÓN', descX, y);
     doc.text('IMPORTE', RIGHT, y, { align: 'right' });
     y += 5;
 
     const isBsSale = (sale.payments || []).some(p => {
         const isCop = p.currency === 'COP';
         const isBs = !isCop && (p.currency ? p.currency !== 'USD' : (p.methodId?.includes('_bs') || p.methodId === 'pago_movil'));
-        return isBs && parseFloat(p.amountBs || 0) > 0;
+        return isBs && (Number(p.amountBs) || 0) > 0;
     });
 
     // ════════════════════════════════════
@@ -138,12 +141,13 @@ export async function generateTicketPDF(sale, bcvRate) {
     // ════════════════════════════════════
     if (sale.items && sale.items.length > 0) {
         sale.items.forEach(item => {
-            const isDualBs = item.pricingMode === 'dual_usd' && parseFloat(item.priceBsUsdRef) > 0 && isBsSale;
-            const effectivePriceUsd = isDualBs ? parseFloat(item.priceBsUsdRef) : item.priceUsd;
+            const isDualBs = item.pricingMode === 'dual_usd' && (Number(item.priceBsUsdRef) || 0) > 0 && isBsSale;
+            const effectivePriceUsd = isDualBs ? (Number(item.priceBsUsdRef) || 0) : item.priceUsd;
 
-            // FIN-024: formatUsd para cantidades peso (2 decimales), sin toFixed.
-            const qty = item.isWeight ? formatUsd(item.qty) : String(item.qty);
-            const unit = item.isWeight ? 'Kg' : 'u';
+            const granelMode = getGranelUnitMode();
+            const qtyUnit = isGranelProduct(item)
+                ? formatGranelDisplay(item.qty, item, granelMode)
+                : `${item.qty}u`;
             // FIN-024: mulR en vez de multiplicación raw.
             const itemExactBs = item.exactBs ?? (item.isCashAdvance && item.currency === 'BS' ? (item.montoEfectivo + item.montoComision) : null);
             const sub = itemExactBs != null ? (rate > 0 ? divR(itemExactBs, rate) : effectivePriceUsd) : mulR(effectivePriceUsd, item.qty);
@@ -152,10 +156,11 @@ export async function generateTicketPDF(sale, bcvRate) {
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(7.5);
             doc.setTextColor(...INK);
-            doc.text(`${qty}${unit}`, M, y);
+            doc.text(qtyUnit, M, y);
             
-            const nameLines = doc.splitTextToSize(item.name, RIGHT - (M + 10) - 2);
-            doc.text(nameLines, M + 10, y);
+            const maxNameWidth = Math.max(10, RIGHT - descX - (is80 ? 18 : 14));
+            const nameLines = doc.splitTextToSize(item.name, maxNameWidth);
+            doc.text(nameLines, descX, y);
             
             doc.setFont('helvetica', 'bold');
             doc.text(fmtUsd(sub), RIGHT, y, { align: 'right' });

@@ -12,7 +12,7 @@ import { showToast } from '../components/Toast';
 import { ShoppingCart, X, DollarSign, CheckCircle2, Trash2 } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useProductContext } from '../context/ProductContext';
-import { isGranelProduct, parseCartQuantity, adjustStockValue } from '../utils/granel'; // GRANEL-001
+import { isGranelProduct, parseCartQuantity, adjustStockValue, parseEan13ScaleBarcode } from '../utils/granel'; // GRANEL-001
 import { deriveCartFields, resyncCartItems } from '../utils/cartSync'; // SYNC-CESTA-001
 
 // Components
@@ -252,9 +252,9 @@ export default function SalesView({ triggerHaptic, isActive }) {
             const normalized = normalizeBarcode(barcode, products);
 
             // Pesa electrónica con PLU
-            if (normalized.startsWith('21') && normalized.length >= 13) {
-                const pluCode = parseInt(normalized.substring(2, 7), 10).toString();
-                const weightKg = parseInt(normalized.substring(7, 12), 10) / 1000;
+            const scaleScan = parseEan13ScaleBarcode(normalized);
+            if (scaleScan) {
+                const { pluCode, weightKg } = scaleScan;
                 const p = products.find(p => String(p.id) === pluCode || p.barcode?.includes(pluCode) || p.barcode?.includes(normalized.substring(0, 7)));
                 if (p) { addToCart({ ...p, isWeight: true }, weightKg, null, true); return; }
             }
@@ -278,9 +278,9 @@ export default function SalesView({ triggerHaptic, isActive }) {
         const normalized = normalizeBarcode(pastedText, products);
 
         // Intentar Pesa Electrónica
-        if (normalized.startsWith('21') && normalized.length >= 13) {
-            const pluCode = parseInt(normalized.substring(2, 7), 10).toString();
-            const weightKg = parseInt(normalized.substring(7, 12), 10) / 1000;
+        const scalePaste = parseEan13ScaleBarcode(normalized);
+        if (scalePaste) {
+            const { pluCode, weightKg } = scalePaste;
             const p = products.find(p => String(p.id) === pluCode || p.barcode?.includes(pluCode) || p.barcode?.includes(normalized.substring(0, 7)));
             if (p) {
                 addToCart({ ...p, isWeight: true }, weightKg, null, true);
@@ -626,9 +626,9 @@ export default function SalesView({ triggerHaptic, isActive }) {
             const normalized = normalizeBarcode(rawTerm, products);
 
             // 1. Barcode de balanza/pesa electrónica (prefijo 21)
-            if (normalized.startsWith('21') && normalized.length >= 13) {
-                const pluCode = parseInt(normalized.substring(2, 7), 10).toString();
-                const weightKg = parseInt(normalized.substring(7, 12), 10) / 1000;
+            const scaleTerm = parseEan13ScaleBarcode(normalized);
+            if (scaleTerm) {
+                const { pluCode, weightKg } = scaleTerm;
                 const p = products.find(p => String(p.id) === pluCode || p.barcode?.includes(pluCode) || p.barcode?.includes(normalized.substring(0, 7)));
                 if (p) { addToCart({ ...p, isWeight: true }, weightKg, null, true); handleSetSearchTerm(''); return; }
             }
