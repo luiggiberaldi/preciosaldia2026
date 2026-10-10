@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
-import { Package, CreditCard, FileText, DollarSign, LayoutGrid, SlidersHorizontal, ShieldCheck, Zap, Smartphone, Monitor, Check, HandCoins } from 'lucide-react';
+import { Package, CreditCard, FileText, DollarSign, LayoutGrid, SlidersHorizontal, ShieldCheck, Zap, Smartphone, Monitor, Check, HandCoins, Printer } from 'lucide-react';
 import { SectionCard, Toggle } from '../../SettingsShared';
 import PaymentMethodsManager from '../PaymentMethodsManager';
 import CasheaIcon from '../../CasheaIcon';
+import PrinterHardwareManager from '../PrinterHardwareManager';
 import { useProductContext } from '../../../context/ProductContext';
 
 export default function SettingsTabVentas({
     allowNegativeStock, setAllowNegativeStock,
-    forceHeartbeat, showToast, triggerHaptic
+    forceHeartbeat, showToast, triggerHaptic,
+    paperWidth, setPaperWidth,
 }) {
     const { checkoutMode, setCheckoutMode } = useProductContext();
     const [casheaEnabled, setCasheaEnabled] = useState(localStorage.getItem('cashea_enabled') === 'true');
@@ -517,6 +519,29 @@ export default function SettingsTabVentas({
                     <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-3 leading-relaxed">
                         Ejemplo: cambio de $6.20 · billete $1 · redondeo Bs 1 a favor del cliente → la caja entrega <strong>$6 + Bs 16</strong> (Bs 15,95 redondeados a 16).
                     </p>
+                </SectionCard>
+            </div>
+
+            {/* ── BLOQUE: TICKETERA TÉRMICA & HARDWARE ── */}
+            <div>
+                <div className="flex items-center gap-2 mb-3 px-1">
+                    <Printer size={16} className="text-brand dark:text-brand" />
+                    <h2 className="text-xs font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                        Impresora Térmica & Hardware
+                    </h2>
+                </div>
+                <SectionCard
+                    icon={Printer}
+                    title="Configuración de Ticketera"
+                    subtitle="Drivers, formato de papel (58 mm / 80 mm) y calibración de impresión"
+                    iconColor="text-brand"
+                >
+                    <PrinterHardwareManager
+                        paperWidth={paperWidth}
+                        setPaperWidth={setPaperWidth}
+                        showToast={showToast}
+                        triggerHaptic={triggerHaptic}
+                    />
                 </SectionCard>
             </div>
 

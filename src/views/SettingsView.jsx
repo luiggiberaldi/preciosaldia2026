@@ -329,6 +329,8 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                                 forceHeartbeat={forceHeartbeat}
                                 showToast={showToast}
                                 triggerHaptic={triggerHaptic}
+                                paperWidth={paperWidth}
+                                setPaperWidth={setPaperWidth}
                             />
                         )}
 

@@ -1,0 +1,31 @@
+===========================================================
+  PRECIOS AL DIA - GUIA DE INSTALACION DE TICKETERA TERMICA
+  Driver: POS Printer Driver V7.17 (Inno Setup 5.5.7)
+  Compatibilidad: Windows 7 / 8 / 10 / 11 (32 y 64 bits)
+===========================================================
+
+PASOS RAPIDOS:
+1. Conecta la impresora termica a la corriente electrica.
+2. Coloca el rollo de papel termico (cara brillante hacia arriba).
+3. Conecta el cable USB a la computadora.
+4. Enciende la impresora.
+5. Ejecuta "instalar_silencioso.bat" como Administrador.
+   (O haz doble clic en "Instalador_Impresora_POS.exe" para instalacion interactiva.)
+
+EN EL INSTALADOR INTERACTIVO:
+- Selecciona tu modelo segun el ancho del papel:
+    "POS-58" → rollo angosto de 58 mm (impresoras compactas/portatiles)
+    "POS-80" → rollo ancho de 80 mm con guillotina (impresoras de mostrador)
+- Puerto recomendado: USB001
+- Haz clic en "Install Now".
+
+DESPUES DE INSTALAR:
+- Abre Precios al Dia.
+- Ve a Ajustes > Ventas > Impresora Termica.
+- Selecciona el mismo ancho de papel (58 mm o 80 mm).
+- Presiona "Imprimir Ticket de Prueba" para verificar.
+
+SOPORTE:
+Si el ticket sale cortado o desalineado, verifica que el ancho
+configurado en Precios al Dia coincida con tu rollo fisico.
+===========================================================

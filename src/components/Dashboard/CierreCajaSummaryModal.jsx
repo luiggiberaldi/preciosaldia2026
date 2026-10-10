@@ -184,6 +184,18 @@ export default function CierreCajaSummaryModal({
                         <Printer size={15} /> Imprimir Ticket de Cierre
                     </button>
 
+                    {/* Enlace de ayuda para instalación de driver si la impresión falla */}
+                    <div className="flex items-center justify-center gap-1 text-[10px] text-slate-400 dark:text-slate-500">
+                        <span>¿Problemas al imprimir?</span>
+                        <a
+                            href="/drivers/Instalador_Impresora_POS.exe"
+                            download="Instalador_Impresora_POS.exe"
+                            className="text-blue-500 hover:text-blue-600 hover:underline font-bold"
+                        >
+                            Descarga los drivers POS aquí
+                        </a>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-2">
                         <button
                             onClick={onDownload}
