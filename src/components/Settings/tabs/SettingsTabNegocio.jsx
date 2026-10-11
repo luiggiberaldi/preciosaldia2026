@@ -1,6 +1,6 @@
 // v1.2.1: Calibrador y preview de ticket ocultados hasta nuevo aviso
 import React, { useState, useRef, useEffect } from 'react';
-import { Store, Printer, Coins, Check, Tag } from 'lucide-react';
+import { Store, Coins, Check, Tag } from 'lucide-react';
 import { SectionCard, Toggle } from '../../SettingsShared';
 import { generarPreviewLabel } from '../../../utils/labelGenerator';
 
@@ -90,7 +90,7 @@ const CalibratorSlider = ({ label, value, setValue, baseKey, mode, paperWidth, m
 export default function SettingsTabNegocio({
     businessName, setBusinessName,
     businessRif, setBusinessRif,
-    paperWidth, setPaperWidth,
+    paperWidth,
     labelCurrencyMode, setLabelCurrencyMode,
     labelOffsetNameX, setLabelOffsetNameX,
     labelOffsetNameY, setLabelOffsetNameY,
@@ -126,6 +126,7 @@ export default function SettingsTabNegocio({
         const prevUrlRef = useRef(null);
 
         const isMixto = labelCurrencyMode === 'mixto';
+        const hasSecondaryPrice = Boolean(copEnabled && calculatedTasaCop > 0);
         const PX_MM   = 3.78;
         const is80 = paperWidth === '80';
         const W_PX = (is80 ? 80 : 58) * PX_MM;
@@ -224,24 +225,6 @@ export default function SettingsTabNegocio({
                 </SectionCard>
             </div>
 
-            {/* Impresora - Sólo Tamaño de Ticket */}
-            <SectionCard icon={Printer} title="Tamaño de Ticket" subtitle="Configuración del ancho de papel" iconColor="text-brand">
-                <label className="text-[11px] uppercase tracking-wider font-extrabold text-slate-500 dark:text-slate-400 block mb-1.5">Ancho de Papel</label>
-                <div className="grid grid-cols-2 gap-2">
-                    {[{ val: '58', label: '58 mm (Pequeña)' }, { val: '80', label: '80 mm (Estándar)' }].map(opt => (
-                        <button
-                            key={opt.val}
-                            onClick={() => { setPaperWidth(opt.val); localStorage.setItem('printer_paper_width', opt.val); triggerHaptic?.(); }}
-                            className={`py-2.5 px-3 text-xs font-bold rounded-xl transition-all border ${paperWidth === opt.val
-                                ? 'bg-brand-light dark:bg-brand/10 border-brand text-brand-dark dark:text-brand shadow-sm'
-                                : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
-                            }`}
-                        >
-                            {opt.label}
-                        </button>
-                    ))}
-                </div>
-            </SectionCard>
 
             {/* Etiquetas de Precios */}
             <SectionCard icon={Tag} title="Etiquetas de Productos" subtitle="Moneda a mostrar en la etiqueta" iconColor="text-brand">

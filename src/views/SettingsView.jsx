@@ -295,7 +295,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                             <SettingsTabNegocio
                                 businessName={businessName} setBusinessName={setBusinessName}
                                 businessRif={businessRif} setBusinessRif={setBusinessRif}
-                                paperWidth={paperWidth} setPaperWidth={setPaperWidth}
+                                paperWidth={paperWidth}
                                 labelCurrencyMode={labelCurrencyMode} setLabelCurrencyMode={setLabelCurrencyMode}
                                 labelOffsetNameX={labelOffsetNameX} setLabelOffsetNameX={setLabelOffsetNameX}
                                 labelOffsetNameY={labelOffsetNameY} setLabelOffsetNameY={setLabelOffsetNameY}
