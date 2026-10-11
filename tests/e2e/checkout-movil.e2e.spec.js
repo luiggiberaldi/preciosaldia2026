@@ -54,7 +54,6 @@ test.describe('unidades de venta a granel persistidas en el snapshot', () => {
         await confirmButton(page).click();
 
         await expect(page.getByText('Tasa BCV Aplicada')).toBeVisible({ timeout: 10_000 });
-        console.log('[snapshot E2E] receipt shown');
         const savedSale = await page.evaluate(async () => {
             const request = indexedDB.open('BodegaApp');
             const db = await new Promise((resolve, reject) => {
@@ -72,13 +71,10 @@ test.describe('unidades de venta a granel persistidas en el snapshot', () => {
         });
         expect(savedSale.granelUnitMode).toBe('gr_ml');
         expect(savedSale.items[0]).toMatchObject({ qty: 0.75, unit: 'lt', granelUnit: 'lt' });
-        console.log('[snapshot E2E] saved sale metadata verified');
 
         const receiptQuantity = page.getByText(/750 ml ×/);
-        console.log('[snapshot E2E] receipt quantity locator count', await receiptQuantity.count());
         await receiptQuantity.scrollIntoViewIfNeeded();
         await expect(receiptQuantity).toBeVisible();
-        console.log('[snapshot E2E] receipt quantity visible');
         await page.evaluate(() => {
             localStorage.setItem('granel_unit_mode', 'kg_lt');
             window.dispatchEvent(new CustomEvent('granel_unit_mode_changed', { detail: 'kg_lt' }));
