@@ -6,6 +6,7 @@ import { compressString, isCompressionSupported } from '../utils/compression';
 import { uploadToGoogleDrive } from '../utils/driveBackupUploader';
 import { validateBackupJson, applyBackupToStorage } from '../utils/backupRestoreService';
 import { buildCloudBackupsRow } from '../config/cloudSchema';
+import { startBackupRequestPolling } from '../services/backupRequestPolling';
 
 
 // ─── Configuración optimizada ───────────────────────────────────────────────
@@ -140,7 +141,9 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                     } catch (driveErr) {
                         console.error('[AutoBackup] Error al subir a Google Drive:', driveErr);
                     }
-
+                    if (forceUpload && !driveResult) {
+                        throw new Error('No fue posible enviar el respaldo solicitado a Google Drive.');
+                    }
                     // Guardar metadatos a través de la API de La Estación Maestra (Service Key en Server Side)
                     const metadataPayload = {
                         drive_url: driveResult?.downloadUrl || null,
@@ -204,6 +207,7 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
 
             } catch (e) {
                 console.error('[AutoBackup] Error:', e);
+                if (forceUpload) throw e;
             }
     }, []);
 
@@ -248,13 +252,14 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
             }, 2 * 60 * 1000);
 
             try {
-                const { data } = await supabaseCloud
+                const { data, error: queryError } = await supabaseCloud
                     .from('backup_requests')
                     .select('id, status, created_at')
                     .eq('device_id', deviceId)
                     .eq('status', 'pending')
                     .order('created_at', { ascending: false })
                     .maybeSingle();
+                if (queryError) throw queryError;
 
                 if (data?.id) {
                     // GUARDA-RAIL V4: usar sessionStorage para persistir IDs entre reloads en la misma pestaña
@@ -269,16 +274,18 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                         console.log(`[AutoBackup] Solicitud de backup pendiente detectada (${data.id}). Ejecutando...`);
                         await performBackupRef.current?.(true);
 
-                        // ARNES V3: marcar como procesado SOLO después de éxito
+                        // Confirmar el cierre en la nube antes de impedir nuevos intentos.
+                        const { error: updateError } = await supabaseCloud.from('backup_requests').update({
+                            status: 'completed',
+                            completed_at: new Date().toISOString()
+                        }).eq('id', data.id);
+                        if (updateError) throw updateError;
+
+                        // ARNES V3: marcar como procesado SOLO después del backup y el cierre exitosos.
                         processedIdsRef.current.add(data.id);
                         if (typeof sessionStorage !== 'undefined') {
                             try { sessionStorage.setItem(sessionKey, '1'); } catch {}
                         }
-
-                        await supabaseCloud.from('backup_requests').update({
-                            status: 'completed',
-                            completed_at: new Date().toISOString()
-                        }).eq('id', data.id);
                         console.log('[AutoBackup] Backup pendiente procesado exitosamente.');
                     } catch (backupErr) {
                         console.error('[AutoBackup] Backup falló, se reintentará:', backupErr);
@@ -292,9 +299,9 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
             }
         };
 
-        // Comprobar solicitudes pendientes al conectar y cada 60s (Fail-safe contra pérdida de WebSocket)
-        checkPendingRequests();
-        const pendingPollInterval = setInterval(checkPendingRequests, 60000);
+        // Realtime es el camino primario. El polling visible cada 5 min es fail-safe;
+        // al volver de background o recuperar conexión se reconcilia inmediatamente.
+        const stopBackupRequestPolling = startBackupRequestPolling(checkPendingRequests);
 
         // Suscribirse al canal en tiempo real de forma anónima
         channel = supabaseCloud
@@ -313,7 +320,12 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
             .subscribe();
 
         return () => {
-            clearInterval(pendingPollInterval);
+            stopBackupRequestPolling();
+            if (runningTimeoutRef.current) {
+                clearTimeout(runningTimeoutRef.current);
+                runningTimeoutRef.current = null;
+            }
+            isRunningRef.current = false;
             if (channel) {
                 supabaseCloud.removeChannel(channel).catch(() => {});
             }

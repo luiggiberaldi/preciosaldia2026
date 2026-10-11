@@ -6,6 +6,7 @@ import { generateFingerprint, verifyStoredFingerprint, seedFingerprintAnchor } f
 import { useLicenseMonitoring } from './useLicenseMonitoring';
 import { useDemoCountdown } from './useDemoCountdown';
 import { LICENSE_POLICY } from '../utils/securityConstants';
+import { sendDeviceHeartbeat } from '../services/deviceHeartbeat';
 
 const APP_VERSION = '1.0.0';
 const PRODUCT_ID = 'bodega';
@@ -316,31 +317,8 @@ function useSecurityState() {
             } catch { }
         }
 
-        // Registro y heartbeat garantizado en Supabase para el 100% de los dispositivos
-        const registerAndHeartbeat = async () => {
-            try {
-                const bName = localStorage.getItem('business_name') || localStorage.getItem('restaurant_name') || '';
-                const mEmail = localStorage.getItem('marketing_email') || '';
-                const clientName = mEmail ? `${bName} | ${mEmail}` : bName;
-                await supabase.rpc('auto_register_device', {
-                    p_device_id: currentDeviceId,
-                    p_product_id: PRODUCT_ID,
-                    p_client_name: clientName
-                });
-                await supabase.rpc('heartbeat_device', {
-                    p_device_id: currentDeviceId,
-                    p_product_id: PRODUCT_ID,
-                    p_client_name: clientName
-                });
-            } catch (e) {
-                if (import.meta.env?.DEV) {
-                    console.warn('[Security] Registro / heartbeat falló:', e?.message ?? e);
-                }
-            }
-        };
-
-        registerAndHeartbeat();
-
+        // Al iniciar se consultó el estado remoto de licencia; no se requiere un
+        // heartbeat extra aquí: el monitor enviará el primero tras montar.
         setLoading(false);
     }, [setDemoExpiredMsg]);
 
@@ -371,20 +349,30 @@ function useSecurityState() {
             // rotación post-manipulación, de modo que el ID activo quede protegido
             // contra drift futuro desde su primer día.
             seedFingerprintAnchor(storedId, currentFp);
-            setDeviceId(storedId);
 
-            // Auto-registro: registrar dispositivo si no existe (sin importar licencia)
+            // Auto-registro idempotente de filas al iniciar; los heartbeats posteriores
+            // actualizan last_seen sin repetir comprobaciones/inserciones de registro.
             try {
                 if (import.meta.env.VITE_SUPABASE_URL) {
                     const bName = localStorage.getItem('business_name') || localStorage.getItem('restaurant_name') || '';
                     const mEmail = localStorage.getItem('marketing_email') || '';
                     const clientName = mEmail ? `${bName} | ${mEmail}` : bName;
-                    await supabase.rpc('auto_register_device', { p_device_id: storedId, p_product_id: PRODUCT_ID, p_client_name: clientName });
+                    const { error } = await supabase.rpc('auto_register_device', {
+                        p_device_id: storedId,
+                        p_product_id: PRODUCT_ID,
+                        p_client_name: clientName,
+                    });
+                    if (error) throw error;
                 }
-            } catch (e) {
-                if (import.meta.env?.DEV) console.warn('[Security] auto_register_device falló:', e?.message ?? e);
+            } catch (error) {
+                if (import.meta.env?.DEV) {
+                    console.warn('[Security] auto_register_device falló:', error?.message ?? error);
+                }
             }
 
+            // Montar el monitor después de intentar el registro evita que el primer
+            // heartbeat llegue antes de que existan las filas de presencia/licencia.
+            setDeviceId(storedId);
             checkLicense(storedId);
         };
 
@@ -762,10 +750,10 @@ function useSecurityState() {
         const mEmail = localStorage.getItem('marketing_email') || '';
         const clientName = mEmail ? `${bName} | ${mEmail}` : bName;
         try {
-            await supabase.rpc('heartbeat_device', {
-                p_device_id: deviceId || localStorage.getItem('pda_device_id'),
-                p_product_id: PRODUCT_ID,
-                p_client_name: clientName
+            await sendDeviceHeartbeat(supabase, {
+                deviceId: deviceId || localStorage.getItem('pda_device_id'),
+                productId: PRODUCT_ID,
+                clientName,
             });
         } catch(e) {
             console.error('Error forcing heartbeat:', e);
