@@ -43,7 +43,7 @@ const LEGACY_IDB_KEYS = Object.freeze([
 ]);
 const LEGACY_LS_KEYS = Object.freeze([
     'street_rate_bs', 'catalog_use_auto_usdt', 'catalog_custom_usdt_price',
-    'catalog_show_cash_price', 'monitor_rates_v12', 'business_name', 'business_rif',
+    'catalog_show_cash_price', 'monitor_rates_v12', 'business_name', 'business_phone', 'business_rif',
 ]);
 
 // ─── COLECCIÓN ──────────────────────────────────────────────────────────────

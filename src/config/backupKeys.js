@@ -45,6 +45,7 @@ export const LS_KEYS = Object.freeze([
   'bodega_inventory_view',
   'bodega_use_auto_rate',
   'business_name',
+  'business_phone',
   'business_rif',
   'catalog_custom_usdt_price',
   'catalog_show_cash_price',

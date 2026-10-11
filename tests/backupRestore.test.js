@@ -73,6 +73,7 @@ async function seedDevice() {
     await storageService.setItem('bodega_products_v1', products);
     await storageService.setItem('bodega_sales_v1', sales);
     localStorage.setItem('business_name', 'Bodega Doña María');
+    localStorage.setItem('business_phone', '04121234567');
     localStorage.setItem('street_rate_bs', '40.5');
     return { products, sales };
 }
@@ -88,6 +89,7 @@ describe('collectLocalBackupPayload', () => {
         expect(backup.data.idb.bodega_products_v1).toHaveLength(2);
         expect(backup.data.idb.bodega_sales_v1).toHaveLength(1);
         expect(backup.data.ls.business_name).toBe('Bodega Doña María');
+        expect(backup.data.ls.business_phone).toBe('04121234567');
         expect(backup.data.ls.street_rate_bs).toBe('40.5');
     });
 
@@ -180,6 +182,7 @@ describe('cloud backup round-trip', () => {
         expect(restoredProducts[0].packagingType).toBe('granel');
         expect(restoredSales).toEqual([{ id: 's1', total: 100, items: [{ productId: 'p1', qty: 0.35 }] }]);
         expect(localStorage.getItem('business_name')).toBe('Bodega Doña María');
+        expect(localStorage.getItem('business_phone')).toBe('04121234567');
         expect(localStorage.getItem('street_rate_bs')).toBe('40.5');
     });
 
@@ -270,6 +273,7 @@ describe('formato legado (pre-2.0)', () => {
             data: {
                 bodega_products_v1: JSON.stringify([{ id: 'old1', name: 'Harina' }]),
                 business_name: 'Bodega Vieja',
+                business_phone: '04141234567',
                 street_rate_bs: '36',
             },
         };
@@ -279,6 +283,7 @@ describe('formato legado (pre-2.0)', () => {
         const products = await storageService.getItem('bodega_products_v1', null);
         expect(products).toEqual([{ id: 'old1', name: 'Harina' }]);
         expect(localStorage.getItem('business_name')).toBe('Bodega Vieja');
+        expect(localStorage.getItem('business_phone')).toBe('04141234567');
         expect(localStorage.getItem('street_rate_bs')).toBe('36');
     });
 });

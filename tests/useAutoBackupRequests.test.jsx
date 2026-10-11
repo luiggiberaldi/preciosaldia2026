@@ -13,19 +13,49 @@ const { backupQuery, channelState, cloudClient, driveUpload, storageGet } = vi.h
     };
     const query = {
         select: vi.fn(() => query),
-        eq: vi.fn(() => {
+        eq: vi.fn((column, value) => {
             if (query.updating) {
                 query.updating = false;
-                return Promise.resolve(query.updateResult);
+                query.updateId = value;
+                const result = query.updateResult;
+                const persistUpdate = (resolved) => {
+                    if (!resolved?.error && Array.isArray(query.pendingResult?.data)) {
+                        query.pendingResult.data.forEach(row => {
+                            if (row.id === query.updateId) Object.assign(row, query.updatePayload);
+                        });
+                    }
+                    return resolved;
+                };
+                if (result && typeof result.then === 'function') return result.then(persistUpdate);
+                return Promise.resolve(persistUpdate(result));
             }
+            if (column === 'device_id') query.deviceFilter = value;
+            return query;
+        }),
+        in: vi.fn((column, values) => {
+            if (column === 'status') query.statusFilter = values;
             return query;
         }),
         order: vi.fn(() => query),
-        maybeSingle: vi.fn(() => Promise.resolve(query.pendingResult)),
+        limit: vi.fn(() => {
+            if (!query.pendingResult || query.pendingResult.error || !Array.isArray(query.pendingResult.data)) {
+                return Promise.resolve(query.pendingResult);
+            }
+            const data = query.pendingResult.data.filter(row =>
+                !query.statusFilter || query.statusFilter.includes(row.status)
+            );
+            query.observedStatuses.push(data.map(row => row.status));
+            return Promise.resolve({ data, error: null });
+        }),
         pendingResult: null,
+        observedStatuses: [],
+        statusFilter: null,
         updateResult: { error: null },
         updating: false,
-        update: vi.fn(() => {
+        updatePayload: null,
+        updateId: null,
+        update: vi.fn((payload) => {
+            query.updatePayload = payload;
             query.updating = true;
             return query;
         }),
@@ -96,7 +126,7 @@ function HookHarness() {
 }
 
 function pendingRequest(id = 'request-1') {
-    backupQuery.pendingResult = { data: { id, status: 'pending' }, error: null };
+    backupQuery.pendingResult = { data: [{ id, status: 'pending' }], error: null };
 }
 
 async function flushPromises() {
@@ -117,9 +147,15 @@ describe('useAutoBackup remote request reconciliation', () => {
         channelState.stopped = false;
         channelState.check = null;
         channelState.options = null;
-        backupQuery.maybeSingle.mockClear();
+        backupQuery.limit.mockClear();
+        backupQuery.in.mockClear();
         backupQuery.updateResult = { error: null };
         backupQuery.updating = false;
+        backupQuery.updatePayload = null;
+        backupQuery.updateId = null;
+        backupQuery.statusFilter = null;
+        backupQuery.observedStatuses = [];
+        backupQuery.deviceFilter = null;
         backupQuery.pendingResult = null;
         backupQuery.update.mockClear();
         backupQuery.select.mockClear();
@@ -164,7 +200,7 @@ describe('useAutoBackup remote request reconciliation', () => {
             await channelState.callback({ new: { status: 'pending' } });
             await channelState.check();
         });
-        expect(backupQuery.maybeSingle).toHaveBeenCalledTimes(1);
+        expect(backupQuery.limit).toHaveBeenCalledTimes(1);
 
         await act(async () => { finishBackup({ downloadUrl: 'https://backup.test/file', sizeBytes: 10 }); });
         await flushPromises();
@@ -174,6 +210,63 @@ describe('useAutoBackup remote request reconciliation', () => {
         await act(async () => { await channelState.callback({ new: { status: 'pending' } }); });
         await flushPromises();
         expect(driveUpload).toHaveBeenCalledTimes(1);
+        view.unmount();
+    });
+
+    it('does not retry a failed request before its exponential backoff expires', async () => {
+        pendingRequest('retry-backoff');
+        driveUpload.mockRejectedValueOnce(new Error('temporary outage'));
+        const view = renderBackupHook();
+        await flushPromises();
+
+        expect(driveUpload).toHaveBeenCalledTimes(1);
+        await act(async () => {
+            vi.advanceTimersByTime(5 * 60 * 1000 - 1);
+            await channelState.check();
+        });
+        await flushPromises();
+        expect(driveUpload).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+            vi.advanceTimersByTime(1);
+            await channelState.check();
+        });
+        await flushPromises();
+        expect(driveUpload).toHaveBeenCalledTimes(2);
+        view.unmount();
+    });
+
+    it('increases retry delay after consecutive backup failures', async () => {
+        pendingRequest('retry-backoff-growth');
+        driveUpload
+            .mockRejectedValueOnce(new Error('first outage'))
+            .mockRejectedValueOnce(new Error('second outage'))
+            .mockResolvedValueOnce({ downloadUrl: 'https://backup.test/file', sizeBytes: 10 });
+        const view = renderBackupHook();
+        await flushPromises();
+        expect(driveUpload).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+            vi.advanceTimersByTime(5 * 60 * 1000);
+            await channelState.check();
+        });
+        await flushPromises();
+        expect(driveUpload).toHaveBeenCalledTimes(2);
+
+        await act(async () => {
+            vi.advanceTimersByTime(5 * 60 * 1000);
+            await channelState.check();
+        });
+        await flushPromises();
+        expect(driveUpload).toHaveBeenCalledTimes(2);
+
+        await act(async () => {
+            vi.advanceTimersByTime(5 * 60 * 1000);
+            await channelState.check();
+        });
+        await flushPromises();
+        expect(driveUpload).toHaveBeenCalledTimes(3);
+        expect(backupQuery.update).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'completed' }));
         view.unmount();
     });
 
@@ -199,12 +292,19 @@ describe('useAutoBackup remote request reconciliation', () => {
 
         expect(driveUpload).toHaveBeenCalledTimes(1);
         expect(backupQuery.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }));
+        expect(backupQuery.pendingResult.data[0].status).toBe('failed');
+        expect(backupQuery.in).toHaveBeenCalledWith('status', ['pending', 'failed']);
 
-        await act(async () => { await channelState.check(); });
+        await act(async () => {
+            vi.advanceTimersByTime(5 * 60 * 1000);
+            await channelState.check();
+        });
         await flushPromises();
         expect(driveUpload).toHaveBeenCalledTimes(2);
         expect(backupQuery.update).toHaveBeenCalledTimes(2);
         expect(backupQuery.update).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'completed' }));
+        expect(backupQuery.observedStatuses).toEqual([['pending'], ['failed']]);
+        expect(backupQuery.pendingResult.data[0].status).toBe('completed');
         view.unmount();
     });
 
@@ -232,7 +332,10 @@ describe('useAutoBackup remote request reconciliation', () => {
         expect(sessionStorage.getItem('backup_processed_completion-write-retry')).toBeNull();
 
         backupQuery.updateResult = { error: null };
-        await act(async () => { await channelState.check(); });
+        await act(async () => {
+            vi.advanceTimersByTime(5 * 60 * 1000);
+            await channelState.check();
+        });
         await flushPromises();
 
         expect(driveUpload).toHaveBeenCalledTimes(2);
@@ -252,7 +355,10 @@ describe('useAutoBackup remote request reconciliation', () => {
         expect(backupQuery.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }));
         expect(sessionStorage.getItem('backup_processed_missing-drive-endpoint')).toBeNull();
 
-        await act(async () => { await channelState.check(); });
+        await act(async () => {
+            vi.advanceTimersByTime(5 * 60 * 1000);
+            await channelState.check();
+        });
         await flushPromises();
         expect(driveUpload).toHaveBeenCalledTimes(2);
         expect(backupQuery.update).toHaveBeenCalledTimes(2);

@@ -13,6 +13,49 @@ import { startBackupRequestPolling } from '../services/backupRequestPolling';
 const BACKUP_INTERVAL_MS = 30 * 60 * 1000; // 30 minutos
 const BACKUP_KEY = 'bodega_autobackup_v1';
 const LAST_UPLOAD_HASH_KEY = 'bodega_last_upload_hash';
+const BACKUP_RETRY_STATE_PREFIX = 'backup_retry_';
+const BACKUP_RETRY_BASE_MS = 5 * 60 * 1000;
+const BACKUP_RETRY_MAX_MS = 30 * 60 * 1000;
+
+function getBackupRetryState(requestId) {
+    if (typeof sessionStorage === 'undefined') return { attempts: 0, nextAttemptAt: 0 };
+    try {
+        const raw = sessionStorage.getItem(`${BACKUP_RETRY_STATE_PREFIX}${requestId}`);
+        if (!raw) return { attempts: 0, nextAttemptAt: 0 };
+        const parsed = JSON.parse(raw);
+        return {
+            attempts: Math.max(0, Number(parsed.attempts) || 0),
+            nextAttemptAt: Math.max(0, Number(parsed.nextAttemptAt) || 0),
+        };
+    } catch {
+        return { attempts: 0, nextAttemptAt: 0 };
+    }
+}
+
+function scheduleBackupRetry(requestId) {
+    const previous = getBackupRetryState(requestId);
+    const attempts = previous.attempts + 1;
+    const delay = Math.min(BACKUP_RETRY_BASE_MS * (2 ** (attempts - 1)), BACKUP_RETRY_MAX_MS);
+    const state = { attempts, nextAttemptAt: Date.now() + delay };
+    try {
+        sessionStorage.setItem(`${BACKUP_RETRY_STATE_PREFIX}${requestId}`, JSON.stringify(state));
+    } catch {
+        // Retry timing is best-effort when session storage is unavailable.
+    }
+    return state;
+}
+
+function clearBackupRetryState(requestId) {
+    try {
+        sessionStorage.removeItem(`${BACKUP_RETRY_STATE_PREFIX}${requestId}`);
+    } catch {
+        // A completed backup stays complete even if retry-state cleanup is unavailable.
+    }
+}
+
+function isBackupRetryDue(requestId, now = Date.now()) {
+    return getBackupRetryState(requestId).nextAttemptAt <= now;
+}
 
 /**
  * Marca una solicitud de respaldo como fallida con el motivo.
@@ -271,14 +314,20 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
             }, 2 * 60 * 1000);
 
             try {
-                const { data, error: queryError } = await supabaseCloud
+                const { data: requestRows, error: queryError } = await supabaseCloud
                     .from('backup_requests')
                     .select('id, status, created_at')
                     .eq('device_id', deviceId)
-                    .eq('status', 'pending')
+                    .in('status', ['pending', 'failed'])
                     .order('created_at', { ascending: false })
-                    .maybeSingle();
+                    .limit(25);
                 if (queryError) throw queryError;
+
+                const requests = Array.isArray(requestRows) ? requestRows : (requestRows ? [requestRows] : []);
+                const data = requests.find(request =>
+                    (request.status === 'pending' || request.status === 'failed')
+                    && isBackupRetryDue(request.id)
+                );
 
                 if (data?.id) {
                     // GUARDA-RAIL V4: usar sessionStorage para persistir IDs entre reloads en la misma pestaña
@@ -305,15 +354,22 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
 
                             // ARNES V3: marcar como procesado SOLO después del backup y el cierre exitosos en la nube
                             processedIdsRef.current.add(data.id);
+                            clearBackupRetryState(data.id);
                             if (typeof sessionStorage !== 'undefined') {
-                                try { sessionStorage.setItem(sessionKey, '1'); } catch {}
+                                try {
+                                    sessionStorage.setItem(sessionKey, '1');
+                                } catch {
+                                    // In-memory processed IDs still prevent duplicate work this session.
+                                }
                             }
                             console.log('[AutoBackup] Backup pendiente procesado.');
                         } else {
-                            // Fracaso honesto: la estación lo verá como fallido con el motivo.
+                            // Un estado failed sigue siendo elegible para un retry con backoff.
+                            scheduleBackupRetry(data.id);
                             await markBackupRequestFailed(data.id, result?.error || 'error desconocido');
                         }
                     } catch (backupErr) {
+                        scheduleBackupRetry(data.id);
                         console.error('[AutoBackup] Backup falló, se reintentará:', backupErr);
                     }
                 }

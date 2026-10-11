@@ -5,6 +5,7 @@ import localforage from 'localforage';
 import { showToast } from '../components/Toast';
 import PaymentMethodsManager from './Settings/PaymentMethodsManager';
 import { normalizeVzlaPhone, isValidVzlaPhone } from '../utils/phoneValidation';
+import { LS_KEYS } from '../config/backupKeys';
 
 import { useSecurity } from '../hooks/useSecurity';
 import { useProductContext } from '../context/ProductContext';
@@ -85,6 +86,7 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
                     catalog_show_cash_price: localStorage.getItem('catalog_show_cash_price'),
                     monitor_rates_v12: localStorage.getItem('monitor_rates_v12'),
                     business_name: localStorage.getItem('business_name'),
+                    business_phone: localStorage.getItem('business_phone'),
                     business_rif: localStorage.getItem('business_rif')
                 }
             };
@@ -143,8 +145,15 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
                     idbMap = json.idb || {};
                     lsMap = json.ls || {};
                 } else if (json.data && (json.data.bodega_products_v1 || json.data.bodega_accounts_v2 || json.data.my_categories_v1)) {
-                    // Formato v1.0 legado: { timestamp, version: "1.0", data: { bodega_products_v1: "...", ... } }
-                    idbMap = json.data;
+                    // Formato v1.0 legado: datos IDB y localStorage convivían en data.
+                    idbMap = { ...json.data };
+                    lsMap = {};
+                    LS_KEYS.forEach(key => {
+                        if (Object.prototype.hasOwnProperty.call(idbMap, key)) {
+                            lsMap[key] = idbMap[key];
+                            delete idbMap[key];
+                        }
+                    });
                 } else if (Array.isArray(json)) {
                     // Array directo de productos
                     idbMap = { bodega_products_v1: json };
