@@ -210,7 +210,12 @@ export default function SettingsTabLicencia({ deviceId, triggerHaptic }) {
                                     <button 
                                         onClick={() => {
                                             triggerHaptic?.();
-                                            window.open(`https://wa.me/584124051793?text=Hola! Quiero adquirir la licencia de $50 (1 equipo + modo supervisor). Mi ID es: ${deviceId || 'N/A'}`.replace(/\s+/g, '%20'), '_blank');
+                                            const bizName = localStorage.getItem('business_name') || '';
+                                            const bizPhone = localStorage.getItem('business_phone') || '';
+                                            const parts = [`Hola! Quiero adquirir la licencia de $50 (1 equipo + modo supervisor). Mi ID es: ${deviceId || 'N/A'}`];
+                                            if (bizName) parts.push(`Negocio: ${bizName}`);
+                                            if (bizPhone) parts.push(`Mi teléfono: ${bizPhone}`);
+                                            window.open(`https://wa.me/584124051793?text=${encodeURIComponent(parts.join('\n'))}`, '_blank');
                                         }}
                                         className="w-full mt-1 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-black rounded-xl transition-all shadow-sm shadow-emerald-500/20 active:scale-[0.97] text-center"
                                     >

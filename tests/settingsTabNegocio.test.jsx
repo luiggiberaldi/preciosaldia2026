@@ -17,6 +17,8 @@ describe('SettingsTabNegocio - Consolidación y Limpieza de Tarjeta Huérfana', 
         setBusinessName: vi.fn(),
         businessRif: 'J-12345678',
         setBusinessRif: vi.fn(),
+        businessPhone: '0412 123 4567',
+        setBusinessPhone: vi.fn(),
         paperWidth: '58',
         labelCurrencyMode: 'bs',
         setLabelCurrencyMode: vi.fn(),
@@ -74,6 +76,7 @@ describe('SettingsTabNegocio - Consolidación y Limpieza de Tarjeta Huérfana', 
         await act(async () => { await new Promise(r => setTimeout(r, 0)); });
 
         expect(container.textContent).toContain('Mi Negocio');
+        expect(container.textContent).toContain('Teléfono del Negocio');
         expect(container.textContent).toContain('Etiquetas de Productos');
         expect(container.textContent).toContain('Peso Colombiano (COP)');
     });

@@ -135,12 +135,15 @@ describe('useAutoBackup remote request reconciliation', () => {
         localStorage.clear();
         sessionStorage.clear();
         localStorage.setItem('business_name', 'Test Store');
+        vi.stubEnv('VITE_ESTACION_API_URL', 'https://estacion.test');
+        globalThis.fetch = vi.fn().mockResolvedValue({ ok: true });
         vi.spyOn(console, 'log').mockImplementation(() => {});
         vi.spyOn(console, 'error').mockImplementation(() => {});
         vi.spyOn(console, 'warn').mockImplementation(() => {});
     });
 
     afterEach(() => {
+        vi.unstubAllEnvs();
         vi.restoreAllMocks();
         vi.useRealTimers();
     });
@@ -195,13 +198,13 @@ describe('useAutoBackup remote request reconciliation', () => {
         await flushPromises();
 
         expect(driveUpload).toHaveBeenCalledTimes(1);
-        expect(backupQuery.update).not.toHaveBeenCalled();
+        expect(backupQuery.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }));
 
         await act(async () => { await channelState.check(); });
         await flushPromises();
         expect(driveUpload).toHaveBeenCalledTimes(2);
-        expect(backupQuery.update).toHaveBeenCalledTimes(1);
-        expect(backupQuery.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }));
+        expect(backupQuery.update).toHaveBeenCalledTimes(2);
+        expect(backupQuery.update).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'completed' }));
         view.unmount();
     });
 
@@ -246,13 +249,14 @@ describe('useAutoBackup remote request reconciliation', () => {
         const view = renderBackupHook();
         await flushPromises();
 
-        expect(backupQuery.update).not.toHaveBeenCalled();
+        expect(backupQuery.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }));
         expect(sessionStorage.getItem('backup_processed_missing-drive-endpoint')).toBeNull();
 
         await act(async () => { await channelState.check(); });
         await flushPromises();
         expect(driveUpload).toHaveBeenCalledTimes(2);
-        expect(backupQuery.update).toHaveBeenCalledTimes(1);
+        expect(backupQuery.update).toHaveBeenCalledTimes(2);
+        expect(backupQuery.update).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'completed' }));
         view.unmount();
     });
 
