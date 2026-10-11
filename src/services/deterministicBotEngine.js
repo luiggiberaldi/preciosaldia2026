@@ -2,6 +2,7 @@
 // Responde instantáneamente preguntas de vuelto, stock, ventas y caja sin depender de IA ni conexión.
 
 import { storageService } from '../utils/storageService';
+import { formatLowStockAlert, isLowStockProduct } from '../utils/granel';
 
 export async function processDeterministicOfflineQuery(userQuery, { effectiveRate, tasaCop, products, cart, usuarioActivo, offlineReason = 'no_internet' }) {
     const q = userQuery.toLowerCase().trim();
@@ -40,10 +41,10 @@ export async function processDeterministicOfflineQuery(userQuery, { effectiveRat
 
     // 2. CONSULTA DE INVENTARIO / STOCK CRITICO
     if (q.includes('stock') || q.includes('inventario') || q.includes('agotado') || q.includes('bajo')) {
-        const lowStockItems = products ? products.filter(p => (p.stock ?? 0) <= (p.lowStockAlert ?? 5)) : [];
+        const lowStockItems = products ? products.filter(isLowStockProduct) : [];
         const outOfStockItems = products ? products.filter(p => (p.stock ?? 0) <= 0) : [];
 
-        const criticalList = lowStockItems.slice(0, 5).map(p => `- **${p.name}**: ${p.stock ?? 0} unidades restantes`).join('\n') || '- Todos los productos tienen stock suficiente.';
+        const criticalList = lowStockItems.slice(0, 5).map(p => `- **${p.name}**: quedan ${p.stock ?? 0}; umbral ${formatLowStockAlert(p)}`).join('\n') || '- Todos los productos tienen stock suficiente.';
 
         return `## Estado actual (Modo Local Offline)
 

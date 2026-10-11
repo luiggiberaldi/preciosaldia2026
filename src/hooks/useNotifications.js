@@ -1,4 +1,5 @@
 import { useCallback, useRef } from 'react';
+import { formatGranelDisplay, getGranelUnitMode, isGranelProduct, isLowStockProduct } from '../utils/granel';
 
 const getLocalISODate = (d = new Date()) => {
     const y = d.getFullYear();
@@ -52,11 +53,10 @@ export function useNotifications() {
     // ── 1. Stock bajo / agotado ──────────────────────────────────────────────
     const notifyLowStock = useCallback((products) => {
         const agotados = products.filter(p => (parseFloat(p.stock) || 0) <= 0);
-        const bajos = products.filter(p => {
-            const stock = parseFloat(p.stock) || 0;
-            const threshold = parseFloat(p.lowStockAlert) || 5;
-            return stock > 0 && stock <= threshold;
-        });
+        const bajos = products.filter(p => (parseFloat(p.stock) || 0) > 0 && isLowStockProduct(p));
+        const stockText = (p) => isGranelProduct(p)
+            ? formatGranelDisplay(p.stock, p, getGranelUnitMode())
+            : `${parseFloat(p.stock) || 0} ${((parseFloat(p.stock) || 0) === 1) ? 'unidad' : 'unidades'}`;
 
         // Agotados primero
         if (agotados.length === 1) {
@@ -77,19 +77,18 @@ export function useNotifications() {
         // Stock bajo (pero no cero)
         if (bajos.length === 1) {
             const p = bajos[0];
-            const unidad = p.unit === 'kg' ? 'kg' : p.unit === 'litro' ? 'lt' : (p.stock === 1 ? 'unidad' : 'unidades');
+            const thresholdText = isGranelProduct(p)
+                ? formatGranelDisplay(p.lowStockAlert ?? 5, p, getGranelUnitMode())
+                : `${p.lowStockAlert ?? 5} uds`;
             send(
                 '⚠️ Stock Bajo',
-                `${p.name} — quedan ${parseFloat(p.stock).toFixed(p.unit === 'kg' || p.unit === 'litro' ? 2 : 0)} ${unidad}`,
+                `${p.name} — quedan ${stockText(p)} (umbral ${thresholdText}).`,
                 `low-stock-${p.id}`
             );
         } else if (bajos.length > 1) {
             send(
                 `⚠️ ${bajos.length} Productos con Stock Bajo`,
-                bajos.slice(0, 3).map(p => {
-                    const u = p.unit === 'kg' ? 'kg' : p.unit === 'litro' ? 'lt' : 'u';
-                    return `${p.name} (${parseFloat(p.stock).toFixed(0)}${u})`;
-                }).join(', ') + (bajos.length > 3 ? ` y ${bajos.length - 3} más` : ''),
+                bajos.slice(0, 3).map(p => `${p.name} (${stockText(p)})`).join(', ') + (bajos.length > 3 ? ` y ${bajos.length - 3} más` : ''),
                 'low-stock-batch'
             );
         }

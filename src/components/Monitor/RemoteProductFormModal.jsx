@@ -250,6 +250,7 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
                 unitPriceCop,
                 category,
                 lowStockAlert,
+                lowStockAlertCanonical: true,
                 granelUnitMode: getGranelUnitMode(),
             };
 

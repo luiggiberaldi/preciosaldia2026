@@ -3,6 +3,7 @@ import { FinancialEngine } from '../core/FinancialEngine';
 import { computeReceivablesMovements } from '../utils/receivablesReport';
 import { sumR, mulR } from '../utils/dinero';
 import { getLocalISODate } from '../utils/dateHelpers';
+import { isLowStockProduct } from '../utils/granel';
 
 /**
  * Hook de métricas del Dashboard.
@@ -123,7 +124,7 @@ export function useDashboardMetrics(sales, customers, products, bcvRate) {
 
     // Productos bajo stock (stock > 0 y <= lowStockAlert)
     const lowStockProducts = useMemo(() =>
-        products.filter(p => (p.stock ?? 0) > 0 && (p.stock ?? 0) <= (p.lowStockAlert ?? 5))
+        products.filter(p => (p.stock ?? 0) > 0 && isLowStockProduct(p))
             .sort((a, b) => (a.stock ?? 0) - (b.stock ?? 0)).slice(0, 6),
         [products]
     );

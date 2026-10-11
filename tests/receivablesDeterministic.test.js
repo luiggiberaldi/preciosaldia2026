@@ -38,8 +38,9 @@ const EXPECTED = DETERMINISTIC_EXPECTED;
 
 const build = () => buildDeterministicDataset({ dateStr: DETERMINISTIC_DATE });
 
-const runReport = (dataset) => calculateReportsData(
-    dataset.sales, from, to, dataset.rate, dataset.products, dataset.customers
+const runTestHarnessReport = (dataset, customers = dataset.customers) => calculateReportsData(
+    dataset.sales, from, to, dataset.rate, dataset.products, customers,
+    { includeDeterministicTestData: true }
 );
 
 /** Importe en Bs de un pago, con el mismo contrato que el motor: `amount` si es BS. */
@@ -139,7 +140,7 @@ describe('dataset determinista v4.0 — reproducibilidad', () => {
 
 describe('agregados congelados — motor vs literales', () => {
     const dataset = build();
-    const report = runReport(dataset);
+    const report = runTestHarnessReport(dataset);
     const breakdown = report.paymentBreakdown;
 
     it('cuentas por cobrar: otorgado, cobranzas, neto', () => {
@@ -199,7 +200,7 @@ describe('agregados congelados — motor vs literales', () => {
 
 describe('suma independiente — el motor no inventa ni pierde dinero', () => {
     const dataset = build();
-    const report = runReport(dataset);
+    const report = runTestHarnessReport(dataset);
     const raw = sumRawByHand(dataset.sales, dataset.products);
 
     it('la cuenta por cobrar coincide con la suma cruda (fiado + Cashea)', () => {
@@ -248,39 +249,43 @@ describe('persistencia determinista del inyector', () => {
         _memoryStore.clear();
     });
 
-    it('escribe ventas, productos, clientes y ledger sin tocar datos reales', async () => {
-        await _memoryStore.set('bodega_sales_v1', [{ id: 'real-1', tipo: 'VENTA', totalUsd: 1, items: [] }]);
+    it('el harness calcula el dataset determinista sin leer ni escribir storage productivo', async () => {
+        const realSales = [{ id: 'real-1', tipo: 'VENTA', totalUsd: 1, items: [] }];
+        const realProducts = [{ id: 'real-product', stock: 7 }];
+        const realCustomers = [{ id: 'real-customer', deuda: 1 }];
+        const realLedger = [{ id: 'real-ledger' }];
+        _memoryStore.set('bodega_sales_v1', realSales);
+        _memoryStore.set('bodega_products_v1', realProducts);
+        _memoryStore.set('bodega_customers_v1', realCustomers);
+        _memoryStore.set(CUSTOMER_LEDGER_KEY, realLedger);
 
-        const result = await injectDeterministicSales({ interactive: false });
+        const result = await injectDeterministicSales({ interactive: false, dateStr: DETERMINISTIC_DATE });
 
-        const sales = _memoryStore.get('bodega_sales_v1');
-        const customers = _memoryStore.get('bodega_customers_v1');
-        const ledger = _memoryStore.get(CUSTOMER_LEDGER_KEY);
-        const products = _memoryStore.get('bodega_products_v1');
+        expect(_memoryStore.get('bodega_sales_v1')).toEqual(realSales);
+        expect(_memoryStore.get('bodega_products_v1')).toEqual(realProducts);
+        expect(_memoryStore.get('bodega_customers_v1')).toEqual(realCustomers);
+        expect(_memoryStore.get(CUSTOMER_LEDGER_KEY)).toEqual(realLedger);
+        expect(result.dataset.sales.filter(s => String(s.id).startsWith('det_'))).toHaveLength(EXPECTED.totalRecords);
 
-        expect(sales.some(s => s.id === 'real-1')).toBe(true);           // el dato real sigue ahí
-        expect(sales.filter(s => String(s.id).startsWith('det_')).length).toBe(EXPECTED.totalRecords);
-        expect(customers).toHaveLength(3);
-        expect(products).toHaveLength(10);
-        expect(ledger).toHaveLength(EXPECTED.ledgerMovements);
-
-        // El reporte sobre lo persistido coincide con los agregados congelados.
-        const stored = calculateReportsData(
-            sales, from, to, result.dataset.rate, products, customers
-        );
+        const stored = runTestHarnessReport(result.dataset);
         expect(stored.receivables.netoUsd).toBe(EXPECTED.netoUsd);
         expect(stored.carteraUsd).toBe(EXPECTED.carteraUsd);
     });
 
-    it('es idempotente: inyectar dos veces no duplica los registros det_', async () => {
-        await injectDeterministicSales({ interactive: false });
-        const first = JSON.parse(JSON.stringify(_memoryStore.get('bodega_sales_v1')));
-        await injectDeterministicSales({ interactive: false });
-        const second = _memoryStore.get('bodega_sales_v1');
+    it('el modo persistente del inyector es idempotente y conserva datos reales', async () => {
+        window.confirm = vi.fn(() => true);
+        window.alert = vi.fn();
+        _memoryStore.set('bodega_sales_v1', [{ id: 'real-keep', tipo: 'VENTA', totalUsd: 1, items: [] }]);
 
-        expect(second.length).toBe(first.length);
-        expect(second.length).toBe(EXPECTED.totalRecords);
-        expect(_memoryStore.get(CUSTOMER_LEDGER_KEY).length).toBe(EXPECTED.ledgerMovements);
-        expect(_memoryStore.get('bodega_customers_v1')).toHaveLength(3);
+        const first = await injectDeterministicSales({ interactive: true, dateStr: DETERMINISTIC_DATE });
+        const salesAfterFirst = _memoryStore.get('bodega_sales_v1');
+        await injectDeterministicSales({ interactive: true, dateStr: DETERMINISTIC_DATE });
+        const salesAfterSecond = _memoryStore.get('bodega_sales_v1');
+
+        expect(first.ledgerMovements).toBe(EXPECTED.ledgerMovements);
+        expect(salesAfterFirst.filter(s => String(s.id).startsWith('det_'))).toHaveLength(EXPECTED.totalRecords);
+        expect(salesAfterSecond.filter(s => String(s.id).startsWith('det_'))).toHaveLength(EXPECTED.totalRecords);
+        expect(salesAfterSecond.some(s => s.id === 'real-keep')).toBe(true);
+        expect(_memoryStore.get(CUSTOMER_LEDGER_KEY)).toHaveLength(EXPECTED.ledgerMovements);
     });
 });

@@ -60,6 +60,7 @@ function baseOpts(over = {}) {
         copEnabled: false,
         discountData: null,
         useAutoRate: false,
+        granelUnitMode: 'kg_lt',
         ...over,
     };
 }
@@ -79,6 +80,7 @@ describe('FIN-034: normalización del vuelto', () => {
         }));
 
         expect(result.success).toBe(true);
+        expect(result.sale.granelUnitMode).toBe('kg_lt');
         // El valor total del vuelto entregado, expresado en USD, no puede pasar de $10.
         const vueltoTotalUsd = result.sale.changeUsd + (result.sale.changeBs / 40);
         expect(vueltoTotalUsd).toBeLessThanOrEqual(10.01);

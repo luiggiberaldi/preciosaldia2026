@@ -9,6 +9,8 @@ import {
     GRANEL_MODE_GR_ML,
     GRANEL_MODE_KG_LT,
     parseWeightInput,
+    formatGranelInputValue,
+    parseGranelThreshold,
     isLiquidProduct,
 } from '../../utils/granel'; // GRANEL-001 / GRANEL-DUAL
 
@@ -99,8 +101,29 @@ export default function ProductFormWizard({
 
     const parsedStockLotes = parseInt(stockInLotes) || 0;
     const stockUnitsCalc = parsedStockLotes * (parsedUnits || 1);
-    const parsedAlert = parseInt(lowStockAlert) || 0;
+    const parsedAlert = Number(lowStockAlert) || 0;
     const alertLotesCalc = parsedUnits > 0 ? (parsedAlert / parsedUnits) : 0;
+    const alertLabel = isGranel
+        ? (granelMode === GRANEL_MODE_GR_ML
+            ? (isLiquidProduct(granelUnit) ? 'ml' : 'g')
+            : (isLiquidProduct(granelUnit) ? 'L' : 'kg'))
+        : 'Uds';
+    const displayedAlert = isGranel
+        ? formatGranelInputValue(lowStockAlert, granelMode)
+        : lowStockAlert;
+    const handleAlertChange = (value) => {
+        if (value === '') {
+            setLowStockAlert('');
+            return;
+        }
+        if (!isGranel) {
+            setLowStockAlert(value);
+            return;
+        }
+
+        const canonical = parseGranelThreshold(value, granelMode);
+        if (canonical !== null) setLowStockAlert(String(canonical));
+    };
 
     const granelLabel = isLiquidProduct(granelUnit) ? 'Litro' : 'Kilo';
     const priceSuffix = isLote ? ' / Bulto' : isGranel ? ` / ${granelLabel}` : '';
@@ -527,15 +550,15 @@ export default function ProductFormWizard({
                             </div>
                             <div>
                                 <label className="text-xs font-bold text-amber-500 ml-1 mb-1 block uppercase flex items-center gap-1">
-                                    <AlertTriangle size={10} /> Alerta stock {isGranel ? `(${isLiquidProduct(granelUnit) ? 'L' : 'kg'})` : '(Uds)'}
+                                    <AlertTriangle size={10} /> Alerta stock ({alertLabel})
                                 </label>
                                 <input 
                                     type="number" 
                                     step={stockStep}
                                     inputMode={isGranel ? 'decimal' : 'numeric'} 
-                                    value={lowStockAlert} 
-                                    onChange={e => setLowStockAlert(e.target.value)} 
-                                    placeholder={isGranel ? '2.5' : '5'}
+                                    value={displayedAlert}
+                                    onChange={e => handleAlertChange(e.target.value)}
+                                    placeholder={isGranel ? (granelMode === GRANEL_MODE_GR_ML ? '5000' : '5') : '5'}
                                     className="w-full bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800/30 p-3 rounded-xl font-bold text-amber-700 dark:text-amber-400 outline-none focus:ring-2 focus:ring-amber-500/50 text-sm" />
                             </div>
                         </div>
@@ -878,7 +901,7 @@ export default function ProductFormWizard({
                         )}
                         <div className="flex justify-between items-center">
                             <span className="text-slate-400 font-medium">Alerta mín. stock:</span>
-                            <span className="font-black text-amber-500">{lowStockAlert || (isGranel ? '2.5' : '5')} {isGranel ? (isLiquidProduct(granelUnit) ? 'L' : 'kg') : 'uds'}</span>
+                            <span className="font-black text-amber-500">{displayedAlert || (isGranel ? (granelMode === GRANEL_MODE_GR_ML ? '5000' : '5') : '5')} {alertLabel}</span>
                         </div>
                     </div>
                 </div>

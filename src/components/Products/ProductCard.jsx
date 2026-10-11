@@ -4,7 +4,7 @@ import { CATEGORY_COLORS, CATEGORY_ICONS, UNITS } from '../../config/categories'
 import { formatUsd, formatBs, formatCop, smartCashRounding, getCop, getUsd } from '../../utils/calculatorUtils';
 import { showToast } from '../Toast';
 import SmartImage from '../SmartImage';
-import { isGranelProduct, granelUnitLabel, parseStockInput, formatStockDisplay } from '../../utils/granel'; // GRANEL-001
+import { isGranelProduct, isLowStockProduct, granelUnitLabel, parseStockInput, formatStockDisplay, formatLowStockAlert } from '../../utils/granel'; // GRANEL-001
 
 export default function ProductCard({
     product: p,
@@ -46,7 +46,7 @@ export default function ProductCard({
     const effectiveUsd = getUsd(p, tasaCop);
     const valBs = effectiveUsd * effectiveRate;
     const valCop = getCop(p, tasaCop);
-    const isLowStock = (p.stock ?? 0) <= (p.lowStockAlert ?? 5);
+    const isLowStock = isLowStockProduct(p);
     const effectiveCostUsd = p.costUsd || (p.costBs && effectiveRate > 0 ? p.costBs / effectiveRate : 0);
     const margin = effectiveCostUsd > 0 && effectiveUsd > 0 ? ((effectiveUsd - effectiveCostUsd) / effectiveCostUsd * 100) : null;
     const catInfo = categories.find(c => c.id === p.category);
@@ -354,6 +354,7 @@ ${showSecondary ? `[PRECIO SECUNDARIO]
                                 </button>
                             )}
                             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-none">{unitShort}</span>
+                            <span className="text-[8px] text-slate-400 leading-none">{formatLowStockAlert(p)}</span>
                             {p.unit === 'paquete' && p.unitsPerPackage > 0 && Math.floor((p.stock ?? 0) / p.unitsPerPackage) > 0 && (
                                 <span className="text-[8px] text-slate-400 leading-none">= {Math.floor((p.stock ?? 0) / p.unitsPerPackage)} bultos</span>
                             )}

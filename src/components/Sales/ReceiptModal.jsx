@@ -9,6 +9,7 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
     if (!receipt) return null;
 
     const receiptCurrencyMode = localStorage.getItem('receipt_currency_mode') || 'bs';
+    const receiptGranelMode = receipt.granelUnitMode || getGranelUnitMode();
 
     return (
         <div className="fixed inset-0 z-[60] bg-slate-900/80 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -128,7 +129,7 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                                 const itemPriceUsd = isDualBs ? parseFloat(item.priceBsUsdRef) : item.priceUsd;
                                 const priceBs = itemPriceUsd * (receipt.rate || 0);
                                 const totalBs = itemPriceUsd * item.qty * (receipt.rate || 0);
-                                const qtyStr = isGranelProduct(item) ? formatGranelDisplay(item.qty, item, getGranelUnitMode()) : `${item.qty} u`;
+                                const qtyStr = isGranelProduct(item) ? formatGranelDisplay(item.qty, item, receiptGranelMode) : `${item.qty} u`;
 
                                 if (item.isCashAdvance) {
                                     return (

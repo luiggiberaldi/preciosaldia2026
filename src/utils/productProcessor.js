@@ -10,6 +10,7 @@ import {
     getGranelUnitMode,
     GRANEL_MODE_GR_ML,
     parseWeightToCanonical,
+    parseGranelThreshold,
 } from './granel.js'; // GRANEL-001 / GRANEL-DUAL: decimales SOLO para productos a granel y conversión dual.
 
 export function buildProductPayload(formData, effectiveRate) {
@@ -102,8 +103,13 @@ export function buildProductPayload(formData, effectiveRate) {
 
     // GRANEL-001: alerta de stock bajo con el mismo guardarraíl de tipado
     // (granel admite hasta 3 decimales; el resto cae a entero, con fallback a 5).
-    const finalLowStockAlert = lowStockAlert
-        ? (parseStockInput(lowStockAlert, isGranel) ?? 5)
+    const activeGranelMode = formData.granelUnitMode || getGranelUnitMode();
+    const finalLowStockAlert = lowStockAlert !== null && lowStockAlert !== undefined && lowStockAlert !== ''
+        ? (isGranel
+            ? (formData.lowStockAlertCanonical === true
+                ? (parseStockInput(lowStockAlert, true) ?? 5)
+                : (parseGranelThreshold(lowStockAlert, activeGranelMode) ?? 5))
+            : (parseStockInput(lowStockAlert, false) ?? 5))
         : 5;
 
     // Doble Precio y modalidad de precios (dual_usd / tasa_dia)

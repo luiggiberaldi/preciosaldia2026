@@ -33,6 +33,69 @@ test.beforeEach(async ({ page }) => {
     await page.addInitScript(SEED_INDEXEDDB_SNIPPET);
 });
 
+test.describe('unidades de venta a granel persistidas en el snapshot', () => {
+    test.beforeEach(async ({ page }) => {
+        await page.addInitScript(() => localStorage.setItem('granel_unit_mode', 'gr_ml'));
+    });
+
+    test('recibo e historial mantienen ml después de cambiar la preferencia a litros', async ({ page }) => {
+        await page.goto('/');
+        await page.evaluate(() => localStorage.setItem('granel_unit_mode', 'gr_ml'));
+        await page.reload();
+        await page.getByRole('button', { name: 'Vender' }).click();
+        await addProductBySearch(page, 'Leche E2E');
+
+        await expect(page.getByText('¿Cuántos mililitros?')).toBeVisible();
+        await page.getByPlaceholder('Ej: 3.00').fill('1.50');
+        await page.getByRole('button', { name: 'Agregar', exact: true }).first().click();
+        await page.getByText('Ver Cesta', { exact: true }).click();
+        await expect(page.locator('span:visible').filter({ hasText: /^750 ml$/ }).first()).toBeVisible();
+        await page.getByRole('button', { name: /COBRAR/ }).click();
+        await expect(page.getByRole('heading', { name: 'COBRAR' })).toBeVisible();
+        await page.getByRole('button', { name: /Total/ }).click();
+        await expect(confirmButton(page)).toBeEnabled();
+        await confirmButton(page).click();
+
+        await expect(page.getByText('Tasa BCV Aplicada')).toBeVisible({ timeout: 10_000 });
+        const receiptSnapshot = await page.evaluate(async () => {
+            const request = indexedDB.open('BodegaApp');
+            const db = await new Promise((resolve, reject) => {
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+            const sale = await new Promise((resolve, reject) => {
+                const get = db.transaction('bodega_app_data', 'readonly')
+                    .objectStore('bodega_app_data').get('bodega_sales_v1');
+                get.onsuccess = () => resolve(get.result.find(row => row.tipo === 'VENTA'));
+                get.onerror = () => reject(get.error);
+            });
+            db.close();
+            return sale;
+        });
+        expect(receiptSnapshot.granelUnitMode).toBe('gr_ml');
+        expect(receiptSnapshot.items[0]).toMatchObject({ qty: 0.75, unit: 'lt', granelUnit: 'lt' });
+        await expect(page.getByText('Leche E2E', { exact: true })).toBeVisible();
+        await expect(page.locator('span:visible').filter({ hasText: /750 ml ×/ }).first()).toBeVisible();
+
+        await page.getByRole('button', { name: /Cerrar/ }).last().click();
+        await page.getByRole('button', { name: 'Reportes', exact: true }).click();
+        await page.getByRole('button', { name: 'Ventas', exact: true }).click();
+        await expect(page.getByRole('heading', { name: 'Historial de Ventas' })).toBeVisible({ timeout: 15_000 });
+        await expect(page.getByText('750 ml Leche E2E')).toBeVisible();
+
+        await page.getByRole('button', { name: 'Ajustes', exact: true }).click();
+        await page.getByRole('button', { name: 'Ventas', exact: true }).first().click();
+        await expect(page.getByRole('button', { name: /Kg \/ Litros \(Decimales\)/ })).toBeVisible();
+        await page.getByRole('button', { name: /Kg \/ Litros \(Decimales\)/ }).click();
+        await page.getByRole('button', { name: 'Reportes', exact: true }).click();
+        await page.getByRole('button', { name: 'Ventas', exact: true }).click();
+        await expect(page.getByRole('heading', { name: 'Historial de Ventas' })).toBeVisible({ timeout: 15_000 });
+        await page.getByText('Consumidor Final').last().click();
+        const saleItemAfterModeChange = page.locator('span.truncate.pr-2').filter({ hasText: 'Leche E2E' });
+        await expect(saleItemAfterModeChange).toHaveText(/750 ml Leche E2E/);
+    });
+});
+
 // ── Navegación: app → Vender → caja abierta → agregar producto → checkout ──
 
 async function goToSales(page) {

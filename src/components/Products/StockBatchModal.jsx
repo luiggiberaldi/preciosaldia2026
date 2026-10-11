@@ -3,13 +3,12 @@ import { Search, TrendingUp, TrendingDown, Check, Package, X, AlertTriangle, Min
 import { showToast } from '../Toast';
 import { CATEGORY_COLORS } from '../../config/categories';
 import { storageService } from '../../utils/storageService';
-import { isGranelProduct, granelUnitLabel, parseStockInput, adjustStockValue, formatStockDisplay } from '../../utils/granel'; // GRANEL-001
+import { isGranelProduct, isLowStockProduct, granelUnitLabel, parseStockInput, adjustStockValue, formatStockDisplay, formatLowStockAlert } from '../../utils/granel'; // GRANEL-001
 
 // ─── FILA DEL CATÁLOGO (PICKER LIMPIO CON CHECKMARK) ───
 function CatalogRow({ p, isSelected, direction, onToggle }) {
     const stock = p.stock ?? 0;
-    const lowAlert = p.lowStockAlert ?? 5;
-    const isLow = stock <= lowAlert;
+    const isLow = isLowStockProduct(p);
     const unitsPerPkg = (p.unitsPerPackage ?? 1);
     const hasBulk = unitsPerPkg > 1;
 
@@ -36,7 +35,7 @@ function CatalogRow({ p, isSelected, direction, onToggle }) {
                             ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-800/80'
                             : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200/60 dark:border-slate-700'
                     }`}>
-                        Stock: {formatStockDisplay(stock, isGranelProduct(p))}
+                        Stock: {formatStockDisplay(stock, isGranelProduct(p))} · {formatLowStockAlert(p)}
                     </span>
                     {isGranelProduct(p) && (
                         <span className="text-[9px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-lg border border-amber-200/60 dark:border-amber-800/60">

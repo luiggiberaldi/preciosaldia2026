@@ -1,5 +1,6 @@
 import { formatBs, formatVzlaPhone, formatCop } from './calculatorUtils';
-import { round2, round3, mulR } from './dinero';
+import { round2, mulR } from './dinero';
+import { formatSaleItemQuantity } from './granel';
 
 /**
  * dashboardActions.js — Acciones del dashboard (compartir venta por WhatsApp).
@@ -26,8 +27,7 @@ export function shareSaleWhatsApp(sale, saleCustomer, bcvRate) {
 
     if (sale.items && sale.items.length > 0) {
         sale.items.forEach(item => {
-            // Cantidad: peso usa 3 decimales (round3), unidad es entero.
-            const qty = item.isWeight ? `${round3(item.qty)}Kg` : `${item.qty} Und`;
+            const qty = formatSaleItemQuantity(item, sale.granelUnitMode);
             // Subtotal línea: mulR para evitar drift.
             const lineTotal = mulR(item.priceUsd, item.qty);
             text += `- ${item.name}\n  ${qty} x ${fmtUsd(item.priceUsd)} = *${fmtUsd(lineTotal)}*\n`;

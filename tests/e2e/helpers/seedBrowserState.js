@@ -37,7 +37,15 @@ const TEST_PRODUCTS = [
         id: 'p_caraota', name: 'Caraota E2E', category: 'abastos', stock: 10,
         costUsd: 2, priceUsd: 5, priceUsdt: 5, isWeight: false, barcode: 'E2ECARAO1',
     },
+    {
+        id: 'p_leche', name: 'Leche E2E', category: 'abastos', stock: 20,
+        costUsd: 1, priceUsd: 2, priceUsdt: 2, isWeight: true, unit: 'lt', granelUnit: 'lt',
+        packagingType: 'granel', barcode: 'E2ELECHE1',
+    },
 ];
+
+/** Activates the gram/milliliter UI mode for a browser test before app startup. */
+export const SEED_GRANEL_MODE_SNIPPET = `localStorage.setItem('granel_unit_mode', 'gr_ml');`;
 
 const TEST_CUSTOMERS = [
     {

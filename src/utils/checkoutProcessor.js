@@ -4,7 +4,7 @@ import { CUSTOMER_MOVEMENT_TYPES, normalizeCustomer } from './customerLedger.js'
 import { logEvent } from '../services/auditService.js';
 import { useAuthStore } from '../hooks/store/useAuthStore.js';
 import { round2, round0, round3, sumR, subR, divR, mulR } from './dinero.js';
-import { isGranelProduct } from './granel.js'; // GRANEL-001
+import { GRANEL_MODE_GR_ML, getGranelUnitMode, isGranelProduct } from './granel.js'; // GRANEL-001
 import { withLock } from './withLock.js';          // FIN-007: feature detection + fallback.
 import { deepFreeze } from './deepFreeze.js';      // FIN-008: deep freeze (no solo shallow).
 import { FINANCIAL_EPSILON } from './securityConstants.js';
@@ -29,7 +29,8 @@ export async function processSaleTransaction({
     tasaCop,
     copEnabled,
     discountData,
-    useAutoRate
+    useAutoRate,
+    granelUnitMode = getGranelUnitMode()
 }) {
     if (cart.length === 0) return { success: false, error: 'Carrito vacío' };
 
@@ -200,6 +201,7 @@ export async function processSaleTransaction({
 
     const sale = {
         id: crypto.randomUUID(),
+        granelUnitMode: granelUnitMode === GRANEL_MODE_GR_ML ? GRANEL_MODE_GR_ML : 'kg_lt',
         tipo: tipoVenta,
         status: 'COMPLETADA',
         items: cart.map(i => ({
@@ -213,6 +215,9 @@ export async function processSaleTransaction({
             costBs: i.costBs || 0,
             costUsd: i.costUsd || 0,
             isWeight: i.isWeight,
+            unit: i.unit ?? null,
+            granelUnit: i.granelUnit ?? i.unit ?? null,
+            packagingType: i.packagingType ?? null,
             isCashAdvance: i.isCashAdvance || null,
             montoEfectivo: i.montoEfectivo || null,
             montoComision: i.montoComision || null,

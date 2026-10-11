@@ -35,6 +35,9 @@ vi.mock('../src/hooks/store/useAuthStore', () => ({
 import { processSaleTransaction } from '../src/utils/checkoutProcessor';
 import { processVoidSale } from '../src/utils/voidSaleProcessor';
 import { storageService } from '../src/utils/storageService';
+import { formatSaleItemQuantity } from '../src/utils/granel';
+import { buildTicketHtml } from '../src/utils/ticketHtmlTemplate';
+import { getPaperConfig } from '../src/utils/ticketConstants';
 
 const SALES_KEY = 'bodega_sales_v1';
 const PRODUCTS_KEY = 'bodega_products_v1';
@@ -79,8 +82,9 @@ function resetMockStore() {
 }
 
 // Opts base para vender `qty` kg del queso a $5/kg, pago exacto, sin vuelto.
-function granelSaleOpts(qty) {
+function granelSaleOpts(qty, granelUnitMode = 'kg_lt') {
     return {
+        granelUnitMode,
         cart: [{
             id: 'queso-001',
             _originalId: 'queso-001',
@@ -90,6 +94,9 @@ function granelSaleOpts(qty) {
             costUsd: 3.0,
             costBs: 0,
             isWeight: true,
+            unit: 'kg',
+            granelUnit: 'kg',
+            packagingType: 'granel',
         }],
         cartTotalUsd: qty * 5.0,
         cartTotalBs: qty * 5.0 * 40,
@@ -116,11 +123,15 @@ describe('GRANEL-001 E2E: venta 0.350 kg + anulación restaura el stock exacto',
 
     it('vende 0.350 kg de Queso Blanco, anula la venta y el stock vuelve a 55.5 exacto', async () => {
         // ── 1. Vender 0.350 kg ($5/kg × 0.350 = $1.75, pago exacto, sin vuelto) ──
-        const saleResult = await processSaleTransaction(granelSaleOpts(0.350));
+        const saleResult = await processSaleTransaction(granelSaleOpts(0.350, 'gr_ml'));
         expect(saleResult.success).toBe(true);
+        expect(saleResult.sale.granelUnitMode).toBe('gr_ml');
 
-        // La venta registra el peso vendido
+        // La venta conserva cantidad canónica y metadatos semánticos en el snapshot.
         expect(saleResult.sale.items[0].qty).toBe(0.350);
+        expect(saleResult.sale.items[0]).toMatchObject({ unit: 'kg', granelUnit: 'kg', packagingType: 'granel' });
+        expect(formatSaleItemQuantity(saleResult.sale.items[0], saleResult.sale.granelUnitMode)).toBe('350 g');
+        expect(formatSaleItemQuantity(saleResult.sale.items[0], 'kg_lt')).toBe('0.35 kg');
 
         // ── Verificar deducción exacta: 55.5 − 0.350 = 55.15 (3 decimales) ──
         const productsAfterSale = await storageService.getItem(PRODUCTS_KEY, []);
@@ -152,6 +163,34 @@ describe('GRANEL-001 E2E: venta 0.350 kg + anulación restaura el stock exacto',
         const salesAfterVoid = await storageService.getItem(SALES_KEY, []);
         expect(salesAfterVoid[0].status).toBe('ANULADA');
         expect(salesAfterVoid).toHaveLength(1);
+    });
+
+    it('vende líquido por litros: snapshot y ticket conservan ml/L y no lo etiquetan como kg', async () => {
+        const liquid = {
+            id: 'cloro-001', name: 'Cloro', unit: 'litro', packagingType: 'granel', granelUnit: 'litro',
+            stock: 4, priceUsd: 2, priceUsdt: 2, costUsd: 1, costBs: 0, isWeight: true,
+        };
+        _memoryStore.set(PRODUCTS_KEY, [liquid]);
+        localStorage.setItem('granel_unit_mode', 'kg_lt');
+        const result = await processSaleTransaction({
+            granelUnitMode: 'gr_ml',
+            cart: [{ ...liquid, qty: 0.75, _originalId: liquid.id }],
+            cartTotalUsd: 1.5, cartTotalBs: 60, cartSubtotalUsd: 1.5,
+            payments: [{ amountUsd: 1.5, amountBs: 0, currency: 'USD', methodId: 'efectivo_usd', methodLabel: 'Efectivo $' }],
+            changeBreakdown: { changeUsdGiven: 0, changeBsGiven: 0 },
+            selectedCustomerId: null, customers: [], products: [liquid], effectiveRate: 40,
+            tasaCop: 0, copEnabled: false, discountData: null, useAutoRate: false,
+        });
+
+        expect(result.success).toBe(true);
+        expect(result.sale.granelUnitMode).toBe('gr_ml');
+        expect(result.sale.items[0]).toMatchObject({ qty: 0.75, unit: 'litro', granelUnit: 'litro', packagingType: 'granel' });
+        expect(formatSaleItemQuantity(result.sale.items[0], result.sale.granelUnitMode)).toBe('750 ml');
+        const html = buildTicketHtml(result.sale, 40, getPaperConfig('58'), {
+            name: 'Bodega Test', rif: '', address: '', phone: '', instagram: '',
+        });
+        expect(html).toContain('750 ml x');
+        expect(html).not.toContain('0.75 kg');
     });
 
     it('vende 0.125 kg (tercer decimal) y lo anula sin perder el tercer decimal', async () => {

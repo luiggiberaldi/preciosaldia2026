@@ -46,7 +46,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
     const { notifyLowStock, notifySaleComplete } = useNotifications();
 
     // ── Global Context ──────────────────────────────────────
-    const { products, setProducts, isLoadingProducts, rateMode, setRateMode, useAutoRate, setUseAutoRate, customRate, setCustomRate, effectiveRate, rates, rateDiscrepancyWarning, copEnabled, copPrimary, tasaCop, autoCopEnabled, setAutoCopEnabled, tasaCopManual, setTasaCopManual, categories, checkoutMode, effectiveCheckoutMode, setCheckoutMode } = useProductContext();
+    const { products, setProducts, isLoadingProducts, rateMode, setRateMode, useAutoRate, setUseAutoRate, customRate, setCustomRate, effectiveRate, rates, rateDiscrepancyWarning, copEnabled, copPrimary, tasaCop, autoCopEnabled, setAutoCopEnabled, tasaCopManual, setTasaCopManual, categories, checkoutMode, effectiveCheckoutMode, setCheckoutMode, granelUnitMode } = useProductContext();
 
     // ── State ──────────────────────────────────────
     const [showConfetti, setShowConfetti] = useState(false);
@@ -408,7 +408,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
     const { handleCheckout, handleCreateCustomer, handleSaveApertura, isProcessing } = useCheckoutFlow({
         cart, cartTotalUsd, cartTotalBs, cartSubtotalUsd,
         selectedCustomerId, customers, setCustomers, products, setProducts,
-        effectiveRate, tasaCop, copEnabled, discountData, useAutoRate,
+        effectiveRate, tasaCop, copEnabled, discountData, useAutoRate, granelUnitMode,
         setSalesData, setShowReceipt, setShowCheckout, setSelectedCustomerId,
         setCart, setCartSelectedIndex, setShowConfetti, setTodayAperturaData, setIsAperturaOpen,
         playCheckout, playError, notifyLowStock, notifySaleComplete, triggerHaptic
@@ -523,6 +523,9 @@ export default function SalesView({ triggerHaptic, isActive }) {
                 costBs: derived.costBs,
                 costUsd: derived.costUsd,
                 qty: qtyToAdd, isWeight: productIsGranel,
+                unit: product.unit ?? null,
+                granelUnit: productIsGranel ? (product.granelUnit ?? product.unit ?? null) : null,
+                packagingType: product.packagingType ?? null,
                 _originalId: product.id, _mode: forceMode || 'package', _unitsPerPackage: product.unitsPerPackage || 1,
             }, ...prev];
         });

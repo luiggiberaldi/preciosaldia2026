@@ -24,6 +24,7 @@ export function buildTicketHtml(sale, bcvRate, paperConfig, settings) {
 
     const receiptCurrencyMode = (typeof localStorage !== 'undefined' ? localStorage.getItem('receipt_currency_mode') : null) || 'bs';
     const rate = sale.rate || bcvRate || 1;
+    const granelMode = sale.granelUnitMode || getGranelUnitMode();
     const isCop = sale.copEnabled && sale.tasaCop > 0;
     // FIN-024: formatUsd en vez de parseFloat(v).toFixed(2).
     const fmtUsd = (v) => isCop ? `USD ${formatUsd(v)}` : `$${formatUsd(v)}`;
@@ -44,7 +45,6 @@ export function buildTicketHtml(sale, bcvRate, paperConfig, settings) {
         const isDualBs = item.pricingMode === 'dual_usd' && (Number(item.priceBsUsdRef) || 0) > 0 && isBsSale;
         const effectivePriceUsd = isDualBs ? (Number(item.priceBsUsdRef) || 0) : item.priceUsd;
 
-        const granelMode = getGranelUnitMode();
         const qtyUnit = isGranelProduct(item)
             ? formatGranelDisplay(item.qty, item, granelMode)
             : `${item.qty}u`;

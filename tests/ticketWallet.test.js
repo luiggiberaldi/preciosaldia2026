@@ -10,6 +10,23 @@ beforeEach(() => {
 });
 
 describe('referencias de cartera en tickets', () => {
+    it('formatea cantidades canónicas con unidad líquida/sólida en tickets', () => {
+        localStorage.setItem('granel_unit_mode', 'gr_ml');
+        const html = buildTicketHtml({
+            id: 'bulk-units', saleNumber: 5, timestamp: new Date().toISOString(),
+            totalUsd: 3, totalBs: 120, rate: 40,
+            items: [
+                { name: 'Queso', qty: 0.5, priceUsd: 5, isWeight: true, unit: 'kg', granelUnit: 'kg', packagingType: 'granel' },
+                { name: 'Cloro', qty: 0.75, priceUsd: 2, isWeight: true, unit: 'litro', granelUnit: 'litro', packagingType: 'granel' },
+            ],
+            payments: [{ methodId: 'efectivo_usd', methodLabel: 'Efectivo $', currency: 'USD', amountUsd: 3 }],
+        }, 40, getPaperConfig('58'), settings);
+
+        expect(html).toContain('500 g x');
+        expect(html).toContain('750 ml x');
+        expect(html).not.toContain('0.75 kg');
+    });
+
     it('muestra cuando el vuelto queda acreditado a favor', () => {
         const html = buildTicketHtml({
             id: 'sale-wallet',

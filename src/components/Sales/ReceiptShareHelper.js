@@ -20,7 +20,7 @@ export function buildReceiptWhatsAppUrl(receipt, currentRate) {
 
     const receiptCurrencyMode = localStorage.getItem('receipt_currency_mode') || 'bs';
 
-    const receiptGranelMode = getGranelUnitMode();
+    const receiptGranelMode = r.granelUnitMode || getGranelUnitMode();
     const itemsLines = (r.items ?? []).map(item => {
         const qty = isGranelProduct(item)
             ? formatGranelDisplay(item.qty, item, receiptGranelMode)

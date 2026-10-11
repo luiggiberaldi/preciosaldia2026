@@ -8,6 +8,7 @@ import { generateTicketPDF, printThermalTicket } from '../../utils/ticketGenerat
 import EmptyState from '../EmptyState';
 import { BarChart3 } from 'lucide-react';
 import CasheaIcon from '../CasheaIcon';
+import { formatSaleItemQuantity } from '../../utils/granel';
 
 // ── Helper sub-components (moved from ReportsView) ──
 
@@ -155,7 +156,7 @@ function TransactionRow({ sale: s, bcvRate, isExpanded, onToggle, onVoidSale, on
                             {s.items.map((item, i) => (
                                 <div key={i} className={`flex justify-between items-center text-xs ${isCanceled ? 'text-slate-400 line-through' : 'text-slate-600 dark:text-slate-300'}`}>
                                     <span className="truncate pr-2">
-                                        {item.isWeight ? `${item.qty.toFixed(3)}kg` : `${item.qty}u`} {item.name}
+                                        {formatSaleItemQuantity(item, s.granelUnitMode)} {item.name}
                                         {(item.isWeight || item.qty !== 1) && (
                                             <span className="text-[10px] text-slate-400 font-normal ml-1">
                                                 ({item.isWeight ? '' : 'c/u '}{copEnabled && copPrimary && tasaCop > 0 ? `${formatCop(item.priceCop || Math.round(item.priceUsd * tasaCop))} COP` : `$${item.priceUsd.toFixed(2)}`})

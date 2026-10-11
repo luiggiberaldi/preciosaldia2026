@@ -30,7 +30,7 @@ import { useProductFiltering } from '../hooks/useProductFiltering';
 import { useProductForm } from '../hooks/useProductForm';
 import { useProductSorting } from '../hooks/useProductSorting';
 import { buildProductPayload } from '../utils/productProcessor';
-import { isGranelProduct, formatStockDisplay, getGranelUnitMode } from '../utils/granel'; // GRANEL-001 / GRANEL-DUAL
+import { isGranelProduct, isLowStockProduct, formatStockDisplay, getGranelUnitMode } from '../utils/granel'; // GRANEL-001 / GRANEL-DUAL
 import { uploadProductImage, migrateProductImagesToStorage } from '../utils/imageUpload';
 // useAuthStore removed - single-user app
 import { useAudit } from '../hooks/useAudit';
@@ -294,7 +294,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
     }
 
     // Low stock count
-    const lowStockCount = products.filter(p => (p.stock ?? 0) <= (p.lowStockAlert ?? 5) && (p.stock ?? 0) >= 0).length;
+    const lowStockCount = products.filter(p => (p.stock ?? 0) >= 0 && isLowStockProduct(p)).length;
 
     // ─── IMAGE HANDLER ──────────────────────────────────────
 
@@ -388,7 +388,8 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
             name, barcode, priceUsd, priceBs, pricingMode, priceBsUsdRef, priceCop, costUsd, costBs, stock, stockInLotes,
             packagingType, unitsPerPackage, granelUnit, sellByUnit, unitPriceUsd, unitPriceCop,
             category, lowStockAlert,
-            granelUnitMode: getGranelUnitMode()
+            granelUnitMode: getGranelUnitMode(),
+            lowStockAlertCanonical: true
         }, effectiveRate);
 
         // Advertencia si el precio parece inusualmente alto
@@ -782,7 +783,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                             <div className="divide-y divide-slate-100 dark:divide-slate-800">
                                 {paginatedProducts.map(p => {
                                     const valBs = p.priceUsdt * effectiveRate;
-                                    const isLowStock = (p.stock ?? 0) <= (p.lowStockAlert ?? 5);
+                                    const isLowStock = isLowStockProduct(p);
                                     const effectiveCostUsd = p.costUsd || (p.costBs && effectiveRate > 0 ? p.costBs / effectiveRate : 0);
                                     const margin = effectiveCostUsd > 0 && p.priceUsdt > 0 ? ((p.priceUsdt - effectiveCostUsd) / effectiveCostUsd * 100) : null;
                                     const catInfo = categories.find(c => c.id === p.category);

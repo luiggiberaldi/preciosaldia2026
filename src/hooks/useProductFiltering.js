@@ -1,4 +1,5 @@
 import { useMemo, useDeferredValue } from 'react';
+import { isLowStockProduct } from '../utils/granel';
 
 export function useProductFiltering(products, searchTerm, activeCategory, sortField, sortDir, effectiveRate) {
     const deferredSearchTerm = useDeferredValue(searchTerm);
@@ -8,7 +9,7 @@ export function useProductFiltering(products, searchTerm, activeCategory, sortFi
             const term = deferredSearchTerm.toLowerCase();
             const matchesSearch = p.name.toLowerCase().includes(term) || (p.barcode && p.barcode.toLowerCase().includes(term));
             if (activeCategory === 'bajo-stock') {
-                return matchesSearch && (p.stock ?? 0) <= (p.lowStockAlert ?? 5);
+                return matchesSearch && isLowStockProduct(p);
             }
             const matchesCategory = activeCategory === 'todos' || p.category === activeCategory;
             return matchesSearch && matchesCategory;

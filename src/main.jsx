@@ -6,6 +6,7 @@ import { ToastProvider } from './components/Toast.jsx'
 import { SecurityProvider } from './hooks/useSecurity.jsx'
 import { supabaseCloud } from './config/supabaseCloud.js'
 import { registerSW } from 'virtual:pwa-register'
+import { migrateBusinessPhoneToLocalStorage } from './utils/businessPhoneStorage.js'
 import './index.css'
 
 // ── Interceptor global de Fetch para Electron (protocolo file://) ──
@@ -147,13 +148,21 @@ function AppRouter() {
   return <App />;
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <ToastProvider>
-      <SecurityProvider>
-        <AppRouter />
-      </SecurityProvider>
-    </ToastProvider>
-  </React.StrictMode>,
-)
+const root = ReactDOM.createRoot(document.getElementById('root'));
+
+migrateBusinessPhoneToLocalStorage()
+  .catch((error) => {
+    console.error('[Migration] No se pudo recuperar el teléfono del negocio:', error);
+  })
+  .finally(() => {
+    root.render(
+      <React.StrictMode>
+        <ToastProvider>
+          <SecurityProvider>
+            <AppRouter />
+          </SecurityProvider>
+        </ToastProvider>
+      </React.StrictMode>,
+    );
+  });
 

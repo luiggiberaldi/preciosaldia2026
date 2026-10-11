@@ -23,6 +23,7 @@ import { useSupplierManagement } from '../hooks/useSupplierManagement';
 import { usePagination } from '../hooks/usePagination';
 import PaginationBar from '../components/PaginationBar';
 import CasheaIcon from '../components/CasheaIcon';
+import { formatSaleItemQuantity } from '../utils/granel';
 
 // Importaciones de Proveedores
 import SuppliersList from '../components/Suppliers/SuppliersList';
@@ -1415,7 +1416,7 @@ export function TransactionDetailModal({ sale, bcvRate, tasaCop, copEnabled, cop
                                 {sale.items.map((item, idx) => (
                                     <div key={idx} className="flex justify-between items-center text-xs text-slate-600 dark:text-slate-300">
                                         <span className="truncate pr-4 flex-1">
-                                            {item.isWeight ? `${item.qty.toFixed(3)}kg` : `${item.qty}u`} {item.name}
+                                            {formatSaleItemQuantity(item, sale.granelUnitMode)} {item.name}
                                             {(item.isWeight || item.qty !== 1) && (
                                                 <span className="text-[10px] text-slate-400 font-normal ml-1">
                                                     (c/u ${item.priceUsd.toFixed(2)})

@@ -347,6 +347,77 @@ export const formatGranelDisplay = (canonicalQty, productOrUnit, mode = getGrane
 };
 
 /**
+ * Canonical sale-item quantity for receipts, histories and reports. New sales
+ * carry the product unit metadata; legacy `isWeight` snapshots retain the old
+ * kg label rather than guessing whether the missing unit was liquid.
+ * @param {object} item
+ * @param {'kg_lt'|'gr_ml'} [mode]
+ */
+export const formatSaleItemQuantity = (item, mode = getGranelUnitMode()) => {
+    if (!item) return '0 u';
+    const knownUnit = item.granelUnit || item.unit;
+    if (isGranelProduct(item) && knownUnit && isGranelProduct(knownUnit)) {
+        return formatGranelDisplay(item.qty, item, mode);
+    }
+    if (item.isWeight || item.soldByWeight || isGranelProduct(item)) {
+        return `${formatStockDisplay(item.qty, true)} kg`;
+    }
+    return `${item.qty ?? 0} u`;
+};
+
+/**
+ * Formats a canonical threshold as a numeric input value in the selected
+ * display mode. Stock alert thresholds remain canonical kg/L in storage.
+ */
+export const formatGranelInputValue = (canonicalQty, mode = getGranelUnitMode()) => {
+    const n = Number(canonicalQty);
+    if (!Number.isFinite(n) || n <= 0) return '0';
+    if (mode === GRANEL_MODE_GR_ML) return String(round0(round3(n) * 1000));
+    return formatStockDisplay(n, true);
+};
+
+/** Format a product's canonical low-stock alert threshold for the current UI. */
+export const formatLowStockAlert = (product, mode = getGranelUnitMode()) => {
+    if (isGranelProduct(product)) {
+        return `${formatGranelDisplay(product.lowStockAlert ?? 5, product, mode)} mín.`;
+    }
+    return `${product?.lowStockAlert ?? 5} uds mín.`;
+};
+
+/** True when stock and its low-stock threshold share canonical kg/L units. */
+export const isLowStockProduct = (product) => {
+    const stock = Number(product?.stock ?? 0);
+    const threshold = Number(product?.lowStockAlert ?? 5);
+    return stock >= 0 && stock <= threshold;
+};
+
+/** Parse a visible g/ml or kg/L threshold into the canonical kg/L scale. */
+export const parseGranelThreshold = (rawValue, mode = getGranelUnitMode()) => {
+    if (rawValue === null || rawValue === undefined || String(rawValue).trim() === '') return null;
+    if (mode === GRANEL_MODE_GR_ML) {
+        const raw = Number(String(rawValue).trim().replace(/,/g, '.'));
+        if (!Number.isFinite(raw) || raw < 0) return null;
+        return round3(raw / 1000);
+    }
+    return parseStockInput(rawValue, true);
+};
+
+/** Converts a canonical kg/L threshold to g/ml display units. */
+export const canonicalThresholdForMode = (canonicalQty, mode = getGranelUnitMode()) =>
+    mode === GRANEL_MODE_GR_ML
+        ? round0(round3(Number(canonicalQty) || 0) * 1000)
+        : normalizeStockValue(canonicalQty, true);
+
+/** Converts a g/ml threshold to canonical kg/L. */
+export const visibleThresholdToCanonical = (rawValue, mode = getGranelUnitMode()) =>
+    parseGranelThreshold(rawValue, mode);
+
+// Keep standalone threshold helpers above the stock parser declaration usable
+// after module evaluation; function invocation happens only after initialization.
+export const formatSaleQuantity = formatSaleItemQuantity;
+
+
+/**
  * Extrae y parsea códigos de barra EAN-13 de balanza electrónica (prefijo 21).
  * Formato estándar: 21 + 5 dígitos PLU + 5 dígitos peso en gramos + 1 dígito checksum.
  * @param {string} barcode

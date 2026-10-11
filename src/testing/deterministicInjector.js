@@ -39,34 +39,41 @@ const CONFIRM_TEXT =
 /**
  * Genera e inyecta el dataset determinista.
  *
- * @param {{ interactive?: boolean }} [opts] - `false` salta confirm/alert/reload
- *        (lo usan los tests). Por defecto es interactivo.
+ * @param {{ interactive?: boolean, dateStr?: string }} [opts] - `false` salta confirm/alert/reload
+ *        (lo usan los tests). `dateStr` permite fijar la fecha del dataset.
+ *        Por defecto es interactivo y usa la fecha actual UTC.
  */
-export async function injectDeterministicSales({ interactive = true } = {}) {
+export async function injectDeterministicSales({ interactive = true, dateStr } = {}) {
     const hasWindow = typeof window !== 'undefined';
     if (interactive && hasWindow && !window.confirm(CONFIRM_TEXT)) return { cancelled: true };
 
-    const dataset = buildDeterministicDataset();
+    const dataset = buildDeterministicDataset(dateStr ? { dateStr } : undefined);
     const { sales: testSales, products, customers, ledger } = dataset;
 
     try {
         // ── Persistencia idempotente: limpia lo det_* previo y escribe lo nuevo ──
-        const existingSales = await storageService.getItem('bodega_sales_v1', []);
+        const existingSales = interactive
+            ? await storageService.getItem('bodega_sales_v1', [])
+            : [];
         const cleanSales = existingSales.filter(s => !String(s.id).startsWith('det_'));
 
-        const existingProducts = await storageService.getItem('bodega_products_v1', []);
-        const cleanProducts = existingProducts.filter(p => !String(p.id).startsWith('det-'));
+        // interactive:false es el harness determinista del test; no debe leer ni
+        // escribir datos productivos. La UI de diagnóstico sí persiste al aceptar.
+        if (interactive) {
+            const existingProducts = await storageService.getItem('bodega_products_v1', []);
+            const cleanProducts = existingProducts.filter(p => !String(p.id).startsWith('det-'));
 
-        const existingCustomers = await storageService.getItem('bodega_customers_v1', []);
-        const cleanCustomers = existingCustomers.filter(c => !String(c.id).startsWith('det-'));
+            const existingCustomers = await storageService.getItem('bodega_customers_v1', []);
+            const cleanCustomers = existingCustomers.filter(c => !String(c.id).startsWith('det-'));
 
-        const existingLedger = await storageService.getItem(CUSTOMER_LEDGER_KEY, []);
-        const cleanLedger = existingLedger.filter(m => !String(m.id).startsWith('det_'));
+            const existingLedger = await storageService.getItem(CUSTOMER_LEDGER_KEY, []);
+            const cleanLedger = existingLedger.filter(m => !String(m.id).startsWith('det_'));
 
-        await storageService.setItem('bodega_sales_v1', [...cleanSales, ...testSales]);
-        await storageService.setItem('bodega_products_v1', [...cleanProducts, ...products]);
-        await storageService.setItem('bodega_customers_v1', [...cleanCustomers, ...customers]);
-        await storageService.setItem(CUSTOMER_LEDGER_KEY, [...cleanLedger, ...ledger]);
+            await storageService.setItem('bodega_sales_v1', [...cleanSales, ...testSales]);
+            await storageService.setItem('bodega_products_v1', [...cleanProducts, ...products]);
+            await storageService.setItem('bodega_customers_v1', [...cleanCustomers, ...customers]);
+            await storageService.setItem(CUSTOMER_LEDGER_KEY, [...cleanLedger, ...ledger]);
+        }
 
         // ── Resumen de verificacion ──
         const netSales = testSales.filter(s => s.status !== 'ANULADA' && (s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA'));

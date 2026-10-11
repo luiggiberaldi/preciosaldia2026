@@ -8,6 +8,10 @@ import {
     normalizeCartQuantity,
     adjustStockValue,
     formatStockDisplay,
+    formatSaleItemQuantity,
+    formatGranelInputValue,
+    parseGranelThreshold,
+    isLowStockProduct,
 } from '../src/utils/granel.js';
 import { buildProductPayload } from '../src/utils/productProcessor.js';
 
@@ -120,7 +124,51 @@ describe('buildProductPayload stock typing (GRANEL-001)', () => {
         expect(payload.stock).toBe(11); // round-half-away-from-zero
         expect(payload.lowStockAlert).toBe(4);
     });
+
+    it('converts g/ml alert inputs to canonical kg/L and compares the same scale', () => {
+        const solid = buildProductPayload({
+            name: 'Queso', packagingType: 'granel', granelUnit: 'kg', stock: '5000',
+            lowStockAlert: '500', granelUnitMode: 'gr_ml', priceUsd: '5',
+        }, 40);
+        const liquid = buildProductPayload({
+            name: 'Cloro', packagingType: 'granel', granelUnit: 'litro', stock: '2000',
+            lowStockAlert: '750', granelUnitMode: 'gr_ml', priceUsd: '2',
+        }, 40);
+        expect(solid.lowStockAlert).toBe(0.5);
+        expect(liquid.lowStockAlert).toBe(0.75);
+        expect(isLowStockProduct({ stock: 0.4, lowStockAlert: solid.lowStockAlert })).toBe(true);
+        expect(isLowStockProduct({ stock: 0.6, lowStockAlert: solid.lowStockAlert })).toBe(false);
+    });
+
+    it('keeps an already canonical alert unchanged on edit', () => {
+        const payload = buildProductPayload({
+            name: 'Harina', packagingType: 'granel', granelUnit: 'kg', stock: '5000',
+            lowStockAlert: '0.5', granelUnitMode: 'gr_ml', lowStockAlertCanonical: true, priceUsd: '5',
+        }, 40);
+        expect(payload.lowStockAlert).toBe(0.5);
+    });
 });
+
+describe('alert and sale quantity unit helpers', () => {
+    it('converts canonical thresholds to/from display mode', () => {
+        expect(parseGranelThreshold('500', 'gr_ml')).toBe(0.5);
+        expect(parseGranelThreshold('750', 'gr_ml')).toBe(0.75);
+        expect(parseGranelThreshold('0.75', 'kg_lt')).toBe(0.75);
+        expect(formatGranelInputValue(0.5, 'gr_ml')).toBe('500');
+        expect(formatGranelInputValue(0.75, 'kg_lt')).toBe('0.75');
+    });
+
+    it('formats canonical solids and liquids consistently, with a legacy fallback', () => {
+        const solid = { qty: 0.5, isWeight: true, unit: 'kg', packagingType: 'granel', granelUnit: 'kg' };
+        const liquid = { qty: 0.75, isWeight: true, unit: 'litro', packagingType: 'granel', granelUnit: 'litro' };
+        expect(formatSaleItemQuantity(solid, 'gr_ml')).toBe('500 g');
+        expect(formatSaleItemQuantity(solid, 'kg_lt')).toBe('0.5 kg');
+        expect(formatSaleItemQuantity(liquid, 'gr_ml')).toBe('750 ml');
+        expect(formatSaleItemQuantity(liquid, 'kg_lt')).toBe('0.75 L');
+        expect(formatSaleItemQuantity({ qty: 0.75, isWeight: true }, 'gr_ml')).toBe('0.75 kg');
+    });
+});
+
 
 describe('checkout-style deduction rules (pure logic mirror)', () => {
     // Espejo de la lógica de checkoutProcessor: deduce stock según reglas de granel.

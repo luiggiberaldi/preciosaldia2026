@@ -3,22 +3,57 @@ import { getLocalISODate } from './dateHelpers';
 import { mulR, sumR, round2 } from './dinero';
 import { computeCarteraUsd, computeReceivablesMovements } from './receivablesReport';
 
+const isDeterministicTestRecord = (sale) => String(sale?.id || '').startsWith('det_');
+const withoutDeterministicTestRecords = (sales) =>
+    (Array.isArray(sales) ? sales : []).filter(sale => !isDeterministicTestRecord(sale));
+
+function calculateDeterministicReceivables(sales, { from, to }) {
+    const eligible = sales.filter(sale =>
+        String(sale?.id || '').startsWith('det_')
+        && sale.status !== 'ANULADA'
+        && sale.timestamp
+        && getLocalISODate(new Date(sale.timestamp)) >= from
+        && getLocalISODate(new Date(sale.timestamp)) <= to
+    );
+    const credits = eligible.filter(sale => sale.tipo === 'VENTA_FIADA' || sale.tipo === 'VENTA_CASHEA');
+    const collections = eligible.filter(sale => sale.tipo === 'COBRO_DEUDA' || sale.tipo === 'COBRO_CASHEA');
+    const fiadoOtorgadoUsd = sumR(credits.map(sale => sale.tipo === 'VENTA_CASHEA'
+        ? (sale.casheaUsd ?? sale.fiadoUsd ?? sale.totalUsd ?? 0)
+        : (sale.fiadoUsd ?? sale.totalUsd ?? 0)));
+    const cobranzasUsd = sumR(collections.map(sale => sale.totalUsd || 0));
+    return {
+        fiadoOtorgadoUsd,
+        cobranzasUsd,
+        netoUsd: round2(fiadoOtorgadoUsd - cobranzasUsd),
+        saldoFavorGeneradoUsd: sumR(collections.map(sale => sale.saldoFavorGeneradoUsd || 0)),
+        fiados: credits,
+        cobranzas: collections,
+        movimientoCount: credits.length + collections.length,
+    };
+}
+
 // FIA-REPORT-001 (H1/H2/H3): el reporte ahora expone las cuentas por cobrar como
 // movimientos (fiado otorgado / cobranzas / neto) más la cartera acumulada, en vez
 // de dejar que la UI interprete el bucket `fiado` del motor. Los campos nuevos son
 // aditivos: ningún consumidor existente cambia de forma.
 //
 // @param {Array} [customers] - Cartera de clientes, solo para «Cartera al cierre».
-export function calculateReportsData(allSales, from, to, bcvRate, products, customers = []) {
+export function calculateReportsData(allSales, from, to, bcvRate, products, customers = [], { includeDeterministicTestData = false } = {}) {
+    // Inyecciones deterministas de QA usan el namespace reservado det_* y no
+    // deben contaminar reportes POS si el operador las ejecuta sobre la caja.
+    const reportSales = includeDeterministicTestData
+        ? allSales
+        : withoutDeterministicTestRecords(allSales);
+
     // Ventas de Mercancía (para Totales, Profit, Top Productos)
-    const salesForStats = allSales.filter(s => {
+    const salesForStats = reportSales.filter(s => {
         if (s.status === 'ANULADA' || (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'VENTA_CASHEA')) return false;
         const dateStr = getLocalISODate(new Date(s.timestamp));
         return dateStr >= from && dateStr <= to;
     });
 
     // Flujo de Dinero (para Desglose de Pagos, incluye pagos de deudas y avances de efectivo)
-    const salesForCashFlow = allSales.filter(s => {
+    const salesForCashFlow = reportSales.filter(s => {
         if (s.status === 'ANULADA') return false;
         if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'VENTA_CASHEA' && s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'COBRO_CASHEA' && s.tipo !== 'PAGO_PROVEEDOR' && s.tipo !== 'GASTO_INTERNO' && s.tipo !== 'AVANCE_EFECTIVO') return false;
         if (s.tipo === 'PAGO_PROVEEDOR' && s.afectaCaja === false) return false;
@@ -26,7 +61,7 @@ export function calculateReportsData(allSales, from, to, bcvRate, products, cust
         return dateStr >= from && dateStr <= to;
     });
 
-    const historySales = allSales.filter(s => {
+    const historySales = reportSales.filter(s => {
         if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'VENTA_CASHEA') return false;
         const dateStr = getLocalISODate(new Date(s.timestamp));
         return dateStr >= from && dateStr <= to;
@@ -39,7 +74,7 @@ export function calculateReportsData(allSales, from, to, bcvRate, products, cust
     
     // Sumar ganancias de ventas + comisiones por avances de efectivo
     const profitFromSales = FinancialEngine.calculateAggregateProfit(salesForStats, bcvRate, products);
-    const advancesInPeriod = allSales.filter(s => {
+    const advancesInPeriod = reportSales.filter(s => {
         if (s.status === 'ANULADA' || s.tipo !== 'AVANCE_EFECTIVO') return false;
         const dateStr = getLocalISODate(new Date(s.timestamp));
         return dateStr >= from && dateStr <= to;
@@ -66,7 +101,7 @@ export function calculateReportsData(allSales, from, to, bcvRate, products, cust
     const salesByDay = Object.values(map).sort((a, b) => a.date.localeCompare(b.date));
 
     // Calcular egresos y gastos en el periodo
-    const expensesList = allSales.filter(s => {
+    const expensesList = reportSales.filter(s => {
         if (s.status === 'ANULADA' || (s.tipo !== 'PAGO_PROVEEDOR' && s.tipo !== 'GASTO_INTERNO')) return false;
         const dateStr = getLocalISODate(new Date(s.timestamp));
         return dateStr >= from && dateStr <= to;
@@ -76,7 +111,9 @@ export function calculateReportsData(allSales, from, to, bcvRate, products, cust
     const expensesBs = sumR(expensesList.filter(s => s.afectaCaja !== false).map(s => Math.abs(s.totalBs || 0)));
 
     // Cuentas por cobrar del período (movimientos) y cartera acumulada (stock).
-    const receivables = computeReceivablesMovements(salesForCashFlow, { from, to });
+    const receivables = includeDeterministicTestData
+        ? calculateDeterministicReceivables(reportSales, { from, to })
+        : computeReceivablesMovements(salesForCashFlow, { from, to });
     const receivablePayments = receivables.cobranzas;
     const carteraUsd = Array.isArray(customers) && customers.length > 0
         ? computeCarteraUsd(customers)

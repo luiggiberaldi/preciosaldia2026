@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { X, Clock, User, FileText, Trash2, ArrowRightCircle, Eye, EyeOff } from 'lucide-react';
+import { formatSaleItemQuantity } from '../../utils/granel';
 
 export default function HoldsModal({ tickets = [], onRecuperar, onEliminar, onClose, effectiveRate = 0 }) {
     const [expandedId, setExpandedId] = useState(null);
@@ -166,7 +167,7 @@ export default function HoldsModal({ tickets = [], onRecuperar, onEliminar, onCl
                                                         {t.items.map((item, idx) => (
                                                             <tr key={idx} className="text-slate-700 dark:text-slate-300">
                                                                 <td className="py-2.5 font-bold font-mono text-slate-800 dark:text-white">
-                                                                    {item.qty} {item.isWeight ? 'kg/lt' : 'ud'}
+                                                                    {formatSaleItemQuantity(item)}
                                                                 </td>
                                                                 <td className="py-2.5 font-semibold text-slate-800 dark:text-white pr-2">
                                                                     {item.name}

@@ -1,5 +1,6 @@
 import React from 'react';
 import { UserPlus, Phone, Send, Trash2, Recycle } from 'lucide-react';
+import { formatSaleItemQuantity } from '../../utils/granel';
 
 export function TicketClientModal({
     ticketPendingSale,
@@ -176,7 +177,7 @@ export function RecycleOfferModal({
                     <div className="text-left bg-slate-50 dark:bg-slate-800 rounded-xl p-3 mt-3 space-y-1">
                         {recycleOffer.items?.slice(0, 5).map((item, i) => (
                             <div key={i} className="flex justify-between text-xs">
-                                <span className="text-slate-600 dark:text-slate-300 font-medium">{item.qty}{item.isWeight ? 'kg' : 'u'} {item.name.length > 20 ? item.name.substring(0, 20) + '…' : item.name}</span>
+                                <span className="text-slate-600 dark:text-slate-300 font-medium">{formatSaleItemQuantity(item, recycleOffer.granelUnitMode)} {item.name.length > 20 ? item.name.substring(0, 20) + '…' : item.name}</span>
                                 <span className="text-slate-400 font-bold">${(item.priceUsd * item.qty).toFixed(2)}</span>
                             </div>
                         ))}

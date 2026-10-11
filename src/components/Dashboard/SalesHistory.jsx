@@ -7,6 +7,7 @@ import { printerSerial } from '../../services/PrinterSerial';
 import { showToast } from '../Toast';
 import CasheaIcon from '../CasheaIcon';
 import { filterHistoryByKind } from '../../utils/receivablesReport';
+import { formatSaleItemQuantity } from '../../utils/granel';
 import { usePagination } from '../../hooks/usePagination';
 import PaginationBar from '../PaginationBar';
 
@@ -513,7 +514,7 @@ export default function SalesHistory({
                                             {s.items.map((item, i) => (
                                                 <div key={i} className={`flex justify-between items-center text-xs ${isCanceled ? 'text-slate-400 line-through' : 'text-slate-600 dark:text-slate-300'}`}>
                                                     <span className="truncate pr-2">
-                                                        {item.isWeight ? `${item.qty.toFixed(3)}kg` : `${item.qty}u`} {item.name}
+                                                        {formatSaleItemQuantity(item, s.granelUnitMode)} {item.name}
                                                         {(item.isWeight || item.qty !== 1) && (
                                                             <span className="text-[10px] text-slate-400 font-normal ml-1">
                                                                 ({item.isWeight ? '' : 'c/u '}{copEnabled && copPrimary && tasaCop > 0 ? `${formatCop(item.priceCop || Math.round(item.priceUsd * tasaCop))} COP` : `$${item.priceUsd.toFixed(2)}`})

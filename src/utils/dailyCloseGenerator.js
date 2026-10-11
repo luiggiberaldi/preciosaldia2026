@@ -3,6 +3,7 @@ import { formatBs, formatCop, formatUsd } from './calculatorUtils';
 import { getPaymentLabel, toTitleCase } from '../config/paymentMethods';
 import { round2, mulR, divR } from './dinero';
 import { buildCloseDaySummary } from './closeDaySummary';
+import { formatSaleItemQuantity } from './granel';
 
 /**
  * FIA-DETALLE-001: formatea un bucket del desglose respetando su moneda real.
@@ -654,7 +655,7 @@ export async function generateDailyClosePDF({
                 let itemsText = '';
                 if (s.items && s.items.length > 0) {
                     itemsText = s.items.map(item => {
-                        const qty = item.isWeight ? `${formatUsd(item.qty)}kg` : `${item.qty}u`;
+                        const qty = formatSaleItemQuantity(item, s.granelUnitMode);
                         return `${qty} ${item.name} (${fmtUsd(item.priceUsd)})`;
                     }).join(', ');
                 }
