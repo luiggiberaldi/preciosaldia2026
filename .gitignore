@@ -88,3 +88,18 @@ supabase/.temp/
 
 .vercel
 
+
+# ── Binarios e instaladores externos ──
+*.exe
+
+# ── Datos y scripts temporales de extracción/análisis de catálogos ──
+candidate_other.json
+cosmeticos_*.json
+matches_cosmeticos.json
+temp_cosmeticos_*.json
+scripts/cosmeticos_extracted.json
+scripts/analyze_*.py
+scripts/generate_cosmetics_*.py
+scripts/inspect_merge.py
+scripts/merge_inventories.py
+scripts/extract_cosmetics.cjs

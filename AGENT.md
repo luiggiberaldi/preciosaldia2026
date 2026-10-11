@@ -193,7 +193,16 @@ Estos módulos fueron creados durante la implementación de fixes y son la base 
 
 ## 6. Guardrails y calidad de código
 
+### Regla permanente del propietario: cambios atómicos y explicaciones sencillas
+
+Esta regla aplica a todo agente que trabaje en este proyecto:
+
+- **Cambios atómicos:** completar cada cambio solicitado como una unidad coherente y verificable. No dejar implementaciones a medias ni mezclar tareas que no estén relacionadas. Antes de tocar archivos, identificar el alcance; respetar y no borrar cambios previos del propietario. Si una operación no puede completarse de forma segura, detenerse y explicar qué falta en vez de dejar el proyecto en un estado engañoso.
+- **Verificación completa:** después del cambio, revisar lo realizado y ejecutar las comprobaciones relevantes que permita el proyecto. Explicar con honestidad qué se comprobó y qué no.
+- **Lenguaje sencillo:** hablarle al propietario en español claro, asumiendo que es *vibe coder* y no necesita saber programar. Evitar tecnicismos; cuando alguno sea imprescindible, explicarlo con palabras cotidianas. Contar qué se hizo, para qué sirve y si queda alguna acción pendiente, sin exigirle leer código ni ejecutar pasos técnicos por su cuenta.
+
 ### ESLint (`eslint.config.js`)
+
 
 **Reglas de error (bloquean `lint` pero NO `build`):**
 - `no-eval`, `no-new-func` — anti inyección de código.
