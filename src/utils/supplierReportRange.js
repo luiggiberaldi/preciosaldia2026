@@ -21,6 +21,43 @@ export function filterActivityByRange(items, desde = '', hasta = '') {
 }
 
 /** Texto legible del rango: 'Del 01/10/2026 al 09/10/2026', 'Todo el historial', etc. */
+export function buildSupplierPeriodSummary({ suppliers = [], invoices = [], payments = [], desde = '', hasta = '' }) {
+    const supplierById = new Map(suppliers.map((supplier) => [supplier.id, supplier]));
+    const totalsBySupplier = new Map();
+    const getRow = (record) => {
+        const supplier = supplierById.get(record.supplierId);
+        const key = record.supplierId || record.supplierName || 'sin-proveedor';
+        if (!totalsBySupplier.has(key)) {
+            totalsBySupplier.set(key, {
+                supplierId: record.supplierId || null,
+                supplierName: supplier?.name || record.supplierName || 'Proveedor desconocido',
+                invoicesUsd: 0,
+                paymentsUsd: 0,
+                currentDebtUsd: Number(supplier?.deuda) || 0,
+            });
+        }
+        return totalsBySupplier.get(key);
+    };
+
+    filterActivityByRange(invoices, desde, hasta).forEach((invoice) => {
+        getRow(invoice).invoicesUsd += Number(invoice.amountUsd) || 0;
+    });
+    filterActivityByRange(payments, desde, hasta)
+        .filter((payment) => payment.status !== 'ANULADA')
+        .forEach((payment) => {
+            getRow(payment).paymentsUsd += Math.abs(Number(payment.totalUsd) || 0);
+        });
+
+    const rows = [...totalsBySupplier.values()].sort((a, b) => a.supplierName.localeCompare(b.supplierName, 'es'));
+    return {
+        rows,
+        totalInvoicesUsd: rows.reduce((total, row) => total + row.invoicesUsd, 0),
+        totalPaymentsUsd: rows.reduce((total, row) => total + row.paymentsUsd, 0),
+        // Deuda actual no es un total del rango: puede incluir facturas anteriores.
+        currentDebtUsd: suppliers.reduce((total, supplier) => total + (Number(supplier.deuda) || 0), 0),
+    };
+}
+
 export function rangeLabel(desde = '', hasta = '') {
     const fmt = (s) => {
         const [y, m, d] = s.split('-');

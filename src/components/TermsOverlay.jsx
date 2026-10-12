@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Check, FileText, ChevronDown, Store, Phone } from 'lucide-react';
 import { normalizeVzlaPhone, isValidVzlaPhone, displayVzlaPhone } from '../utils/phoneValidation';
 
-export default function TermsOverlay({ onAccept }) {
+export default function TermsOverlay({ onAccept, isLicenseLoading = true, isPremium = false, isDemo = false }) {
     const [hasAccepted, setHasAccepted] = useState(
         () => localStorage.getItem('pda_terms_accepted') === 'true'
     );
@@ -25,6 +25,18 @@ export default function TermsOverlay({ onAccept }) {
     };
 
     const handleAcceptTerms = () => {
+        const savedBusinessName = localStorage.getItem('business_name')?.trim();
+        const savedBusinessPhone = localStorage.getItem('business_phone')?.trim();
+        if (savedBusinessName || savedBusinessPhone) {
+            setBusinessName(savedBusinessName || '');
+            setBusinessPhone(savedBusinessPhone || '');
+        }
+        if (savedBusinessName && savedBusinessPhone) {
+            localStorage.setItem('pda_terms_accepted', 'true');
+            setHasAccepted(true);
+            if (onAccept) onAccept();
+            return;
+        }
         setStep(2);
     };
 
@@ -48,7 +60,7 @@ export default function TermsOverlay({ onAccept }) {
     const phoneValid = isValidVzlaPhone(businessPhone);
     const phoneError = phoneTouched && !phoneValid;
 
-    if (hasAccepted) return null;
+    if (isLicenseLoading || (isPremium && !isDemo) || hasAccepted) return null;
 
     return (
         <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-300">

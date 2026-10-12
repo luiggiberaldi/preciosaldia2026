@@ -24,6 +24,7 @@ import {
 } from './seedBrowserState';
 
 export const REPORTES_RATE = 40; // Bs por USD, fija y determinista
+const TEST_SUPPLIER = { id: 'supplier_e2e', name: 'Proveedor E2E', deuda: 35, documentId: 'J-12345678' };
 
 const TEST_PRODUCTS = [
     { id: 'p_cafe', name: 'Cafe E2E', category: 'abastos', stock: 50, costUsd: 1, priceUsd: 2, priceUsdt: 2, isWeight: false, barcode: 'E2ECAFE1' },
@@ -89,6 +90,11 @@ export function buildReportesSeedSnippet({ customerDeudaUsd = 0 } = {}) {
     const DATA = {
         'bodega_products_v1': ${JSON.stringify(TEST_PRODUCTS)},
         'bodega_customers_v1': ${JSON.stringify(customers)},
+        'bodega_suppliers_v1': ${JSON.stringify([TEST_SUPPLIER])},
+        'bodega_supplier_invoices_v1': [{
+            id: 'invoice_e2e', supplierId: '${TEST_SUPPLIER.id}', supplierName: '${TEST_SUPPLIER.name}',
+            invoiceNumber: 'FAC-E2E', amountUsd: 80, date: iso(1),
+        }],
         'bodega_payment_methods_v1': ${JSON.stringify(TEST_PAYMENT_METHODS)},
         'bodega_customer_ledger_v1': [
             mov('led_0', 'SALDO_INICIAL_MIGRADO', 'DEBIT', 15, 0, -15, 0, 'Saldo inicial migrado'),
@@ -105,6 +111,13 @@ export function buildReportesSeedSnippet({ customerDeudaUsd = 0 } = {}) {
             abono('rep_cobro_1', 4, 3),
             abono('rep_cobro_2', 6, 4),
             abono('rep_cobro_3', 15, 5),
+            {
+                id: 'supplier_payment_e2e', tipo: 'PAGO_PROVEEDOR', status: 'COMPLETADA',
+                supplierId: '${TEST_SUPPLIER.id}', supplierName: '${TEST_SUPPLIER.name}',
+                description: 'Pago de mercancía E2E', timestamp: iso(2),
+                totalUsd: -45, totalBs: -bs(45), paymentMethod: 'efectivo_usd',
+                afectaCaja: true, payments: efectivoUsd(45),
+            },
         ],
     };
 

@@ -3,6 +3,7 @@ import {
     filterActivityByRange,
     rangeLabel,
     buildSupplierActivityLines,
+    buildSupplierPeriodSummary,
 } from '../src/utils/supplierReportRange';
 
 // Fechas con mediodía local para que el día local no dependa de la zona horaria del runner.
@@ -32,6 +33,49 @@ describe('filterActivityByRange', () => {
 
     it('no es array → lista vacía', () => {
         expect(filterActivityByRange(null, '2026-10-01', '')).toEqual([]);
+    });
+});
+
+describe('buildSupplierPeriodSummary', () => {
+    const suppliers = [
+        { id: 's1', name: 'Distribuidora A', deuda: 35 },
+        { id: 's2', name: 'Distribuidora B', deuda: 10 },
+    ];
+    const invoices = [
+        { id: 'i1', supplierId: 's1', amountUsd: 80, date: at('2026-10-02') },
+        { id: 'i2', supplierId: 's2', amountUsd: 20, date: at('2026-10-10') },
+    ];
+    const payments = [
+        { id: 'p1', supplierId: 's1', totalUsd: -45, timestamp: at('2026-10-03') },
+        { id: 'pExternal', supplierId: 's1', totalUsd: -6, timestamp: at('2026-10-04'), afectaCaja: false },
+        { id: 'p2', supplierId: 's2', totalUsd: -12, timestamp: at('2026-10-04'), status: 'ANULADA' },
+        { id: 'p3', supplierId: 's2', totalUsd: -7, timestamp: at('2026-10-10') },
+    ];
+
+    it('separa compras del período, pagos no anulados y deuda actual', () => {
+        const summary = buildSupplierPeriodSummary({
+            suppliers,
+            invoices,
+            payments,
+            desde: '2026-10-01',
+            hasta: '2026-10-05',
+        });
+        expect(summary.totalInvoicesUsd).toBe(80);
+        expect(summary.totalPaymentsUsd).toBe(51);
+        expect(summary.currentDebtUsd).toBe(45);
+        expect(summary.rows).toEqual([
+            { supplierId: 's1', supplierName: 'Distribuidora A', invoicesUsd: 80, paymentsUsd: 51, currentDebtUsd: 35 },
+        ]);
+    });
+
+    it('incluye facturas y pagos del mismo rango, agrupados por proveedor', () => {
+        const summary = buildSupplierPeriodSummary({ suppliers, invoices, payments });
+        expect(summary.totalInvoicesUsd).toBe(100);
+        expect(summary.totalPaymentsUsd).toBe(58);
+        expect(summary.currentDebtUsd).toBe(45);
+        expect(summary.rows.map(({ supplierName }) => supplierName)).toEqual(['Distribuidora A', 'Distribuidora B']);
+        expect(summary.rows[0].paymentsUsd).toBe(51);
+        expect(summary.rows[1].paymentsUsd).toBe(7);
     });
 });
 

@@ -41,6 +41,7 @@ export function useReportExport({ triggerHaptic }) {
                 todayTotalBs: totalBs,
                 todayProfit: profit,
                 todayItemsSold: totalItems,
+                action: 'download',
             });
         } catch (e) {
             console.error('Error generando PDF:', e);

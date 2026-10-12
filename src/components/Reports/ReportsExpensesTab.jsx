@@ -14,6 +14,8 @@ import {
     Filter
 } from 'lucide-react';
 import { formatBs, formatCop } from '../../utils/calculatorUtils';
+import { buildSupplierPeriodSummary, rangeLabel } from '../../utils/supplierReportRange';
+import { storageService } from '../../utils/storageService';
 import { getPaymentIcon, getPaymentLabel } from '../../config/paymentMethods';
 import EmptyState from '../EmptyState';
 
@@ -33,11 +35,40 @@ export default function ReportsExpensesTab({
     expensesBs = 0, 
     bcvRate = 0, 
     copEnabled = false, 
-    copPrimary = false, 
-    tasaCop = 0 
+    copPrimary = false,
+    tasaCop = 0,
+    suppliers = [],
+    supplierInvoices = [],
+    from = '',
+    to = '',
 }) {
     const [searchQuery, setSearchQuery] = useState('');
     const [categoryFilter, setCategoryFilter] = useState('all'); // all, insumos, servicios, etc.
+
+    const supplierPayments = useMemo(
+        () => expensesList.filter((expense) => expense.tipo === 'PAGO_PROVEEDOR'),
+        [expensesList],
+    );
+    const supplierSummary = useMemo(
+        () => buildSupplierPeriodSummary({ suppliers, invoices: supplierInvoices, payments: supplierPayments, desde: from, hasta: to }),
+        [suppliers, supplierInvoices, supplierPayments, from, to],
+    );
+    const handleSupplierPdf = async () => {
+        const [allSales, { generateGlobalSuppliersPDF }] = await Promise.all([
+            storageService.getItem('bodega_sales_v1', []),
+            import('../../utils/supplierReportGenerator'),
+        ]);
+        await generateGlobalSuppliersPDF({
+            suppliers,
+            invoices: supplierInvoices,
+            allSales,
+            desde: from,
+            hasta: to,
+            bcvRate,
+            tasaCop,
+            copEnabled,
+        });
+    };
 
     // Calculate currency sums
     const totalExpensesCop = useMemo(() => {
@@ -153,6 +184,43 @@ export default function ReportsExpensesTab({
                     <p className="text-xs font-bold text-slate-655 dark:text-slate-455 mt-0.5">Movimientos totales</p>
                 </div>
             </div>
+
+            <section data-testid="supplier-period-report" className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h3 className="text-sm font-black text-slate-800 dark:text-white">Compras y pagos a proveedores</h3>
+                        <p className="text-xs text-slate-500 mt-1">{rangeLabel(from, to)} · Las compras usan la fecha de factura; los pagos, la fecha en que se registraron.</p>
+                    </div>
+                    <button type="button" onClick={handleSupplierPdf} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold">
+                        <FileText size={14} /> PDF de compras y pagos
+                    </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="rounded-xl bg-rose-50 dark:bg-rose-900/20 p-3">
+                        <p className="text-[10px] uppercase font-bold text-rose-600 dark:text-rose-300">Compras (facturas)</p>
+                        <p className="text-lg font-black text-slate-900 dark:text-white">${supplierSummary.totalInvoicesUsd.toFixed(2)}</p>
+                    </div>
+                    <div className="rounded-xl bg-emerald-50 dark:bg-emerald-900/20 p-3">
+                        <p className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-300">Pagos hechos</p>
+                        <p className="text-lg font-black text-slate-900 dark:text-white">-${supplierSummary.totalPaymentsUsd.toFixed(2)}</p>
+                    </div>
+                    <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 p-3">
+                        <p className="text-[10px] uppercase font-bold text-amber-700 dark:text-amber-300">Saldo pendiente actual (todos los períodos)</p>
+                        <p className="text-lg font-black text-slate-900 dark:text-white">${supplierSummary.currentDebtUsd.toFixed(2)}</p>
+                    </div>
+                </div>
+                <p className="text-[11px] text-slate-500">El saldo pendiente es al día de hoy y puede incluir deudas anteriores al rango. Compras y pagos se muestran aparte porque no necesariamente corresponden a las mismas facturas.</p>
+                {supplierSummary.rows.length > 0 ? (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                            <thead><tr className="text-left text-slate-500 border-b dark:border-slate-800"><th className="py-2">Proveedor</th><th className="py-2 text-right">Compras</th><th className="py-2 text-right">Pagos</th><th className="py-2 text-right">Saldo actual</th></tr></thead>
+                            <tbody>{supplierSummary.rows.map((row) => (
+                                <tr key={row.supplierId || row.supplierName} className="border-b last:border-0 dark:border-slate-800"><td className="py-2 font-bold text-slate-700 dark:text-slate-200">{row.supplierName}</td><td className="py-2 text-right">${row.invoicesUsd.toFixed(2)}</td><td className="py-2 text-right">${row.paymentsUsd.toFixed(2)}</td><td className="py-2 text-right">${row.currentDebtUsd.toFixed(2)}</td></tr>
+                            ))}</tbody>
+                        </table>
+                    </div>
+                ) : <p className="text-xs text-slate-400">No hay compras ni pagos de proveedores en este rango.</p>}
+            </section>
 
             {/* Layout Grid: Breakdown on left, Detailed List on right */}
             <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-5 items-start">

@@ -57,7 +57,7 @@ export default function App() {
     setMountedViews(prev => ({...prev, [activeTab]: true}));
   }, [activeTab]);
 
-  const { isPremium, isDemo, demoTimeLeft, demoExpiredMsg, dismissExpiredMsg, deviceId, isMonthlyGracePeriod, monthlyGraceDaysLeft, forceHeartbeat } = useSecurity();
+  const { isPremium, isDemo, loading: isLicenseLoading, demoTimeLeft, demoExpiredMsg, dismissExpiredMsg, deviceId, isMonthlyGracePeriod, monthlyGraceDaysLeft, forceHeartbeat } = useSecurity();
   const { isOnline, cacheRates } = useOfflineQueue();
   useAutoBackup(isPremium, isDemo, deviceId);
   // El monitor no debe montar listeners de la caja. Las mutaciones remotas
@@ -314,7 +314,7 @@ export default function App() {
       <UpdateBanner />
 
       {/* Terms and Conditions Overlay (First Use) */}
-      <TermsOverlay onAccept={forceHeartbeat} />
+      <TermsOverlay onAccept={forceHeartbeat} isLicenseLoading={isLicenseLoading} isPremium={isPremium} isDemo={isDemo} />
 
 
       {/* Lock Screen — solo si login está activado y no hay sesión activa */}

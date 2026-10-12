@@ -38,6 +38,8 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
     const { products, setProducts, effectiveRate: bcvRate, copEnabled, copPrimary, tasaCop } = useProductContext();
     const { loadCart } = useCart();
     const [allSales, setAllSales] = useState([]);
+    const [supplierInvoices, setSupplierInvoices] = useState([]);
+    const [suppliers, setSuppliers] = useState([]);
     // FIA-REPORT-001: la cartera de clientes permite mostrar «Cartera al cierre»
     // (stock acumulado) sin confundirla con el flujo del período.
     const [customers, setCustomers] = useState([]);
@@ -78,15 +80,19 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
         if (isActive === false) return; // Si es explicitamente false, abortamos
         let mounted = true;
         const load = async () => {
-            const [saved, savedCustomers, savedLedger] = await Promise.all([
+            const [saved, savedCustomers, savedLedger, savedSuppliers, savedSupplierInvoices] = await Promise.all([
                 storageService.getItem(SALES_KEY, []),
                 storageService.getItem('bodega_customers_v1', []),
                 storageService.getItem(CUSTOMER_LEDGER_KEY, []),
+                storageService.getItem('bodega_suppliers_v1', []),
+                storageService.getItem('bodega_supplier_invoices_v1', []),
             ]);
             if (mounted) {
                 setAllSales(saved);
                 setCustomers(Array.isArray(savedCustomers) ? savedCustomers : []);
                 setLedger(Array.isArray(savedLedger) ? savedLedger : []);
+                setSuppliers(Array.isArray(savedSuppliers) ? savedSuppliers : []);
+                setSupplierInvoices(Array.isArray(savedSupplierInvoices) ? savedSupplierInvoices : []);
                 setIsLoading(false);
             }
         };
@@ -221,13 +227,15 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                     </div>
                     Reportes
                 </h2>
-                <button
-                    onClick={onExportPDF}
-                    disabled={salesForStats.length === 0 && salesForCashFlow.length === 0}
-                    className="flex items-center gap-2 px-4 py-2.5 min-h-[48px] bg-brand hover:bg-brand-dark disabled:bg-slate-300 dark:disabled:bg-surface-700 text-white font-bold rounded-xl text-sm shadow-primary-tone active:scale-95 transition-all"
-                >
-                    <Download size={16} aria-hidden="true" /> Descargar PDF
-                </button>
+                {activeTab !== 'expenses' && (
+                    <button
+                        onClick={onExportPDF}
+                        disabled={salesForStats.length === 0 && salesForCashFlow.length === 0}
+                        className="flex items-center gap-2 px-4 py-2.5 min-h-[48px] bg-brand hover:bg-brand-dark disabled:bg-slate-300 dark:disabled:bg-surface-700 text-white font-bold rounded-xl text-sm shadow-primary-tone active:scale-95 transition-all"
+                    >
+                        <Download size={16} aria-hidden="true" /> PDF de ventas y caja
+                    </button>
+                )}
             </div>
 
             {/* Tab Selector — 4 tabs */}
@@ -401,6 +409,10 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                     copEnabled={copEnabled}
                     copPrimary={copPrimary}
                     tasaCop={tasaCop}
+                    suppliers={suppliers}
+                    supplierInvoices={supplierInvoices}
+                    from={from}
+                    to={to}
                 />
             )}
 

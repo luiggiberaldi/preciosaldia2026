@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import { formatBs, formatCop, formatUsd } from './calculatorUtils';
 import { getPaymentLabel, toTitleCase } from '../config/paymentMethods';
-import { filterActivityByRange } from './supplierReportRange';
+import { filterActivityByRange, rangeLabel } from './supplierReportRange';
 
 export async function generateSupplierHistoryPDF({
     supplier,
@@ -246,6 +246,13 @@ export async function generateGlobalSuppliersPDF({
 }) {
     // Rango opcional: la actividad impresa se limita a [desde, hasta]. Los saldos son el estado actual.
     const invoices = filterActivityByRange(allInvoices, desde, hasta);
+    const periodInvoicesUsd = invoices.reduce((sum, invoice) => sum + (Number(invoice.amountUsd) || 0), 0);
+    const periodPayments = filterActivityByRange(
+        allSales.filter((sale) => sale.tipo === 'PAGO_PROVEEDOR' && sale.status !== 'ANULADA'),
+        desde,
+        hasta,
+    );
+    const periodPaymentsUsd = periodPayments.reduce((sum, payment) => sum + Math.abs(Number(payment.totalUsd) || 0), 0);
     const doc = new jsPDF('p', 'mm', 'letter');
     const WIDTH = 215.9;
     const HEIGHT = 279.4;
@@ -329,7 +336,7 @@ export async function generateGlobalSuppliersPDF({
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(...MUTED);
-    doc.text('DEUDA TOTAL CONSOLIDADA', RIGHT - 5, y + 6, { align: 'right' });
+    doc.text('SALDO PENDIENTE ACTUAL', RIGHT - 5, y + 6, { align: 'right' });
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(15);
     doc.setTextColor(...RED);
@@ -344,6 +351,27 @@ export async function generateGlobalSuppliersPDF({
     doc.text(totalDetails.join('  |  '), RIGHT - 5, y + 20, { align: 'right' });
 
     y += 32;
+
+    // --- Resumen del período: compras y pagos son eventos distintos ---
+    checkPageBreak(34);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(...BLUE);
+    doc.text('RESUMEN DEL PERÍODO', M, y);
+    y += 6;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(...BODY);
+    doc.text(`Rango: ${rangeLabel(desde, hasta)}`, M, y);
+    y += 6;
+    doc.text(`Compras (fecha de factura): USD ${formatUsd(periodInvoicesUsd)}`, M, y);
+    y += 5;
+    doc.text(`Pagos registrados (fecha de pago): USD ${formatUsd(periodPaymentsUsd)}`, M, y);
+    y += 5;
+    doc.setFontSize(8);
+    doc.setTextColor(...MUTED);
+    doc.text('El saldo pendiente es actual; puede incluir facturas fuera del rango. Compras y pagos no necesariamente corresponden a las mismas facturas.', M, y);
+    y += 10;
 
     // --- Listado de Proveedores ---
     doc.setFont('helvetica', 'bold');
@@ -442,7 +470,7 @@ export async function generateGlobalSuppliersPDF({
     drawActivityHeader(y);
     y += 8;
 
-    const allPayments = filterActivityByRange(allSales.filter(s => s.tipo === 'PAGO_PROVEEDOR'), desde, hasta);
+    const allPayments = periodPayments;
     const combinedActivity = [
         ...invoices.map(i => ({ ...i, type: 'INVOICE' })),
         ...allPayments.map(p => ({ ...p, type: 'PAYMENT' }))

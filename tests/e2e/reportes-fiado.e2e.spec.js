@@ -31,7 +31,21 @@ test('cobranzas mayores al fiado: la sección aparece con neto negativo y sin ov
     await goToReports(page);
 
     const reports = page.locator('[data-view="reportes"]');
+    await expect(reports.getByRole('button', { name: 'PDF de ventas y caja' })).toBeVisible();
+    await reports.getByRole('button', { name: 'Gastos', exact: true }).click();
+    await expect(reports.getByRole('button', { name: 'PDF de ventas y caja' })).toHaveCount(0);
+    const supplierReport = reports.getByTestId('supplier-period-report');
+    await expect(supplierReport.getByText('$80.00')).toBeVisible();
+    await expect(supplierReport.getByText('-$45.00')).toBeVisible();
+    await expect(supplierReport.getByText('$35.00')).toBeVisible();
+    const supplierPdfButton = supplierReport.getByRole('button', { name: 'PDF de compras y pagos' });
+    await expect(supplierPdfButton).toBeVisible();
+    const supplierDownload = page.waitForEvent('download');
+    await supplierPdfButton.click();
+    expect((await supplierDownload).suggestedFilename()).toMatch(/Reporte_Global_Proveedores_/);
+
     const section = page.getByTestId('reporte-cuentas-por-cobrar');
+    await reports.getByRole('button', { name: 'Métricas', exact: true }).click();
     await expect(section).toBeVisible();
 
     // ── Las tres filas, separadas y con la etiqueta correcta ──
