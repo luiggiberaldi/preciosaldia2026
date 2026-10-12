@@ -19,6 +19,9 @@ export default function SuppliersList({
 }) {
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState('all'); // 'all' | 'deuda'
+    // Rango para reportes (YYYY-MM-DD local). Vacío = todo el historial.
+    const [desde, setDesde] = useState('');
+    const [hasta, setHasta] = useState('');
 
     const filteredSuppliers = suppliers.filter(s => {
         const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || (s.phone && s.phone.includes(searchTerm));
@@ -96,6 +99,12 @@ export default function SuppliersList({
                     </div>
 
                     {suppliers.length > 0 && (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                            <input type="date" value={desde} onChange={e => setDesde(e.target.value)} className="form-input border rounded-lg px-2 py-1 text-xs dark:bg-slate-950" aria-label="Desde" />
+                            <input type="date" value={hasta} onChange={e => setHasta(e.target.value)} className="form-input border rounded-lg px-2 py-1 text-xs dark:bg-slate-950" aria-label="Hasta" />
+                        </div>
+                    )}
+                    {suppliers.length > 0 && (
                         <button
                             onClick={async () => {
                                 triggerHaptic && triggerHaptic();
@@ -109,7 +118,9 @@ export default function SuppliersList({
                                         allSales,
                                         bcvRate,
                                         tasaCop,
-                                        copEnabled
+                                        copEnabled,
+                                        desde,
+                                        hasta
                                     });
                                 } catch (e) {
                                     console.error('Error al generar el reporte global de proveedores:', e);

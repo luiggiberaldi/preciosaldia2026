@@ -1,7 +1,52 @@
-import React, { useState } from 'react';
-import { X, Truck, Save, Pencil, FileText, CreditCard, Clock, Phone, Trash2, ArrowUpRight, CheckCircle2, Download } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Truck, Save, Pencil, FileText, CreditCard, Clock, Phone, Trash2, ArrowUpRight, CheckCircle2, Download, Ban } from 'lucide-react';
 import { formatUsd, formatBs, formatCop } from '../../utils/calculatorUtils';
 import CustomSelect from '../CustomSelect';
+import { getLocalISODate } from '../../utils/dateHelpers';
+import { filterActivityByRange } from '../../utils/supplierReportRange';
+import { allocatePaymentsToInvoices } from '../../utils/supplierAllocation';
+import { compressImage, getInvoicePhotoUrl } from '../../utils/invoicePhotos';
+
+/** Miniatura de la foto de una factura (solo local). */
+function InvoicePhotoThumb({ invoiceId, invoiceNumber }) {
+    const [url, setUrl] = useState(null);
+    const [showFull, setShowFull] = useState(false);
+    useEffect(() => {
+        let alive = true;
+        let objectUrl = null;
+        getInvoicePhotoUrl(invoiceId).then(u => { if (alive) { objectUrl = u; setUrl(u); } }).catch(() => {});
+        return () => { alive = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+    }, [invoiceId]);
+    if (!url) return null;
+    return (
+        <>
+            <button
+                type="button"
+                onClick={() => setShowFull(true)}
+                title="Ver foto"
+                className="shrink-0 w-10 h-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 hover:ring-2 hover:ring-teal-500/50 transition-all"
+            >
+                <img src={url} alt="Factura" className="w-full h-full object-cover" />
+            </button>
+            <a
+                href={url}
+                download={`factura-${invoiceNumber || invoiceId}.jpg`}
+                title="Descargar foto"
+                className="shrink-0 p-2 rounded-lg text-brand-dark dark:text-brand bg-slate-100 dark:bg-slate-800"
+            >
+                <Download size={14} />
+            </a>
+            {showFull && (
+                <div className="fixed inset-0 z-[80] bg-black/90 flex items-center justify-center p-4" onClick={() => setShowFull(false)}>
+                    <img src={url} alt="Factura" className="max-w-full max-h-full rounded-xl" />
+                    <button className="absolute top-4 right-4 p-2 bg-white/20 text-white rounded-full" onClick={() => setShowFull(false)}>
+                        <X size={20} />
+                    </button>
+                </div>
+            )}
+        </>
+    );
+}
 
 export function AddSupplierModal({ onClose, onSave, editingSupplier = null }) {
     const [name, setName] = useState(editingSupplier?.name || '');
@@ -66,23 +111,52 @@ export function AddSupplierModal({ onClose, onSave, editingSupplier = null }) {
 export function AddInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, onClose, onSave }) {
     const [invoiceNumber, setInvoiceNumber] = useState('');
     const [amountUsd, setAmountUsd] = useState('');
+    // Fecha de la factura (YYYY-MM-DD local). Por defecto hoy; permite cargar facturas pasadas.
+    const [invoiceDate, setInvoiceDate] = useState(() => getLocalISODate());
     const [dueDate, setDueDate] = useState('');
+    const [photoBlob, setPhotoBlob] = useState(null);
+    const [photoPreview, setPhotoPreview] = useState(null);
+
+    // Plazo en días: calcula la fecha de vencimiento a partir de la fecha de la factura.
+    const setDueInDays = (days) => {
+        const base = new Date(`${invoiceDate}T12:00:00`);
+        base.setDate(base.getDate() + days);
+        setDueDate(getLocalISODate(base));
+    };
+
+    const handlePhotoSelect = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try {
+            const compressed = await compressImage(file);
+            setPhotoBlob(compressed);
+            setPhotoPreview(URL.createObjectURL(compressed));
+        } catch {
+            // Si falla la compresión, se usa el archivo original
+            setPhotoBlob(file);
+            setPhotoPreview(URL.createObjectURL(file));
+        }
+        e.target.value = '';
+    };
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        if (!invoiceNumber || !amountUsd || parseFloat(amountUsd) <= 0) return;
-        
+        if (!invoiceNumber || !amountUsd || parseFloat(amountUsd) <= 0 || !invoiceDate) return;
+
         const invoiceData = {
             id: crypto.randomUUID(),
             supplierId: supplier.id,
             invoiceNumber: invoiceNumber.trim(),
-            date: new Date().toISOString(),
+            // Mediodía local: evita que la fecha caiga en el día anterior al convertir a ISO.
+            date: new Date(`${invoiceDate}T12:00:00`).toISOString(),
             dueDate: dueDate || null,
             amountUsd: parseFloat(amountUsd),
             amountBs: parseFloat(amountUsd) * bcvRate,
             status: 'PENDIENTE',
             amountPaidUsd: 0,
-            type: 'INVOICE'
+            type: 'INVOICE',
+            hasPhoto: !!photoBlob,
+            _photoBlob: photoBlob, // temporal: el hook la guarda en IndexedDB y la quita del registro
         };
         onSave(invoiceData);
     };
@@ -106,17 +180,42 @@ export function AddInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, onClos
                     <div>
                         <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Monto Total a Pagar (USD) *</label>
                         <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 font-black text-slate-400">USD</span>
-                            <input type="number" required min="0.01" step="0.01" value={amountUsd} onChange={e => setAmountUsd(e.target.value)} className="w-full form-input border rounded-xl px-3 py-2 pl-12 text-lg font-black dark:bg-slate-950" />
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 font-black text-slate-400 pointer-events-none select-none z-10">USD</span>
+                            <input type="number" required min="0.01" step="0.01" value={amountUsd} onChange={e => setAmountUsd(e.target.value)} className="w-full form-input border rounded-xl px-3 py-2 pl-14 text-lg font-black dark:bg-slate-950" />
                         </div>
                         {amountUsd && bcvRate > 0 && <p className="text-[10px] text-slate-500 mt-1 text-right">Equivale a {formatBs(parseFloat(amountUsd) * bcvRate)} Bs</p>}
                     </div>
                     <div>
+                        <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha de la factura *</label>
+                        <input type="date" required value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} className="w-full form-input border rounded-xl px-3 py-2 text-sm font-bold dark:bg-slate-950 text-slate-700 dark:text-white" />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Plazo de pago</label>
+                        <div className="flex gap-2 mb-2">
+                            {[7, 15, 30].map((d) => (
+                                <button key={d} type="button" onClick={() => setDueInDays(d)} className="flex-1 py-2 rounded-xl border text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800">{d} días</button>
+                            ))}
+                        </div>
                         <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha Vencimiento (Opcional)</label>
                         <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="w-full form-input border rounded-xl px-3 py-2 text-sm font-bold dark:bg-slate-950 text-slate-700 dark:text-white" />
                     </div>
 
-                    <button type="submit" disabled={!invoiceNumber || !amountUsd || parseFloat(amountUsd) <= 0} className="w-full py-3 bg-red-500 hover:bg-red-600 disabled:bg-red-500/50 text-white font-bold rounded-xl active:scale-95 transition-all text-sm flex justify-center items-center gap-2 mt-4">
+                    <div>
+                        <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Foto de Factura <span className="normal-case font-medium">(opcional, solo en este equipo)</span></label>
+                        {photoPreview ? (
+                            <div className="relative">
+                                <img src={photoPreview} alt="Factura" className="w-full h-32 object-cover rounded-xl border border-slate-200 dark:border-slate-700" />
+                                <button type="button" onClick={() => { setPhotoBlob(null); setPhotoPreview(null); }} className="absolute top-2 right-2 p-1 bg-white/90 rounded-full text-slate-600"><X size={14} /></button>
+                            </div>
+                        ) : (
+                            <label className="block w-full py-3 text-center rounded-xl border border-dashed text-xs font-bold text-slate-500 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
+                                Adjuntar foto
+                                <input type="file" accept="image/*" capture="environment" onChange={handlePhotoSelect} className="hidden" />
+                            </label>
+                        )}
+                    </div>
+
+                    <button type="submit" disabled={!invoiceNumber || !amountUsd || parseFloat(amountUsd) <= 0 || !invoiceDate} className="w-full py-3 bg-red-500 hover:bg-red-600 disabled:bg-red-500/50 text-white font-bold rounded-xl active:scale-95 transition-all text-sm flex justify-center items-center gap-2 mt-4">
                         Registrar Deuda
                     </button>
                 </form>
@@ -125,11 +224,20 @@ export function AddInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, onClos
     );
 }
 
-export function PayInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, copPrimary, activePaymentMethods = [], onClose, onSave }) {
+export function PayInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, copPrimary, activePaymentMethods = [], invoices = [], payments = [], onClose, onSave }) {
     const [amount, setAmount] = useState('');
     const [currencyMode, setCurrencyMode] = useState('BS');
     const [paymentMethod, setPaymentMethod] = useState('efectivo_bs');
     const [retiraCaja, setRetiraCaja] = useState(true);
+    const [invoiceId, setInvoiceId] = useState('');
+    // Facturas con saldo pendiente, para elegir a cuál va el pago.
+    const openInvoices = (() => {
+        const { byInvoice } = allocatePaymentsToInvoices(invoices, payments);
+        return invoices
+            .filter(i => (byInvoice.get(i.id)?.remainingUsd ?? 0) > 0)
+            .map(i => ({ ...i, remaining: byInvoice.get(i.id).remainingUsd }))
+            .sort((a, b) => new Date(a.date || a.timestamp) - new Date(b.date || b.timestamp));
+    })();
 
     const handleSave = (e) => {
         e.preventDefault();
@@ -149,7 +257,8 @@ export function PayInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, copPri
             amountCop,
             paymentMethod: retiraCaja ? paymentMethod : 'pago_externo',
             currencyMode,
-            retiraCaja
+            retiraCaja,
+            invoiceId: invoiceId || null,
         });
     };
 
@@ -165,6 +274,28 @@ export function PayInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, copPri
                 <form onSubmit={handleSave} className="p-5 space-y-4">
                     <p className="text-xs text-slate-500 -mt-2 mb-2">Deuda total: <strong>{copEnabled && copPrimary && tasaCop > 0 ? `${formatCop(supplier.deuda * tasaCop)} COP · USD ${formatUsd(supplier.deuda)}` : `USD ${formatUsd(supplier.deuda)}`}{copEnabled && !copPrimary && tasaCop > 0 ? ` · ${formatCop(supplier.deuda * tasaCop)} COP` : ''}</strong></p>
                     
+                    {/* Factura a la que va el pago */}
+                    {openInvoices.length > 0 && (
+                        <div>
+                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Aplicar a</label>
+                            <CustomSelect
+                                value={invoiceId}
+                                onChange={setInvoiceId}
+                                buttonClassName="!py-2.5 !px-3 !text-xs !bg-white dark:!bg-slate-950 !border-slate-200 dark:!border-slate-800"
+                                options={[
+                                    {
+                                        value: '',
+                                        label: 'Repartir automáticamente (más antigua primero)'
+                                    },
+                                    ...openInvoices.map(i => ({
+                                        value: i.id,
+                                        label: `Factura #${i.invoiceNumber} · saldo USD ${formatUsd(i.remaining)}`
+                                    }))
+                                ]}
+                            />
+                        </div>
+                    )}
+
                     {/* Moneda */}
                     <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
                         <button type="button" onClick={() => { setCurrencyMode('BS'); setAmount(''); setPaymentMethod('efectivo_bs'); }} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${currencyMode === 'BS' ? 'bg-white shadow text-brand' : 'text-slate-500'}`}>Bs</button>
@@ -176,17 +307,20 @@ export function PayInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, copPri
 
                     {/* Input */}
                     <div>
-                        <div className="flex items-center w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-brand/50">
-                            <span className={`pl-4 text-lg font-black shrink-0 select-none ${currencyMode === 'BS' ? 'text-brand' : currencyMode === 'COP' ? 'text-amber-500' : 'text-emerald-500'}`}>
+                        <div className="relative">
+                            <span className={`absolute left-4 top-1/2 -translate-y-1/2 font-black text-lg pointer-events-none select-none z-10 ${currencyMode === 'BS' ? 'text-brand' : currencyMode === 'COP' ? 'text-amber-500' : 'text-emerald-500'}`}>
                                 {currencyMode === 'BS' ? 'Bs' : currencyMode === 'COP' ? 'COP' : 'USD'}
                             </span>
                             <input 
                                 type="number" 
                                 step="0.01" 
                                 required 
+                                placeholder="0.00"
                                 value={amount} 
                                 onChange={e => setAmount(e.target.value)} 
-                                className="flex-1 bg-transparent border-none outline-none focus:ring-0 px-3 py-3 text-2xl font-black dark:text-white" 
+                                className={`w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-3 pr-4 text-2xl font-black text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand/50 transition-all ${
+                                    currencyMode === 'BS' ? 'pl-12' : 'pl-16'
+                                }`} 
                                 autoFocus 
                             />
                         </div>
@@ -265,12 +399,121 @@ export function PayInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, copPri
     );
 }
 
-export function SupplierDetailsSheet({ supplier, isOpen, isAdmin, onClose, onAddInvoice, onPayInvoice, onEdit, onDelete, bcvRate, tasaCop, copEnabled, copPrimary, historyData, triggerHaptic }) {
+/** Edita una factura: número, monto, fechas y foto. El monto ajusta la deuda en el hook. */
+export function EditInvoiceModal({ invoice, onClose, onSave }) {
+    const [invoiceNumber, setInvoiceNumber] = useState(invoice.invoiceNumber || '');
+    const [amountUsd, setAmountUsd] = useState(String(invoice.amountUsd ?? ''));
+    const [invoiceDate, setInvoiceDate] = useState(() => getLocalISODate(new Date(invoice.date)));
+    const [dueDate, setDueDate] = useState(invoice.dueDate || '');
+    const [photoBlob, setPhotoBlob] = useState(undefined); // undefined = sin cambio
+    const [photoPreview, setPhotoPreview] = useState(null);
+    const [photoRemoved, setPhotoRemoved] = useState(false);
+
+    const amount = parseFloat(amountUsd) || 0;
+    const valid = invoiceNumber.trim() && amount > 0 && invoiceDate;
+
+    const handlePhotoSelect = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try {
+            const compressed = await compressImage(file);
+            setPhotoBlob(compressed);
+            setPhotoPreview(URL.createObjectURL(compressed));
+        } catch {
+            setPhotoBlob(file);
+            setPhotoPreview(URL.createObjectURL(file));
+        }
+        setPhotoRemoved(false);
+        e.target.value = '';
+    };
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        if (!valid) return;
+        const patch = {
+            invoiceNumber: invoiceNumber.trim(),
+            amountUsd: amount,
+            date: new Date(`${invoiceDate}T12:00:00`).toISOString(),
+            dueDate: dueDate || null,
+        };
+        if (photoBlob !== undefined) patch.newPhotoBlob = photoBlob;
+        else if (photoRemoved) patch.newPhotoBlob = null;
+        onSave(patch);
+    };
+
+    return (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+            <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-3xl shadow-xl overflow-hidden">
+                <div className="p-5 border-b border-slate-100 flex justify-between items-center">
+                    <h3 className="text-lg font-black text-slate-800 dark:text-white">Editar Factura</h3>
+                    <button onClick={onClose} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-full"><X size={18} /></button>
+                </div>
+                <form onSubmit={handleSubmit} className="p-5 space-y-4">
+                    <div>
+                        <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Nro Control / Factura *</label>
+                        <input type="text" required value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} className="w-full form-input border rounded-xl px-3 py-2 text-sm font-bold dark:bg-slate-950" />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Monto (USD) *</label>
+                        <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 font-black text-slate-400 pointer-events-none select-none z-10">USD</span>
+                            <input type="number" required min="0.01" step="0.01" value={amountUsd} onChange={e => setAmountUsd(e.target.value)} className="w-full form-input border rounded-xl px-3 py-2 pl-14 text-lg font-black dark:bg-slate-950" />
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-1">Al cambiar el monto, la deuda del proveedor se ajusta por la diferencia.</p>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha de la factura *</label>
+                        <input type="date" required value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} className="w-full form-input border rounded-xl px-3 py-2 text-sm font-bold dark:bg-slate-950" />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha Vencimiento (Opcional)</label>
+                        <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="w-full form-input border rounded-xl px-3 py-2 text-sm font-bold dark:bg-slate-950" />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Foto de Factura</label>
+                        {photoPreview ? (
+                            <img src={photoPreview} alt="Nueva foto" className="w-full h-28 object-cover rounded-xl border" />
+                        ) : invoice.hasPhoto && !photoRemoved ? (
+                            <div className="flex items-center justify-between text-xs text-slate-500">
+                                <span>Tiene foto</span>
+                                <button type="button" onClick={() => setPhotoRemoved(true)} className="font-bold text-red-500">Quitar foto</button>
+                            </div>
+                        ) : null}
+                        <label className="block w-full mt-2 py-2 text-center rounded-xl border border-dashed text-xs font-bold text-slate-500 cursor-pointer">
+                            {photoRemoved ? 'Foto se quitará al guardar' : 'Cambiar / adjuntar foto'}
+                            <input type="file" accept="image/*" capture="environment" onChange={handlePhotoSelect} className="hidden" />
+                        </label>
+                    </div>
+                    <button type="submit" disabled={!valid} className="w-full py-3 bg-brand-dark disabled:opacity-50 text-white font-bold rounded-xl text-sm">
+                        Guardar cambios
+                    </button>
+                </form>
+            </div>
+        </div>
+    );
+}
+
+export function SupplierDetailsSheet({ supplier, isOpen, isAdmin, onClose, onAddInvoice, onPayInvoice, onEdit, onDelete, bcvRate, tasaCop, copEnabled, copPrimary, historyData, triggerHaptic, onEditInvoice, onDeleteInvoice, onVoidPayment }) {
+    // Rango para estado de cuenta (YYYY-MM-DD local). Vacío = todo el historial.
+    const [desde, setDesde] = useState('');
+    const [hasta, setHasta] = useState('');
     if (!isOpen || !supplier) return null;
+    const visibleHistory = filterActivityByRange(historyData, desde, hasta);
+    // Estado por factura: los pagos se reparten FIFO sobre TODO el historial, no solo el rango visible.
+    const allocation = allocatePaymentsToInvoices(
+        historyData.filter(r => r.type === 'INVOICE'),
+        historyData.filter(r => r.type !== 'INVOICE'),
+    );
+    const STATUS_LABEL = { PAGADA: 'Pagada', PARCIAL: 'Parcial', PENDIENTE: 'Pendiente' };
+    const STATUS_CLASS = {
+        PAGADA: 'bg-emerald-100 text-emerald-700',
+        PARCIAL: 'bg-amber-100 text-amber-700',
+        PENDIENTE: 'bg-red-100 text-red-600',
+    };
 
     return (
         <div className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
-            <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white dark:bg-slate-900 rounded-t-3xl max-h-[85vh] overflow-y-auto shadow-2xl animate-in slide-in-from-bottom" onClick={e => e.stopPropagation()}>
+            <div className="fixed bottom-0 left-0 right-0 max-w-lg mx-auto bg-white dark:bg-slate-900 rounded-t-3xl max-h-[90vh] overflow-y-auto shadow-2xl animate-in slide-in-from-bottom" onClick={e => e.stopPropagation()}>
                 {/* Close + Drag Handle */}
                 <div className="flex items-center justify-between px-4 pt-3 pb-2">
                     <div className="w-8" />
@@ -326,7 +569,7 @@ export function SupplierDetailsSheet({ supplier, isOpen, isAdmin, onClose, onAdd
                             <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                                 <Clock size={12} /> Estado de Cuenta
                             </h4>
-                            {historyData.length > 0 && (
+                            {visibleHistory.length > 0 && (
                                 <button
                                     onClick={async () => {
                                         triggerHaptic && triggerHaptic();
@@ -336,7 +579,9 @@ export function SupplierDetailsSheet({ supplier, isOpen, isAdmin, onClose, onAdd
                                             historyData,
                                             bcvRate,
                                             tasaCop,
-                                            copEnabled
+                                            copEnabled,
+                                            desde,
+                                            hasta
                                         });
                                     }}
                                     className="text-[10px] font-bold text-brand-dark dark:text-brand bg-slate-100 dark:bg-slate-800/40 px-2.5 py-1 rounded-lg flex items-center gap-1 active:scale-95 transition-all animate-in fade-in duration-200"
@@ -345,26 +590,64 @@ export function SupplierDetailsSheet({ supplier, isOpen, isAdmin, onClose, onAdd
                                 </button>
                             )}
                         </div>
-                        {historyData.length === 0 ? (
-                            <p className="text-xs text-slate-400 text-center py-4">Sin facturas registradas</p>
+                        <div className="flex items-center gap-2 mb-3">
+                            <input type="date" value={desde} onChange={e => setDesde(e.target.value)} className="form-input border rounded-lg px-2 py-1 text-xs dark:bg-slate-950" />
+                            <span className="text-[10px] text-slate-400">a</span>
+                            <input type="date" value={hasta} onChange={e => setHasta(e.target.value)} className="form-input border rounded-lg px-2 py-1 text-xs dark:bg-slate-950" />
+                            {(desde || hasta) && (
+                                <button type="button" onClick={() => { setDesde(''); setHasta(''); }} className="text-[10px] font-bold text-slate-500 px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800">Limpiar</button>
+                            )}
+                        </div>
+                        {visibleHistory.length === 0 ? (
+                            <p className="text-xs text-slate-400 text-center py-4">Sin movimientos en este rango</p>
                         ) : (
-                            <div className="space-y-2">
-                                {historyData.map(record => {
+                            <div className="space-y-4">
+                                {[
+                                    { key: 'INVOICE', title: 'Facturas', items: visibleHistory.filter(r => r.type === 'INVOICE') },
+                                    { key: 'PAYMENT', title: 'Pagos', items: visibleHistory.filter(r => r.type !== 'INVOICE') },
+                                ].filter(section => section.items.length > 0).map(section => (
+                                <div key={section.key}>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2">{section.title} ({section.items.length})</p>
+                                <div className="space-y-2">
+                                {section.items.map(record => {
                                     const isInvoice = record.type === 'INVOICE';
                                     const dateStr = new Date(record.date || record.timestamp).toLocaleDateString('es-VE');
+                                    // Estado de vencimiento (solo facturas no pagadas con fecha de vencimiento).
+                                    const due = isInvoice && record.dueDate && record.status !== 'PAGADA' ? new Date(record.dueDate + 'T12:00:00') : null;
+                                    const vencida = due && due < new Date();
+                                    const voided = !isInvoice && record.status === 'ANULADA';
                                     return (
-                                        <div key={record.id} className="flex items-center gap-3 p-2 bg-slate-50 dark:bg-slate-950 rounded-xl">
+                                        <div key={record.id} className={`flex items-center gap-3 p-2 bg-slate-50 dark:bg-slate-950 rounded-xl ${voided ? 'opacity-50' : ''}`}>
                                             <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isInvoice ? 'bg-red-100/50 text-red-500' : 'bg-emerald-100/50 text-emerald-500'}`}>
                                                 {isInvoice ? <FileText size={14} /> : <ArrowUpRight size={14} />}
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                                                <p className={`text-xs font-bold text-slate-700 dark:text-slate-200 ${voided ? 'line-through' : ''}`}>
                                                     {isInvoice ? `Factura #${record.invoiceNumber}` : `Abono/Pago`}
-                                                </p>
-                                                <p className="text-[10px] text-slate-400">{dateStr} {isInvoice && record.dueDate && `• Venc: ${new Date(record.dueDate).toLocaleDateString('es-VE')}`}</p>
+                                                    {voided && <span className="ml-1.5 no-underline text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-rose-100 text-rose-600">Anulado</span>}
+                                                </p>                                                    <p className="text-[10px] text-slate-400">{dateStr} {isInvoice && record.dueDate && `• Venc: ${new Date(record.dueDate + 'T12:00:00').toLocaleDateString('es-VE')}`} {vencida && <span className="font-bold text-red-500">• VENCIDA</span>}</p>
+                                                    {isInvoice && allocation.byInvoice.get(record.id) && (() => {
+                                                        const a = allocation.byInvoice.get(record.id);
+                                                        return (
+                                                            <p className="mt-0.5">
+                                                                <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${STATUS_CLASS[a.status]}`}>{STATUS_LABEL[a.status]}</span>
+                                                                {a.paidUsd > 0 && <span className="text-[10px] text-slate-500 ml-1">Pagado USD {formatUsd(a.paidUsd)} · Saldo USD {formatUsd(a.remainingUsd)}</span>}
+                                                            </p>
+                                                        );
+                                                    })()}
                                             </div>
+                                            {isInvoice && record.hasPhoto && <InvoicePhotoThumb invoiceId={record.id} invoiceNumber={record.invoiceNumber} />}
+                                            {isInvoice && (
+                                                <div className="shrink-0 flex flex-col gap-1">
+                                                    <button type="button" title="Editar factura" onClick={() => onEditInvoice && onEditInvoice(record)} className="p-1.5 rounded-lg text-slate-500 bg-white dark:bg-slate-900 border"><Pencil size={12} /></button>
+                                                    <button type="button" title="Eliminar factura" onClick={() => onDeleteInvoice && onDeleteInvoice(record)} className="p-1.5 rounded-lg text-red-500 bg-white dark:bg-slate-900 border"><Trash2 size={12} /></button>
+                                                </div>
+                                            )}
+                                            {!isInvoice && !voided && onVoidPayment && (
+                                                <button type="button" title="Anular pago" onClick={() => onVoidPayment(record)} className="shrink-0 p-1.5 rounded-lg text-rose-500 bg-white dark:bg-slate-900 border"><Ban size={12} /></button>
+                                            )}
                                             <div className="text-right">
-                                                <p className={`text-sm font-black ${isInvoice ? 'text-red-500' : 'text-emerald-500'}`}>
+                                                <p className={`text-sm font-black ${isInvoice ? 'text-red-500' : 'text-emerald-500'} ${voided ? 'line-through' : ''}`}>
                                                     {copEnabled && copPrimary && tasaCop > 0
                                                         ? <>{isInvoice ? '+' : '-'}{formatCop((isInvoice ? record.amountUsd : Math.abs(record.totalUsd || 0)) * tasaCop)} COP</>
                                                         : <>{isInvoice ? '+' : '-'}USD {formatUsd(isInvoice ? record.amountUsd : Math.abs(record.totalUsd || 0))}</>}
@@ -383,6 +666,9 @@ export function SupplierDetailsSheet({ supplier, isOpen, isAdmin, onClose, onAdd
                                         </div>
                                     )
                                 })}
+                                </div>
+                                </div>
+                                ))}
                             </div>
                         )}
                     </div>

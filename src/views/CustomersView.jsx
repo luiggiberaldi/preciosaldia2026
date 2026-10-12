@@ -27,7 +27,7 @@ import { formatSaleItemQuantity } from '../utils/granel';
 
 // Importaciones de Proveedores
 import SuppliersList from '../components/Suppliers/SuppliersList';
-import { AddSupplierModal, AddInvoiceModal, PayInvoiceModal, SupplierDetailsSheet } from '../components/Suppliers/SupplierModals';
+import { AddSupplierModal, AddInvoiceModal, PayInvoiceModal, SupplierDetailsSheet, EditInvoiceModal } from '../components/Suppliers/SupplierModals';
 import { getActivePaymentMethods } from '../config/paymentMethods';
 
 export default function CustomersView({ triggerHaptic, rates, isActive }) {
@@ -93,6 +93,8 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
         setIsAddInvoiceModalOpen, setIsPayInvoiceModalOpen, setDeleteSupplierTarget,
         handleSaveSupplier, refreshSupplierHistory, handleSelectSupplier,
         handleAddInvoice, handlePayInvoice, handleDeleteSupplier, hydrateSuppliers,
+        handleEditInvoice, handleDeleteInvoice, handleVoidSupplierPayment, editingInvoice, setEditingInvoice,
+        deleteInvoiceTarget, setDeleteInvoiceTarget,
     } = useSupplierManagement({ bcvRate, tasaCop, copEnabled, triggerHaptic, auditLog });
 
     const loadData = async () => {
@@ -324,6 +326,8 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                         copEnabled={copEnabled}
                         copPrimary={copPrimary}
                         activePaymentMethods={activePaymentMethods}
+                        invoices={invoices.filter(i => i.supplierId === selectedSupplier.id)}
+                        payments={supplierHistoryData.filter(r => r.tipo === 'PAGO_PROVEEDOR')}
                         onClose={() => setIsPayInvoiceModalOpen(false)}
                         onSave={handlePayInvoice}
                     />
@@ -343,6 +347,25 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                     onPayInvoice={() => setIsPayInvoiceModalOpen(true)}
                     onEdit={() => { setEditingSupplier(selectedSupplier); setIsAddSupplierModalOpen(true); }}
                     onDelete={() => setDeleteSupplierTarget(selectedSupplier)}
+                    onEditInvoice={(inv) => setEditingInvoice(inv)}
+                    onDeleteInvoice={(inv) => setDeleteInvoiceTarget(inv)}
+                    onVoidPayment={(pay) => handleVoidSupplierPayment(pay.id)}
+                />
+                {editingInvoice && selectedSupplier && (
+                    <EditInvoiceModal
+                        invoice={editingInvoice}
+                        onClose={() => setEditingInvoice(null)}
+                        onSave={(patch) => handleEditInvoice(editingInvoice.id, patch)}
+                    />
+                )}
+                <ConfirmModal
+                    isOpen={!!deleteInvoiceTarget}
+                    onClose={() => setDeleteInvoiceTarget(null)}
+                    onConfirm={() => handleDeleteInvoice(deleteInvoiceTarget)}
+                    title="Eliminar Factura"
+                    message={deleteInvoiceTarget ? `¿Eliminar la factura #${deleteInvoiceTarget.invoiceNumber} por USD ${deleteInvoiceTarget.amountUsd?.toFixed(2)}? La deuda del proveedor se reducirá y la foto se borrará.` : ''}
+                    confirmText="Eliminar"
+                    variant="danger"
                 />
                 <ConfirmModal
                     isOpen={!!deleteSupplierTarget}

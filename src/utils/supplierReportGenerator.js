@@ -1,14 +1,19 @@
 import { jsPDF } from 'jspdf';
 import { formatBs, formatCop, formatUsd } from './calculatorUtils';
 import { getPaymentLabel, toTitleCase } from '../config/paymentMethods';
+import { filterActivityByRange } from './supplierReportRange';
 
 export async function generateSupplierHistoryPDF({
     supplier,
-    historyData = [],
+    historyData: allHistoryData = [],
     bcvRate = 0,
     tasaCop = 0,
     copEnabled = false,
+    desde = '',
+    hasta = '',
 }) {
+    // Rango opcional: solo se imprimen los registros dentro de [desde, hasta].
+    const historyData = filterActivityByRange(allHistoryData, desde, hasta);
     const doc = new jsPDF('p', 'mm', 'letter');
     const WIDTH = 215.9;
     const HEIGHT = 279.4;
@@ -231,12 +236,16 @@ export async function generateSupplierHistoryPDF({
 
 export async function generateGlobalSuppliersPDF({
     suppliers = [],
-    invoices = [],
+    invoices: allInvoices = [],
     allSales = [],
     bcvRate = 0,
     tasaCop = 0,
     copEnabled = false,
+    desde = '',
+    hasta = '',
 }) {
+    // Rango opcional: la actividad impresa se limita a [desde, hasta]. Los saldos son el estado actual.
+    const invoices = filterActivityByRange(allInvoices, desde, hasta);
     const doc = new jsPDF('p', 'mm', 'letter');
     const WIDTH = 215.9;
     const HEIGHT = 279.4;
@@ -433,7 +442,7 @@ export async function generateGlobalSuppliersPDF({
     drawActivityHeader(y);
     y += 8;
 
-    const allPayments = allSales.filter(s => s.tipo === 'PAGO_PROVEEDOR');
+    const allPayments = filterActivityByRange(allSales.filter(s => s.tipo === 'PAGO_PROVEEDOR'), desde, hasta);
     const combinedActivity = [
         ...invoices.map(i => ({ ...i, type: 'INVOICE' })),
         ...allPayments.map(p => ({ ...p, type: 'PAYMENT' }))
