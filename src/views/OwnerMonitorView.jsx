@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useProductContext } from '../context/ProductContext';
 import { useMonitorSync } from '../hooks/useMonitorSync';
 import { storageService } from '../utils/storageService';
@@ -26,6 +26,7 @@ import {
 import { calculateInventoryMetrics, calculateSalesProfit } from '../services/supervisorMetrics';
 import { buildSupervisorRegisterCloses, calculateSupervisorPaymentBreakdown } from '../services/supervisorFinancials';
 import { ensureSupervisorSession } from '../services/supervisorAuth';
+import { MONITOR_CLEANUP_PENDING_KEY, isPairingRevocationConfirmed, revokeAndClearMonitor } from '../services/monitorUnpair';
 import { SUPERVISOR_SYNC_STATES } from '../services/supervisorSyncService';
 import { sendSupervisorCommand } from '../services/supervisorCommandService';
 import {
@@ -63,6 +64,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
         lastSync,
         loading: syncLoading,
         syncState,
+        stopMonitorSync,
         syncError,
         triggerRefresh,
     } = useMonitorSync(pairedDeviceId);
@@ -72,6 +74,10 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
     const [activeCashier, setActiveCashier] = useState({ nombre: 'Ninguno', rol: '' });
     const [loadingData, setLoadingData] = useState(true);
     const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
+    const [disconnecting, setDisconnecting] = useState(false);
+    const [disconnectError, setDisconnectError] = useState('');
+    const [disconnectServerRevoked, setDisconnectServerRevoked] = useState(false);
+    const disconnectingRef = useRef(false);
     const [viewTab, setViewTab] = useState('activo'); // 'activo' o 'cierres'
     const [selectedCierreId, setSelectedCierreId] = useState(null);
     const [searchTermInventario, setSearchTermInventario] = useState('');
@@ -400,37 +406,62 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
             .slice(0, 10);
     }, [products]);
 
-    // Desvincular Monitor
+    // Desvincular Monitor: mantener esta sesión abierta hasta confirmar servidor y limpieza local.
     const handleDisconnect = async () => {
+        if (disconnectingRef.current) return;
+        disconnectingRef.current = true;
+        setDisconnecting(true);
+        setDisconnectError('');
+        const resumeCleanup = localStorage.getItem(MONITOR_CLEANUP_PENDING_KEY) === 'true';
+        setDisconnectServerRevoked(resumeCleanup);
         triggerHaptic?.();
-        
-        try {
-            if (supabaseCloud && pairedDeviceId) {
-                const { session, error: sessionError } = await ensureSupervisorSession();
-                if (sessionError || !session) throw sessionError || new Error('No hay sesión segura del monitor');
-                const { error } = await supabaseCloud.rpc('unpair_monitor', { p_device_id: pairedDeviceId });
-                if (error) throw error;
-            }
-        } catch (err) {
-            console.warn('[OwnerMonitorView] Error al llamar unpair RPC:', err);
-        }
 
-        localStorage.removeItem('pda_paired_device_id');
-        localStorage.removeItem('pda_pairing_mode');
-        localStorage.removeItem('monitor_last_sync');
-        localStorage.removeItem('business_name');
-        localStorage.removeItem('business_rif');
-        
         try {
             const { default: localforage } = await import('localforage');
-            localforage.config({ name: 'BodegaApp', storeName: 'bodega_app_data' });
-            await localforage.clear();
-        } catch (e) {
-            console.warn(e);
-        }
+            const monitorStore = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
+            await revokeAndClearMonitor({
+                deviceId: pairedDeviceId || localStorage.getItem('pda_paired_device_id'),
+                ensureSession: ensureSupervisorSession,
+                revokePairing: (deviceId) => {
+                    if (!supabaseCloud) return Promise.resolve({ error: new Error('Sin conexión a la nube') });
+                    return supabaseCloud.rpc('unpair_monitor', { p_device_id: deviceId });
+                },
+                serverAlreadyRevoked: resumeCleanup,
+                onServerRevoked: () => setDisconnectServerRevoked(true),
+                verifyPairingRevoked: async (deviceId) => {
+                    if (!supabaseCloud) return false;
+                    const { session, error: sessionError } = await ensureSupervisorSession();
+                    if (sessionError || !session?.user?.id) return false;
 
-        showToast('Dispositivo desvinculado con éxito', 'success');
-        setTimeout(() => window.location.reload(), 1000);
+                    const { data, error } = await supabaseCloud
+                        .from('device_pairings')
+                        .select('monitor_auth_id, revoked_at')
+                        .eq('primary_device_id', deviceId)
+                        .maybeSingle();
+                    if (error) return false;
+
+                    // La ausencia por RLS no basta: podría ocultar un error de permisos.
+                    return isPairingRevocationConfirmed(data, session.user.id);
+                },
+                idbStore: monitorStore,
+                localStorage,
+                onRemoteRevoked: stopMonitorSync,
+            });
+
+            setShowDisconnectConfirm(false);
+            showToast('Dispositivo desvinculado en el servidor; los datos locales se limpiaron', 'success');
+            setTimeout(() => window.location.reload(), 1000);
+        } catch (error) {
+            console.warn('[OwnerMonitorView] No se pudo completar la desvinculación:', error);
+            const serverWasRevoked = localStorage.getItem(MONITOR_CLEANUP_PENDING_KEY) === 'true'
+                || error?.phase === 'cleanup';
+            setDisconnectServerRevoked(serverWasRevoked);
+            if (serverWasRevoked) await stopMonitorSync().catch(() => {});
+            setDisconnectError(error?.message || 'No se pudo confirmar la desvinculación. Puedes reintentar.');
+        } finally {
+            disconnectingRef.current = false;
+            setDisconnecting(false);
+        }
     };
 
     // Formateadores
@@ -516,10 +547,16 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                         <TrendingUp size={14} />
                         <span className="hidden sm:inline">Ajustar Tasa</span><span className="sm:hidden">Tasa</span>
                     </button>
-
                     <button 
-                        onClick={() => { triggerHaptic?.(); setShowDisconnectConfirm(true); }}
-                        className="min-h-11 min-w-11 p-2.5 rounded-2xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 dark:hover:text-rose-400 transition-colors"
+                        onClick={() => {
+                            triggerHaptic?.();
+                            const cleanupPending = localStorage.getItem(MONITOR_CLEANUP_PENDING_KEY) === 'true';
+                            setDisconnectServerRevoked(cleanupPending);
+                            setDisconnectError(cleanupPending ? 'El vínculo ya fue revocado; falta limpiar la copia local.' : '');
+                            setShowDisconnectConfirm(true);
+                        }}
+                        disabled={disconnecting}
+                        className="min-h-11 min-w-11 p-2.5 rounded-2xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 dark:hover:text-rose-400 transition-colors disabled:opacity-50"
                         title="Desvincular Dispositivo"
                     >
                         <LogOut size={16} />
@@ -1836,24 +1873,31 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                         <div className="space-y-1.5 text-center">
                             <h4 className="text-base font-black text-slate-800 dark:text-white">Desvincular Supervisor</h4>
                             <p className="text-xs font-semibold text-slate-500 leading-relaxed">
-                                ¿Estás seguro de que deseas desvincular este dispositivo? Se perderá el acceso en tiempo real a las transacciones de esta caja.
+                                {disconnectServerRevoked
+                                    ? 'El servidor ya confirmó la revocación. Reintentaremos borrar solamente la copia local del monitor.'
+                                    : '¿Estás seguro de que deseas desvincular este dispositivo? Se quitará el acceso a esta caja y se borrará la copia local del monitor.'}
                             </p>
                         </div>
+                        {disconnectError && (
+                            <div role="alert" className={`rounded-2xl border p-3 text-xs font-bold ${disconnectServerRevoked ? 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300' : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/20 dark:text-rose-300'}`}>
+                                <p>{disconnectServerRevoked ? 'El servidor ya quitó el vínculo, pero falta limpiar algunos datos de este dispositivo.' : disconnectError}</p>
+                                {disconnectServerRevoked && <p className="mt-1">La próxima acción solo reintentará la limpieza; no volverá a enviar la revocación.</p>}
+                            </div>
+                        )}
                         <div className="flex gap-3">
                             <button
-                                onClick={() => { triggerHaptic?.(); setShowDisconnectConfirm(false); }}
-                                className="flex-1 py-3 px-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-350 font-black text-xs rounded-2xl border border-slate-200 dark:border-slate-700 transition-colors"
+                                onClick={() => { triggerHaptic?.(); setShowDisconnectConfirm(false); setDisconnectError(''); }}
+                                disabled={disconnecting || disconnectServerRevoked}
+                                className="flex-1 py-3 px-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-350 font-black text-xs rounded-2xl border border-slate-200 dark:border-slate-700 transition-colors disabled:opacity-50"
                             >
                                 Cancelar
                             </button>
                             <button
-                                onClick={() => { 
-                                    setShowDisconnectConfirm(false);
-                                    handleDisconnect();
-                                }}
-                                className="flex-1 py-3 px-4 bg-rose-500 hover:bg-rose-600 text-white font-black text-xs rounded-2xl shadow-lg shadow-rose-500/20 transition-colors"
+                                onClick={handleDisconnect}
+                                disabled={disconnecting}
+                                className="flex-1 py-3 px-4 bg-rose-500 hover:bg-rose-600 text-white font-black text-xs rounded-2xl shadow-lg shadow-rose-500/20 transition-colors disabled:opacity-50"
                             >
-                                Desvincular
+                                {disconnecting ? 'Procesando…' : disconnectError ? 'Reintentar' : 'Desvincular'}
                             </button>
                         </div>
                     </div>

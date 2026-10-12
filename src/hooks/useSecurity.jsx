@@ -324,36 +324,49 @@ function useSecurityState() {
 
     useEffect(() => {
         const initDeviceId = async () => {
-            // SEC-008: Re-verificar fingerprint. Si el dispositivo cambió (o si alguien
-            // inyectó un pda_device_id arbitrario), invalidamos la sesión premium.
-            let storedId = localStorage.getItem('pda_device_id');
-            const currentFp = await generateFingerprint();
-            if (storedId) {
-                const matches = await verifyStoredFingerprint(storedId, currentFp);
-                if (!matches) {
-                    // Fingerprint manipulado o cambiado → revocar premium y re-fijar deviceId.
-                    if (import.meta.env?.DEV) {
-                        console.warn('[Security] Fingerprint mismatch detectado (SEC-008). Revocando sesión.');
+            // Local-only staging harness. This path is impossible in production
+            // builds and uses only the database's synthetic e2e-* identifiers.
+            const supervisorStagingE2E = import.meta.env?.DEV
+                && import.meta.env.VITE_SUPERVISOR_E2E_STAGING === 'true';
+            let storedId;
+
+            if (supervisorStagingE2E) {
+                const seededId = localStorage.getItem('pda_device_id');
+                storedId = ['e2e-primary-device', 'e2e-monitor-device'].includes(seededId)
+                    ? seededId
+                    : (localStorage.getItem('pda_pairing_mode') === 'monitor'
+                        ? 'e2e-monitor-device'
+                        : 'e2e-primary-device');
+                localStorage.setItem('pda_device_id', storedId);
+            } else {
+                // SEC-008: Re-verificar fingerprint. Si el dispositivo cambió (o si alguien
+                // inyectó un pda_device_id arbitrario), invalidamos la sesión premium.
+                storedId = localStorage.getItem('pda_device_id');
+                const currentFp = await generateFingerprint();
+                if (storedId) {
+                    const matches = await verifyStoredFingerprint(storedId, currentFp);
+                    if (!matches) {
+                        // Fingerprint manipulado o cambiado → revocar premium y re-fijar deviceId.
+                        if (import.meta.env?.DEV) {
+                            console.warn('[Security] Fingerprint mismatch detectado (SEC-008). Revocando sesión.');
+                        }
+                        localStorage.removeItem('pda_premium_token');
+                        setIntegrityWarning(true);
+                        storedId = currentFp;
+                        localStorage.setItem('pda_device_id', storedId);
                     }
-                    localStorage.removeItem('pda_premium_token');
-                    setIntegrityWarning(true);
+                } else {
                     storedId = currentFp;
                     localStorage.setItem('pda_device_id', storedId);
                 }
-            } else {
-                storedId = currentFp;
-                localStorage.setItem('pda_device_id', storedId);
+                // SEC-008-r2: mantener el ancla de identidad fresca en instalaciones reales.
+                seedFingerprintAnchor(storedId, currentFp);
             }
-            // SEC-008-r2: mantener la ancla de identidad fresca. Tras un match exacto
-            // lo es/actualiza verifyStoredFingerprint; aquí cubre el registro fresco y la
-            // rotación post-manipulación, de modo que el ID activo quede protegido
-            // contra drift futuro desde su primer día.
-            seedFingerprintAnchor(storedId, currentFp);
 
             // Auto-registro idempotente de filas al iniciar; los heartbeats posteriores
             // actualizan last_seen sin repetir comprobaciones/inserciones de registro.
             try {
-                if (import.meta.env.VITE_SUPABASE_URL) {
+                if (!supervisorStagingE2E && import.meta.env.VITE_SUPABASE_URL) {
                     const bName = localStorage.getItem('business_name') || localStorage.getItem('restaurant_name') || '';
                     const mEmail = localStorage.getItem('marketing_email') || '';
                     const clientName = mEmail ? `${bName} | ${mEmail}` : bName;

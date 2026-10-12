@@ -239,7 +239,9 @@ BEGIN
 END;
 $$;
 
--- 6) Desvincular: solo el dueño o el monitor de ese vínculo.
+-- 6) Desvincular: solo el monitor autenticado del vínculo activo.
+-- Conserva monitor_auth_id en la fila revocada para que solo esa sesión pueda
+-- verificar revoked_at tras una respuesta perdida. RLS sigue bloqueando sync_documents.
 CREATE OR REPLACE FUNCTION public.unpair_monitor(p_device_id text)
 RETURNS void
 LANGUAGE plpgsql
@@ -255,16 +257,15 @@ BEGIN
 
     UPDATE public.device_pairings
     SET monitor_device_id = NULL,
-        monitor_auth_id = NULL,
         pairing_token = NULL,
         token_hash = NULL,
         token_expires_at = NULL,
         token_used_at = NULL,
         paired_at = NULL,
         revoked_at = now()
-    WHERE (primary_device_id = trim(p_device_id)
-           OR monitor_device_id = trim(p_device_id))
-      AND (owner_auth_id = v_actor OR monitor_auth_id = v_actor);
+    WHERE primary_device_id = trim(p_device_id)
+      AND monitor_auth_id = v_actor
+      AND revoked_at IS NULL;
 
     IF NOT FOUND THEN
         RAISE EXCEPTION 'No autorizado o vínculo inexistente';
