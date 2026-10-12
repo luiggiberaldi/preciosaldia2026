@@ -108,9 +108,30 @@ export function AddSupplierModal({ onClose, onSave, editingSupplier = null }) {
     );
 }
 
-export function AddInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, onClose, onSave }) {
+function SupplierRateToggle({ useBcvRate, onChange, bcvRate, systemRate }) {
+    const activeRate = useBcvRate ? bcvRate : systemRate;
+    const sourceLabel = useBcvRate ? 'BCV real' : 'tasa del sistema';
+
+    return (
+        <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 px-3 py-2">
+            <div className="min-w-0">
+                <span className="block text-xs font-bold text-slate-700 dark:text-slate-200">Usar tasa BCV real</span>
+                <span className="block text-[10px] text-slate-500">Tasa aplicada: {sourceLabel} · {formatBs(activeRate)} Bs/USD</span>
+            </div>
+            <label className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center cursor-pointer select-none shrink-0">
+                <input type="checkbox" checked={useBcvRate} onChange={e => onChange(e.target.checked)} aria-label="Usar tasa BCV real" disabled={!(bcvRate > 0)} className="sr-only peer" />
+                <span className="relative w-11 h-6 rounded-full bg-slate-300 dark:bg-slate-700 transition-colors peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-brand peer-checked:bg-brand after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:border-slate-300 after:rounded-full after:h-5 after:w-5 after:transition-transform peer-checked:after:translate-x-full peer-disabled:opacity-50" />
+            </label>
+        </div>
+    );
+}
+
+export function AddInvoiceModal({ supplier, bcvRate, systemRate = bcvRate, onClose, onSave }) {
     const [invoiceNumber, setInvoiceNumber] = useState('');
     const [amountUsd, setAmountUsd] = useState('');
+    const [useBcvRate, setUseBcvRate] = useState(true);
+    const rateType = useBcvRate ? 'bcv' : 'system';
+    const activeRate = useBcvRate ? bcvRate : systemRate;
     // Fecha de la factura (YYYY-MM-DD local). Por defecto hoy; permite cargar facturas pasadas.
     const [invoiceDate, setInvoiceDate] = useState(() => getLocalISODate());
     const [dueDate, setDueDate] = useState('');
@@ -151,7 +172,9 @@ export function AddInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, onClos
             date: new Date(`${invoiceDate}T12:00:00`).toISOString(),
             dueDate: dueDate || null,
             amountUsd: parseFloat(amountUsd),
-            amountBs: parseFloat(amountUsd) * bcvRate,
+            amountBs: parseFloat(amountUsd) * activeRate,
+            rateType,
+            exchangeRate: activeRate,
             status: 'PENDIENTE',
             amountPaidUsd: 0,
             type: 'INVOICE',
@@ -178,12 +201,15 @@ export function AddInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, onClos
                         <input type="text" required value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} className="w-full form-input border rounded-xl px-3 py-2 text-sm font-bold dark:bg-slate-950" autoFocus />
                     </div>
                     <div>
-                        <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Monto Total a Pagar (USD) *</label>
-                        <div className="relative">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                            <label className="block text-xs font-bold text-slate-400 uppercase">Monto Total a Pagar (USD) *</label>
+                        </div>
+                        <SupplierRateToggle useBcvRate={useBcvRate} onChange={setUseBcvRate} bcvRate={bcvRate} systemRate={systemRate} />
+                        <div className="relative mt-2">
                             <span className="absolute left-3 top-1/2 -translate-y-1/2 font-black text-slate-400 pointer-events-none select-none z-10">USD</span>
                             <input type="number" required min="0.01" step="0.01" value={amountUsd} onChange={e => setAmountUsd(e.target.value)} className="w-full form-input border rounded-xl px-3 py-2 pl-14 text-lg font-black dark:bg-slate-950" />
                         </div>
-                        {amountUsd && bcvRate > 0 && <p className="text-[10px] text-slate-500 mt-1 text-right">Equivale a {formatBs(parseFloat(amountUsd) * bcvRate)} Bs</p>}
+                        {amountUsd && activeRate > 0 && <p className="text-[10px] text-slate-500 mt-1 text-right">Equivale a {formatBs(parseFloat(amountUsd) * activeRate)} Bs</p>}
                     </div>
                     <div>
                         <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha de la factura *</label>
@@ -224,9 +250,12 @@ export function AddInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, onClos
     );
 }
 
-export function PayInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, copPrimary, activePaymentMethods = [], invoices = [], payments = [], onClose, onSave }) {
+export function PayInvoiceModal({ supplier, bcvRate, systemRate = bcvRate, tasaCop, copEnabled, copPrimary, activePaymentMethods = [], invoices = [], payments = [], onClose, onSave }) {
     const [amount, setAmount] = useState('');
+    const [useBcvRate, setUseBcvRate] = useState(true);
     const [currencyMode, setCurrencyMode] = useState('BS');
+    const rateType = useBcvRate ? 'bcv' : 'system';
+    const activeRate = useBcvRate ? bcvRate : systemRate;
     const [paymentMethod, setPaymentMethod] = useState('efectivo_bs');
     const [retiraCaja, setRetiraCaja] = useState(true);
     const [invoiceId, setInvoiceId] = useState('');
@@ -245,16 +274,18 @@ export function PayInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, copPri
         if (!rawAmt || rawAmt <= 0) return;
 
         let amountUsd = rawAmt;
-        if (currencyMode === 'BS' && bcvRate > 0) amountUsd = rawAmt / bcvRate;
+        if (currencyMode === 'BS' && activeRate > 0) amountUsd = rawAmt / activeRate;
         if (currencyMode === 'COP' && tasaCop > 0) amountUsd = rawAmt / tasaCop;
         
-        const amountBs = currencyMode === 'BS' ? rawAmt : (amountUsd * bcvRate);
+        const amountBs = currencyMode === 'BS' ? rawAmt : (amountUsd * activeRate);
         const amountCop = currencyMode === 'COP' ? rawAmt : (amountUsd * tasaCop);
 
         onSave({
             amountUsd,
             amountBs,
             amountCop,
+            exchangeRate: activeRate,
+            rateType,
             paymentMethod: retiraCaja ? paymentMethod : 'pago_externo',
             currencyMode,
             retiraCaja,
@@ -296,6 +327,8 @@ export function PayInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, copPri
                         </div>
                     )}
 
+                    <SupplierRateToggle useBcvRate={useBcvRate} onChange={setUseBcvRate} bcvRate={bcvRate} systemRate={systemRate} />
+
                     {/* Moneda */}
                     <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
                         <button type="button" onClick={() => { setCurrencyMode('BS'); setAmount(''); setPaymentMethod('efectivo_bs'); }} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${currencyMode === 'BS' ? 'bg-white shadow text-brand' : 'text-slate-500'}`}>Bs</button>
@@ -324,20 +357,20 @@ export function PayInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, copPri
                                 autoFocus 
                             />
                         </div>
-                        {amount && bcvRate > 0 && (
+                        {amount && activeRate > 0 && (
                             <div className="mt-2 text-right">
                                 <p className="text-[10px] text-slate-500">
-                                    Equivale a {currencyMode === 'BS' ? `USD ${formatUsd(parseFloat(amount)/bcvRate)}` : currencyMode === 'COP' ? `USD ${formatUsd(parseFloat(amount)/tasaCop)}` : `${formatBs(parseFloat(amount)*bcvRate)} Bs`}
+                                    Equivale a {currencyMode === 'BS' ? `USD ${formatUsd(parseFloat(amount)/activeRate)}` : currencyMode === 'COP' ? `USD ${formatUsd(parseFloat(amount)/tasaCop)}` : `${formatBs(parseFloat(amount)*activeRate)} Bs`}
                                 </p>
                                 {currencyMode !== 'COP' && copEnabled && tasaCop > 0 && (
                                      <p className="text-[10px] text-slate-500">
-                                         • {currencyMode === 'BS' ? ((parseFloat(amount)/bcvRate) * tasaCop).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : (parseFloat(amount)*tasaCop).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COP
+                                         • {currencyMode === 'BS' ? ((parseFloat(amount)/activeRate) * tasaCop).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : (parseFloat(amount)*tasaCop).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COP
                                      </p>
                                 )}
                             </div>
                         )}
                         {supplier.deuda > 0 && (
-                            <button type="button" onClick={() => setAmount(currencyMode === 'BS' ? (supplier.deuda * bcvRate).toFixed(2) : currencyMode === 'COP' ? (supplier.deuda * tasaCop).toFixed(2) : supplier.deuda.toFixed(2))} className="mt-2 w-full text-xs font-bold text-emerald-600 bg-emerald-50 py-1.5 rounded border border-emerald-200">
+                            <button type="button" onClick={() => setAmount(currencyMode === 'BS' ? (supplier.deuda * activeRate).toFixed(2) : currencyMode === 'COP' ? (supplier.deuda * tasaCop).toFixed(2) : supplier.deuda.toFixed(2))} className="mt-2 w-full text-xs font-bold text-emerald-600 bg-emerald-50 py-1.5 rounded border border-emerald-200">
                                 Pagar Deuda Completa
                             </button>
                         )}

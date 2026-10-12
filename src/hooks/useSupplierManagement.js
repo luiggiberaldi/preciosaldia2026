@@ -96,7 +96,7 @@ export function useSupplierManagement({ bcvRate, tasaCop, copEnabled, triggerHap
         refreshSupplierHistory(invoiceData.supplierId, updatedInvoices);
     };
 
-    const handlePayInvoice = async ({ amountUsd, amountBs, amountCop, paymentMethod, currencyMode, retiraCaja, invoiceId = null }) => {
+    const handlePayInvoice = async ({ amountUsd, amountBs, amountCop, exchangeRate, rateType, paymentMethod, currencyMode, retiraCaja, invoiceId = null }) => {
         triggerHaptic && triggerHaptic();
         const supplier = selectedSupplier;
         if (!supplier) return;
@@ -109,9 +109,9 @@ export function useSupplierManagement({ bcvRate, tasaCop, copEnabled, triggerHap
 
         // 2. Registrar en Caja/Sistema
         const sales = await storageService.getItem('bodega_sales_v1', []);
-        const totalEnBs = currencyMode === 'BS' ? amountBs : (amountUsd * bcvRate);
-        const totalEnUsd = currencyMode === 'USD' ? amountUsd : (bcvRate > 0 ? amountBs / bcvRate : 0);
-        const totalEnCop = currencyMode === 'COP' ? amountBs : (amountUsd * tasaCop);
+        const totalEnBs = amountBs;
+        const totalEnUsd = amountUsd;
+        const totalEnCop = currencyMode === 'COP' ? amountCop : (amountUsd * tasaCop);
 
         const pagoRecord = {
             id: crypto.randomUUID(),
@@ -119,6 +119,8 @@ export function useSupplierManagement({ bcvRate, tasaCop, copEnabled, triggerHap
             tipo: 'PAGO_PROVEEDOR',
             supplierId: supplier.id,
             supplierName: supplier.name,
+            exchangeRate: exchangeRate || bcvRate,
+            rateType: rateType || 'bcv',
             totalBs: -totalEnBs,
             totalUsd: -totalEnUsd,
             ...(copEnabled && { totalCop: -totalEnCop }),

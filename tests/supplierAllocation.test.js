@@ -1,8 +1,110 @@
-import { describe, expect, it } from 'vitest';
+import { act, createElement } from 'react';
+import { createRoot } from 'react-dom/client';
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { AddInvoiceModal, PayInvoiceModal } from '../src/components/Suppliers/SupplierModals.jsx';
 import { allocatePaymentsToInvoices, paidAmountForInvoice } from '../src/utils/supplierAllocation.js';
 
 const inv = (id, amountUsd, date) => ({ id, amountUsd, date });
 const pay = (id, totalUsd, date) => ({ id, totalUsd: -totalUsd, date });
+
+describe('tasas BCV real y tasa activa en movimientos de proveedor', () => {
+    let container;
+    let root;
+
+    beforeEach(() => {
+        globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+        container = document.createElement('div');
+        document.body.appendChild(container);
+        root = createRoot(container);
+    });
+
+    afterEach(async () => {
+        if (root) await act(async () => root.unmount());
+        container?.remove();
+    });
+
+    it('la factura usa BCV real por defecto y el toggle permite usar la tasa activa del sistema', async () => {
+        let savedInvoice;
+        await act(async () => root.render(createElement(AddInvoiceModal, {
+            supplier: { id: 'supplier-1', name: 'Proveedor de prueba' },
+            bcvRate: 87.68,
+            systemRate: 36.35,
+            onClose: () => {},
+            onSave: invoice => { savedInvoice = invoice; },
+        })));
+
+        const invoiceNumber = container.querySelector('input[type="text"]');
+        const amount = container.querySelector('input[type="number"]');
+        const setInputValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+        await act(async () => {
+            setInputValue.call(invoiceNumber, 'F-1313');
+            invoiceNumber.dispatchEvent(new Event('input', { bubbles: true }));
+            setInputValue.call(amount, '100');
+            amount.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        expect(container.textContent).toContain('Tasa aplicada: BCV real · 87,68 Bs/USD');
+        expect(container.textContent).toContain('Equivale a 8.768,00 Bs');
+
+        const toggle = container.querySelector('input[aria-label="Usar tasa BCV real"]');
+        const setChecked = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked').set;
+        await act(async () => {
+            setChecked.call(toggle, false);
+            toggle.dispatchEvent(new Event('click', { bubbles: true }));
+        });
+        expect(container.textContent).toContain('Tasa aplicada: tasa del sistema · 36,35 Bs/USD');
+        expect(container.textContent).toContain('Equivale a 3.635,00 Bs');
+
+        await act(async () => {
+            setChecked.call(toggle, true);
+            toggle.dispatchEvent(new Event('click', { bubbles: true }));
+        });
+
+        const submitButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent.trim() === 'Registrar Deuda');
+        await act(async () => submitButton.click());
+        expect(savedInvoice.amountBs).toBe(8_768);
+        expect(savedInvoice.rateType).toBe('bcv');
+        expect(savedInvoice.exchangeRate).toBe(87.68);
+    });
+
+    it('el pago usa BCV real por defecto y convierte con la tasa activa al apagar el toggle', async () => {
+        let savedPayment;
+        await act(async () => root.render(createElement(PayInvoiceModal, {
+            supplier: { id: 'supplier-1', name: 'Proveedor de prueba', deuda: 10 },
+            bcvRate: 87.68,
+            systemRate: 36.35,
+            onClose: () => {},
+            onSave: payment => { savedPayment = payment; },
+        })));
+
+        const amount = container.querySelector('input[type="number"]');
+        const setInputValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+        await act(async () => {
+            setInputValue.call(amount, '363.50');
+            amount.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        expect(container.textContent).toContain('USD 4.15');
+        const toggle = container.querySelector('input[aria-label="Usar tasa BCV real"]');
+        const setChecked = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked').set;
+        await act(async () => {
+            setChecked.call(toggle, false);
+            toggle.dispatchEvent(new Event('click', { bubbles: true }));
+        });
+        expect(container.textContent).toContain('USD 10.00');
+        await act(async () => {
+            setChecked.call(toggle, true);
+            toggle.dispatchEvent(new Event('click', { bubbles: true }));
+        });
+        expect(container.textContent).toContain('USD 4.15');
+        await act(async () => {
+            const form = container.querySelector('form');
+            form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        });
+        expect(savedPayment.amountUsd).toBeCloseTo(363.5 / 87.68, 10);
+        expect(savedPayment.amountBs).toBe(363.5);
+        expect(savedPayment.exchangeRate).toBe(87.68);
+        expect(savedPayment.rateType).toBe('bcv');
+    });
+});
 
 describe('allocatePaymentsToInvoices', () => {
     it('marca una factura sin pagos como PENDIENTE', () => {

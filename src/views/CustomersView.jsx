@@ -30,7 +30,7 @@ import SuppliersList from '../components/Suppliers/SuppliersList';
 import { AddSupplierModal, AddInvoiceModal, PayInvoiceModal, SupplierDetailsSheet, EditInvoiceModal } from '../components/Suppliers/SupplierModals';
 import { getActivePaymentMethods } from '../config/paymentMethods';
 
-export default function CustomersView({ triggerHaptic, rates, isActive }) {
+export default function CustomersView({ triggerHaptic, isActive }) {
     // v1.2.0: reveal-on-scroll para header, filtros y lista de tarjetas.
     const revealRef = useReveal();
     const [customers, setCustomers] = useState([]);
@@ -51,7 +51,8 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
     const [paymentMethod, setPaymentMethod] = useState('efectivo_bs');
     const [activePaymentMethods, setActivePaymentMethods] = useState([]);
     const [resetBalanceCustomer, setResetBalanceCustomer] = useState(null);
-    const { effectiveRate: bcvRate, tasaCop, copEnabled, copPrimary } = useProductContext();
+    const { effectiveRate, rates, tasaCop, copEnabled, copPrimary } = useProductContext();
+    const bcvRate = rates?.bcv?.price || 0;
     const { log: auditLog } = useAudit();
     const [expandedHistory, setExpandedHistory] = useState(null);
     const [historyData, setHistoryData] = useState([]);
@@ -314,6 +315,7 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                     <AddInvoiceModal 
                         supplier={selectedSupplier}
                         bcvRate={bcvRate}
+                        systemRate={effectiveRate}
                         onClose={() => setIsAddInvoiceModalOpen(false)}
                         onSave={handleAddInvoice}
                     />
@@ -322,6 +324,7 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                     <PayInvoiceModal
                         supplier={selectedSupplier}
                         bcvRate={bcvRate}
+                        systemRate={effectiveRate}
                         tasaCop={tasaCop}
                         copEnabled={copEnabled}
                         copPrimary={copPrimary}
