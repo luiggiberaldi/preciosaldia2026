@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
+import CustomSelect from '../CustomSelect';
 
 /**
  * Registro de la REMESA que Cashea envía a la bodega.
@@ -77,13 +78,16 @@ export default function CasheaRemittanceModal({
                     Remesa completa (${pendiente.toFixed(2)})
                 </button>
 
-                <select value={metodoEfectivo} onChange={(e) => setPaymentMethod(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-bold mb-4 outline-none">
-                    {(metodosDisponibles.length
-                        ? metodosDisponibles
-                        : [{ id: metodoEfectivo, label: currencyMode === 'USD' ? 'Efectivo $' : 'Efectivo Bs' }]
-                    ).map(m => <option key={m.id} value={m.id}>{m.label || m.id}</option>)}
-                </select>
+                <div className="mb-4">
+                    <CustomSelect
+                        value={metodoEfectivo}
+                        onChange={setPaymentMethod}
+                        options={(metodosDisponibles.length
+                            ? metodosDisponibles
+                            : [{ id: metodoEfectivo, label: currencyMode === 'USD' ? 'Efectivo $' : 'Efectivo Bs' }]
+                        ).map(m => ({ value: m.id, label: m.label || m.id }))}
+                    />
+                </div>
 
                 <button type="button" onClick={handleConfirm}
                     disabled={busy || !amount || parseFloat(amount) <= 0}
