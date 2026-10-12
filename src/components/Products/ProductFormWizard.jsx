@@ -87,7 +87,7 @@ export default function ProductFormWizard({
     const parsedCost = parseFloat(costUsd) || 0;
 
     // Margin calculations
-    const mainMarginPct = parsedCost > 0 ? ((parsedPrice - parsedCost) / parsedCost * 100) : null;
+    const mainMarginPct = parsedPrice > 0 && parsedCost > 0 ? ((parsedPrice - parsedCost) / parsedPrice * 100) : null;
     const mainMarginUsd = parsedPrice - parsedCost;
 
     const effectiveUnitPrice = copEnabled && tasaCop > 0 && unitPriceCop
@@ -96,7 +96,7 @@ export default function ProductFormWizard({
             ? parseFloat(unitPriceUsd)
             : (parsedUnits > 0 ? parsedPrice / parsedUnits : 0);
     const unitCost = parsedUnits > 0 && parsedCost > 0 ? parsedCost / parsedUnits : 0;
-    const unitMarginPct = unitCost > 0 ? ((effectiveUnitPrice - unitCost) / unitCost * 100) : null;
+    const unitMarginPct = unitCost > 0 && effectiveUnitPrice > 0 ? ((effectiveUnitPrice - unitCost) / effectiveUnitPrice * 100) : null;
     const unitMarginUsd = effectiveUnitPrice - unitCost;
 
     const parsedStockLotes = parseInt(stockInLotes) || 0;

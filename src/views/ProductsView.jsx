@@ -29,7 +29,7 @@ import { useInventoryVelocity } from '../hooks/useInventoryVelocity';
 import { useProductFiltering } from '../hooks/useProductFiltering';
 import { useProductForm } from '../hooks/useProductForm';
 import { useProductSorting } from '../hooks/useProductSorting';
-import { buildProductPayload } from '../utils/productProcessor';
+import { buildProductPayload, deriveCostFactorUpdate } from '../utils/productProcessor';
 import { isGranelProduct, isLowStockProduct, formatStockDisplay, getGranelUnitMode } from '../utils/granel'; // GRANEL-001 / GRANEL-DUAL
 import { uploadProductImage, migrateProductImagesToStorage } from '../utils/imageUpload';
 // useAuthStore removed - single-user app
@@ -240,6 +240,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         priceBsUsdRef, setPriceBsUsdRef,
         costUsd, setCostUsd,
         costBs, setCostBs,
+        costFactor, setCostFactor,
         stock, setStock,
         unit, setUnit,
         unitsPerPackage, setUnitsPerPackage,
@@ -324,54 +325,99 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
     const [priceCop, setPriceCop] = useState('');
     const [unitPriceCop, setUnitPriceCop] = useState('');
     const [costCop, setCostCop] = useState('');
+    const editOrderRef = useRef([]);
+
+    const deriveFromLastTwoEdits = (editedField, cost, price, factor) => {
+        const result = deriveCostFactorUpdate(editOrderRef.current, editedField, { cost, price, factor });
+        editOrderRef.current = result.editOrder;
+        if (!result.field) return;
+
+        if (result.field === 'factor') {
+            setCostFactor(result.value.toFixed(3));
+        } else if (result.field === 'price') {
+            setPriceUsd(result.value.toFixed(2));
+            setPriceBs((result.value * effectiveRate).toFixed(2));
+            if (copEnabled && tasaCop > 0) setPriceCop(Math.round(result.value * tasaCop).toString());
+        } else {
+            setCostUsd(result.value.toFixed(2));
+            setCostBs((result.value * effectiveRate).toFixed(2));
+            if (copEnabled && tasaCop > 0) setCostCop(Math.round(result.value * tasaCop).toString());
+        }
+    };
+
+    const removeFromEditOrder = (field) => {
+        editOrderRef.current = editOrderRef.current.filter(item => item !== field);
+    };
 
     const handlePriceUsdChange = (val) => {
         setPriceUsd(val);
-        if (!val || parseFloat(val) <= 0) { setPriceBs(''); setPriceCop(''); return; }
-        setPriceBs((parseFloat(val) * effectiveRate).toFixed(2));
-        if (copEnabled && tasaCop > 0) setPriceCop(Math.round(parseFloat(val) * tasaCop).toString());
+        const usd = parseFloat(val) || 0;
+        if (!val || usd <= 0) { setPriceBs(''); setPriceCop(''); removeFromEditOrder('price'); return; }
+        setPriceBs((usd * effectiveRate).toFixed(2));
+        if (copEnabled && tasaCop > 0) setPriceCop(Math.round(usd * tasaCop).toString());
+        deriveFromLastTwoEdits('price', parseFloat(costUsd) || 0, usd, parseFloat(costFactor) || 0);
     };
 
     const handlePriceBsChange = (val) => {
         setPriceBs(val);
-        if (!val || parseFloat(val) <= 0) { setPriceUsd(''); setPriceCop(''); return; }
-        const usd = parseFloat(val) / effectiveRate;
+        const amountBs = parseFloat(val) || 0;
+        if (!val || amountBs <= 0) { setPriceUsd(''); setPriceCop(''); removeFromEditOrder('price'); return; }
+        const usd = amountBs / effectiveRate;
         setPriceUsd(usd.toFixed(2));
         if (copEnabled && tasaCop > 0) setPriceCop(Math.round(usd * tasaCop).toString());
+        deriveFromLastTwoEdits('price', parseFloat(costUsd) || 0, usd, parseFloat(costFactor) || 0);
     };
 
     const handlePriceCopChange = (val) => {
         setPriceCop(val);
-        if (!val || parseFloat(val) <= 0) { setPriceUsd(''); setPriceBs(''); return; }
+        const amountCop = parseFloat(val) || 0;
+        if (!val || amountCop <= 0) { setPriceUsd(''); setPriceBs(''); removeFromEditOrder('price'); return; }
         if (tasaCop <= 0) return;
-        const usd = parseFloat(val) / tasaCop;
+        const usd = amountCop / tasaCop;
         // Usar 4 decimales para que al reconvertir a COP dé el valor original
         setPriceUsd(usd.toFixed(4));
         setPriceBs((usd * effectiveRate).toFixed(2));
+        deriveFromLastTwoEdits('price', parseFloat(costUsd) || 0, usd, parseFloat(costFactor) || 0);
     };
 
     const handleCostUsdChange = (val) => {
         setCostUsd(val);
-        if (!val || parseFloat(val) <= 0) { setCostBs(''); setCostCop(''); return; }
-        setCostBs((parseFloat(val) * effectiveRate).toFixed(2));
-        if (copEnabled && tasaCop > 0) setCostCop(Math.round(parseFloat(val) * tasaCop).toString());
+        const usd = parseFloat(val) || 0;
+        if (!val || usd <= 0) { setCostBs(''); setCostCop(''); removeFromEditOrder('cost'); return; }
+        setCostBs((usd * effectiveRate).toFixed(2));
+        if (copEnabled && tasaCop > 0) setCostCop(Math.round(usd * tasaCop).toString());
+        deriveFromLastTwoEdits('cost', usd, parseFloat(priceUsd) || 0, parseFloat(costFactor) || 0);
     };
 
     const handleCostBsChange = (val) => {
         setCostBs(val);
-        if (!val || parseFloat(val) <= 0) { setCostUsd(''); setCostCop(''); return; }
-        const usd = parseFloat(val) / effectiveRate;
+        const amountBs = parseFloat(val) || 0;
+        if (!val || amountBs <= 0) { setCostUsd(''); setCostCop(''); removeFromEditOrder('cost'); return; }
+        const usd = amountBs / effectiveRate;
         setCostUsd(usd.toFixed(2));
         if (copEnabled && tasaCop > 0) setCostCop(Math.round(usd * tasaCop).toString());
+        deriveFromLastTwoEdits('cost', usd, parseFloat(priceUsd) || 0, parseFloat(costFactor) || 0);
     };
 
     const handleCostCopChange = (val) => {
         setCostCop(val);
-        if (!val || parseFloat(val) <= 0) { setCostUsd(''); setCostBs(''); return; }
+        const amountCop = parseFloat(val) || 0;
+        if (!val || amountCop <= 0) { setCostUsd(''); setCostBs(''); removeFromEditOrder('cost'); return; }
         if (tasaCop <= 0) return;
-        const usd = parseFloat(val) / tasaCop;
+        const usd = amountCop / tasaCop;
         setCostUsd(usd.toFixed(2));
         setCostBs((usd * effectiveRate).toFixed(2));
+        deriveFromLastTwoEdits('cost', usd, parseFloat(priceUsd) || 0, parseFloat(costFactor) || 0);
+    };
+
+    const handleCostFactorChange = (val) => {
+        setCostFactor(val);
+        const factor = parseFloat(val) || 0;
+        if (factor > 0) {
+            deriveFromLastTwoEdits('factor', parseFloat(costUsd) || 0, parseFloat(priceUsd) || 0, factor);
+        } else {
+            removeFromEditOrder('factor');
+        }
     };
 
     // ─── CRUD ───────────────────────────────────────────────
@@ -385,7 +431,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         }
 
         const productData = buildProductPayload({
-            name, barcode, priceUsd, priceBs, pricingMode, priceBsUsdRef, priceCop, costUsd, costBs, stock, stockInLotes,
+            name, barcode, priceUsd, priceBs, pricingMode, priceBsUsdRef, priceCop, costUsd, costBs, costFactor, stock, stockInLotes,
             packagingType, unitsPerPackage, granelUnit, sellByUnit, unitPriceUsd, unitPriceCop,
             category, lowStockAlert,
             granelUnitMode: getGranelUnitMode(),
@@ -487,6 +533,12 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
             setCostCop('');
         }
 
+        const initialOrder = [];
+        if (product.costUsd > 0) initialOrder.push('cost');
+        if ((product.priceUsdt || product.priceUsd) > 0) initialOrder.push('price');
+        if (parseFloat(product.costFactor) > 0) initialOrder.push('factor');
+        editOrderRef.current = initialOrder.slice(-2);
+
         setIsModalOpen(true);
 
         // Load product movements (Kardex Lite)
@@ -526,6 +578,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
     };
 
     const handleClose = () => {
+        editOrderRef.current = [];
         resetForm();
         setPriceCop('');
         setUnitPriceCop('');
@@ -916,6 +969,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 costUsd={costUsd} handleCostUsdChange={handleCostUsdChange}
                 costBs={costBs} handleCostBsChange={handleCostBsChange}
                 costCop={costCop} handleCostCopChange={handleCostCopChange}
+                costFactor={costFactor} handleCostFactorChange={handleCostFactorChange}
                 stock={stock} setStock={setStock}
                 lowStockAlert={lowStockAlert} setLowStockAlert={setLowStockAlert}
                 unitsPerPackage={unitsPerPackage} setUnitsPerPackage={setUnitsPerPackage}

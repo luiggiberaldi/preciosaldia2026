@@ -13,6 +13,24 @@ import {
     parseGranelThreshold,
 } from './granel.js'; // GRANEL-001 / GRANEL-DUAL: decimales SOLO para productos a granel y conversión dual.
 
+export function deriveCostFactorUpdate(editOrder, editedField, { cost, price, factor }) {
+    const nextOrder = [...(editOrder || []).filter(field => field !== editedField), editedField].slice(-2);
+    const [first, second] = nextOrder;
+    if (!first || !second) return { editOrder: nextOrder, field: null, value: null };
+
+    const derivedField = ['cost', 'price', 'factor'].find(field => field !== first && field !== second);
+    if (derivedField === 'factor' && price > 0 && cost > 0) {
+        return { editOrder: nextOrder, field: 'factor', value: cost / price };
+    }
+    if (derivedField === 'price' && factor > 0 && cost > 0) {
+        return { editOrder: nextOrder, field: 'price', value: cost / factor };
+    }
+    if (derivedField === 'cost' && price > 0 && factor > 0) {
+        return { editOrder: nextOrder, field: 'cost', value: price * factor };
+    }
+    return { editOrder: nextOrder, field: null, value: null };
+}
+
 export function buildProductPayload(formData, effectiveRate) {
     const {
         name,
@@ -137,6 +155,11 @@ export function buildProductPayload(formData, effectiveRate) {
         priceCop: finalPriceCop,
         costUsd: finalCostUsd,
         costBs: finalCostBs,
+        ...(formData.costFactor !== undefined ? {
+            costFactor: formData.costFactor !== null && formData.costFactor !== '' && Number.isFinite(Number(formData.costFactor))
+                ? Number(formData.costFactor)
+                : null,
+        } : {}),
         stock: finalStock,
         unit: legacyUnit,
         packagingType: packagingType,
