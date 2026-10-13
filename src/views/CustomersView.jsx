@@ -97,6 +97,7 @@ export default function CustomersView({ triggerHaptic, isActive }) {
         handleEditInvoice, handleDeleteInvoice, handleVoidSupplierPayment, editingInvoice, setEditingInvoice,
         deleteInvoiceTarget, setDeleteInvoiceTarget,
     } = useSupplierManagement({ bcvRate, tasaCop, copEnabled, triggerHaptic, auditLog });
+    const [voidPaymentTarget, setVoidPaymentTarget] = useState(null);
 
     const loadData = async () => {
         const [savedCustomers, savedSuppliers, savedInvoices, savedMethods, savedLedger] = await Promise.all([
@@ -352,7 +353,7 @@ export default function CustomersView({ triggerHaptic, isActive }) {
                     onDelete={() => setDeleteSupplierTarget(selectedSupplier)}
                     onEditInvoice={(inv) => setEditingInvoice(inv)}
                     onDeleteInvoice={(inv) => setDeleteInvoiceTarget(inv)}
-                    onVoidPayment={(pay) => handleVoidSupplierPayment(pay.id)}
+                    onVoidPayment={(pay) => setVoidPaymentTarget(pay)}
                 />
                 {editingInvoice && selectedSupplier && (
                     <EditInvoiceModal
@@ -361,6 +362,15 @@ export default function CustomersView({ triggerHaptic, isActive }) {
                         onSave={(patch) => handleEditInvoice(editingInvoice.id, patch)}
                     />
                 )}
+                <ConfirmModal
+                    isOpen={!!voidPaymentTarget}
+                    onClose={() => setVoidPaymentTarget(null)}
+                    onConfirm={() => { handleVoidSupplierPayment(voidPaymentTarget.id); setVoidPaymentTarget(null); }}
+                    title="Anular Pago"
+                    message={voidPaymentTarget ? `¿Anular el pago de USD ${Math.abs(Number(voidPaymentTarget.totalUsd) || 0).toFixed(2)}? La deuda del proveedor volverá a aumentar.` : ''}
+                    confirmText="Sí, anular"
+                    variant="danger"
+                />
                 <ConfirmModal
                     isOpen={!!deleteInvoiceTarget}
                     onClose={() => setDeleteInvoiceTarget(null)}
