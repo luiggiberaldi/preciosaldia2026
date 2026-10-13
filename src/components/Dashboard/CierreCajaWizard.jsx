@@ -5,6 +5,7 @@ import { getPaymentLabel, getPaymentIcon, toTitleCase } from '../../config/payme
 import { round2, subR, mulR } from '../../utils/dinero';
 // FIN-028: semáforo de cierre ahora considera las tres monedas con tolerancias explícitas.
 import { FINANCIAL_EPSILON } from '../../utils/securityConstants';
+import { calcularEfectivoEsperado } from '../../utils/cajaEsperada';
 
 const extractAdvancesFromSales = (salesArray) => {
     const list = [];
@@ -86,9 +87,7 @@ export default function CierreCajaWizard({
 
     if (!isOpen) return null;
 
-    const expectedUsd = round2((paymentBreakdown['efectivo_usd']?.total || 0) - (paymentBreakdown['_vuelto_usd']?.total || 0));
-    const expectedBs = round2((paymentBreakdown['efectivo_bs']?.total || 0) - (paymentBreakdown['_vuelto_bs']?.total || 0));
-    const expectedCop = paymentBreakdown['efectivo_cop']?.total || 0;
+    const { expectedUsd, expectedBs, expectedCop } = calcularEfectivoEsperado(paymentBreakdown);
 
     const declaredUsd = round2(parseFloat(actualUsd) || 0);
     const declaredBs = round2(parseFloat(actualBs) || 0);
