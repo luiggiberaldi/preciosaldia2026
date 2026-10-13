@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 // v1.2.0: useReveal hook para animaciones reveal-on-scroll (design system "Precios al Día")
 import { useReveal } from '../hooks/useReveal';
-import { Users, Plus, Search, User, X, Trash2, Pencil, Phone, RefreshCw, Save, ArrowDownRight, ArrowUpRight, Clock, CheckCircle2, CreditCard, ShoppingBag, Truck, Smartphone, Download } from 'lucide-react';
+import { Users, Plus, Search, User, X, Trash2, Pencil, Phone, RefreshCw, Save, ArrowUpRight, Clock, CheckCircle2, CreditCard, ShoppingBag, Truck, Smartphone, Download } from 'lucide-react';
 import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
 import { formatBs, formatUsd, formatCop } from '../utils/calculatorUtils';
@@ -10,7 +10,6 @@ import { CUSTOMER_MOVEMENT_TYPES, CUSTOMER_LEDGER_KEY } from '../utils/customerL
 import { buildCustomerCreditLens, fiadoCustomerIds } from '../utils/customerCreditLens';
 import TransactionModal from '../components/Customers/TransactionModal';
 import { processCustomerTransaction } from '../utils/customerTransactionProcessor';
-import { DEFAULT_PAYMENT_METHODS } from '../config/paymentMethods';
 import { processCasheaRemittance } from '../utils/casheaRemittanceProcessor';
 import CasheaRemittanceModal from '../components/Customers/CasheaRemittanceModal';
 import ConfirmModal from '../components/ConfirmModal';
@@ -92,7 +91,7 @@ export default function CustomersView({ triggerHaptic, isActive }) {
         deleteSupplierTarget, supplierHistoryData,
         setSelectedSupplier, setIsAddSupplierModalOpen, setEditingSupplier,
         setIsAddInvoiceModalOpen, setIsPayInvoiceModalOpen, setDeleteSupplierTarget,
-        handleSaveSupplier, refreshSupplierHistory, handleSelectSupplier,
+        handleSaveSupplier, handleSelectSupplier,
         handleAddInvoice, handlePayInvoice, handleDeleteSupplier, hydrateSuppliers,
         handleEditInvoice, handleDeleteInvoice, handleVoidSupplierPayment, editingInvoice, setEditingInvoice,
         deleteInvoiceTarget, setDeleteInvoiceTarget,

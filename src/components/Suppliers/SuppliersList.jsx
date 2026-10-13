@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Truck, Plus, Search, CheckCircle2, Phone, FileText } from 'lucide-react';
 import { formatUsd, formatBs, formatCop } from '../../utils/calculatorUtils';
 import EmptyState from '../EmptyState';
 import SwipeableItem from '../SwipeableItem';
+import PaginationBar from '../PaginationBar';
+import { usePagination } from '../../hooks/usePagination';
 
 export default function SuppliersList({
     suppliers,
@@ -32,6 +34,24 @@ export default function SuppliersList({
 
     const totalDebtUsd = suppliers.reduce((acc, s) => acc + (s.deuda || 0), 0);
 
+    const {
+        currentPage,
+        totalPages,
+        paginatedItems: paginatedSuppliers,
+        goNext,
+        goPrev,
+        resetPage,
+        hasNext,
+        hasPrev,
+        startIndex,
+        endIndex,
+        totalItems,
+    } = usePagination(filteredSuppliers, 10);
+
+    useEffect(() => {
+        resetPage();
+    }, [searchTerm, filterType]);
+
     return (
         <div className="flex flex-col h-full overflow-y-auto scrollbar-hide">
             {/* Banner de Cuentas por Pagar (Premium) */}
@@ -59,9 +79,10 @@ export default function SuppliersList({
                         {isAdmin && (
                             <button
                                 onClick={() => { triggerHaptic && triggerHaptic(); onAddSupplier(); }}
-                                className="bg-white/20 hover:bg-white/30 backdrop-blur-md text-white rounded-xl p-2.5 shadow-sm active:scale-95 transition-all"
+                                className="bg-white hover:bg-cyan-50 text-brand-dark rounded-xl px-3 py-2 shadow-md active:scale-95 transition-all flex items-center gap-1.5 text-xs font-black whitespace-nowrap"
                             >
-                                <Plus size={20} />
+                                <Plus size={16} aria-hidden="true" />
+                                Nuevo proveedor
                             </button>
                         )}
                     </div>
@@ -153,7 +174,8 @@ export default function SuppliersList({
                         onSecondaryAction={() => { setSearchTerm(''); triggerHaptic && triggerHaptic(); }}
                     />
                 ) : (
-                    filteredSuppliers.map(supplier => (
+                    <>
+                    {paginatedSuppliers.map(supplier => (
                         <SwipeableItem
                             key={supplier.id}
                             onDelete={isAdmin ? () => onDeleteSupplier && onDeleteSupplier(supplier) : undefined}
@@ -204,7 +226,20 @@ export default function SuppliersList({
                                 </div>
                             </div>
                         </SwipeableItem>
-                    ))
+                    ))}
+                    <PaginationBar
+                        currentPage={currentPage}
+                        totalPages={totalPages}
+                        totalItems={totalItems}
+                        startIndex={startIndex}
+                        endIndex={endIndex}
+                        onNext={goNext}
+                        onPrev={goPrev}
+                        hasNext={hasNext}
+                        hasPrev={hasPrev}
+                        label="proveedores"
+                    />
+                    </>
                 )}
             </div>
         </div>
