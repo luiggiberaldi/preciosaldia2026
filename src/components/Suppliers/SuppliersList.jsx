@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { matchesSearch as matchesSearchFields } from '../../utils/searchMatch';
 import { Truck, Plus, Search, CheckCircle2, Phone, FileText } from 'lucide-react';
 import { formatUsd, formatBs, formatCop } from '../../utils/calculatorUtils';
 import EmptyState from '../EmptyState';
@@ -26,7 +27,7 @@ export default function SuppliersList({
     const [hasta, setHasta] = useState('');
 
     const filteredSuppliers = suppliers.filter(s => {
-        const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || (s.phone && s.phone.includes(searchTerm));
+        const matchesSearch = matchesSearchFields([s.name, s.phone, s.rif], searchTerm);
         if (!matchesSearch) return false;
         if (filterType === 'deuda') return s.deuda > 0.01;
         return true;

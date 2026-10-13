@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useCallback } from 'react';
+import { matchesSearch as matchesSearchFields } from '../../utils/searchMatch';
 import { Search, TrendingUp, TrendingDown, Check, Package, X, AlertTriangle, Minus, Plus, Boxes, Edit3 } from 'lucide-react';
 import { showToast } from '../Toast';
 import { CATEGORY_COLORS } from '../../config/categories';
@@ -366,13 +367,10 @@ export default function StockBatchModal({
     const hasGranelInAdjust = activeAdjustments.some(({ p }) => isGranelProduct(p));
 
     const catalogProducts = useMemo(() => {
-        const term = search.toLowerCase().trim();
         return allProducts
             .filter(p => {
                 const matchesCat = selectedCategory === 'todos' || p.category === selectedCategory;
-                const matchesSearch = !term ||
-                    p.name.toLowerCase().includes(term) ||
-                    (p.barcode && p.barcode.toLowerCase().includes(term));
+                const matchesSearch = matchesSearchFields([p.name, p.barcode], search);
                 return matchesCat && matchesSearch;
             })
             .sort((a, b) => a.name.localeCompare(b.name));

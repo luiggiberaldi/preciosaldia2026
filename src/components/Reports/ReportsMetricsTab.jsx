@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { matchesSearch as matchesSearchFields } from '../../utils/searchMatch';
 import { Calendar, DollarSign, TrendingUp, TrendingDown, ShoppingBag, Package, ChevronDown, ChevronUp, Clock, Send, Ban, Shuffle, Search, X, Recycle, LockIcon, CornerDownLeft, Printer, Lightbulb, Car, User, Wrench, FileText } from 'lucide-react';
 import { formatBs, formatCop } from '../../utils/calculatorUtils';
 import { buildPaymentBreakdownRows, toBsEquivalent } from '../../utils/paymentBreakdownView';
@@ -639,11 +640,8 @@ export default function ReportsMetricsTab({
                         || (historyFilter === 'voided' && s.status === 'ANULADA');
                     if (!matchesFilter) return false;
                     if (!historySearch.trim()) return true;
-                    const q = historySearch.toLowerCase();
-                    if ((s.customerName || 'consumidor final').toLowerCase().includes(q)) return true;
-                    if (s.items && s.items.some(i => i.name.toLowerCase().includes(q))) return true;
-                    if (s.id.toLowerCase().includes(q)) return true;
-                    return false;
+                    const itemNames = (s.items || []).map(i => i.name);
+                    return matchesSearchFields([s.customerName || 'Consumidor Final', ...itemNames, s.id], historySearch);
                 });
                 const completedInList = searchedSales.filter(s => s.status !== 'ANULADA');
                 const voidedInList = searchedSales.filter(s => s.status === 'ANULADA');

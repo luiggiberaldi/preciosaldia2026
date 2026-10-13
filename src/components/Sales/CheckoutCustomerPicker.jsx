@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { matchesSearch as matchesSearchFields } from '../../utils/searchMatch';
 import { ChevronDown, UserPlus, Check, Search, X, User } from 'lucide-react';
 import { formatBs } from '../../utils/calculatorUtils';
 
@@ -42,9 +43,7 @@ export default function CheckoutCustomerPicker({
     const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
 
     const filteredCustomers = customers.filter(c =>
-        !search ||
-        c.name.toLowerCase().includes(search.toLowerCase()) ||
-        (c.documentId && c.documentId.toLowerCase().includes(search.toLowerCase()))
+        matchesSearchFields([c.name, c.documentId], search)
     );
 
     useEffect(() => {

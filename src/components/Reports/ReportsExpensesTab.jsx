@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { matchesSearch as matchesSearchFields } from '../../utils/searchMatch';
 import { 
     TrendingDown, 
     Search, 
@@ -111,11 +112,7 @@ export default function ReportsExpensesTab({
             
             const matchesCategory = categoryFilter === 'all' || categoryFilter === catKey;
             
-            const text = (g.description || '').toLowerCase();
-            const note = (g.note || '').toLowerCase();
-            const label = (CATEGORY_META[catKey]?.label || '').toLowerCase();
-            const query = searchQuery.toLowerCase().trim();
-            const matchesSearch = !query || text.includes(query) || note.includes(query) || label.includes(query);
+            const matchesSearch = matchesSearchFields([g.description, g.note, CATEGORY_META[catKey]?.label], searchQuery);
 
             return matchesCategory && matchesSearch;
         });

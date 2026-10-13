@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 // v1.2.0: useReveal hook para animaciones reveal-on-scroll (design system "Precios al Día")
 import { useReveal } from '../hooks/useReveal';
+import { matchesSearch as matchesSearchFields } from '../utils/searchMatch';
 import { Users, Plus, Search, User, X, Trash2, Pencil, Phone, RefreshCw, Save, ArrowUpRight, Clock, CheckCircle2, CreditCard, ShoppingBag, Truck, Smartphone, Download } from 'lucide-react';
 import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
@@ -134,7 +135,7 @@ export default function CustomersView({ triggerHaptic, isActive }) {
     const fiadoIdsMes = useMemo(() => fiadoCustomerIds(creditLens), [creditLens]);
 
     const filteredCustomers = customers.filter(c => {
-        const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) || (c.phone && c.phone.includes(searchTerm));
+        const matchesSearch = matchesSearchFields([c.name, c.phone, c.documentId], searchTerm);
         if (!matchesSearch) return false;
         if (filterType === 'deuda') return c.deuda > 0.01;
         if (filterType === 'favor') return c.favor > 0.01;

@@ -10,6 +10,7 @@ import { filterHistoryByKind } from '../../utils/receivablesReport';
 import { formatSaleItemQuantity } from '../../utils/granel';
 import { usePagination } from '../../hooks/usePagination';
 import PaginationBar from '../PaginationBar';
+import { normalizeSearchText } from '../../utils/searchMatch';
 
 export default function SalesHistory({
     sales = [],
@@ -66,15 +67,7 @@ export default function SalesHistory({
     const filteredSales = useMemo(() => {
         if (!searchTerm.trim()) return currentBaseSales;
 
-        // Normalizador sin tildes ni caracteres especiales
-        const norm = (str) => {
-            if (!str) return '';
-            return String(str)
-                .toLowerCase()
-                .normalize('NFD')
-                .replace(/[\u0300-\u036f]/g, '')
-                .trim();
-        };
+        const norm = normalizeSearchText;
 
         const rawTerm = searchTerm.trim();
         const term = norm(rawTerm);

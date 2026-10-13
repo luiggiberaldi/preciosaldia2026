@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { matchesSearch as matchesSearchFields } from '../utils/searchMatch';
 import { Search, ChevronRight, Package, Users, FileText, Settings, X } from 'lucide-react';
 
 export default function CommandPalette({ isOpen, onClose, onToggle, navigateTo }) {
@@ -14,7 +15,7 @@ export default function CommandPalette({ isOpen, onClose, onToggle, navigateTo }
         { id: 'nav-settings', title: 'Ir a Ajustes', icon: Settings, action: () => navigateTo('ajustes') },
     ];
 
-    const filteredCommands = commands.filter(c => c.title.toLowerCase().includes(query.toLowerCase()));
+    const filteredCommands = commands.filter(c => matchesSearchFields([c.title], query));
 
     useEffect(() => {
         if (isOpen) {
