@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { X, Truck, Save, Pencil, FileText, CreditCard, Clock, Phone, Trash2, ArrowUpRight, CheckCircle2, Download, Ban } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { X, Truck, Save, Pencil, FileText, CreditCard, Clock, Phone, Trash2, ArrowUpRight, CheckCircle2, Download, Ban, Search } from 'lucide-react';
+import { getLocalISODate } from '../../utils/dateHelpers';
 import { formatUsd, formatBs, formatCop } from '../../utils/calculatorUtils';
 import CustomSelect from '../CustomSelect';
-import { getLocalISODate } from '../../utils/dateHelpers';
 import { filterActivityByRange } from '../../utils/supplierReportRange';
 import { allocatePaymentsToInvoices } from '../../utils/supplierAllocation';
 import { compressImage, getInvoicePhotoUrl } from '../../utils/invoicePhotos';
+import { matchesSearch as matchesSearchFields } from '../../utils/searchMatch';
 
 /** Miniatura de la foto de una factura (solo local). */
 function InvoicePhotoThumb({ invoiceId, invoiceNumber }) {
@@ -258,27 +259,55 @@ export function PayInvoiceModal({ supplier, bcvRate, systemRate = bcvRate, tasaC
     const activeRate = useBcvRate ? bcvRate : systemRate;
     const [paymentMethod, setPaymentMethod] = useState('efectivo_bs');
     const [retiraCaja, setRetiraCaja] = useState(true);
+    const [allocationMode, setAllocationMode] = useState('FIFO');
     const [invoiceId, setInvoiceId] = useState('');
-    // Facturas con saldo pendiente, para elegir a cuál va el pago.
-    const openInvoices = (() => {
-        const { byInvoice } = allocatePaymentsToInvoices(invoices, payments);
-        return invoices
-            .filter(i => (byInvoice.get(i.id)?.remainingUsd ?? 0) > 0)
-            .map(i => ({ ...i, remaining: byInvoice.get(i.id).remainingUsd }))
-            .sort((a, b) => new Date(a.date || a.timestamp) - new Date(b.date || b.timestamp));
-    })();
+    const [invoiceSearch, setInvoiceSearch] = useState('');
+    // Calcula los saldos con todo el historial para que el rango del estado de cuenta no afecte pagos.
+    const { byInvoice } = allocatePaymentsToInvoices(invoices, payments);
+    const openInvoices = invoices
+        .filter(i => (byInvoice.get(i.id)?.remainingUsd ?? 0) > 0)
+        .map(i => ({ ...i, remaining: byInvoice.get(i.id).remainingUsd }))
+        .sort((a, b) => new Date(a.date || a.timestamp) - new Date(b.date || b.timestamp));
+    const selectedInvoice = openInvoices.find(invoice => invoice.id === invoiceId);
+    const maxPaymentUsd = Math.max(0, Math.min(
+        Number(supplier.deuda) || 0,
+        allocationMode === 'INVOICE' ? (selectedInvoice?.remaining ?? 0) : (Number(supplier.deuda) || 0),
+    ));
+    const rawAmount = Number.parseFloat(amount);
+    let amountUsdPreview = rawAmount;
+    if (currencyMode === 'BS' && activeRate > 0) amountUsdPreview = rawAmount / activeRate;
+    if (currencyMode === 'COP' && tasaCop > 0) amountUsdPreview = rawAmount / tasaCop;
+    const exceedsLimit = Number.isFinite(amountUsdPreview) && amountUsdPreview > maxPaymentUsd + 0.005;
+    const filteredInvoices = openInvoices.filter(invoice => matchesSearchFields(
+        [invoice.invoiceNumber, getLocalISODate(new Date(invoice.date || invoice.timestamp))],
+        invoiceSearch,
+    ));
+
+    const fillMaxPayment = () => {
+        if (!(maxPaymentUsd > 0)) return;
+        setAmount(currencyMode === 'BS'
+            ? (maxPaymentUsd * activeRate).toFixed(2)
+            : currencyMode === 'COP'
+                ? (maxPaymentUsd * tasaCop).toFixed(2)
+                : maxPaymentUsd.toFixed(2));
+    };
 
     const handleSave = (e) => {
         e.preventDefault();
-        const rawAmt = parseFloat(amount);
-        if (!rawAmt || rawAmt <= 0) return;
+        const rawAmt = Number.parseFloat(amount);
+        if (!Number.isFinite(rawAmt) || rawAmt <= 0) return;
 
         let amountUsd = rawAmt;
         if (currencyMode === 'BS' && activeRate > 0) amountUsd = rawAmt / activeRate;
         if (currencyMode === 'COP' && tasaCop > 0) amountUsd = rawAmt / tasaCop;
-        
         const amountBs = currencyMode === 'BS' ? rawAmt : (amountUsd * activeRate);
         const amountCop = currencyMode === 'COP' ? rawAmt : (amountUsd * tasaCop);
+        const allowedUsd = Math.max(0, Math.min(
+            Number(supplier.deuda) || 0,
+            allocationMode === 'INVOICE' ? (selectedInvoice?.remaining ?? 0) : (Number(supplier.deuda) || 0),
+        ));
+        if (allocationMode === 'INVOICE' && !selectedInvoice) return;
+        if (amountUsd > allowedUsd + 0.005) return;
 
         onSave({
             amountUsd,
@@ -289,7 +318,7 @@ export function PayInvoiceModal({ supplier, bcvRate, systemRate = bcvRate, tasaC
             paymentMethod: retiraCaja ? paymentMethod : 'pago_externo',
             currencyMode,
             retiraCaja,
-            invoiceId: invoiceId || null,
+            invoiceId: allocationMode === 'INVOICE' ? invoiceId : null,
         });
     };
 
@@ -302,30 +331,39 @@ export function PayInvoiceModal({ supplier, bcvRate, systemRate = bcvRate, tasaC
                     </h3>
                     <button onClick={onClose} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-full"><X size={18} /></button>
                 </div>
-                <form onSubmit={handleSave} className="p-5 space-y-4">
+                <form onSubmit={handleSave} className="p-5 space-y-4 max-h-[calc(90vh-5rem)] max-h-[calc(90dvh-5rem)] overflow-y-auto">
                     <p className="text-xs text-slate-500 -mt-2 mb-2">Deuda total: <strong>{copEnabled && copPrimary && tasaCop > 0 ? `${formatCop(supplier.deuda * tasaCop)} COP · USD ${formatUsd(supplier.deuda)}` : `USD ${formatUsd(supplier.deuda)}`}{copEnabled && !copPrimary && tasaCop > 0 ? ` · ${formatCop(supplier.deuda * tasaCop)} COP` : ''}</strong></p>
-                    
-                    {/* Factura a la que va el pago */}
-                    {openInvoices.length > 0 && (
-                        <div>
-                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Aplicar a</label>
-                            <CustomSelect
-                                value={invoiceId}
-                                onChange={setInvoiceId}
-                                buttonClassName="!py-2.5 !px-3 !text-xs !bg-white dark:!bg-slate-950 !border-slate-200 dark:!border-slate-800"
-                                options={[
-                                    {
-                                        value: '',
-                                        label: 'Repartir automáticamente (más antigua primero)'
-                                    },
-                                    ...openInvoices.map(i => ({
-                                        value: i.id,
-                                        label: `Factura #${i.invoiceNumber} · saldo USD ${formatUsd(i.remaining)}`
-                                    }))
-                                ]}
-                            />
+
+                    <div>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Aplicar pago</label>
+                        <div className="grid grid-cols-2 gap-2">
+                            <button type="button" onClick={() => { setAllocationMode('FIFO'); setInvoiceId(''); setInvoiceSearch(''); }} aria-label="Automático FIFO" aria-pressed={allocationMode === 'FIFO'} className={`rounded-xl border px-3 py-2 text-xs font-bold ${allocationMode === 'FIFO' ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500'}`}>Automático (FIFO)</button>
+                            <button type="button" onClick={() => { setAllocationMode('INVOICE'); setInvoiceId(''); setInvoiceSearch(''); }} aria-label="Factura específica" aria-pressed={allocationMode === 'INVOICE'} className={`rounded-xl border px-3 py-2 text-xs font-bold ${allocationMode === 'INVOICE' ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500'}`}>Factura específica</button>
                         </div>
-                    )}
+                        {allocationMode === 'FIFO' ? (
+                            <p className="mt-1.5 text-[10px] text-slate-500">Se distribuirá desde la factura pendiente más antigua. Máximo: USD {formatUsd(maxPaymentUsd)}.</p>
+                        ) : openInvoices.length === 0 ? (
+                            <p className="mt-2 rounded-lg bg-amber-50 p-2 text-[10px] text-amber-700">No hay facturas pendientes disponibles.</p>
+                        ) : (
+                            <div className="mt-2 space-y-2">
+                                <label className="relative block">
+                                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    <input type="search" value={invoiceSearch} onChange={e => setInvoiceSearch(e.target.value)} placeholder="Buscar número de factura" aria-label="Buscar factura" className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-xs dark:bg-slate-950" />
+                                </label>
+                                <div className="max-h-36 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800">
+                                    {filteredInvoices.map(invoice => (
+                                        <button key={invoice.id} type="button" onClick={() => { setInvoiceId(invoice.id); setAmount(currencyMode === 'BS' ? (invoice.remaining * activeRate).toFixed(2) : currencyMode === 'COP' ? (invoice.remaining * tasaCop).toFixed(2) : invoice.remaining.toFixed(2)); }} className={`w-full border-b border-slate-100 px-3 py-2 text-left last:border-b-0 dark:border-slate-800 ${invoiceId === invoice.id ? 'bg-emerald-50 dark:bg-emerald-950/30' : 'hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
+                                            <span className="block text-xs font-bold text-slate-700 dark:text-slate-200">Factura #{invoice.invoiceNumber || '—'} · saldo USD {formatUsd(invoice.remaining)}</span>
+                                            <span className="block text-[10px] text-slate-400">{new Date(invoice.date || invoice.timestamp).toLocaleDateString('es-VE')}{invoice.dueDate ? ` · Vence ${new Date(`${invoice.dueDate}T12:00:00`).toLocaleDateString('es-VE')}` : ''}</span>
+                                        </button>
+                                    ))}
+                                    {filteredInvoices.length === 0 && <p className="p-3 text-center text-[10px] text-slate-400">No se encontraron facturas</p>}
+                                </div>
+                                {selectedInvoice && <p className="text-[10px] font-bold text-emerald-700">Saldo máximo de esta factura: USD {formatUsd(maxPaymentUsd)}</p>}
+                                {!selectedInvoice && <p className="text-[10px] text-amber-700">Selecciona una factura pendiente para continuar.</p>}
+                            </div>
+                        )}
+                    </div>
 
                     <SupplierRateToggle useBcvRate={useBcvRate} onChange={setUseBcvRate} bcvRate={bcvRate} systemRate={systemRate} />
 
@@ -369,11 +407,13 @@ export function PayInvoiceModal({ supplier, bcvRate, systemRate = bcvRate, tasaC
                                 )}
                             </div>
                         )}
-                        {supplier.deuda > 0 && (
-                            <button type="button" onClick={() => setAmount(currencyMode === 'BS' ? (supplier.deuda * activeRate).toFixed(2) : currencyMode === 'COP' ? (supplier.deuda * tasaCop).toFixed(2) : supplier.deuda.toFixed(2))} className="mt-2 w-full text-xs font-bold text-emerald-600 bg-emerald-50 py-1.5 rounded border border-emerald-200">
-                                Pagar Deuda Completa
+                        {maxPaymentUsd > 0 && (
+                            <button type="button" onClick={fillMaxPayment} className="mt-2 w-full text-xs font-bold text-emerald-600 bg-emerald-50 py-1.5 rounded border border-emerald-200">
+                                Pagar saldo completo · USD {formatUsd(maxPaymentUsd)}
                             </button>
                         )}
+                        {exceedsLimit && <p role="alert" className="mt-2 text-xs font-bold text-red-600">El pago supera el máximo permitido de USD {formatUsd(maxPaymentUsd)}. Reduce el monto para continuar.</p>}
+                        {allocationMode === 'INVOICE' && !selectedInvoice && <p role="alert" className="mt-2 text-xs font-bold text-red-600">Selecciona una factura pendiente antes de procesar el pago.</p>}
                     </div>
 
                     {/* Switch Retirar de Caja */}
@@ -423,7 +463,7 @@ export function PayInvoiceModal({ supplier, bcvRate, systemRate = bcvRate, tasaC
                         </div>
                     )}
 
-                    <button type="submit" disabled={!amount || parseFloat(amount) <= 0} className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-500/50 text-white font-bold rounded-xl active:scale-95 transition-all text-sm flex justify-center items-center gap-2 mt-4">
+                    <button type="submit" disabled={!amount || !Number.isFinite(rawAmount) || rawAmount <= 0 || exceedsLimit || (allocationMode === 'INVOICE' && !selectedInvoice)} className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-500/50 text-white font-bold rounded-xl active:scale-95 transition-all text-sm flex justify-center items-center gap-2 mt-4">
                         Procesar Pago
                     </button>
                 </form>
@@ -530,13 +570,66 @@ export function SupplierDetailsSheet({ supplier, isOpen, isAdmin, onClose, onAdd
     // Rango para estado de cuenta (YYYY-MM-DD local). Vacío = todo el historial.
     const [desde, setDesde] = useState('');
     const [hasta, setHasta] = useState('');
+    const [invoiceStatusFilter, setInvoiceStatusFilter] = useState('PENDIENTES');
+    const [invoiceSearch, setInvoiceSearch] = useState('');
+
+    // Cálculos del estado de cuenta. Se memorizan para no repetir el reparto FIFO,
+    // los filtros y el ordenado en cada render (p. ej. al escribir en la búsqueda).
+    // Los hooks van ANTES del return temprano para respetar las reglas de hooks.
+    const derived = useMemo(() => {
+        const visibleHistory = filterActivityByRange(historyData, desde, hasta);
+        // Estado por factura: los pagos se reparten FIFO sobre TODO el historial, no solo el rango visible.
+        const allocation = allocatePaymentsToInvoices(
+            historyData.filter(r => r.type === 'INVOICE'),
+            historyData.filter(r => r.type !== 'INVOICE'),
+        );
+        const todayStart = new Date(new Date().toDateString());
+        const invoiceById = new Map(historyData.filter(r => r.type === 'INVOICE').map(r => [r.id, r]));
+        const invoiceStatusById = new Map([...allocation.byInvoice].map(([id, balance]) => {
+            const invoice = invoiceById.get(id);
+            const overdue = invoice?.dueDate && new Date(`${invoice.dueDate}T12:00:00`) < todayStart && balance.remainingUsd > 0;
+            return [id, overdue ? 'VENCIDA' : balance.status];
+        }));
+        const visibleInvoices = visibleHistory.filter(record => record.type === 'INVOICE');
+        const pendingInvoiceCount = visibleInvoices.filter(record => (allocation.byInvoice.get(record.id)?.remainingUsd ?? 0) > 0).length;
+        const invoiceCounts = {
+            PENDIENTES: pendingInvoiceCount,
+            PAGADAS: visibleInvoices.filter(record => allocation.byInvoice.get(record.id)?.status === 'PAGADA').length,
+            TODAS: visibleInvoices.length,
+        };
+        const pendingInvoices = visibleHistory.filter(record => {
+            if (record.type !== 'INVOICE') return false;
+            const balance = allocation.byInvoice.get(record.id);
+            const overdue = record.dueDate && new Date(`${record.dueDate}T12:00:00`) < todayStart;
+            return (balance?.remainingUsd ?? 0) > 0 && !overdue;
+        });
+        return { visibleHistory, allocation, invoiceStatusById, invoiceCounts, pendingInvoices, pendingInvoiceCount };
+    }, [historyData, desde, hasta]);
+
+    const { visibleHistory, allocation, invoiceStatusById, invoiceCounts, pendingInvoices, pendingInvoiceCount } = derived;
+
+    const sortedHistory = useMemo(() => {
+        const filteredHistory = visibleHistory.filter(record => {
+            if (record.type !== 'INVOICE') return true;
+            const balance = allocation.byInvoice.get(record.id);
+            const status = invoiceStatusById.get(record.id);
+            if (invoiceStatusFilter === 'PENDIENTES' && !(balance?.remainingUsd > 0)) return false;
+            if (invoiceStatusFilter === 'PAGADAS' && status !== 'PAGADA') return false;
+            return matchesSearchFields([record.invoiceNumber], invoiceSearch);
+        });
+        return [...filteredHistory].sort((a, b) => {
+            if (invoiceStatusFilter === 'PENDIENTES' && a.type === 'INVOICE' && b.type === 'INVOICE') {
+                const overdueA = invoiceStatusById.get(a.id) === 'VENCIDA' ? 1 : 0;
+                const overdueB = invoiceStatusById.get(b.id) === 'VENCIDA' ? 1 : 0;
+                if (overdueA !== overdueB) return overdueB - overdueA;
+            }
+            return new Date(b.date || b.timestamp) - new Date(a.date || a.timestamp);
+        });
+    }, [visibleHistory, allocation, invoiceStatusById, invoiceStatusFilter, invoiceSearch]);
+
     if (!isOpen || !supplier) return null;
-    const visibleHistory = filterActivityByRange(historyData, desde, hasta);
-    // Estado por factura: los pagos se reparten FIFO sobre TODO el historial, no solo el rango visible.
-    const allocation = allocatePaymentsToInvoices(
-        historyData.filter(r => r.type === 'INVOICE'),
-        historyData.filter(r => r.type !== 'INVOICE'),
-    );
+
+    const overdueInvoiceCount = pendingInvoiceCount - pendingInvoices.length;
     const STATUS_LABEL = { PAGADA: 'Pagada', PARCIAL: 'Parcial', PENDIENTE: 'Pendiente' };
     const STATUS_CLASS = {
         PAGADA: 'bg-emerald-100 text-emerald-700',
@@ -545,8 +638,8 @@ export function SupplierDetailsSheet({ supplier, isOpen, isAdmin, onClose, onAdd
     };
 
     return (
-        <div className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
-            <div className="fixed bottom-0 left-0 right-0 max-w-lg mx-auto bg-white dark:bg-slate-900 rounded-t-3xl max-h-[90vh] overflow-y-auto shadow-2xl animate-in slide-in-from-bottom" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200 sm:flex sm:items-center sm:justify-center sm:p-6" onClick={onClose}>
+            <div className="fixed bottom-0 left-0 right-0 max-w-lg mx-auto bg-white dark:bg-slate-900 rounded-t-3xl max-h-[90vh] overflow-y-auto shadow-2xl animate-in slide-in-from-bottom sm:static sm:w-full sm:max-w-2xl sm:rounded-3xl sm:max-h-[min(88vh,900px)] sm:animate-in sm:zoom-in-95" onClick={e => e.stopPropagation()}>
                 {/* Close + Drag Handle */}
                 <div className="flex items-center justify-between px-4 pt-3 pb-2">
                     <div className="w-8" />
@@ -624,20 +717,42 @@ export function SupplierDetailsSheet({ supplier, isOpen, isAdmin, onClose, onAdd
                             )}
                         </div>
                         <div className="flex items-center gap-2 mb-3">
-                            <input type="date" value={desde} onChange={e => setDesde(e.target.value)} className="form-input border rounded-lg px-2 py-1 text-xs dark:bg-slate-950" />
+                            <input type="date" value={desde} onChange={e => setDesde(e.target.value)} aria-label="Fecha desde" className="form-input min-w-0 flex-1 border rounded-lg px-2 py-1 text-xs dark:bg-slate-950" />
                             <span className="text-[10px] text-slate-400">a</span>
-                            <input type="date" value={hasta} onChange={e => setHasta(e.target.value)} className="form-input border rounded-lg px-2 py-1 text-xs dark:bg-slate-950" />
+                            <input type="date" value={hasta} onChange={e => setHasta(e.target.value)} aria-label="Fecha hasta" className="form-input min-w-0 flex-1 border rounded-lg px-2 py-1 text-xs dark:bg-slate-950" />
                             {(desde || hasta) && (
                                 <button type="button" onClick={() => { setDesde(''); setHasta(''); }} className="text-[10px] font-bold text-slate-500 px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800">Limpiar</button>
                             )}
                         </div>
-                        {visibleHistory.length === 0 ? (
+                        <div className="mb-3 space-y-2">
+                            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Facturas por estado</p>
+                            <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+                                {[['PENDIENTES', 'Pendientes'], ['PAGADAS', 'Pagadas'], ['TODAS', 'Todas']].map(([value, label]) => (
+                                    <button key={value} type="button" onClick={() => setInvoiceStatusFilter(value)} aria-pressed={invoiceStatusFilter === value} className={`rounded-lg px-1 py-2 text-[10px] font-bold ${invoiceStatusFilter === value ? 'bg-white text-slate-800 shadow-sm dark:bg-slate-950 dark:text-white' : 'text-slate-500'}`}>{label} <span className="opacity-70">{invoiceCounts[value]}</span></button>
+                                ))}
+                            </div>
+                            {invoiceStatusFilter === 'PENDIENTES' && overdueInvoiceCount > 0 && <p className="text-[10px] font-bold text-red-600">Vencidas: {overdueInvoiceCount}</p>}
+                            <p className="text-[10px] text-slate-400">Los pagos se muestran en todos los filtros.</p>
+                            <label className="relative block">
+                                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input type="search" value={invoiceSearch} onChange={e => setInvoiceSearch(e.target.value)} placeholder="Buscar número de factura" aria-label="Buscar factura en estado de cuenta" className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-xs dark:bg-slate-950" />
+                            </label>
+                        </div>
+                        {sortedHistory.length === 0 ? (
                             <p className="text-xs text-slate-400 text-center py-4">Sin movimientos en este rango</p>
                         ) : (
                             <div className="space-y-4">
                                 {[
-                                    { key: 'INVOICE', title: 'Facturas', items: visibleHistory.filter(r => r.type === 'INVOICE') },
-                                    { key: 'PAYMENT', title: 'Pagos', items: visibleHistory.filter(r => r.type !== 'INVOICE') },
+                                    { key: 'INVOICE', title: 'Facturas', items: sortedHistory.filter(r => r.type === 'INVOICE').sort((a, b) => {
+                                        if (invoiceStatusFilter === 'PENDIENTES') {
+                                            const overdueA = invoiceStatusById.get(a.id) === 'VENCIDA' ? 1 : 0;
+                                            const overdueB = invoiceStatusById.get(b.id) === 'VENCIDA' ? 1 : 0;
+                                            if (overdueA !== overdueB) return overdueB - overdueA;
+                                            return new Date(a.date || a.timestamp) - new Date(b.date || b.timestamp);
+                                        }
+                                        return new Date(b.date || b.timestamp) - new Date(a.date || a.timestamp);
+                                    }) },
+                                    { key: 'PAYMENT', title: 'Pagos', items: sortedHistory.filter(r => r.type !== 'INVOICE') },
                                 ].filter(section => section.items.length > 0).map(section => (
                                 <div key={section.key}>
                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2">{section.title} ({section.items.length})</p>
@@ -646,8 +761,8 @@ export function SupplierDetailsSheet({ supplier, isOpen, isAdmin, onClose, onAdd
                                     const isInvoice = record.type === 'INVOICE';
                                     const dateStr = new Date(record.date || record.timestamp).toLocaleDateString('es-VE');
                                     // Estado de vencimiento (solo facturas no pagadas con fecha de vencimiento).
-                                    const due = isInvoice && record.dueDate && record.status !== 'PAGADA' ? new Date(record.dueDate + 'T12:00:00') : null;
-                                    const vencida = due && due < new Date();
+                                    const due = isInvoice && record.dueDate && allocation.byInvoice.get(record.id)?.remainingUsd > 0 ? new Date(record.dueDate + 'T12:00:00') : null;
+                                    const vencida = due && due < new Date(new Date().toDateString());
                                     const voided = !isInvoice && record.status === 'ANULADA';
                                     return (
                                         <div key={record.id} className={`flex items-center gap-3 p-2 bg-slate-50 dark:bg-slate-950 rounded-xl ${voided ? 'opacity-50' : ''}`}>
@@ -661,9 +776,10 @@ export function SupplierDetailsSheet({ supplier, isOpen, isAdmin, onClose, onAdd
                                                 </p>                                                    <p className="text-[10px] text-slate-400">{dateStr} {isInvoice && record.dueDate && `• Venc: ${new Date(record.dueDate + 'T12:00:00').toLocaleDateString('es-VE')}`} {vencida && <span className="font-bold text-red-500">• VENCIDA</span>}</p>
                                                     {isInvoice && allocation.byInvoice.get(record.id) && (() => {
                                                         const a = allocation.byInvoice.get(record.id);
+                                                        const visualStatus = invoiceStatusById.get(record.id) || a.status;
                                                         return (
                                                             <p className="mt-0.5">
-                                                                <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${STATUS_CLASS[a.status]}`}>{STATUS_LABEL[a.status]}</span>
+                                                                <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${visualStatus === 'VENCIDA' ? 'bg-red-600 text-white' : STATUS_CLASS[a.status]}`}>{visualStatus === 'VENCIDA' ? 'Vencida' : STATUS_LABEL[a.status]}</span>
                                                                 {a.paidUsd > 0 && <span className="text-[10px] text-slate-500 ml-1">Pagado USD {formatUsd(a.paidUsd)} · Saldo USD {formatUsd(a.remainingUsd)}</span>}
                                                             </p>
                                                         );

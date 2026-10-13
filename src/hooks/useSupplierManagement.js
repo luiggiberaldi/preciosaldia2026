@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
 import { saveInvoicePhoto, deleteInvoicePhoto } from '../utils/invoicePhotos';
-import { paidAmountForInvoice } from '../utils/supplierAllocation';
+import { allocatePaymentsToInvoices, paidAmountForInvoice } from '../utils/supplierAllocation';
+import { round2 } from '../utils/dinero';
 
 export function useSupplierManagement({ bcvRate, tasaCop, copEnabled, triggerHaptic, auditLog }) {
     const [suppliers, setSuppliers] = useState([]);
@@ -97,20 +98,44 @@ export function useSupplierManagement({ bcvRate, tasaCop, copEnabled, triggerHap
     };
 
     const handlePayInvoice = async ({ amountUsd, amountBs, amountCop, exchangeRate, rateType, paymentMethod, currencyMode, retiraCaja, invoiceId = null }) => {
-        triggerHaptic && triggerHaptic();
         const supplier = selectedSupplier;
         if (!supplier) return;
 
-        // 1. Descontar deuda
-        const updatedSupplier = { ...supplier, deuda: Math.max(0, (supplier.deuda || 0) - amountUsd) };
+        const safeAmountUsd = round2(Number(amountUsd));
+        if (!Number.isFinite(safeAmountUsd) || safeAmountUsd <= 0) {
+            showToast('El monto del pago debe ser mayor que cero', 'error');
+            return;
+        }
+        const allSales = await storageService.getItem('bodega_sales_v1', []);
+        const supplierInvoices = invoices.filter(invoice => invoice.supplierId === supplier.id);
+        const supplierPayments = allSales.filter(sale => sale.tipo === 'PAGO_PROVEEDOR' && sale.supplierId === supplier.id);
+        const { byInvoice } = allocatePaymentsToInvoices(supplierInvoices, supplierPayments);
+        const selectedInvoice = invoiceId ? supplierInvoices.find(invoice => invoice.id === invoiceId) : null;
+        const selectedBalance = invoiceId ? byInvoice.get(invoiceId)?.remainingUsd : null;
+        if (invoiceId && (!selectedInvoice || selectedBalance === undefined || selectedBalance <= 0)) {
+            showToast('La factura seleccionada ya no está disponible', 'error');
+            return;
+        }
+        const maximumUsd = Math.max(0, Math.min(
+            Number(supplier.deuda) || 0,
+            invoiceId ? selectedBalance : (Number(supplier.deuda) || 0),
+        ));
+        if (safeAmountUsd > maximumUsd + 0.005) {
+            showToast(`El pago supera el máximo permitido de USD ${maximumUsd.toFixed(2)}`, 'error');
+            return;
+        }
+        triggerHaptic && triggerHaptic();
+
+        // 1. Descontar deuda sin permitir saldo negativo.
+        const updatedSupplier = { ...supplier, deuda: round2(Math.max(0, (supplier.deuda || 0) - safeAmountUsd)) };
         const updatedSuppliers = suppliers.map(s => s.id === supplier.id ? updatedSupplier : s);
         await saveSuppliers(updatedSuppliers);
         setSelectedSupplier(updatedSupplier);
 
         // 2. Registrar en Caja/Sistema
-        const sales = await storageService.getItem('bodega_sales_v1', []);
+        const sales = allSales;
         const totalEnBs = amountBs;
-        const totalEnUsd = amountUsd;
+        const totalEnUsd = safeAmountUsd;
         const totalEnCop = currencyMode === 'COP' ? amountCop : (amountUsd * tasaCop);
 
         const pagoRecord = {
@@ -142,7 +167,7 @@ export function useSupplierManagement({ bcvRate, tasaCop, copEnabled, triggerHap
 
         setIsPayInvoiceModalOpen(false);
         showToast(retiraCaja ? 'Pago registrado y descontado de caja' : 'Pago registrado (externo)', 'success');
-        auditLog('PROVEEDOR', 'PAGO_PROVEEDOR', `Pago $${amountUsd.toFixed(2)} a ${supplier.name} (${retiraCaja ? 'Caja' : 'Externo'})`);
+        auditLog('PROVEEDOR', 'PAGO_PROVEEDOR', `Pago $${safeAmountUsd.toFixed(2)} a ${supplier.name} (${retiraCaja ? 'Caja' : 'Externo'})`);
         refreshSupplierHistory(supplier.id);
     };
 

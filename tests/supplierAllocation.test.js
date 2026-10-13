@@ -1,7 +1,7 @@
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { AddInvoiceModal, PayInvoiceModal } from '../src/components/Suppliers/SupplierModals.jsx';
+import { AddInvoiceModal, PayInvoiceModal, SupplierDetailsSheet } from '../src/components/Suppliers/SupplierModals.jsx';
 import { allocatePaymentsToInvoices, paidAmountForInvoice } from '../src/utils/supplierAllocation.js';
 
 const inv = (id, amountUsd, date) => ({ id, amountUsd, date });
@@ -66,6 +66,103 @@ describe('tasas BCV real y tasa activa en movimientos de proveedor', () => {
         expect(savedInvoice.exchangeRate).toBe(87.68);
     });
 
+    it('el panel de detalle calcula contadores y filtros de facturas sobre el historial completo', async () => {
+        const historyData = [
+            { id: 'f-old', type: 'INVOICE', invoiceNumber: 'F-100', amountUsd: 10, date: '2026-10-01T10:00:00.000Z' },
+            { id: 'f-new', type: 'INVOICE', invoiceNumber: 'F-200', amountUsd: 5, date: '2026-10-05T10:00:00.000Z' },
+            { id: 'p-1', type: 'PAYMENT', totalUsd: -10, date: '2026-10-03T10:00:00.000Z', status: 'ACTIVA' },
+        ];
+        await act(async () => root.render(createElement(SupplierDetailsSheet, {
+            supplier: { id: 'supplier-1', name: 'Proveedor de prueba', deuda: 5 },
+            isOpen: true,
+            isAdmin: false,
+            historyData,
+            bcvRate: 0,
+            tasaCop: 0,
+            copEnabled: false,
+            copPrimary: false,
+            onClose: () => {},
+        })));
+
+        // F-100 queda pagada (10 cubre 10); F-200 pendiente con 5.
+        const pills = Array.from(container.querySelectorAll('button[aria-pressed]')).map(b => b.textContent.trim());
+        expect(pills).toEqual(['Pendientes 1', 'Pagadas 1', 'Todas 2']);
+        expect(container.textContent).toContain('Factura #F-200');
+        expect(container.textContent).not.toContain('Factura #F-100');
+
+        const allButton = Array.from(container.querySelectorAll('button[aria-pressed]')).find(b => b.textContent.trim().startsWith('Todas'));
+        await act(async () => allButton.click());
+        expect(container.textContent).toContain('Factura #F-100');
+        expect(container.textContent).toContain('Factura #F-200');
+    });
+
+    it('el pago dirigido permite buscar y selecciona una factura específica con saldo máximo', async () => {
+        let savedPayment;
+        const invoices = Array.from({ length: 100 }, (_, index) => ({
+            id: `invoice-${index}`,
+            invoiceNumber: `F-${String(index + 1).padStart(3, '0')}`,
+            amountUsd: 10,
+            date: new Date(2026, 0, index + 1, 12).toISOString(),
+        }));
+        await act(async () => root.render(createElement(PayInvoiceModal, {
+            supplier: { id: 'supplier-1', name: 'Proveedor de prueba', deuda: 1000 },
+            bcvRate: 10,
+            systemRate: 10,
+            invoices,
+            payments: [],
+            onClose: () => {},
+            onSave: payment => { savedPayment = payment; },
+        })));
+
+        await act(async () => container.querySelector('button[aria-label="Factura específica"]').click());
+        expect(container.querySelectorAll('button[aria-label^="Factura #"]')).toHaveLength(0);
+        const search = container.querySelector('input[aria-label="Buscar factura"]');
+        const setInputValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+        await act(async () => {
+            setInputValue.call(search, 'F-100');
+            search.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        const target = Array.from(container.querySelectorAll('button[type="button"]')).find(button => button.textContent.includes('Factura #F-100'));
+        expect(target).toBeTruthy();
+        await act(async () => target.click());
+        const amount = container.querySelector('input[type="number"]');
+        expect(amount.value).toBe('100.00');
+        expect(container.textContent).toContain('Saldo máximo de esta factura: USD 10.00');
+
+        await act(async () => {
+            setInputValue.call(amount, '110');
+            amount.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        expect(container.querySelector('button[type="submit"]').disabled).toBe(true);
+        expect(container.textContent).toContain('El pago supera el máximo permitido de USD 10.00');
+
+        await act(async () => {
+            setInputValue.call(amount, '50');
+            amount.dispatchEvent(new Event('input', { bubbles: true }));
+            container.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        });
+        expect(savedPayment.amountUsd).toBe(5);
+        expect(savedPayment.invoiceId).toBe('invoice-99');
+    });
+
+    it('deshabilita el envío automático cuando el pago supera la deuda total', async () => {
+        await act(async () => root.render(createElement(PayInvoiceModal, {
+            supplier: { id: 'supplier-1', name: 'Proveedor de prueba', deuda: 10 },
+            bcvRate: 1,
+            systemRate: 1,
+            onClose: () => {},
+            onSave: () => {},
+        })));
+        const amount = container.querySelector('input[type="number"]');
+        const setInputValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+        await act(async () => {
+            setInputValue.call(amount, '10.01');
+            amount.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        expect(container.querySelector('button[type="submit"]').disabled).toBe(true);
+        expect(container.textContent).toContain('El pago supera el máximo permitido de USD 10.00');
+    });
+
     it('el pago usa BCV real por defecto y convierte con la tasa activa al apagar el toggle', async () => {
         let savedPayment;
         await act(async () => root.render(createElement(PayInvoiceModal, {
@@ -107,6 +204,46 @@ describe('tasas BCV real y tasa activa en movimientos de proveedor', () => {
 });
 
 describe('allocatePaymentsToInvoices', () => {
+    it('el modo pagadas omite facturas pendientes y el filtro todas conserva todo el historial', async () => {
+        globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+        const container = document.createElement('div');
+        document.body.appendChild(container);
+        const root = createRoot(container);
+        await act(async () => root.render(createElement(SupplierDetailsSheet, {
+            supplier: { id: 'supplier-1', name: 'Proveedor de prueba', deuda: 5 },
+            isOpen: true,
+            isAdmin: false,
+            onClose: () => {},
+            onAddInvoice: () => {},
+            onPayInvoice: () => {},
+            onEdit: () => {},
+            onDelete: () => {},
+            bcvRate: 1,
+            historyData: [
+                { id: 'open', type: 'INVOICE', invoiceNumber: 'F-OPEN', amountUsd: 5, dueDate: '2026-12-01', date: '2026-10-01T12:00:00.000Z' },
+                { id: 'paid', type: 'INVOICE', invoiceNumber: 'F-PAID', amountUsd: 5, date: '2026-10-02T12:00:00.000Z' },
+                { id: 'payment', totalUsd: -5, invoiceId: 'paid', timestamp: '2026-10-03T12:00:00.000Z' },
+            ],
+        })));
+        expect(container.textContent).toContain('Factura #F-OPEN');
+        expect(container.textContent).not.toContain('Factura #F-PAID');
+        expect(container.textContent).toContain('Todas 2');
+        expect(container.textContent).toContain('Facturas por estado');
+        expect(container.textContent).toContain('Los pagos se muestran en todos los filtros.');
+
+        const setPaid = Array.from(container.querySelectorAll('button')).find(button => button.textContent.includes('Pagadas'));
+        await act(async () => setPaid.click());
+        expect(container.textContent).toContain('Factura #F-PAID');
+        expect(container.textContent).not.toContain('Factura #F-OPEN');
+
+        const setAll = Array.from(container.querySelectorAll('button')).find(button => button.textContent.includes('Todas'));
+        await act(async () => setAll.click());
+        expect(container.textContent).toContain('Factura #F-OPEN');
+        expect(container.textContent).toContain('Factura #F-PAID');
+        await act(async () => root.unmount());
+        container.remove();
+    });
+
     it('marca una factura sin pagos como PENDIENTE', () => {
         const { byInvoice, unallocatedUsd } = allocatePaymentsToInvoices([inv('a', 5, '2026-10-01')], []);
         expect(byInvoice.get('a')).toEqual({ paidUsd: 0, remainingUsd: 5, status: 'PENDIENTE' });
