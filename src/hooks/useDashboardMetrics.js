@@ -39,7 +39,7 @@ export function useDashboardMetrics(sales, customers, products, bcvRate) {
     const todayCashFlow = useMemo(() =>
         salesWithLocalDate.filter(s => {
             if (s.status === 'ANULADA') return false;
-            if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'VENTA_CASHEA' && s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'COBRO_CASHEA' && s.tipo !== 'PAGO_PROVEEDOR' && s.tipo !== 'GASTO_INTERNO' && s.tipo !== 'APERTURA_CAJA') return false;
+            if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'VENTA_CASHEA' && s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'COBRO_CASHEA' && s.tipo !== 'PAGO_PROVEEDOR' && s.tipo !== 'GASTO_INTERNO' && s.tipo !== 'APERTURA_CAJA' && s.tipo !== 'APORTE_CAJA') return false;
             if ((s.tipo === 'PAGO_PROVEEDOR' || s.tipo === 'GASTO_INTERNO') && s.afectaCaja === false) return false;
             if (s.cajaCerrada === true) return false;
             return s.localDate === today;
@@ -176,6 +176,13 @@ export function useDashboardMetrics(sales, customers, products, bcvRate) {
         return FinancialEngine.calculatePaymentBreakdown(todayCashFlow);
     }, [todayCashFlow]);
 
+    // Solo el fondo de apertura y los aportes de efectivo del turno (sin ventas).
+    // Es un subconjunto informativo del bucket de efectivo; no altera los totales.
+    const fondoBreakdown = useMemo(() => {
+        const fondoMovs = todayCashFlow.filter(s => s.tipo === 'APERTURA_CAJA' || s.tipo === 'APORTE_CAJA');
+        return FinancialEngine.calculatePaymentBreakdown(fondoMovs);
+    }, [todayCashFlow]);
+
     // FIA-REPORT-001 (H1/H2): movimientos de cuentas por cobrar del turno. El bucket
     // `fiado` del motor trae el NETO y el motor descarta los buckets en 0, así que la
     // vista no puede depender de él para decidir si hubo movimientos.
@@ -252,6 +259,7 @@ export function useDashboardMetrics(sales, customers, products, bcvRate) {
         totalDeudas,
         topProducts,
         paymentBreakdown,
+        fondoBreakdown,
         todayReceivables,
         todayTopProducts,
         inventoryMetrics,

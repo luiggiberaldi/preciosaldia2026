@@ -1,5 +1,5 @@
 import React from 'react';
-import { TrendingUp, Package, ShoppingBag, ArrowUpRight, Users, ChevronDown, ChevronUp, Key, LockIcon, CheckCircle2, Wallet, Plus } from 'lucide-react';
+import { TrendingUp, Package, ShoppingBag, Users, ChevronDown, ChevronUp, Key } from 'lucide-react';
 import { formatBs, formatCop } from '../../utils/calculatorUtils';
 import AnimatedCounter from '../AnimatedCounter';
 import CasheaIcon from '../CasheaIcon';
@@ -9,14 +9,11 @@ export default function DashboardStats({
     todayTotalUsd, todayTotalBs, todayTotalCop, todaySales, todayItemsSold,
     todayExpenses, todayExpensesUsd, todayGastosUsd = 0,
     todayProfit, bcvRate,
-    todayCashFlow,
     totalDeudas, showTopDeudas, setShowTopDeudas,
-    triggerHaptic, onDailyClose, onOpenGasto,
-    copEnabled, copPrimary, tasaCop,
-    onTasaClick,
+    triggerHaptic, copEnabled, copPrimary, tasaCop,
 }) {
     return (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
             {/* Licencia Demo */}
             {isDemo && demoTimeLeft && (
                 <div className="col-span-2 lg:col-span-4 bg-gradient-to-r from-amber-500 to-amber-600 rounded-2xl p-4 shadow-sm relative overflow-hidden text-white flex items-center justify-between">
@@ -88,8 +85,7 @@ export default function DashboardStats({
             </div>
 
             {/* Egresos del Día */}
-            {todayExpensesUsd > 0 && (
-                <div className="col-span-2 lg:col-span-4 bg-white dark:bg-slate-900 rounded-2xl p-4 border border-orange-200 dark:border-orange-800/30 shadow-sm relative overflow-hidden">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-orange-200 dark:border-orange-800/30 shadow-sm relative overflow-hidden">
                     <div className="absolute -right-4 -top-4 w-16 h-16 bg-orange-50 dark:bg-orange-900/10 rounded-full blur-2xl"></div>
                     <div className="flex items-center justify-between relative z-10">
                         <div className="flex items-center gap-3">
@@ -100,19 +96,14 @@ export default function DashboardStats({
                                 <p className="text-[11px] font-medium text-slate-400">Egresos del día</p>
                                 {copEnabled && copPrimary && tasaCop > 0 ? (
                                     <>
-                                        <p className="text-2xl font-outfit font-semibold text-orange-600 dark:text-orange-400">
-                                            -{formatCop(todayExpensesUsd * tasaCop)} COP
-                                        </p>
+                                        <p className="text-2xl font-outfit font-semibold text-orange-600 dark:text-orange-400">-{formatCop(todayExpensesUsd * tasaCop)} COP</p>
                                         <p className="text-[10px] text-orange-400">-${todayExpensesUsd.toFixed(2)} · {formatBs(todayExpensesUsd * bcvRate)} Bs</p>
                                     </>
                                 ) : (
                                     <>
-                                        <p className="text-2xl font-outfit font-semibold text-orange-600 dark:text-orange-400">
-                                            -$<AnimatedCounter value={todayExpensesUsd} />
-                                        </p>
-                                        {copEnabled && tasaCop > 0 && (
-                                            <p className="text-[10px] text-orange-400">{formatCop(todayExpensesUsd * tasaCop)} COP · {formatBs(todayExpensesUsd * bcvRate)} Bs</p>
-                                        )}
+                                        <p className="text-2xl font-outfit font-semibold text-orange-600 dark:text-orange-400">-$<AnimatedCounter value={todayExpensesUsd} /></p>
+                                        <p className="text-[10px] text-orange-400">{formatBs(todayExpensesUsd * bcvRate)} Bs</p>
+                                        {copEnabled && tasaCop > 0 && <p className="text-[10px] text-orange-400">{formatCop(todayExpensesUsd * tasaCop)} COP</p>}
                                     </>
                                 )}
                                 {todayGastosUsd > 0 && (
@@ -128,7 +119,6 @@ export default function DashboardStats({
                         <span className="text-xs font-bold text-orange-500 bg-orange-50 dark:bg-orange-900/20 px-2.5 py-1 rounded-lg shrink-0 self-start">{todayExpenses.length} {todayExpenses.length === 1 ? 'pago' : 'pagos'}</span>
                     </div>
                 </div>
-            )}
 
             {/* Ganancia Estimada */}
             <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 shadow-sm relative overflow-hidden">
@@ -167,86 +157,6 @@ export default function DashboardStats({
                 </div>
             </div>
 
-            {/* Tasas */}
-            <div 
-                onClick={() => { triggerHaptic && triggerHaptic(); onTasaClick && onTasaClick(); }}
-                className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 shadow-sm cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/80 active:scale-[0.98] transition-all"
-            >
-                <div className="flex items-center justify-between mb-2">
-                    <div className="w-9 h-9 bg-brand-light dark:bg-surface-800/30 rounded-xl flex items-center justify-center">
-                        <ArrowUpRight size={18} className="text-brand" />
-                    </div>
-                </div>
-                <p className="text-2xl font-outfit font-semibold text-slate-800 dark:text-white leading-none">{formatBs(bcvRate)} <span className="text-xs font-bold text-slate-400">Bs/$</span></p>
-                <p className="text-[11px] text-slate-400 mt-0.5">Tasa BCV</p>
-                {copEnabled && tasaCop > 0 && (
-                    <>
-                        <div className="border-t border-slate-100 dark:border-slate-800 my-2"></div>
-                        <p className="text-xl font-outfit font-semibold text-amber-600 dark:text-amber-400 leading-none">
-                            {tasaCop.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-xs font-bold text-amber-500/60">COP/$</span>
-                        </p>
-                        <p className="text-[11px] text-slate-400 mt-0.5">Tasa COP</p>
-                        {bcvRate > 0 && (
-                            <p className="text-[10px] font-bold text-amber-500 dark:text-amber-400 mt-1.5 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded inline-block">
-                                1 COP ≈ {formatBs(bcvRate / tasaCop)} Bs
-                            </p>
-                        )}
-                    </>
-                )}
-            </div>
-
-            {/* BOTON CERRAR CAJA Y REGISTRAR GASTO */}
-            <div className="col-span-2 lg:col-span-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {(todayCashFlow.length > 0 || todaySales.length > 0) ? (
-                    <button
-                        onClick={onDailyClose}
-                        className="w-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white rounded-2xl p-4 shadow-lg shadow-red-500/20 active:scale-[0.98] transition-all flex items-center justify-between group"
-                    >
-                        <div className="flex items-center gap-3">
-                            <div className="w-11 h-11 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
-                                <LockIcon size={22} />
-                            </div>
-                            <div className="text-left">
-                                <p className="text-sm font-black">Cerrar Caja</p>
-                                <p className="text-[11px] font-medium text-white/70">{copEnabled && copPrimary && tasaCop > 0 ? `${formatCop(todayTotalCop || Math.round(todayTotalUsd * tasaCop))} COP · $${todayTotalUsd.toFixed(2)}` : `$${todayTotalUsd.toFixed(2)}${copEnabled && tasaCop > 0 ? ` · ${formatCop(todayTotalCop || Math.round(todayTotalUsd * tasaCop))} COP` : ''}`} | {todaySales.length} {todaySales.length === 1 ? 'venta' : 'ventas'}</p>
-                            </div>
-                        </div>
-                        <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center group-hover:translate-x-1 transition-transform">
-                            <LockIcon size={16} />
-                        </div>
-                    </button>
-                ) : (
-                    <div className="w-full bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 flex items-center gap-3">
-                        <div className="w-10 h-10 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl flex items-center justify-center">
-                            <CheckCircle2 size={20} className="text-emerald-500" />
-                        </div>
-                        <div>
-                            <p className="text-sm font-bold text-slate-500 dark:text-slate-400">Sin ventas pendientes</p>
-                            <p className="text-[11px] text-slate-400 dark:text-slate-500">La caja esta limpia</p>
-                        </div>
-                    </div>
-                )}
-
-                {/* Botón Registrar Gasto Prominente */}
-                <button
-                    type="button"
-                    onClick={() => { triggerHaptic && triggerHaptic(); onOpenGasto && onOpenGasto(); }}
-                    className="w-full bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200/70 dark:border-rose-900/50 rounded-2xl p-4 shadow-sm active:scale-[0.98] transition-all flex items-center justify-between group"
-                >
-                    <div className="flex items-center gap-3">
-                        <div className="w-11 h-11 bg-rose-100 dark:bg-rose-900/40 rounded-xl flex items-center justify-center shadow-inner">
-                            <Wallet size={22} className="text-rose-600 dark:text-rose-400" />
-                        </div>
-                        <div className="text-left">
-                            <p className="text-sm font-black">Registrar Gasto</p>
-                            <p className="text-[11px] text-rose-500/80 font-bold">Abonos, compras e insumos</p>
-                        </div>
-                    </div>
-                    <div className="w-8 h-8 bg-rose-100 dark:bg-rose-900/40 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
-                        <Plus size={18} className="text-rose-600 dark:text-rose-400" />
-                    </div>
-                </button>
-            </div>
 
             {/* Deudas Pendientes */}
             {totalDeudas.count > 0 && (

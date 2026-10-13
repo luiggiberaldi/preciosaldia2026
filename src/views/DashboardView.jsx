@@ -7,6 +7,7 @@ import { BarChart3, TrendingUp, Package, AlertTriangle, ShoppingCart, Store, Use
 import { formatBs, formatCop } from '../utils/calculatorUtils';
 import DashboardStats from '../components/Dashboard/DashboardStats';
 import DashboardPaymentBreakdown from '../components/Dashboard/DashboardPaymentBreakdown';
+import DashboardCashControls from '../components/Dashboard/DashboardCashControls';
 import SalesHistory from '../components/Dashboard/SalesHistory';
 import SalesChart from '../components/Dashboard/SalesChart';
 import ConfirmModal from '../components/ConfirmModal';
@@ -72,9 +73,10 @@ const extractAdvancesFromSales = (salesArray) => {
 export default function DashboardView({ rates, triggerHaptic, onNavigate, theme, toggleTheme, isActive, isDemo, demoTimeLeft }) {
     const { notifyCierrePendiente, requestPermission } = useNotifications();
     const { deviceId } = useSecurity();
-    const isAdmin = true;
-    const isCajero = useAuthStore(s => s.requireLogin && s.usuarioActivo?.rol === 'CAJERO');
+    const requireLogin = useAuthStore(s => s.requireLogin);
     const usuarioActivo = useAuthStore(s => s.usuarioActivo);
+    const isCajero = requireLogin && usuarioActivo?.rol === 'CAJERO';
+    const isAdmin = !requireLogin || usuarioActivo?.rol === 'ADMIN';
     const { log: auditLog } = useAudit();
     const { products, setProducts, isLoadingProducts, effectiveRate: bcvRate, copEnabled, copPrimary, tasaCop } = useProductContext();
     const { loadCart } = useCart();
@@ -149,7 +151,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         todayTotalBs, todayTotalUsd, todayTotalCop, todayItemsSold,
         todayExpenses, todayExpensesUsd, todayGastos, todayGastosUsd, todayProfit,
         getRecentSales, weekData, outOfStockProducts, lowStockProducts,
-        totalDeudas, topProducts, paymentBreakdown, todayTopProducts, inventoryMetrics,
+        totalDeudas, topProducts, paymentBreakdown, fondoBreakdown, todayTopProducts, inventoryMetrics,
         todayReceivables,
     } = useDashboardMetrics(sales, customers, products, bcvRate);
 
@@ -318,7 +320,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         const currentCierreId = new Date().getTime();
         const existingCloses = sales.filter(s => s.tipo === 'REGISTRO_CIERRE');
         const cierreNumber = existingCloses.reduce((mx, s) => Math.max(mx, s.cierreNumber || 0), 0) + 1;
-        const validTiposParaCerrar = ['VENTA', 'VENTA_FIADA', 'VENTA_CASHEA', 'COBRO_DEUDA', 'COBRO_CASHEA', 'PAGO_PROVEEDOR', 'GASTO_INTERNO', 'APERTURA_CAJA', 'AVANCE_EFECTIVO'];
+        const validTiposParaCerrar = ['VENTA', 'VENTA_FIADA', 'VENTA_CASHEA', 'COBRO_DEUDA', 'COBRO_CASHEA', 'PAGO_PROVEEDOR', 'GASTO_INTERNO', 'APERTURA_CAJA', 'AVANCE_EFECTIVO', 'APORTE_CAJA'];
         
         // Registrar el cierre formalmente en el log de transacciones para sincronización con el supervisor
         let registroCierre = null;
@@ -590,9 +592,9 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                         {salesHistoryComponent}
                     </div>
                 ) : (
-                    <div className={`${(outOfStockProducts.length > 0 || lowStockProducts.length > 0 || topProducts.length > 0) ? 'lg:grid lg:grid-cols-[1fr_300px] xl:grid-cols-[1fr_340px] lg:gap-6 lg:items-start' : ''}`}>
+                    <div className={`${(outOfStockProducts.length > 0 || lowStockProducts.length > 0 || topProducts.length > 0) ? 'xl:grid xl:grid-cols-[minmax(0,1fr)_340px] xl:gap-6 xl:items-start' : ''}`}>
 
-                {/* LEFT: Stats + Payment + Chart */}
+                {/* LEFT: Resumen financiero + controles de caja + actividad */}
                 <div>
                 {/* Stats Cards */}
                 <DashboardStats
@@ -609,46 +611,61 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                     todayGastosUsd={todayGastosUsd}
                     todayProfit={todayProfit}
                     bcvRate={bcvRate}
-                    todayCashFlow={todayCashFlow}
                     totalDeudas={totalDeudas}
                     showTopDeudas={showTopDeudas}
                     setShowTopDeudas={setShowTopDeudas}
                     triggerHaptic={triggerHaptic}
-                    onDailyClose={handleDailyClose}
                     copEnabled={copEnabled}
-                    copPrimary={copPrimary}
                     tasaCop={tasaCop}
-                    onTasaClick={() => setShowMonitor(true)}
-                    onOpenGasto={() => setIsAddGastoOpen(true)}
                 />
 
-                {/* Pago por Metodo */}
-                <DashboardPaymentBreakdown
+                <DashboardCashControls
+                    isAdmin={isAdmin}
                     paymentBreakdown={paymentBreakdown}
-                    receivables={todayReceivables}
-                    todayTotalBs={todayTotalBs}
-                    bcvRate={bcvRate}
                     copEnabled={copEnabled}
                     copPrimary={copPrimary}
                     tasaCop={tasaCop}
+                    bcvRate={bcvRate}
+                    todayCashFlow={todayCashFlow}
+                    todayApertura={todayApertura}
+                    todaySales={todaySales}
+                    todayTotalUsd={todayTotalUsd}
+                    todayTotalCop={todayTotalCop}
+                    onDailyClose={handleDailyClose}
+                    onOpenGasto={() => setIsAddGastoOpen(true)}
+                    onTasaClick={() => setShowMonitor(true)}
+                    onGoVentas={isAdmin && todayApertura ? () => onNavigate?.('ventas') : null}
+                    triggerHaptic={triggerHaptic}
                 />
 
-                {/* Gráfica semanal */}
-                <SalesChart
-                    weekData={weekData}
-                    selectedDate={selectedChartDate}
-                    copEnabled={copEnabled}
-                    copPrimary={copPrimary}
-                    tasaCop={tasaCop}
-                    bcvRate={bcvRate}
-                    onDayClick={(date) => {
-                        triggerHaptic();
-                        setSelectedChartDate(prev => prev === date ? null : date);
-                        setTimeout(() => {
-                            window.scrollBy({ top: 150, behavior: 'smooth' });
-                        }, 50);
-                    }}
-                />
+                {/* Resumen operativo en dos columnas cuando hay ancho suficiente. */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5 items-start">
+                    <DashboardPaymentBreakdown
+                        paymentBreakdown={paymentBreakdown}
+                        fondoBreakdown={fondoBreakdown}
+                        receivables={todayReceivables}
+                        todayTotalBs={todayTotalBs}
+                        bcvRate={bcvRate}
+                        copEnabled={copEnabled}
+                        copPrimary={copPrimary}
+                        tasaCop={tasaCop}
+                    />
+                    <SalesChart
+                        weekData={weekData}
+                        selectedDate={selectedChartDate}
+                        copEnabled={copEnabled}
+                        copPrimary={copPrimary}
+                        tasaCop={tasaCop}
+                        bcvRate={bcvRate}
+                        onDayClick={(date) => {
+                            triggerHaptic();
+                            setSelectedChartDate(prev => prev === date ? null : date);
+                            setTimeout(() => {
+                                window.scrollBy({ top: 150, behavior: 'smooth' });
+                            }, 50);
+                        }}
+                    />
+                </div>
 
                 {/* Historial de ventas — integrado en la columna izquierda para eliminar espacios vacíos */}
                 {salesHistoryComponent}

@@ -4,16 +4,30 @@ import { formatBs, formatCop } from '../../utils/calculatorUtils';
 import { getPaymentLabel, toTitleCase, getPaymentIcon, PAYMENT_ICONS } from '../../config/paymentMethods';
 import { buildPaymentBreakdownRows, toBsEquivalent } from '../../utils/paymentBreakdownView';
 import { buildReceivablesView } from '../../utils/receivablesReport';
+import { round2, sumR } from '../../utils/dinero';
 
 export default function DashboardPaymentBreakdown({
-    paymentBreakdown, todayTotalBs, bcvRate, copEnabled, copPrimary, tasaCop, receivables = null,
+    paymentBreakdown, fondoBreakdown = {}, todayTotalBs, bcvRate, copEnabled, copPrimary, tasaCop, receivables = null,
 }) {
+    // Fondo de apertura + aportes incluidos dentro de los buckets de efectivo (solo informativo).
+    const fondoUsd = fondoBreakdown?.efectivo_usd?.total || 0;
+    const fondoBs = fondoBreakdown?.efectivo_bs?.total || 0;
+    const fondoLine = (monto, unidad) => (
+        <p className="text-[10px] text-slate-400 dark:text-slate-500 text-right -mt-0.5">
+            incluye fondo/aportes: {unidad}
+        </p>
+    );
     if (Object.keys(paymentBreakdown).length === 0) return null;
 
     // FIA-REPORT-001 (H4): núcleo compartido con el reporte. El denominador de los %
     // son SOLO medios de pago reales (sin fiado, crédito interno, propina ni vuelto).
     const breakdownView = buildPaymentBreakdownRows(paymentBreakdown, { bcvRate, tasaCop });
-    const allEntries = breakdownView.rows.map(row => [row.key, {
+    // Egresos (gastos/pagos a proveedor) entran al bucket como pago negativo. No son
+    // un medio de pago: se muestran aparte para que no parezcan "Dólares −50".
+    const egresosEntries = breakdownView.rows
+        .filter(row => !row.isChange && !row.isTip && !row.isCommission && !row.isReceivable && !row.isInternalCredit && row.amount < 0)
+        .map(row => ({ key: row.key, label: row.label, currency: row.currency, amount: row.amount }));
+    const allEntries = breakdownView.rows.filter(row => !egresosEntries.some(e => e.key === row.key)).map(row => [row.key, {
         ...paymentBreakdown[row.key],
         pct: row.pct,
         amountBs: row.amountBs,
@@ -53,7 +67,15 @@ export default function DashboardPaymentBreakdown({
         ? data.amountBs
         : toBsEquivalent(data, { bcvRate, tasaCop }));
 
-    const grandTotalBsEquiv = breakdownView.denominatorBs;
+    // El denominador excluye los egresos: son salidas, no ventas por medio de pago.
+    const grandTotalBsEquiv = round2(sumR(
+        breakdownView.rows
+            .filter(r => r.inDenominator && r.amount >= 0)
+            .map(r => r.amountBs)
+    ));
+
+    const totalEgresosUsd = egresosEntries.filter(e => e.currency === 'USD').reduce((s, e) => s + e.amount, 0);
+    const totalEgresosBs = egresosEntries.filter(e => e.currency === 'BS').reduce((s, e) => s + e.amount, 0);
 
     const renderMethod = ([method, data]) => {
         const label = toTitleCase(getPaymentLabel(method, data.label));
@@ -179,6 +201,7 @@ export default function DashboardPaymentBreakdown({
                     <div className="space-y-3 pl-1 border-l-2 border-surface-300 dark:border-surface-700/40">
                         <div className="pl-3 space-y-3">
                             {bsMethods.map(e => renderMethod(e))}
+                            {fondoBs > 0 && fondoLine(fondoBs, `${formatBs(fondoBs)} Bs`)}
                             {vueltoBs.map(renderVuelto)}
                         </div>
                     </div>
@@ -198,6 +221,7 @@ export default function DashboardPaymentBreakdown({
                     <div className="space-y-3 pl-1 border-l-2 border-emerald-200 dark:border-emerald-800/40">
                         <div className="pl-3 space-y-3">
                             {usdMethods.map(e => renderMethod(e))}
+                            {fondoUsd > 0 && fondoLine(fondoUsd, `USD ${fondoUsd.toFixed(2)}`)}
                             {vueltoUsd.map(renderVuelto)}
                         </div>
                     </div>
@@ -220,6 +244,23 @@ export default function DashboardPaymentBreakdown({
 
             {/* TIP-005: propinas dejadas en caja. Informativo: NO es un ingreso
                 adicional, el efectivo ya está contado arriba (no se restó vuelto). */}
+            {egresosEntries.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-dashed border-orange-300 dark:border-orange-800/50">
+                    <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-orange-500 uppercase tracking-wider">Egresos de caja</span>
+                        <span className="text-xs font-black text-orange-500 dark:text-orange-400">
+                            {[
+                                totalEgresosUsd < 0 ? `− USD ${Math.abs(totalEgresosUsd).toFixed(2)}` : null,
+                                totalEgresosBs < 0 ? `− ${formatBs(Math.abs(totalEgresosBs))} Bs` : null,
+                            ].filter(Boolean).join(' + ')}
+                        </span>
+                    </div>
+                    <p className="text-[9px] text-slate-450 dark:text-slate-500 mt-0.5">
+                        Ya descontado del efectivo; no es un método de pago.
+                    </p>
+                </div>
+            )}
+
             {propinas.length > 0 && (
                 <div className="mt-3 pt-3 border-t border-dashed border-emerald-300 dark:border-emerald-800/50">
                     <div className="flex items-center justify-between">
