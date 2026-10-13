@@ -34,3 +34,34 @@ Se separa del commit de Estación `32d1f75`.
 - Un canje paralelo en Estación duplicaría ese flujo y exige tocar la base operativa.
 - Pendiente: decidir si la credencial sale del mismo RPC (extender su respuesta) o de una ruta aparte.
   No se implementó en esta iteración.
+
+## Verificación de esquema y diseño del canje (revisión 2)
+
+Fuentes: repo POS, no la base viva. No se consultó Supabase en esta revisión.
+
+### Esquema real de `device_pairings`
+- No hay `CREATE TABLE device_pairings` completo en el repo. Las columnas se
+  infieren de las migraciones y RPC de staging (`20261011_001/002`, `20261012_003`,
+  `20261013_004`) y del borrador de producción.
+- Columnas usadas: `primary_device_id`, `monitor_device_id`, `monitor_auth_id`,
+  `owner_auth_id`, `token_hash`, `token_expires_at`, `token_used_at`, `revoked_at`, `paired_at`.
+- Con RLS forzado. `pair_monitor_device` es `SECURITY DEFINER`, con grant solo a `authenticated`.
+- Producción (`sodgzkablshladvbtnes`) NO tiene estos cambios: el 004 multi-locale
+  está aplicado solo en staging; los borradores de producción no están aplicados.
+
+### Canje propuesto (sin implementar)
+- La credencial sale del mismo flujo de un solo uso: el POS, al llamar
+  `pair_monitor_device`, recibe además una credencial emitida server-side.
+- Guardar solo `secret_hash` en `device_upload_credentials` (migración 004 de
+  Estación). Devolver el secreto una sola vez en la respuesta del RPC o de una
+  ruta que valide el mismo token.
+- Riesgo: el RPC vive en Supabase y el upload en Estación. Hace falta que la
+  respuesta del RPC y la tabla `device_upload_credentials` estén en la misma base.
+  Hoy `device_upload_credentials` solo existe como borrador en Estación.
+
+### Bloqueos antes de implementar
+1. Confirmar que `device_upload_credentials` y `device_pairings` están en la
+   misma base operativa, o decidir cómo se sincroniza la credencial.
+2. Aplicar la migración 004 (Estación) tras aprobación explícita.
+3. Revisar el borrador de producción `20261013_prod_pairing_token_owner_proof.sql`
+   antes de cualquier cambio en `generate_pairing_token`.
