@@ -77,9 +77,10 @@ vía PostgREST con la clave de servicio de Estación. No se leyeron filas de pai
   `last_seen_at`. Requeridas: `id`, `primary_device_id`. Hay 19 filas (conteo, sin contenido).
 - `device_upload_credentials` NO EXISTE en producción (404). La migración 004 sigue sin aplicar.
 - RPC expuestos en producción: `pair_monitor_device`, `generate_pairing_token`, `unpair_monitor`.
-- Diferencia detectada: producción expone `pairing_token` en texto plano, mientras el
-  borrador de staging usa `token_hash`. La columna `token_hash` sí existe en producción.
-  El RPC de producción debe revisarse antes de depender de él.
+- Diferencia de esquema: producción tiene ambas columnas, `pairing_token` (texto) y
+  `token_hash`. El OpenAPI solo confirma que existen; NO se leyeron valores, así que no
+  se sabe si `pairing_token` guarda tokens en claro. El cuerpo real de `pair_monitor_device`
+  en producción tampoco se verificó: PostgREST no lo expone.
 
 Conclusión: el canje propuesto necesita la migración 004 en producción, aprobada
 explícitamente, y revisar qué versión de `pair_monitor_device` corre en producción.
