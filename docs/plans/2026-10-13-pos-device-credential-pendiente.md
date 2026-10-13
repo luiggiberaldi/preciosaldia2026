@@ -84,3 +84,33 @@ vía PostgREST con la clave de servicio de Estación. No se leyeron filas de pai
 
 Conclusión: el canje propuesto necesita la migración 004 en producción, aprobada
 explícitamente, y revisar qué versión de `pair_monitor_device` corre en producción.
+
+## Cuerpo real de `pair_monitor_device` en producción (revisión 4)
+
+Leído del catálogo de Postgres de `sodgzkablshladvbtnes` (solo lectura, sin cambios).
+
+Comportamiento:
+1. Exige sesión (`auth.uid()`); si no hay, responde `success:false`.
+2. Valida el código: entre 16 y 64 caracteres.
+3. Busca la fila por `token_hash = sha256(upper(trim(token)))`, con
+   `token_expires_at > now()`, `token_used_at IS NULL` y `revoked_at IS NULL`. Usa `FOR UPDATE`.
+4. Si `monitor_auth_id` ya está ocupado por otro monitor, responde `success:false`.
+5. Marca el vínculo: guarda `monitor_device_id`, `monitor_auth_id`, `paired_at`,
+   `token_used_at`, y pone `pairing_token` y `token_hash` en NULL.
+6. Devuelve `{success: true, primary_device_id}`.
+
+Diferencias con staging: producción no exige prefijo `e2e-` ni valida el formato
+de `p_monitor_device_id` (solo `NULLIF(trim(...), '')`).
+
+## Diseño del canje sobre esta función (no implementado)
+
+- El token se consume en el paso 5, así que el canje puede salir de la misma respuesta.
+- Propuesta: extender el JSON de éxito con `credential` (secreto aleatorio, una sola vez)
+  y guardar solo su SHA-256 en `device_upload_credentials`.
+- Requisitos previos: migración 004 aplicada en producción, con aprobación explícita.
+- Riesgo: `pair_monitor_device` es SECURITY DEFINER y se llama desde el cliente. El
+  secreto viajaría en la respuesta del RPC; hay que confirmar que el cliente lo guarda
+  sin registrarlo en logs.
+- Riesgo: si la inserción de la credencial falla después del paso 5, el token ya quedó
+  consumido. Hace falta una transacción que cubra ambos pasos.
+- Pendiente de confirmar: si `pairing_token` contiene valores en claro en filas existentes.
