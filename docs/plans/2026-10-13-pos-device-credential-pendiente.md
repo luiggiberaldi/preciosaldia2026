@@ -65,3 +65,21 @@ Fuentes: repo POS, no la base viva. No se consultó Supabase en esta revisión.
 2. Aplicar la migración 004 (Estación) tras aprobación explícita.
 3. Revisar el borrador de producción `20261013_prod_pairing_token_owner_proof.sql`
    antes de cualquier cambio en `generate_pairing_token`.
+
+## Verificación en producción (solo lectura, revisión 3)
+
+Base consultada: `sodgzkablshladvbtnes` (producción, la base operativa). Solo lectura
+vía PostgREST con la clave de servicio de Estación. No se leyeron filas de pairings.
+
+- `device_pairings` EXISTE en producción. Columnas: `id` (uuid), `primary_device_id`,
+  `monitor_device_id`, `pairing_token`, `token_hash`, `token_expires_at`, `token_used_at`,
+  `paired_at`, `revoked_at`, `created_at`, `owner_auth_id` (uuid), `monitor_auth_id` (uuid),
+  `last_seen_at`. Requeridas: `id`, `primary_device_id`. Hay 19 filas (conteo, sin contenido).
+- `device_upload_credentials` NO EXISTE en producción (404). La migración 004 sigue sin aplicar.
+- RPC expuestos en producción: `pair_monitor_device`, `generate_pairing_token`, `unpair_monitor`.
+- Diferencia detectada: producción expone `pairing_token` en texto plano, mientras el
+  borrador de staging usa `token_hash`. La columna `token_hash` sí existe en producción.
+  El RPC de producción debe revisarse antes de depender de él.
+
+Conclusión: el canje propuesto necesita la migración 004 en producción, aprobada
+explícitamente, y revisar qué versión de `pair_monitor_device` corre en producción.
