@@ -42,6 +42,7 @@ api/secrets.*
 # Nunca commitear backups, inventarios reales, PDFs de cierres, videos, etc.
 backup_*.json
 *backup*.json
+backups/
 *.xls
 *.xlsx
 *.pdf

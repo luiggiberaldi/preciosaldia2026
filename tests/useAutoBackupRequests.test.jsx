@@ -2,7 +2,7 @@ import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { backupQuery, channelState, cloudClient, driveUpload, storageGet } = vi.hoisted(() => {
+const { backupQuery, channelState, cloudClient, storageGet } = vi.hoisted(() => {
     const state = { channel: null, callback: null, removed: [] };
     const channel = {
         on: vi.fn((_event, _filter, callback) => {
@@ -67,12 +67,10 @@ const { backupQuery, channelState, cloudClient, driveUpload, storageGet } = vi.h
         removeChannel: vi.fn(async (channel) => { state.removed.push(channel); }),
         auth: { getSession: vi.fn(async () => ({ data: { session: null } })) },
     };
-    const upload = vi.fn(async () => ({ downloadUrl: 'https://backup.test/file', sizeBytes: 10 }));
     return {
         backupQuery: query,
         channelState: state,
         cloudClient: client,
-        driveUpload: upload,
         storageGet: vi.fn(async () => null),
     };
 });
@@ -89,7 +87,6 @@ vi.mock('../src/utils/compression', () => ({
     compressString: vi.fn(async (value) => value),
     isCompressionSupported: vi.fn(() => false),
 }));
-vi.mock('../src/utils/driveBackupUploader', () => ({ uploadToGoogleDrive: driveUpload }));
 vi.mock('../src/utils/backupRestoreService', () => ({
     validateBackupJson: vi.fn(),
     applyBackupToStorage: vi.fn(),
@@ -164,8 +161,6 @@ describe('useAutoBackup remote request reconciliation', () => {
         cloudClient.from.mockClear();
         cloudClient.removeChannel.mockClear();
         cloudClient.channel.mockClear();
-        driveUpload.mockReset();
-        driveUpload.mockResolvedValue({ downloadUrl: 'https://backup.test/file', sizeBytes: 10 });
         storageGet.mockReset();
         storageGet.mockResolvedValue(null);
         localStorage.clear();
@@ -184,89 +179,63 @@ describe('useAutoBackup remote request reconciliation', () => {
         vi.useRealTimers();
     });
 
-    it('deduplicates realtime and poll triggers while one request is in flight', async () => {
-        let finishBackup;
+    it('processes a pending request once and marks it failed without a remote copy', async () => {
         pendingRequest();
-        driveUpload.mockImplementation(() => new Promise((resolve) => { finishBackup = resolve; }));
         const view = renderBackupHook();
         await flushPromises();
 
         expect(startBackupRequestPolling).toHaveBeenCalled();
         expect(cloudClient.channel).toHaveBeenCalledWith('backup_request_PDA-DEVICE-01');
         expect(channelState.callback).toBeTypeOf('function');
-        expect(driveUpload).toHaveBeenCalledTimes(1);
-
-        await act(async () => {
-            await channelState.callback({ new: { status: 'pending' } });
-            await channelState.check();
-        });
-        expect(backupQuery.limit).toHaveBeenCalledTimes(1);
-
-        await act(async () => { finishBackup({ downloadUrl: 'https://backup.test/file', sizeBytes: 10 }); });
-        await flushPromises();
         expect(backupQuery.update).toHaveBeenCalledTimes(1);
-        expect(backupQuery.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }));
+        expect(backupQuery.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }));
+        expect(backupQuery.update).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }));
 
         await act(async () => { await channelState.callback({ new: { status: 'pending' } }); });
         await flushPromises();
-        expect(driveUpload).toHaveBeenCalledTimes(1);
+        expect(backupQuery.update).toHaveBeenCalledTimes(1);
         view.unmount();
     });
 
     it('does not retry a failed request before its exponential backoff expires', async () => {
         pendingRequest('retry-backoff');
-        driveUpload.mockRejectedValueOnce(new Error('temporary outage'));
         const view = renderBackupHook();
         await flushPromises();
+        const updatesAfterFirst = backupQuery.update.mock.calls.length;
+        expect(updatesAfterFirst).toBe(1);
 
-        expect(driveUpload).toHaveBeenCalledTimes(1);
         await act(async () => {
             vi.advanceTimersByTime(5 * 60 * 1000 - 1);
             await channelState.check();
         });
         await flushPromises();
-        expect(driveUpload).toHaveBeenCalledTimes(1);
+        expect(backupQuery.update.mock.calls.length).toBe(updatesAfterFirst);
 
         await act(async () => {
             vi.advanceTimersByTime(1);
             await channelState.check();
         });
         await flushPromises();
-        expect(driveUpload).toHaveBeenCalledTimes(2);
+        expect(backupQuery.update.mock.calls.length).toBe(updatesAfterFirst + 1);
         view.unmount();
     });
 
     it('increases retry delay after consecutive backup failures', async () => {
         pendingRequest('retry-backoff-growth');
-        driveUpload
-            .mockRejectedValueOnce(new Error('first outage'))
-            .mockRejectedValueOnce(new Error('second outage'))
-            .mockResolvedValueOnce({ downloadUrl: 'https://backup.test/file', sizeBytes: 10 });
         const view = renderBackupHook();
         await flushPromises();
-        expect(driveUpload).toHaveBeenCalledTimes(1);
+        const state = () => JSON.parse(sessionStorage.getItem('backup_retry_retry-backoff-growth'));
+        expect(state().attempts).toBe(1);
+        const firstDelay = state().nextAttemptAt - Date.now();
 
         await act(async () => {
             vi.advanceTimersByTime(5 * 60 * 1000);
             await channelState.check();
         });
         await flushPromises();
-        expect(driveUpload).toHaveBeenCalledTimes(2);
-
-        await act(async () => {
-            vi.advanceTimersByTime(5 * 60 * 1000);
-            await channelState.check();
-        });
-        await flushPromises();
-        expect(driveUpload).toHaveBeenCalledTimes(2);
-
-        await act(async () => {
-            vi.advanceTimersByTime(5 * 60 * 1000);
-            await channelState.check();
-        });
-        await flushPromises();
-        expect(driveUpload).toHaveBeenCalledTimes(3);
-        expect(backupQuery.update).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'completed' }));
+        expect(state().attempts).toBe(2);
+        const secondDelay = state().nextAttemptAt - Date.now();
+        expect(secondDelay).toBeGreaterThan(firstDelay);
         view.unmount();
     });
 
@@ -274,23 +243,19 @@ describe('useAutoBackup remote request reconciliation', () => {
         pendingRequest('already-completed');
         const view = renderBackupHook();
         await flushPromises();
-        expect(driveUpload).toHaveBeenCalledTimes(1);
+        expect(backupQuery.update).toHaveBeenCalledTimes(1);
 
         await act(async () => { await channelState.callback({ new: { status: 'pending' } }); });
         await flushPromises();
-        expect(driveUpload).toHaveBeenCalledTimes(1);
+        expect(backupQuery.update).toHaveBeenCalledTimes(1);
         view.unmount();
     });
 
-    it('retries a failed backup on a later reconciliation and completes only after success', async () => {
+    it('retries a failed request on a later reconciliation and never marks it completed without a remote copy', async () => {
         pendingRequest('retry-me');
-        driveUpload
-            .mockRejectedValueOnce(new Error('upload failed'))
-            .mockResolvedValueOnce({ downloadUrl: 'https://backup.test/file', sizeBytes: 10 });
         const view = renderBackupHook();
         await flushPromises();
 
-        expect(driveUpload).toHaveBeenCalledTimes(1);
         expect(backupQuery.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }));
         expect(backupQuery.pendingResult.data[0].status).toBe('failed');
         expect(backupQuery.in).toHaveBeenCalledWith('status', ['pending', 'failed']);
@@ -300,69 +265,36 @@ describe('useAutoBackup remote request reconciliation', () => {
             await channelState.check();
         });
         await flushPromises();
-        expect(driveUpload).toHaveBeenCalledTimes(2);
         expect(backupQuery.update).toHaveBeenCalledTimes(2);
-        expect(backupQuery.update).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'completed' }));
+        expect(backupQuery.update).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }));
         expect(backupQuery.observedStatuses).toEqual([['pending'], ['failed']]);
-        expect(backupQuery.pendingResult.data[0].status).toBe('completed');
+        expect(backupQuery.pendingResult.data[0].status).toBe('failed');
         view.unmount();
     });
 
-    it('does not report a request as completed when Supabase rejects the update promise', async () => {
+    it('does not record a request as processed when the failed status write is rejected', async () => {
         pendingRequest('completion-rejected');
-        backupQuery.updateResult = Promise.reject(new Error('completion request rejected'));
-        backupQuery.updateResult.catch(() => {});
-        const view = renderBackupHook();
-        await flushPromises();
-
-        expect(driveUpload).toHaveBeenCalledTimes(1);
-        expect(sessionStorage.getItem('backup_processed_completion-rejected')).toBeNull();
-        expect(console.error).toHaveBeenCalledWith('[AutoBackup] Backup falló, se reintentará:', expect.any(Error));
-        view.unmount();
-    });
-
-    it('keeps a request retryable when persisting completed status fails', async () => {
-        pendingRequest('completion-write-retry');
-        backupQuery.updateResult = { error: new Error('completion write failed') };
-        const view = renderBackupHook();
-        await flushPromises();
-
-        expect(driveUpload).toHaveBeenCalledTimes(1);
-        expect(backupQuery.update).toHaveBeenCalledTimes(1);
-        expect(sessionStorage.getItem('backup_processed_completion-write-retry')).toBeNull();
-
-        backupQuery.updateResult = { error: null };
-        await act(async () => {
-            vi.advanceTimersByTime(5 * 60 * 1000);
-            await channelState.check();
-        });
-        await flushPromises();
-
-        expect(driveUpload).toHaveBeenCalledTimes(2);
-        expect(backupQuery.update).toHaveBeenCalledTimes(2);
-        expect(sessionStorage.getItem('backup_processed_completion-write-retry')).toBe('1');
-        view.unmount();
-    });
-
-    it('keeps a request retryable when the forced upload cannot reach Google Drive', async () => {
-        pendingRequest('missing-drive-endpoint');
-        driveUpload
-            .mockResolvedValueOnce(null)
-            .mockResolvedValueOnce({ downloadUrl: 'https://backup.test/file', sizeBytes: 10 });
+        backupQuery.updateResult = { error: new Error('status write rejected') };
         const view = renderBackupHook();
         await flushPromises();
 
         expect(backupQuery.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }));
-        expect(sessionStorage.getItem('backup_processed_missing-drive-endpoint')).toBeNull();
+        expect(sessionStorage.getItem('backup_processed_completion-rejected')).toBeNull();
+        view.unmount();
+    });
 
-        await act(async () => {
-            vi.advanceTimersByTime(5 * 60 * 1000);
-            await channelState.check();
-        });
+    it('marks the request failed with a reason when no remote destination exists', async () => {
+        pendingRequest('no-remote-destination');
+        const view = renderBackupHook();
         await flushPromises();
-        expect(driveUpload).toHaveBeenCalledTimes(2);
-        expect(backupQuery.update).toHaveBeenCalledTimes(2);
-        expect(backupQuery.update).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'completed' }));
+
+        // Este entorno no tiene CompressionStream: el respaldo no es .json.gz y Storage lo rechaza
+        // sin llamar a red. Nunca se marca completed.
+        expect(backupQuery.update).toHaveBeenCalledWith(
+            expect.objectContaining({ status: 'failed', error: expect.stringContaining('no se sube a Storage') })
+        );
+        expect(backupQuery.update).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }));
+        expect(sessionStorage.getItem('backup_processed_no-remote-destination')).toBeNull();
         view.unmount();
     });
 
@@ -371,7 +303,6 @@ describe('useAutoBackup remote request reconciliation', () => {
         const view = renderBackupHook();
         await flushPromises();
 
-        expect(driveUpload).not.toHaveBeenCalled();
         expect(backupQuery.update).not.toHaveBeenCalled();
         expect(console.error).toHaveBeenCalledWith('[AutoBackup] Error al procesar solicitud pendiente:', expect.any(Error));
         view.unmount();
@@ -379,7 +310,6 @@ describe('useAutoBackup remote request reconciliation', () => {
 
     it('cleans the polling watchdog and realtime subscription on unmount during an in-flight backup', async () => {
         pendingRequest('unmount-in-flight');
-        driveUpload.mockImplementation(() => new Promise(() => {}));
         const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
         const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
         const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
@@ -387,7 +317,7 @@ describe('useAutoBackup remote request reconciliation', () => {
         const view = renderBackupHook();
         await flushPromises();
 
-        expect(driveUpload).toHaveBeenCalledTimes(1);
+        expect(backupQuery.update).toHaveBeenCalledTimes(1);
         const watchdogTimer = setTimeoutSpy.mock.results.find((result, index) =>
             setTimeoutSpy.mock.calls[index][1] === 2 * 60 * 1000
         )?.value;

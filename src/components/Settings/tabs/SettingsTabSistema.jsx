@@ -97,9 +97,10 @@ export default function SettingsTabSistema({
                         onClick={() => {
                             if (!isLicensedCloud) {
                                 showToast('La sincronización con la nube requiere licencia completa', 'error');
+                                return;
                             }
+                            handleSyncCloud?.();
                         }}
-                        disabled={!isLicensedCloud}
                         aria-disabled={!isLicensedCloud}
                         title={!isLicensedCloud ? 'Disponible con licencia completa' : undefined}
                         className={`w-full flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 rounded-xl transition-colors group active:scale-[0.98] ${isLicensedCloud ? 'hover:bg-slate-100 dark:hover:bg-slate-800' : 'opacity-50 cursor-not-allowed'}`}

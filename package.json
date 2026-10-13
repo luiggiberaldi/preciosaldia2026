@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "schema:compare": "bun run scripts/compareSupabaseSchemas.mjs",
+    "backup:supabase": "node scripts/backupSupabaseProject.mjs",
     "test:coverage": "vitest run --coverage",
     "test:supervisor": "vitest run tests/supervisor*.test.js",
     "test:fiado": "vitest run tests/receivables*.test.js tests/paymentBreakdownView.test.js tests/pocketReconciliation.test.js",

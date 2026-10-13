@@ -3,10 +3,10 @@ import { storageService } from '../utils/storageService';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { IDB_KEYS, LS_KEYS } from '../config/backupKeys';
 import { compressString, isCompressionSupported } from '../utils/compression';
-import { uploadToGoogleDrive } from '../utils/driveBackupUploader';
 import { validateBackupJson, applyBackupToStorage } from '../utils/backupRestoreService';
 import { buildCloudBackupsRow } from '../config/cloudSchema';
 import { startBackupRequestPolling } from '../services/backupRequestPolling';
+import { uploadBackupToStorage } from '../utils/backupStorageUpload';
 
 
 // ─── Configuración optimizada ───────────────────────────────────────────────
@@ -87,24 +87,6 @@ function quickHash(obj) {
         h = Math.imul(31, h) + str.charCodeAt(i) | 0;
     }
     return `${str.length}_${h >>> 0}`;
-}
-
-/** Obtiene y sanitiza el nombre del negocio para el nombre del archivo en Drive */
-function getClientName(deviceId) {
-    const raw = localStorage.getItem('business_name')
-        || localStorage.getItem('restaurant_name')
-        || '';
-
-    if (raw.trim().length > 0 && !/^\d+$/.test(raw.trim())) {
-        const sanitized = raw.trim()
-            .replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ\s_-]/g, '')
-            .replace(/\s+/g, '_')
-            .trim();
-
-        if (sanitized.length >= 2) return sanitized;
-    }
-
-    return `Bodega_${(deviceId || 'Unknown').substring(0, 8)}`;
 }
 
 export function useAutoBackup(isPremium, isDemo, deviceId) {
@@ -192,78 +174,22 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                         }
                     }
 
-                    // Resumen calculado una sola vez aquí para que Estación Maestra pueda
-                    // listar backups sin tener que descargar/descomprimir `backup_data`.
-                    const productCount = Array.isArray(idbData.bodega_products_v1) ? idbData.bodega_products_v1.length : 0;
-                    const salesCount = Array.isArray(idbData.bodega_sales_v1) ? idbData.bodega_sales_v1.length : 0;
-                    const customerCount = Array.isArray(idbData.bodega_customers_v1) ? idbData.bodega_customers_v1.length : 0;
-                    const sizeBytes = JSON.stringify(payloadToUpload).length;
-
-                    const clientName = getClientName(devId);
-                    let driveResult = null;
-                    try {
-                        driveResult = await uploadToGoogleDrive(payloadToUpload, devId, clientName);
-                    } catch (driveErr) {
-                        console.error('[AutoBackup] Error al subir a Google Drive:', driveErr);
+                    // Subida a Storage de Estación: solo es éxito la respuesta verificada
+                    // del servidor (ok:true). Un fallo no marca hash/fecha como respaldados.
+                    if (!payloadToUpload.compressed || typeof payloadToUpload.data !== 'string') {
+                        return { ok: false, driveUrl: null, error: 'Respaldo sin comprimir: no se sube a Storage' };
                     }
-                    if (forceUpload && !driveResult) {
-                        throw new Error('No fue posible enviar el respaldo solicitado a Google Drive.');
+                    const gzipBytes = Uint8Array.from(atob(payloadToUpload.data), (c) => c.charCodeAt(0));
+                    const upload = await uploadBackupToStorage(devId, gzipBytes);
+                    if (!upload.ok) {
+                        return { ok: false, driveUrl: null, error: upload.error || 'Subida a Storage fallida' };
                     }
-                    // Guardar metadatos a través de la API de La Estación Maestra (Service Key en Server Side)
-                    const metadataPayload = {
-                        drive_url: driveResult?.downloadUrl || null,
-                        size_bytes: driveResult?.sizeBytes || sizeBytes,
-                        product_count: productCount,
-                        sales_count: salesCount,
-                        customer_count: customerCount,
-                        updated_at: new Date().toISOString()
-                    };
-
-                    // Notificar metadatos a la API de Estación Maestra (Service Key en Server Side).
-                    // Guardarraíl: solo hay default a producción en builds de producción;
-                    // en dev/test sin env el fetch no se intenta (URL vacía).
-                    const ESTACION_API = import.meta.env.VITE_ESTACION_API_URL
-                        || (import.meta.env.PROD ? 'https://estacion-2026.vercel.app' : '');
-                    let apiSuccess = false;
-                    if (ESTACION_API) {
-                        try {
-                            const res = await fetch(`${ESTACION_API}/api/backup/complete`, {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'text/plain',
-                                    // Shared secret exigido por el endpoint (blindaje anti-escritura pública)
-                                    'x-backup-secret': import.meta.env.VITE_ESTACION_BACKUP_SECRET || '',
-                                },
-                                body: JSON.stringify({
-                                    deviceId: devId,
-                                    driveUrl: metadataPayload.drive_url,
-                                    sizeBytes: metadataPayload.size_bytes,
-                                    productCount: metadataPayload.product_count,
-                                    salesCount: metadataPayload.sales_count,
-                                    customerCount: metadataPayload.customer_count
-                                })
-                            }).catch(() => null);
-                            if (res?.ok) apiSuccess = true;
-                        } catch {
-                            apiSuccess = false;
-                        }
-                    }
-
-                    // NOTA: el antiguo fallback directo a Supabase (cloud_backups) se eliminó:
-                    // requería una sesión Auth que no existe en la app y tragaba los
-                    // errores en silencio. Si la estación no acepta los metadatos, se
-                    // reporta el fallo honestamente en vez de fingir éxito.
+                    // SEC-009 (excepción documentada): hash y fecha son controles locales del
+                    // respaldo, no datos de negocio. No están en LOCAL_KEYS/SYNC_KEYS y no deben
+                    // ir a storageService, que encola sincronización con la nube.
                     localStorage.setItem(LAST_UPLOAD_HASH_KEY, currentHash);
                     localStorage.setItem('bodega_last_daily_backup_date', todayStr);
-
-                    if (!apiSuccess) {
-                        return {
-                            ok: false,
-                            driveUrl: driveResult?.downloadUrl || null,
-                            error: 'La estación rechazó los metadatos (401/403: secreto compartido no coincide o falta)'
-                        };
-                    }
-                    return { ok: true, driveUrl: driveResult?.downloadUrl || null, error: null };
+                    return { ok: true, driveUrl: null, backupId: upload.backupId, operationId: upload.operationId };
                 }
 
                 return { ok: false, error: 'Sin deviceId o sin cliente de nube' };

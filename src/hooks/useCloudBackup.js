@@ -3,7 +3,6 @@ import { showToast } from '../components/Toast';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { runWithoutEco } from '../utils/syncFlags';
 import { compressString, isCompressionSupported } from '../utils/compression';
-import { uploadToGoogleDrive } from '../utils/driveBackupUploader';
 import { describeCloudError, isRlsBlockedError } from '../utils/cloudError';
 import { buildCloudBackupsRow, buildSyncDocumentRow } from '../config/cloudSchema';
 import { ensureDeviceSessionRegistered } from '../utils/deviceIdentity';
@@ -84,20 +83,10 @@ export function useCloudBackup({
             }
         }
 
-        // 1. Subir a Google Drive (copia externa, best-effort) y guardar
-        //    payload completo + metadatos en Supabase.
-        const clientName = localStorage.getItem('business_name') || 'Mi Negocio';
-        let driveResult = null;
-        try {
-            driveResult = await uploadToGoogleDrive(payloadToUpload, deviceId, clientName);
-        } catch (driveErr) {
-            console.error('[CloudBackup] Error al subir manual backup a Google Drive:', driveErr);
-        }
-
+        // 1. Guardar payload completo + metadatos en Supabase (sin Google Drive).
         const metadataPayload = {
             ...payloadToUpload,
-            drive_url: driveResult?.downloadUrl || null,
-            size_bytes: driveResult?.sizeBytes || JSON.stringify(payloadToUpload).length,
+            size_bytes: JSON.stringify(payloadToUpload).length,
             updated_at: new Date().toISOString()
         };
 
