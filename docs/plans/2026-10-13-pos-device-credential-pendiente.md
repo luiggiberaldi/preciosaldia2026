@@ -27,3 +27,10 @@ Se separa del commit de Estación `32d1f75`.
 ## No verificado
 - Prueba HTTP end-to-end contra la ruta de Estación y la base real
   (la tabla no está migrada).
+
+## Revisión del canje de token (decisión)
+- El emparejamiento ya tiene canje de un solo uso: `pair_monitor_device(p_token, p_monitor_device_id)`
+  valida hash y expiración de `device_pairings` (staging: `20261011_002_staging_supervisor_pairing_auth.sql`).
+- Un canje paralelo en Estación duplicaría ese flujo y exige tocar la base operativa.
+- Pendiente: decidir si la credencial sale del mismo RPC (extender su respuesta) o de una ruta aparte.
+  No se implementó en esta iteración.
