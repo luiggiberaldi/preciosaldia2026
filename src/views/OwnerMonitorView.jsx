@@ -29,6 +29,7 @@ import { ensureSupervisorSession } from '../services/supervisorAuth';
 import { MONITOR_CLEANUP_PENDING_KEY, isPairingRevocationConfirmed, revokeAndClearMonitor } from '../services/monitorUnpair';
 import { SUPERVISOR_SYNC_STATES } from '../services/supervisorSyncService';
 import { sendSupervisorCommand } from '../services/supervisorCommandService';
+import { matchesSearch as matchesSearchFields } from '../utils/searchMatch';
 import {
     calculateSupervisorCashSummary,
     buildSupervisorExpenseReport,
@@ -100,8 +101,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
     const filteredProducts = useMemo(() => {
         if (!products) return [];
         return products.filter(p => {
-            const matchesSearch = (p.name || '').toLowerCase().includes(searchTermInventario.toLowerCase()) || 
-                                 (p.barcode && p.barcode.includes(searchTermInventario));
+            const matchesSearch = matchesSearchFields([p.name, p.barcode], searchTermInventario);
             
             if (!matchesSearch) return false;
             

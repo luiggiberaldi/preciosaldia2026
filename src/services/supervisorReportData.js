@@ -1,5 +1,6 @@
 import { round2, mulR, divR } from '../utils/dinero.js';
 import { getDateRange, getLocalISODate } from '../utils/dateHelpers.js';
+import { matchesSearch } from '../utils/searchMatch.js';
 
 const SALE_TYPES = new Set(['VENTA', 'VENTA_FIADA', 'VENTA_CASHEA']);
 const EXPENSE_TYPES = new Set(['GASTO_INTERNO', 'PAGO_PROVEEDOR']);
@@ -253,15 +254,11 @@ export function filterSupervisorInventoryMovements(movements = [], {
     status = 'todos',
     includeIncomplete = true,
 } = {}) {
-    const query = String(search).trim().toLowerCase();
     return (Array.isArray(movements) ? movements : []).filter(movement => {
         if (direction !== 'todos' && movement.direction !== direction) return false;
         if (status !== 'todos' && movement.status !== status) return false;
         if (!includeIncomplete && movement.isIncomplete) return false;
-        if (!query) return true;
-        return [movement.productName, movement.productId, movement.reason, movement.lotReference, movement.supplierName]
-            .filter(Boolean)
-            .some(value => String(value).toLowerCase().includes(query));
+        return matchesSearch([movement.productName, movement.productId, movement.reason, movement.lotReference, movement.supplierName], search);
     });
 }
 
