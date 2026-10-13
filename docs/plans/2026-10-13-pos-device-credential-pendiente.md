@@ -114,3 +114,11 @@ de `p_monitor_device_id` (solo `NULLIF(trim(...), '')`).
 - Riesgo: si la inserción de la credencial falla después del paso 5, el token ya quedó
   consumido. Hace falta una transacción que cubra ambos pasos.
 - Pendiente de confirmar: si `pairing_token` contiene valores en claro en filas existentes.
+
+## Tokens en claro en producción (revisión 5, solo lectura)
+
+- 3 filas de `device_pairings` tienen `pairing_token` con valor (de 19 filas).
+- Las 3 están INACTIVAS: expiradas, usadas o revocadas. Ninguna código vigente.
+- Riesgo: exposición de códigos ya inutilizables. No hay emparejamiento activo afectado.
+- No se modificó la base. Limpiar esas 3 filas requiere aprobación explícita.
+- Corrección recomendada (no aplicada): que `generate_pairing_token` deje de guardar el código en claro.
