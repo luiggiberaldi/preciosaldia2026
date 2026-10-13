@@ -3,6 +3,7 @@ import { Camera, X, AlertTriangle, Package, Tag, Scale, Droplets, Barcode, Bankn
 import { useProductContext } from '../../context/ProductContext';
 import CustomSelect from '../CustomSelect';
 import { showToast } from '../Toast';
+import ProductCostFactorControl from './ProductCostFactorControl';
 import {
     granelUnitLabel,
     useGranelUnitMode,
@@ -33,6 +34,7 @@ export default function ProductFormWizard({
     costUsd, handleCostUsdChange,
     costBs, handleCostBsChange,
     costCop, handleCostCopChange,
+    costFactor, handleCostFactorChange,
     stock, setStock,
     lowStockAlert, setLowStockAlert,
 
@@ -599,6 +601,9 @@ export default function ProductFormWizard({
                                     className="w-full bg-white dark:bg-slate-900 p-2.5 pl-8 rounded-xl font-bold text-slate-700 dark:text-white outline-none border border-slate-200/60 dark:border-slate-800/40 focus:ring-2 focus:ring-slate-500/40 transition-all text-xs" />
                             </div>
                         </div>
+                        {handleCostFactorChange && (
+                            <ProductCostFactorControl costFactor={costFactor} onChange={handleCostFactorChange} />
+                        )}
                     </div>
 
                     {/* Lote Cost Equivalency */}

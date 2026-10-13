@@ -6,6 +6,8 @@ import { withLock } from '../utils/withLock';  // FIN-026: lock para apertura de
 import { round2 } from '../utils/dinero';
 import { CurrencyService } from '../services/CurrencyService'; // FIN-026: safeParse en vez de parseFloat.
 import { SALES_KEY } from './useSalesData';
+import { buildAporteCajaRecord } from '../utils/cajaAporte';
+import { useAuthStore } from './store/useAuthStore';
 
 export function useCheckoutFlow({
     cart, cartTotalUsd, cartTotalBs, cartSubtotalUsd,
@@ -134,10 +136,48 @@ export function useCheckoutFlow({
         }
     };
 
+    // Aporte de efectivo a la caja. Permiso: con login activo solo ADMIN (un CAJERO no);
+    // sin login (requireLogin=false) cualquiera con acceso a la caja, igual que la apertura.
+    // Decidido por el dueño (2026-10-13). El permiso se valida aquí, no solo en la UI.
+    const handleSaveAporte = async (data) => {
+        const { requireLogin, usuarioActivo } = useAuthStore.getState();
+        if (requireLogin && usuarioActivo?.rol !== 'ADMIN') {
+            showToast('Solo el administrador puede registrar aportes de efectivo.', 'error');
+            if (playError) playError();
+            return false;
+        }
+
+        let record;
+        try {
+            record = buildAporteCajaRecord({ ...data, usuario: usuarioActivo });
+        } catch (err) {
+            showToast(err.message, 'error');
+            if (playError) playError();
+            return false;
+        }
+
+        try {
+            await withLock('pos_write_lock', async () => {
+                const existingSales = await storageService.getItem(SALES_KEY, []);
+                await storageService.setItem(SALES_KEY, [...existingSales, record]);
+                setSalesData(prev => [record, ...prev]);
+            });
+            showToast('Aporte de efectivo registrado', 'success');
+            if (triggerHaptic) triggerHaptic();
+            return true;
+        } catch (error) {
+            console.error('Error al registrar aporte de caja:', error);
+            showToast('Error al registrar el aporte', 'error');
+            if (playError) playError();
+            return false;
+        }
+    };
+
     return {
         handleCheckout,
         handleCreateCustomer,
         handleSaveApertura,
+        handleSaveAporte,
         isProcessing
     };
 }

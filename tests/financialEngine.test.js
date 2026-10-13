@@ -819,3 +819,29 @@ describe('FIN-018: reportsProcessor acumula revenue con round2', () => {
         expect(result.topProducts[0].qty).toBe(100);
     });
 });
+
+// Aporte de efectivo a la caja (APORTE_CAJA): suma a efectivo, no es ingreso.
+describe('FinancialEngine.calculatePaymentBreakdown - APORTE_CAJA', () => {
+    const aporte = (extra = {}) => ({
+        id: 'aporte_1', tipo: 'APORTE_CAJA', aporteUsd: 10, aporteBs: 365, aporteCop: 0,
+        motivo: 'Cambio', timestamp: '2026-10-13T12:00:00.000Z', cajaCerrada: false, ...extra,
+    });
+
+    it('suma el aporte a los buckets de efectivo', () => {
+        const b = FinancialEngine.calculatePaymentBreakdown([aporte()]);
+        expect(b['efectivo_usd'].total).toBe(10);
+        expect(b['efectivo_bs'].total).toBe(365);
+        expect(b['efectivo_cop']).toBeUndefined();
+    });
+
+    it('no genera buckets de ingreso: solo los de efectivo', () => {
+        const b = FinancialEngine.calculatePaymentBreakdown([aporte()]);
+        expect(Object.keys(b).sort()).toEqual(['efectivo_bs', 'efectivo_usd']);
+    });
+
+    it('un aporte anulado no suma efectivo', () => {
+        const b = FinancialEngine.calculatePaymentBreakdown([aporte({ status: 'ANULADA' })]);
+        expect(b['efectivo_usd']).toBeUndefined();
+        expect(b['efectivo_bs']).toBeUndefined();
+    });
+});

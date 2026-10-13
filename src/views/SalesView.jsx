@@ -30,6 +30,8 @@ import CashAdvanceModal from '../components/Sales/CashAdvanceModal';
 import CajaCerradaOverlay from '../components/Sales/CajaCerradaOverlay';
 import { getLocalISODate } from '../utils/dateHelpers';
 import AperturaCajaModal from '../components/Dashboard/AperturaCajaModal';
+import AporteCajaModal from '../components/Sales/AporteCajaModal';
+import { useAuthStore } from '../hooks/store/useAuthStore';
 import HoldsModal from '../components/Sales/HoldsModal';
 
 import ConfirmModal from '../components/ConfirmModal';
@@ -61,6 +63,11 @@ export default function SalesView({ triggerHaptic, isActive }) {
 
     // Apertura Caja
     const [isAperturaOpen, setIsAperturaOpen] = useState(false);
+
+    // Aporte de efectivo: solo con caja abierta y, si hay login, solo ADMIN.
+    // La validación definitiva también vive en useCheckoutFlow.handleSaveAporte.
+    const [isAporteOpen, setIsAporteOpen] = useState(false);
+    const { requireLogin, usuarioActivo } = useAuthStore();
 
     // Cart (from global context)
     const { cart, setCart, cartRef, pendingNavigate, setPendingNavigate, discount, setDiscount } = useCart();
@@ -102,6 +109,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
     } = useSalesData({ setCart, cartRef, isActive });
 
     const isLoading = isLoadingProducts || isLoadingLocal;
+    const canRegistrarAporte = !!todayAperturaData && (!requireLogin || usuarioActivo?.rol === 'ADMIN');
 
     // Auto-select last item when cart length changes (if user was already interacting with the cart)
     useEffect(() => {
@@ -405,7 +413,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
     }, [cart, showCheckout, showReceipt, showHoldsModal, pendingCarts]);
 
     // ── Checkout Flow Hook ──────────────────────────
-    const { handleCheckout, handleCreateCustomer, handleSaveApertura, isProcessing } = useCheckoutFlow({
+    const { handleCheckout, handleCreateCustomer, handleSaveApertura, handleSaveAporte, isProcessing } = useCheckoutFlow({
         cart, cartTotalUsd, cartTotalBs, cartSubtotalUsd,
         selectedCustomerId, customers, setCustomers, products, setProducts,
         effectiveRate, tasaCop, copEnabled, discountData, useAutoRate, granelUnitMode,
@@ -752,6 +760,8 @@ export default function SalesView({ triggerHaptic, isActive }) {
 
             {/* Header + Rate Config */}
             <SalesHeader
+                canRegistrarAporte={canRegistrarAporte}
+                onOpenAporte={() => setIsAporteOpen(true)}
                 effectiveRate={effectiveRate}
                 rateMode={rateMode} setRateMode={setRateMode}
                 useAutoRate={useAutoRate} setUseAutoRate={setUseAutoRate}
@@ -870,6 +880,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
                 <div className="hidden lg:flex lg:w-[380px] lg:shrink-0 lg:flex-col">
                     <CartPanel
                         cart={cart} effectiveRate={effectiveRate}
+                        canRegistrarAporte={canRegistrarAporte} onOpenAporte={() => setIsAporteOpen(true)}
                         cartSubtotalUsd={cartSubtotalUsd} cartSubtotalBs={cartSubtotalBs}
                         cartTotalUsd={cartTotalUsd} cartTotalBs={cartTotalBs} cartTotalCop={cartTotalCop} cartItemCount={cartItemCount}
                         discountData={discountData} onOpenDiscount={() => setShowDiscountModal(true)}
@@ -954,6 +965,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
                             </div>
                             <CartPanel
                                 cart={cart} effectiveRate={effectiveRate}
+                        canRegistrarAporte={canRegistrarAporte} onOpenAporte={() => setIsAporteOpen(true)}
                                 cartSubtotalUsd={cartSubtotalUsd} cartSubtotalBs={cartSubtotalBs}
                                 cartTotalUsd={cartTotalUsd} cartTotalBs={cartTotalBs} cartTotalCop={cartTotalCop} cartItemCount={cartItemCount}
                                 discountData={discountData} onOpenDiscount={() => setShowDiscountModal(true)}
@@ -1072,6 +1084,19 @@ export default function SalesView({ triggerHaptic, isActive }) {
                 isOpen={isAperturaOpen}
                 onClose={() => setIsAperturaOpen(false)}
                 onConfirm={handleSaveApertura}
+                copEnabled={copEnabled}
+                copPrimary={copPrimary}
+            />
+
+            {/* Aporte de Efectivo Modal */}
+            <AporteCajaModal
+                isOpen={isAporteOpen}
+                onClose={() => setIsAporteOpen(false)}
+                onConfirm={async (data) => {
+                    const ok = await handleSaveAporte(data);
+                    if (ok) setIsAporteOpen(false);
+                    return ok;
+                }}
                 copEnabled={copEnabled}
                 copPrimary={copPrimary}
             />

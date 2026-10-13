@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { prepareProductFormState } from '../src/hooks/useProductForm.js';
 import { buildProductPayload, deriveCostFactorUpdate } from '../src/utils/productProcessor.js';
+import {
+    costFactorFromMarginPercent,
+    formatCostFactorAsMarginPercent,
+} from '../src/utils/productCostFactor.js';
 
 const payloadFor = (formData) => buildProductPayload({
     name: 'Producto prueba',
@@ -10,6 +14,15 @@ const payloadFor = (formData) => buildProductPayload({
 }, 40);
 
 describe('factor costo de producto', () => {
+    it('converts between margin percentage and cost factor', () => {
+        expect(costFactorFromMarginPercent('30')).toBe('0.7');
+        expect(formatCostFactorAsMarginPercent('0.7')).toBe('30');
+        expect(formatCostFactorAsMarginPercent('0.655')).toBe('34.5');
+        expect(costFactorFromMarginPercent('')).toBe('');
+        expect(formatCostFactorAsMarginPercent('0')).toBe('');
+        expect(formatCostFactorAsMarginPercent('1')).toBe('0');
+    });
+
     it('derives cost factor from the last-edited cost and price', () => {
         const result = deriveCostFactorUpdate(['cost'], 'price', { cost: 7, price: 10, factor: 0 });
         expect(result).toEqual({ editOrder: ['cost', 'price'], field: 'factor', value: 0.7 });
