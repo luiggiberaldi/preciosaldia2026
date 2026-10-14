@@ -615,6 +615,17 @@ export default defineConfig(({ mode }) => {
     },
   },
 
+  // Modo staging E2E: Vite inlinea en el bundle cualquier VITE_* del .env. Aquí se anulan
+  // las credenciales de producción para que el build de staging no las contenga.
+  define: env.VITE_SUPERVISOR_E2E_STAGING === 'true'
+    ? {
+        'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(''),
+        'import.meta.env.VITE_SUPABASE_CLOUD_URL': JSON.stringify(''),
+        'import.meta.env.VITE_SUPABASE_CLOUD_KEY': JSON.stringify(''),
+        'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(''),
+      }
+    : {},
+
   build: {
     rollupOptions: {
       output: {

@@ -32,6 +32,9 @@ dist-ssr
 .env.production
 .env.staging
 
+# Sesiones anónimas de staging reutilizadas por las pruebas (credenciales)
+.staging-test-sessions.json
+
 # ── API serverless ──
 # Las funciones serverless van en /api pero NO se commitean con claves;
 # las claves se inyectan vía variables de entorno del platform (Vercel/Cloudflare).
@@ -86,6 +89,8 @@ test-results/
 test-results-af/
 supabase/.temp/
 .freebuff/
+scratch/
+test_schema.sql
 
 .vercel
 
