@@ -22,6 +22,7 @@ export default function TasaOficialCard({
     copEnabled: propCopEnabled = false,
     tasaCop: propTasaCop = 0,
     triggerHaptic,
+    canEditRate = false,
 }) {
     const {
         effectiveRate,
@@ -100,16 +101,18 @@ export default function TasaOficialCard({
                                     ? 'USDT'
                                     : 'BCV Oficial'}
                             </span>
-                            <button
-                                type="button"
-                                onClick={handleQuickSync}
-                                disabled={isRefreshing}
-                                className="p-1 text-slate-400 hover:text-brand dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors disabled:opacity-50"
-                                title="Sincronizar tasa BCV al instante"
-                                aria-label="Sincronizar tasa BCV al instante"
-                            >
-                                <RefreshCw size={13} className={isRefreshing ? 'animate-spin text-brand' : ''} />
-                            </button>
+                            {canEditRate && (
+                                <button
+                                    type="button"
+                                    onClick={handleQuickSync}
+                                    disabled={isRefreshing}
+                                    className="p-1 text-slate-400 hover:text-brand dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors disabled:opacity-50"
+                                    title="Sincronizar tasa BCV al instante"
+                                    aria-label="Sincronizar tasa BCV al instante"
+                                >
+                                    <RefreshCw size={13} className={isRefreshing ? 'animate-spin text-brand' : ''} />
+                                </button>
+                            )}
                         </div>
                     </div>
 
@@ -143,26 +146,28 @@ export default function TasaOficialCard({
                     </div>
                 </div>
 
-                {/* Bottom Action Button */}
-                <button
-                    type="button"
-                    onClick={() => {
-                        triggerHaptic?.();
-                        setIsModalOpen(true);
-                    }}
-                    className="w-full mt-3 py-2 px-3 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700/60 rounded-xl text-xs font-bold flex items-center justify-between group active:scale-[0.98] transition-all"
-                    aria-label="Actualizar o ajustar tasa"
-                >
-                    <span className="flex items-center gap-2">
-                        <SlidersHorizontal size={14} className="text-brand group-hover:scale-110 transition-transform" />
-                        <span>Actualizar / Ajustar Tasa</span>
-                    </span>
-                    <ChevronRight size={14} className="text-slate-400 group-hover:translate-x-0.5 transition-transform" />
-                </button>
+                {/* Bottom Action Button (solo admin) */}
+                {canEditRate && (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            triggerHaptic?.();
+                            setIsModalOpen(true);
+                        }}
+                        className="w-full mt-3 py-2 px-3 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700/60 rounded-xl text-xs font-bold flex items-center justify-between group active:scale-[0.98] transition-all"
+                        aria-label="Actualizar o ajustar tasa"
+                    >
+                        <span className="flex items-center gap-2">
+                            <SlidersHorizontal size={14} className="text-brand group-hover:scale-110 transition-transform" />
+                            <span>Actualizar / Ajustar Tasa</span>
+                        </span>
+                        <ChevronRight size={14} className="text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                    </button>
+                )}
             </div>
 
             <AjusteRapidoTasaModal
-                isOpen={isModalOpen}
+                isOpen={isModalOpen && canEditRate}
                 onClose={() => setIsModalOpen(false)}
                 triggerHaptic={triggerHaptic}
             />

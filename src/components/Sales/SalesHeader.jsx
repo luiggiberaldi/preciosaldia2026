@@ -82,6 +82,8 @@ export default function SalesHeader({
     };
 
     const { usuarioActivo, requireLogin, logout } = useAuthStore();
+    // Solo administradores pueden cambiar la tasa; los cajeros la ven pero no la editan.
+    const canEditRate = !requireLogin || usuarioActivo?.rol === 'ADMIN';
 
     return (
         <div className={`shrink-0 ${showRateConfig ? 'mb-3 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-3 sm:p-4 shadow-sm border border-slate-100 dark:border-slate-800' : 'bg-transparent border-transparent shadow-none p-0'}`}>
@@ -95,6 +97,7 @@ export default function SalesHeader({
                     </h2>
                     {/* Controles del Encabezado Móvil (Tasa + Salir) */}
                     <div className="flex items-center gap-2">
+                        {canEditRate && (
                         <button
                             onClick={handleRateToggle}
                             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition-all bg-slate-50 border-slate-200 hover:border-emerald-500 hover:bg-emerald-50 active:scale-95 dark:bg-slate-800 dark:border-slate-700"
@@ -106,6 +109,7 @@ export default function SalesHeader({
                             }
                             {!isAuto && <span className="text-[8px] bg-brand-light dark:bg-surface-800/30 text-brand-dark dark:text-brand px-1 rounded font-bold">MAN</span>}
                         </button>
+                        )}
 
                         {canRegistrarAporte && (
                             <button
@@ -132,7 +136,7 @@ export default function SalesHeader({
             </div>
 
             {/* Rate Config Panel */}
-            {showRateConfig && (
+            {showRateConfig && canEditRate && (
                 <div className="bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-4 mb-3 animate-in fade-in slide-in-from-top-2">
                     <div className="max-w-md mx-auto w-full space-y-4">
                         {isCopMode ? (

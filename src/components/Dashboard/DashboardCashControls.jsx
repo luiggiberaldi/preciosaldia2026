@@ -37,6 +37,7 @@ export default function DashboardCashControls({
                     />
                 )}
                 <TasaOficialCard
+                    canEditRate={isAdmin}
                     bcvRate={bcvRate}
                     copEnabled={copEnabled}
                     tasaCop={tasaCop}

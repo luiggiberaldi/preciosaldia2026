@@ -111,6 +111,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
 
     const isLoading = isLoadingProducts || isLoadingLocal;
     const canRegistrarAporte = !!todayAperturaData && (!requireLogin || usuarioActivo?.rol === 'ADMIN');
+    const canEditRate = !requireLogin || usuarioActivo?.rol === 'ADMIN';
 
     // Auto-select last item when cart length changes (if user was already interacting with the cart)
     useEffect(() => {
@@ -840,6 +841,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
                                 </div>
 
                                 {/* Tasa de Referencia Flotante (estilo Listo POS 2026) — solo visible en desktop (lg:flex) */}
+                                {canEditRate && (
                                 <button
                                     onClick={() => setShowRateConfig(v => !v)}
                                     className="hidden lg:flex shrink-0 flex-col items-center justify-center bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl px-5 border border-slate-100 dark:border-slate-800 shadow-sm hover:border-brand/40 transition-all min-w-[100px] gap-0.5"
@@ -854,6 +856,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
                                     </span>
                                     {!useAutoRate && <span className="text-[8px] bg-brand-light dark:bg-surface-800/30 text-brand-dark dark:text-brand px-1 rounded font-bold">MAN</span>}
                                 </button>
+                                )}
                             </div>
 
                             {/* Category Chips + Product Grid */}
