@@ -43,6 +43,8 @@ const INITIAL_STATE = {
     packagingType: 'suelto',
     stockInLotes: '',
     granelUnit: 'kg',
+    // IVA por producto: '' = usar la tasa general; 'exento' = 0%.
+    ivaMode: '',
     isFormShaking: false,
 };
 
@@ -117,6 +119,7 @@ export function prepareProductFormState(product, effectiveRate, granelMode = get
         category: product.category || 'otros',
         lowStockAlert: product.lowStockAlert ?? 5,
         image: product.image,
+        ivaMode: product.ivaRate === 0 ? 'exento' : '',
     };
 
     // Derive packagingType from legacy unit
@@ -182,6 +185,7 @@ export function useProductForm() {
     const setStockInLotes = useCallback((v) => dispatch({ type: 'SET', field: 'stockInLotes', value: v }), []);
     const setGranelUnit = useCallback((v) => dispatch({ type: 'SET', field: 'granelUnit', value: v }), []);
     const setIsFormShaking = useCallback((v) => dispatch({ type: 'SET', field: 'isFormShaking', value: v }), []);
+    const setIvaMode = useCallback((v) => dispatch({ type: 'SET', field: 'ivaMode', value: v }), []);
 
     const resetForm = useCallback(() => {
         dispatch({ type: 'RESET' });
@@ -215,6 +219,7 @@ export function useProductForm() {
         packagingType: state.packagingType, setPackagingType,
         stockInLotes: state.stockInLotes, setStockInLotes,
         granelUnit: state.granelUnit, setGranelUnit,
+        ivaMode: state.ivaMode, setIvaMode,
         isFormShaking: state.isFormShaking, setIsFormShaking,
         resetForm,
         populateForm,

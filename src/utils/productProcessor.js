@@ -171,5 +171,8 @@ export function buildProductPayload(formData, effectiveRate) {
         stockInLotes: isLote && stockInLotes ? parseInt(stockInLotes) : null,
         category: category,
         lowStockAlert: finalLowStockAlert,
+        // IVA por producto: exento guarda 0%. General escribe undefined para que la fusión
+        // { ...producto, ...payload } borre un ivaRate anterior y el producto vuelva a la tasa general.
+        ivaRate: formData.ivaMode === 'exento' ? 0 : undefined,
     };
 }

@@ -45,6 +45,7 @@ export default function ProductFormWizard({
 
     packagingType, setPackagingType,
     stockInLotes, setStockInLotes,
+    ivaMode, setIvaMode,
     granelUnit, setGranelUnit,
     effectiveRate,
     copEnabled,
@@ -323,6 +324,28 @@ export default function ProductFormWizard({
                                         <pt.Icon size={22} strokeWidth={2} className={selected ? textColor[pt.color] : 'text-slate-400'} />
                                         <span className={`text-[10px] font-black uppercase ${selected ? textColor[pt.color] : 'text-slate-500'}`}>{pt.label}</span>
                                         <span className="text-[8px] text-slate-400 leading-tight text-center">{pt.id === 'granel' && granelMode === GRANEL_MODE_GR_ML ? 'Por Gramo o Ml' : pt.desc}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* IVA por producto: General (tasa de Ajustes) o Exento (0%) */}
+                    <div>
+                        <label className="text-xs font-bold text-slate-400 ml-1 mb-1.5 block uppercase">IVA del Producto</label>
+                        <div className="grid grid-cols-2 gap-2">
+                            {[{ id: '', label: 'General', desc: 'Tasa de Ajustes' }, { id: 'exento', label: 'Exento', desc: '0%' }].map(opt => {
+                                const selected = (ivaMode || '') === opt.id;
+                                return (
+                                    <button key={opt.id || 'general'}
+                                        type="button"
+                                        onClick={() => setIvaMode(opt.id)}
+                                        className={`flex flex-col items-center gap-1 p-3 rounded-xl border-2 transition-all active:scale-95 ${selected
+                                            ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
+                                            : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-300'
+                                            }`}>
+                                        <span className={`text-[10px] font-black uppercase ${selected ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500'}`}>{opt.label}</span>
+                                        <span className="text-[8px] text-slate-400 leading-tight text-center">{opt.desc}</span>
                                     </button>
                                 );
                             })}

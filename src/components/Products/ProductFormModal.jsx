@@ -35,6 +35,7 @@ export default function ProductFormModal({
 
     packagingType, setPackagingType,
     stockInLotes, setStockInLotes,
+    ivaMode, setIvaMode,
     granelUnit, setGranelUnit,
     effectiveRate,
     copEnabled,
@@ -203,6 +204,7 @@ export default function ProductFormModal({
         packagingType, setPackagingType,
         stockInLotes, setStockInLotes,
         granelUnit, setGranelUnit,
+        ivaMode, setIvaMode,
         effectiveRate,
         copEnabled,
         copPrimary,

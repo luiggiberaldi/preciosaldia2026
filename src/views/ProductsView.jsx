@@ -252,6 +252,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         packagingType, setPackagingType,
         stockInLotes, setStockInLotes,
         granelUnit, setGranelUnit,
+        ivaMode, setIvaMode,
         isFormShaking, setIsFormShaking,
         resetForm,
         populateForm,
@@ -433,7 +434,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         const productData = buildProductPayload({
             name, barcode, priceUsd, priceBs, pricingMode, priceBsUsdRef, priceCop, costUsd, costBs, costFactor, stock, stockInLotes,
             packagingType, unitsPerPackage, granelUnit, sellByUnit, unitPriceUsd, unitPriceCop,
-            category, lowStockAlert,
+            category, lowStockAlert, ivaMode,
             granelUnitMode: getGranelUnitMode(),
             lowStockAlertCanonical: true
         }, effectiveRate);
@@ -977,6 +978,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 unitPriceUsd={unitPriceUsd} setUnitPriceUsd={setUnitPriceUsd}
                 unitPriceCop={unitPriceCop} setUnitPriceCop={setUnitPriceCop}
                 packagingType={packagingType} setPackagingType={setPackagingType}
+                ivaMode={ivaMode} setIvaMode={setIvaMode}
                 stockInLotes={stockInLotes} setStockInLotes={setStockInLotes}
                 granelUnit={granelUnit} setGranelUnit={setGranelUnit}
                 effectiveRate={effectiveRate}
