@@ -46,7 +46,7 @@ export default function DashboardCashControls({
             </div>
 
             <div className="grid grid-cols-1 gap-3">
-                {!isAdmin ? null : (todayCashFlow.length > 0 || todaySales.length > 0) ? (
+                {(todayCashFlow.length > 0 || todaySales.length > 0) ? (
                     <button
                         type="button"
                         onClick={onDailyClose}

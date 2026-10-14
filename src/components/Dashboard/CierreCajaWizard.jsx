@@ -58,7 +58,9 @@ export default function CierreCajaWizard({
     copEnabled = false,
     copPrimary = false,
     tasaCop = 0,
-    todayCashFlow = []
+    todayCashFlow = [],
+    // Cierre ciego: el cajero cuenta sin ver lo que espera el sistema.
+    blindClose = false
 }) {
     const [step, setStep] = useState(1);
     const [actualUsd, setActualUsd] = useState('');
@@ -402,9 +404,11 @@ export default function CierreCajaWizard({
                                         className="w-full bg-slate-50 dark:bg-slate-950 border-2 border-slate-200 dark:border-slate-700 rounded-2xl py-4 pl-12 pr-4 text-xl text-slate-800 dark:text-white font-black outline-none focus:border-brand focus:ring-4 focus:ring-brand/10 transition-all font-mono"
                                     />
                                 </div>
+                                {!blindClose && (
                                 <p className="text-[11px] text-slate-400 mt-1.5 pl-1">
                                     Sistema espera: <span className="font-bold text-brand">${expectedUsd.toFixed(2)}</span>
                                 </p>
+                                )}
                             </div>
 
                             {/* Bs Input */}
@@ -422,6 +426,7 @@ export default function CierreCajaWizard({
                                         className="w-full bg-slate-50 dark:bg-slate-950 border-2 border-slate-200 dark:border-slate-700 rounded-2xl py-4 pl-12 pr-4 text-xl text-slate-800 dark:text-white font-black outline-none focus:border-brand focus:ring-4 focus:ring-brand/10 transition-all font-mono"
                                     />
                                 </div>
+                                {!blindClose && (
                                 <p className="text-[11px] mt-1.5 pl-1">
                                     {
                                         expectedBs < 0
@@ -429,6 +434,7 @@ export default function CierreCajaWizard({
                                             : <span className="text-slate-400">Sistema espera: <span className="font-bold text-brand">{formatBs(expectedBs)} Bs</span></span>
                                     }
                                 </p>
+                                )}
                             </div>
 
                             {/* COP Input — only visible if COP transactions exist */}
@@ -447,9 +453,11 @@ export default function CierreCajaWizard({
                                             className="w-full bg-slate-50 dark:bg-slate-950 border-2 border-amber-200 dark:border-amber-800/50 rounded-2xl py-4 pl-12 pr-4 text-xl text-slate-800 dark:text-white font-black outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all font-mono"
                                         />
                                     </div>
+                                    {!blindClose && (
                                     <p className="text-[11px] text-slate-400 mt-1.5 pl-1">
                                         Sistema espera: <span className="font-bold text-amber-500">{fmtCop(expectedCop)} COP</span>
                                     </p>
+                                    )}
                                 </div>
                             )}
 
@@ -469,7 +477,28 @@ export default function CierreCajaWizard({
                     )}
 
                     {/* ═══ STEP 3: Resultado ═══ */}
-                    {step === 3 && (() => {
+                    {step === 3 && blindClose && (
+                        <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-300">
+                            <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-5 text-center border border-slate-100 dark:border-slate-700/50">
+                                <CheckCircle2 size={40} className="mx-auto mb-2 text-brand" />
+                                <h3 className="text-lg font-black text-slate-800 dark:text-white">Conteo registrado</h3>
+                                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Confirma para cerrar la caja. El administrador revisará el resultado.</p>
+                            </div>
+                            <div className="flex gap-3 pt-2">
+                                <button onClick={() => setStep(2)} className="flex-1 py-3.5 text-sm font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors">
+                                    Revisar
+                                </button>
+                                <button
+                                    onClick={handleConfirm}
+                                    className="flex-1 py-3.5 text-sm font-bold text-white bg-brand hover:brightness-110 rounded-xl shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                                >
+                                    <CheckCircle2 size={18} /> Confirmar Cierre
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {step === 3 && !blindClose && (() => {
                         const sem = getSemaforo();
                         const SemIcon = sem.icon;
                         return (

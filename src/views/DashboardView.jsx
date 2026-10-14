@@ -265,8 +265,6 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     // Handler: Cierre de Caja
     const handleDailyClose = () => {
         triggerHaptic && triggerHaptic();
-        // Solo administradores cierran caja.
-        if (isCajero) return;
         if (todayCashFlow.length === 0 && todaySales.length === 0) {
             showToast('No hay movimientos hoy para cerrar caja', 'error');
             return;
@@ -876,6 +874,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 isOpen={isCashReconOpen}
                 onClose={() => setIsCashReconOpen(false)}
                 onConfirm={handleConfirmCashRecon}
+                blindClose={isCajero}
                 todaySales={todaySales}
                 todayTotalUsd={todayTotalUsd}
                 todayTotalBs={todayTotalBs}
