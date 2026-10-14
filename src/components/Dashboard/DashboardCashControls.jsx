@@ -6,6 +6,7 @@ import EfectivoEsperadoCard from './EfectivoEsperadoCard';
 export default function DashboardCashControls({
     isAdmin,
     paymentBreakdown,
+    fondoBreakdown,
     copEnabled,
     copPrimary,
     tasaCop,
@@ -25,7 +26,14 @@ export default function DashboardCashControls({
         <section className="grid grid-cols-1 xl:grid-cols-2 gap-3 mb-5" aria-label="Resumen y controles de caja">
             <div className={`grid grid-cols-1 ${isAdmin ? 'sm:grid-cols-2' : ''} gap-3`}>
                 {isAdmin && (
-                    <EfectivoEsperadoCard paymentBreakdown={paymentBreakdown} copEnabled={copEnabled} />
+                    <EfectivoEsperadoCard
+                        paymentBreakdown={paymentBreakdown}
+                        fondoBreakdown={fondoBreakdown}
+                        copEnabled={copEnabled}
+                        bcvRate={bcvRate}
+                        tasaCop={tasaCop}
+                        triggerHaptic={triggerHaptic}
+                    />
                 )}
                 <button
                     type="button"

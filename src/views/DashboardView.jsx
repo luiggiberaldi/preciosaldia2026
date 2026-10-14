@@ -622,6 +622,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 <DashboardCashControls
                     isAdmin={isAdmin}
                     paymentBreakdown={paymentBreakdown}
+                    fondoBreakdown={fondoBreakdown}
                     copEnabled={copEnabled}
                     copPrimary={copPrimary}
                     tasaCop={tasaCop}
