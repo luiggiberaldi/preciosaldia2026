@@ -18,6 +18,16 @@ describe('Supervisor report data', () => {
         expect(shouldShowSupervisorCop('true')).toBe(false);
     });
 
+    it('suma los aportes de efectivo al efectivo esperado', () => {
+        const result = calculateSupervisorCashSummary([
+            { tipo: 'APERTURA_CAJA', openingBs: 100, openingUsd: 10 },
+            { tipo: 'APORTE_CAJA', aporteUsd: 5, aporteBs: 50, aporteCop: 0, motivo: 'cambio' },
+        ]);
+
+        expect(result.expected.USD).toBe(15);
+        expect(result.expected.BS).toBe(150);
+    });
+
     it('calcula efectivo esperado sin duplicar cambios dejados', () => {
         const result = calculateSupervisorCashSummary([
             { tipo: 'APERTURA_CAJA', openingBs: 100, openingUsd: 10 },

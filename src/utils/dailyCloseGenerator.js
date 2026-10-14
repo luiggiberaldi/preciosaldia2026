@@ -649,6 +649,8 @@ export async function generateDailyClosePDF({
                         : `GASTO: ${s.description || 'Gasto Interno'}`;
                 } else if (s.tipo === 'APERTURA_CAJA') {
                     cliente = 'Apertura de Caja';
+                } else if (s.tipo === 'APORTE_CAJA') {
+                    cliente = `APORTE: ${s.motivo || 'Efectivo'}`;
                 }
 
                 // Items
@@ -740,11 +742,13 @@ export async function generateDailyClosePDF({
                 } else {
                     const isExpense = (s.totalUsd || 0) < 0 || s.tipo === 'PAGO_PROVEEDOR' || s.tipo === 'GASTO_INTERNO';
                     doc.setTextColor(...(isExpense ? RED : GREEN));
-                    doc.text(fmtUsd(s.totalUsd || 0), RIGHT - 4, y, { align: 'right' });
+                    const aporteRowUsd = s.tipo === 'APORTE_CAJA' ? (s.aporteUsd || 0) : (s.totalUsd || 0);
+                    doc.text(fmtUsd(aporteRowUsd), RIGHT - 4, y, { align: 'right' });
                     doc.setFont('helvetica', 'normal');
                     doc.setFontSize(6.5);
                     doc.setTextColor(...MUTED);
-                    doc.text(`Bs ${formatBs(s.totalBs || 0)}`, RIGHT - 4, y + 3.5, { align: 'right' });
+                    const aporteRowBs = s.tipo === 'APORTE_CAJA' ? (s.aporteBs || 0) : (s.totalBs || 0);
+                    doc.text(`Bs ${formatBs(aporteRowBs)}`, RIGHT - 4, y + 3.5, { align: 'right' });
                 }
 
                 y += rowHeight;

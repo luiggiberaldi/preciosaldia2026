@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, ShoppingCart, Keyboard, LogOut } from 'lucide-react';
+import { RefreshCw, ShoppingCart, Keyboard, LogOut, Wallet } from 'lucide-react';
 import Tooltip from '../Tooltip';
 import { pushLocalSync } from '../../hooks/useCloudSync';
 import { useAuthStore } from '../../hooks/store/useAuthStore';
@@ -26,6 +26,8 @@ export default function SalesHeader({
     setAutoCopEnabled,
     tasaCopManual,
     setTasaCopManual,
+    canRegistrarAporte,
+    onOpenAporte,
 }) {
     const isCopMode = copEnabled && copPrimary && tasaCop > 0;
 
@@ -104,6 +106,16 @@ export default function SalesHeader({
                             }
                             {!isAuto && <span className="text-[8px] bg-brand-light dark:bg-surface-800/30 text-brand-dark dark:text-brand px-1 rounded font-bold">MAN</span>}
                         </button>
+
+                        {canRegistrarAporte && (
+                            <button
+                                onClick={() => { triggerHaptic && triggerHaptic(); onOpenAporte(); }}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 transition-colors border border-emerald-200/50 text-xs font-bold active:scale-95 shrink-0"
+                            >
+                                <Wallet size={14} />
+                                <span className="text-xs font-bold">Aporte</span>
+                            </button>
+                        )}
 
                         {requireLogin && usuarioActivo && (
                             <button

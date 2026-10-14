@@ -142,6 +142,14 @@ export function calculateSupervisorCashSummary(records = [], bcvRate = 1) {
             continue;
         }
 
+        if (record.tipo === 'APORTE_CAJA') {
+            addCash(cashFlow, 'USD', record.aporteUsd);
+            addCash(cashFlow, 'BS', record.aporteBs);
+            addCash(cashFlow, 'COP', record.aporteCop);
+            cashMovementCount += 1;
+            continue;
+        }
+
         let touchedCash = false;
         if (Array.isArray(record.payments) && record.payments.length > 0) {
             for (const payment of record.payments) {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShoppingCart, Plus, Minus, X, CheckCircle, Package, Trash2, DollarSign, Percent, Search, Pause } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, X, CheckCircle, Package, Trash2, DollarSign, Percent, Search, Pause, Wallet } from 'lucide-react';
 import { formatBs, formatCop, getCop, formatUsd } from '../../utils/calculatorUtils';
 import { mulR, round3 } from '../../utils/dinero';
 import SmartImage from '../SmartImage';
@@ -26,7 +26,9 @@ export default function CartPanel({
     cartSelectedIndex,
     copEnabled,
     copPrimary,
-    tasaCop
+    tasaCop,
+    canRegistrarAporte,
+    onOpenAporte
 }) {
     const [editingQtyId, setEditingQtyId] = React.useState(null);
     const [tempQty, setTempQty] = React.useState('');
@@ -120,6 +122,15 @@ export default function CartPanel({
                 </div>
             </div>
 
+                    {canRegistrarAporte && onOpenAporte && (
+                        <button
+                            onClick={() => { triggerHaptic && triggerHaptic(); onOpenAporte(); }}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold active:scale-95 transition-all"
+                        >
+                            <Wallet size={14} />
+                            Aporte
+                        </button>
+                    )}
             {/* Cart Items — scrollable area with touch support */}
             <div
                 className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-2 sm:p-3"
