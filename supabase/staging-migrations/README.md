@@ -26,6 +26,18 @@ They are a **partial staging E2E schema alignment**, not a full application clon
 3. Test these drafts against a local Postgres/Supabase instance representing the inspected staging structure, including the zero-row guard, RLS, RPC authorization, and rollback behavior.
 4. Review the SQL diff and then apply only after separate approval. Re-query schema and policies, run the opt-in E2E suite with the explicit staging URL/key, and confirm production remained unchanged.
 
+3. `20261013_004_staging_multi_locale_monitor.sql` — **applied to staging on 2026-10-13.** Drops the unique index on `device_pairings.monitor_device_id` so one supervisor phone can be linked to several boxes (locales) at once, and adds a partial index for active links. Each box still has one row (`UNIQUE primary_device_id`); `unpair_monitor` revokes only the named box. Verified: a rolled-back test linked one phone to two boxes. The app's locale selector is not implemented yet, so production stays untouched.
+
+4. `20261013_006_staging_revoke_cancels_pending_commands.sql` — **applied to staging on 2026-10-13** after a backup (`scratch/staging-backup-before-006.md`). Makes `unpair_monitor` cancel the box's `pending` supervisor commands in the same transaction as the revocation (Fase 2). Verified in a rolled-back transaction: a pending command became `failed` and the pairing was revoked; no test rows remain.
+
+5. `20261013_008_staging_read_revoked_command_outcomes.sql` — **applied to staging on 2026-10-13** after explicit approval. Adds a read-only SELECT policy so the owner and monitor of an `e2e-*` box can read orders cancelled by revocation (`status='failed'`, revocation message). Verified in a rolled-back transaction: monitor 1 row, owner 1 row, stranger 0 rows. No write permissions added.
+
+6. `20261013_009_staging_stable_revoked_error_code.sql` — **applied to staging on 2026-10-13.** Replaces the Spanish revocation sentence with the stable code `REVOKED_BEFORE_ACK` in `unpair_monitor` and in the 008 read policy. Same SQL as the applied migration `staging_009_stable_revoked_error_code`.
+
+7. `20261013_007_staging_owner_claim_code.sql` — registered as applied on **2026-10-13**, but its SQL was found missing from staging on **2026-10-14**. See entry 7b for the corrective reapplication and current verification.
+
+7b. **Reaplicada el 2026-10-14.** El SQL de 007 no estaba realmente aplicado aunque figuraba en `supabase_migrations`: faltaban `create_owner_claim_code`, `claim_owner_device` y las columnas `claim_*`, y `generate_pairing_token` seguía con la brecha de reclamo. Se reaplicó en una transacción tras respaldo previo ([scratch/staging-backup-before-007-reapply.md](../../scratch/staging-backup-before-007-reapply.md)). Verificado después: funciones y columnas presentes, `anon` sin EXECUTE, 6 filas originales intactas. Casos con sesiones simuladas en transacciones revertidas: tercero bloqueado, dueño genera token, caja sin dueño bloqueada, código malo rechazado, reuso rechazado. Sin residuales. Después, E2E reales: reclamo de dueño 1/1, pairing clásico 1/1, desvinculación con secreto 1/1 y aislamiento entre dueños 1/1. Todos sin filas residuales. La UI del código de reclamo está en `PairingManager.jsx`; los E2E reclaman dueño antes de generar token.
+
 ## Staging-only E2E harness RPCs (not in a file here)
 
 The functions `e2e_set_pairing_link`, `e2e_set_canary_allowlist` and `e2e_cleanup_commands` were applied **directly to staging** (`tdfcpwctvumbdjmifypd`) so the Supervisor command harness no longer needs the Management API token. They are not stored as a migration file in this directory yet; add one before any reproducible rebuild of staging.
