@@ -1,7 +1,8 @@
 import React from 'react';
-import { ArrowUpRight, CheckCircle2, LockIcon, Plus, Wallet } from 'lucide-react';
-import { formatBs, formatCop } from '../../utils/calculatorUtils';
+import { CheckCircle2, LockIcon, Plus, Wallet } from 'lucide-react';
+import { formatCop } from '../../utils/calculatorUtils';
 import EfectivoEsperadoCard from './EfectivoEsperadoCard';
+import TasaOficialCard from './TasaOficialCard';
 
 export default function DashboardCashControls({
     isAdmin,
@@ -35,25 +36,12 @@ export default function DashboardCashControls({
                         triggerHaptic={triggerHaptic}
                     />
                 )}
-                <button
-                    type="button"
-                    onClick={() => { triggerHaptic && triggerHaptic(); onTasaClick && onTasaClick(); }}
-                    className="min-h-full bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 shadow-sm text-left hover:bg-slate-50 dark:hover:bg-slate-800/80 active:scale-[0.98] transition-all"
-                    aria-label="Abrir configuración de tasas"
-                >
-                    <span className="w-9 h-9 bg-brand-light dark:bg-surface-800/30 rounded-xl flex items-center justify-center mb-2">
-                        <ArrowUpRight size={18} className="text-brand" />
-                    </span>
-                    <span className="block text-2xl font-outfit font-semibold text-slate-800 dark:text-white leading-none">
-                        {formatBs(bcvRate)} <span className="text-xs font-bold text-slate-400">Bs/$</span>
-                    </span>
-                    <span className="block text-[11px] text-slate-400 mt-0.5">Tasa BCV · Ver tasas</span>
-                    {copEnabled && tasaCop > 0 && (
-                        <span className="block text-xs font-bold text-amber-600 dark:text-amber-400 mt-2">
-                            {tasaCop.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COP/$
-                        </span>
-                    )}
-                </button>
+                <TasaOficialCard
+                    bcvRate={bcvRate}
+                    copEnabled={copEnabled}
+                    tasaCop={tasaCop}
+                    triggerHaptic={triggerHaptic}
+                />
             </div>
 
             <div className="grid grid-cols-1 gap-3">

@@ -3,7 +3,7 @@ import { pushLocalSync } from '../hooks/useCloudSync';
 
 const RateContext = createContext();
 
-export function RateProvider({ children, rates = {}, rateDiscrepancyWarning = null }) {
+export function RateProvider({ children, rates = {}, rateDiscrepancyWarning = null, updateData = null, ratesLoading = false }) {
     // ── MARKET LOGIC - Street Rate ──
     const [streetRate, setStreetRate] = useState(() => {
         const saved = localStorage.getItem('street_rate_bs');
@@ -145,6 +145,8 @@ export function RateProvider({ children, rates = {}, rateDiscrepancyWarning = nu
         effectiveRate,
         rates,
         rateDiscrepancyWarning,
+        updateData,
+        ratesLoading,
         copEnabled,
         setCopEnabled,
         autoCopEnabled,
@@ -163,6 +165,8 @@ export function RateProvider({ children, rates = {}, rateDiscrepancyWarning = nu
         effectiveRate,
         rates,
         rateDiscrepancyWarning,
+        updateData,
+        ratesLoading,
         copEnabled,
         autoCopEnabled,
         tasaCopManual,

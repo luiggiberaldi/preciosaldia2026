@@ -34,6 +34,7 @@ import { purgeOldEntries } from './services/auditService';
 import { UpdateBanner } from './components/UpdateBanner';
 import { useCloudSync } from './hooks/useCloudSync';
 import { ImagePrecacheRunner } from './hooks/useImagePrecache';
+import { purgeForeignImageCache } from './services/imageBlobCache';
 import {
   SUPERVISOR_REMOTE_MUTATIONS_ENABLED,
   SUPERVISOR_REMOTE_INCOME_ENABLED,
@@ -155,10 +156,13 @@ export default function App() {
 
   const lastClickTimeRef = useRef(0);
 
-  const { rates, rateDiscrepancyWarning } = useRates();
+  const { rates, rateDiscrepancyWarning, updateData, loading: ratesLoading } = useRates();
 
   // Purge old audit log entries on startup
   useEffect(() => { purgeOldEntries(); }, []);
+
+  // Descarta imágenes cacheadas de otro proyecto Supabase (URLs que ya no resuelven)
+  useEffect(() => { purgeForeignImageCache(); }, []);
 
   // Cache rates whenever they update
   useEffect(() => { if (rates) cacheRates(rates); }, [rates, cacheRates]);
@@ -297,7 +301,7 @@ export default function App() {
   if (isMonitorMode) {
     return (
       <ErrorBoundary>
-        <RateProvider rates={rates} rateDiscrepancyWarning={rateDiscrepancyWarning}>
+        <RateProvider rates={rates} rateDiscrepancyWarning={rateDiscrepancyWarning} updateData={updateData} ratesLoading={ratesLoading}>
           <ProductProvider rates={rates} rateDiscrepancyWarning={rateDiscrepancyWarning}>
             <ImagePrecacheRunner />
             <Suspense fallback={<div className="flex-1 flex items-center justify-center p-6 text-slate-500 font-bold">Cargando monitor...</div>}>
@@ -410,7 +414,7 @@ export default function App() {
       )}
 
 
-      <RateProvider rates={rates} rateDiscrepancyWarning={rateDiscrepancyWarning}>
+      <RateProvider rates={rates} rateDiscrepancyWarning={rateDiscrepancyWarning} updateData={updateData} ratesLoading={ratesLoading}>
       <CartProvider>
       <ProductProvider>
         {/* OFFLINE-IMG: precalienta el cache del SW con TODAS las imágenes del inventario */}
@@ -437,7 +441,7 @@ export default function App() {
           </ErrorBoundary>
         </div>
 
-        <div className={`flex-1 flex flex-col ${activeTab === 'catalogo' ? '' : 'hidden'}`}>
+        <div className={`flex-1 min-h-0 flex flex-col ${activeTab === 'catalogo' ? '' : 'hidden'}`}>
           <ErrorBoundary>
             <PremiumGuard featureName="Inventario de Productos">
               {(activeTab === 'catalogo' || mountedViews.catalogo) && (
