@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { processVoidSale } from '../utils/voidSaleProcessor';
 import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
-import { BarChart3, TrendingUp, Package, AlertTriangle, ShoppingCart, Store, Users, Settings, Wallet, LogOut } from 'lucide-react';
+import { BarChart3, TrendingUp, Package, AlertTriangle, ShoppingCart, Store, Users, Settings, Wallet, LogOut, LockIcon } from 'lucide-react';
 import { formatBs, formatCop } from '../utils/calculatorUtils';
 import DashboardStats from '../components/Dashboard/DashboardStats';
 import DashboardPaymentBreakdown from '../components/Dashboard/DashboardPaymentBreakdown';
@@ -568,6 +568,16 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                                 <ShoppingCart size={18} />
                                 <span>Ir a Caja / Vender</span>
                             </button>
+                            {(todayCashFlow.length > 0 || todaySales.length > 0) && (
+                                <button
+                                    type="button"
+                                    onClick={handleDailyClose}
+                                    className="w-full sm:w-auto px-5 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-extrabold text-sm rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2"
+                                >
+                                    <LockIcon size={18} />
+                                    <span>Cerrar Caja</span>
+                                </button>
+                            )}
                         </div>
 
                         {/* Resumen del Turno (Sin clase .reveal que causaba opacidad cero) */}

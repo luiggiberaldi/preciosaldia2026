@@ -222,6 +222,7 @@ export default function CierreCajaWizard({
                             {/* Totales principales */}
                             <div className="bg-gradient-to-br from-brand to-brand-dark rounded-2xl p-5 text-white relative overflow-hidden">
                                 <div className="absolute -right-6 -top-6 w-24 h-24 bg-white/10 rounded-full blur-2xl" />
+                                {!blindClose && (<>
                                 <p className="text-xs font-bold text-brand-light uppercase tracking-widest mb-1">Ingresos brutos del dia</p>
                                 <p className="text-3xl font-black">
                                     {copEnabled && copPrimary && tasaCop > 0
@@ -234,6 +235,7 @@ export default function CierreCajaWizard({
                                         : <p className="text-sm font-bold text-amber-300 mt-0.5">{formatCop(todayTotalCop)} COP</p>
                                 )}
                                 <p className="text-sm font-bold text-brand-light mt-0.5">{formatBs(todayTotalBs)} Bs</p>
+                                </>)}
                                 <div className="flex items-center gap-4 mt-3 pt-3 border-t border-white/20">
                                     <div className="flex items-center gap-1.5">
                                         <ShoppingBag size={14} className="text-brand-light" />
