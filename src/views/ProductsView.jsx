@@ -98,6 +98,15 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [activeCategory, setActiveCategory] = useState('todos');
     const [currentPage, setCurrentPage] = useState(1);
+    const productsScrollRef = useRef(null);
+
+    useEffect(() => {
+        productsScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+        if (revealRef && revealRef.current) {
+            revealRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    }, [currentPage]);
+
     const [viewMode, setViewMode] = useState(() => localStorage.getItem('bodega_inventory_view') || 'grid');
     const { sortField, sortDir, handleSort: baseSortHandler } = useProductSorting();
     const handleSort = (field) => baseSortHandler(field, setCurrentPage);
@@ -638,7 +647,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
     // ─── RENDER ─────────────────────────────────────────────
 
     return (
-        <div ref={revealRef} className="flex flex-col h-full bg-surface-50 dark:bg-surface-950 p-3 sm:p-6 overflow-y-auto">
+        <div ref={revealRef} className="flex flex-col h-full bg-surface-50 dark:bg-surface-950 p-3 sm:p-6 pb-28 sm:pb-32 overflow-y-auto">
 
             {/* Header — Toolbar */}
             <ProductsToolbar
@@ -717,7 +726,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
 
             {/* Product Grid */}
             {isLoadingProducts ? (
-                <div className="flex-1 overflow-y-auto pb-4 scrollbar-hide">
+                <div className="flex-1 overflow-y-auto pb-28 sm:pb-32 scrollbar-hide">
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
                         {[1,2,3,4,5,6,7,8,9,10].map(i => (
                             // v1.2.0: skeleton cards usan surface tokens (warm cream) en vez de white/slate.
@@ -771,7 +780,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                             </button>
                         </div>
                     )}
-                    <div className="flex-1 overflow-y-auto pb-4 scrollbar-hide">
+                    <div ref={productsScrollRef} className="flex-1 overflow-y-auto pb-28 sm:pb-32 scrollbar-hide">
                         {viewMode === 'grid' ? (
                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
                             {paginatedProducts.map(p => (
@@ -936,15 +945,15 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
 
                         {/* Pagination */}
                         {totalPages > 1 && (
-                            <div className="flex justify-center items-center gap-4 py-4 shrink-0">
+                            <div className="flex justify-center items-center gap-4 py-4 pb-12 sm:pb-10 shrink-0">
                                 {/* v1.2.0: touch targets ≥ 48px (a11y WCAG AA) + surface tokens */}
-                                <button onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} disabled={currentPage === 1}
-                                    className="p-2.5 min-h-[48px] min-w-[48px] flex items-center justify-center rounded-xl bg-surface dark:bg-surface-900 border border-surface-200 dark:border-surface-800 disabled:opacity-50 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors">
+                                <button onClick={() => { triggerHaptic && triggerHaptic(); setCurrentPage(prev => Math.max(prev - 1, 1)); }} disabled={currentPage === 1}
+                                    className="p-2.5 min-h-[48px] min-w-[48px] flex items-center justify-center rounded-xl bg-surface dark:bg-surface-900 border border-surface-200 dark:border-surface-800 disabled:opacity-50 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors shadow-2xs">
                                     <ChevronLeft size={20} className="text-surface-600 dark:text-surface-400" aria-hidden="true" />
                                 </button>
                                 <span className="text-sm font-bold text-surface-500 dark:text-surface-400">Página {currentPage} de {totalPages}</span>
-                                <button onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} disabled={currentPage === totalPages}
-                                    className="p-2.5 min-h-[48px] min-w-[48px] flex items-center justify-center rounded-xl bg-surface dark:bg-surface-900 border border-surface-200 dark:border-surface-800 disabled:opacity-50 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors">
+                                <button onClick={() => { triggerHaptic && triggerHaptic(); setCurrentPage(prev => Math.min(prev + 1, totalPages)); }} disabled={currentPage === totalPages}
+                                    className="p-2.5 min-h-[48px] min-w-[48px] flex items-center justify-center rounded-xl bg-surface dark:bg-surface-900 border border-surface-200 dark:border-surface-800 disabled:opacity-50 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors shadow-2xs">
                                     <ChevronRight size={20} className="text-surface-600 dark:text-surface-400" aria-hidden="true" />
                                 </button>
                             </div>

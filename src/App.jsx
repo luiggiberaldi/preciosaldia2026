@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useMemo, Suspense, lazy } from 'react';
-import { Home, ShoppingCart, Store, Users, Download, FlaskConical, Moon, Sun, BarChart3, WifiOff, X, Settings, Clock } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo, Suspense } from 'react';
+import { Home, ShoppingCart, Store, Users, Download, FlaskConical, BarChart3, WifiOff, X, Settings, Clock } from 'lucide-react';
 
 import DashboardView from './views/DashboardView';
 
@@ -29,7 +29,6 @@ import CommandPalette from './components/CommandPalette';
 import LockScreen from './components/security/LockScreen';
 import { useAutoLock } from './hooks/useAutoLock';
 import { useAuthStore } from './hooks/store/useAuthStore';
-import { LogOut } from 'lucide-react';
 import { purgeOldEntries } from './services/auditService';
 import { UpdateBanner } from './components/UpdateBanner';
 import { useCloudSync } from './hooks/useCloudSync';
