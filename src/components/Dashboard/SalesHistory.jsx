@@ -32,7 +32,10 @@ export default function SalesHistory({
 }) {
     const [expandedSaleId, setExpandedSaleId] = useState(null);
     const [printingId, setPrintingId] = useState(null);
-    const [historyTab, setHistoryTab] = useState('turno'); // 'turno' | 'general'
+    const [historyTabState, setHistoryTabState] = useState('turno'); // 'turno' | 'general'
+    // Solo admin puede ver ventas generales; si el rol cambia, cae a 'turno' sin depender del estado.
+    const historyTab = isAdmin ? historyTabState : 'turno';
+    const setHistoryTab = setHistoryTabState;
     const [searchTerm, setSearchTerm] = useState('');
 
     // Ventas del turno (caja abierta actual)
