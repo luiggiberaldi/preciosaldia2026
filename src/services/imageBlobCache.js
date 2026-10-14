@@ -1,6 +1,71 @@
+import localforage from 'localforage';
 import { storageService } from '../utils/storageService';
+import { supabaseCloudUrl } from '../config/supabaseCloud';
+
+const IMG_BLOB_PREFIX = 'img_blob_';
 
 const memoryCache = new Map();
+
+/**
+ * Devuelve el host de Supabase de una URL, o null si no es una URL de Supabase.
+ */
+function supabaseHostOf(url) {
+    try {
+        const { hostname } = new URL(url);
+        return hostname.endsWith('.supabase.co') ? hostname : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Borra las imágenes cacheadas que apuntan a un proyecto Supabase distinto al
+ * configurado. Sin esto, una caché vieja con URLs de otro proyecto sigue
+ * sirviendo imágenes rotas aunque la base actual ya esté bien.
+ * @returns {Promise<number>} Número de entradas eliminadas.
+ */
+export async function purgeForeignImageCache() {
+    const currentHost = supabaseHostOf(supabaseCloudUrl);
+    if (!currentHost) return 0;
+
+    let removed = 0;
+    // Las claves pueden llevar prefijo de contingencia (bodega_storage_fallback_v1:...).
+    const isForeign = (key) => {
+        const at = key.indexOf(IMG_BLOB_PREFIX);
+        if (at === -1) return false;
+        const host = supabaseHostOf(key.slice(at + IMG_BLOB_PREFIX.length));
+        return host !== null && host !== currentHost;
+    };
+
+    try {
+        const keys = await localforage.keys();
+        for (const key of keys.filter(isForeign)) {
+            await localforage.removeItem(key);
+            removed++;
+        }
+    } catch {
+        // IndexedDB no disponible: nada que purgar
+    }
+
+    try {
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+            const key = localStorage.key(i);
+            if (key && isForeign(key)) {
+                localStorage.removeItem(key);
+                removed++;
+            }
+        }
+    } catch {
+        // localStorage no disponible
+    }
+
+    for (const url of [...memoryCache.keys()]) {
+        const host = supabaseHostOf(url);
+        if (host !== null && host !== currentHost) memoryCache.delete(url);
+    }
+
+    return removed;
+}
 
 /**
  * Obtiene la URL cifrada/almacenada en IndexedDB para una imagen.

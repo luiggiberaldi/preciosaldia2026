@@ -92,6 +92,9 @@ vi.mock('../src/utils/backupRestoreService', () => ({
     applyBackupToStorage: vi.fn(),
 }));
 vi.mock('../src/config/cloudSchema', () => ({ buildCloudBackupsRow: vi.fn() }));
+vi.mock('../src/services/supervisorAuth', () => ({
+    ensureSupervisorSession: vi.fn(),
+}));
 vi.mock('../src/services/backupRequestPolling', () => ({
     startBackupRequestPolling: vi.fn((check, options) => {
         channelState.check = check;
@@ -103,6 +106,7 @@ vi.mock('../src/services/backupRequestPolling', () => ({
 
 import { useAutoBackup } from '../src/hooks/useAutoBackup';
 import { startBackupRequestPolling } from '../src/services/backupRequestPolling';
+import { ensureSupervisorSession } from '../src/services/supervisorAuth';
 
 function renderBackupHook() {
     const container = document.createElement('div');
@@ -168,6 +172,8 @@ describe('useAutoBackup remote request reconciliation', () => {
         localStorage.setItem('business_name', 'Test Store');
         vi.stubEnv('VITE_ESTACION_API_URL', 'https://estacion.test');
         globalThis.fetch = vi.fn().mockResolvedValue({ ok: true });
+        ensureSupervisorSession.mockReset();
+        ensureSupervisorSession.mockResolvedValue({ session: { user: { id: 'device-user' } }, error: null });
         vi.spyOn(console, 'log').mockImplementation(() => {});
         vi.spyOn(console, 'error').mockImplementation(() => {});
         vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -295,6 +301,42 @@ describe('useAutoBackup remote request reconciliation', () => {
         );
         expect(backupQuery.update).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }));
         expect(sessionStorage.getItem('backup_processed_no-remote-destination')).toBeNull();
+        view.unmount();
+    });
+
+    it('does not read or process requests when the device has no Supabase session', async () => {
+        pendingRequest('no-session');
+        ensureSupervisorSession.mockResolvedValue({ session: null, error: new Error('anon sign-in rejected') });
+        const view = renderBackupHook();
+        await flushPromises();
+
+        expect(ensureSupervisorSession).toHaveBeenCalled();
+        expect(cloudClient.from).not.toHaveBeenCalledWith('backup_requests');
+        expect(backupQuery.update).not.toHaveBeenCalled();
+        expect(console.error).toHaveBeenCalledWith(
+            '[AutoBackup] Sin sesión del dispositivo; se omite la revisión de solicitudes:',
+            expect.any(Error)
+        );
+        view.unmount();
+    });
+
+    it('establishes the session before reading backup_requests', async () => {
+        pendingRequest('session-first');
+        const order = [];
+        ensureSupervisorSession.mockImplementation(async () => {
+            order.push('session');
+            return { session: { user: { id: 'device-user' } }, error: null };
+        });
+        cloudClient.from.mockImplementation(() => {
+            order.push('from');
+            return backupQuery;
+        });
+        const view = renderBackupHook();
+        await flushPromises();
+
+        expect(order.indexOf('session')).toBeGreaterThanOrEqual(0);
+        expect(order.indexOf('session')).toBeLessThan(order.indexOf('from'));
+        cloudClient.from.mockImplementation(() => backupQuery);
         view.unmount();
     });
 

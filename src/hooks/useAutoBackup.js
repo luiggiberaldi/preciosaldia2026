@@ -7,6 +7,7 @@ import { validateBackupJson, applyBackupToStorage } from '../utils/backupRestore
 import { buildCloudBackupsRow } from '../config/cloudSchema';
 import { startBackupRequestPolling } from '../services/backupRequestPolling';
 import { uploadBackupToStorage } from '../utils/backupStorageUpload';
+import { ensureSupervisorSession } from '../services/supervisorAuth';
 
 
 // ─── Configuración optimizada ───────────────────────────────────────────────
@@ -240,6 +241,14 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
             }, 2 * 60 * 1000);
 
             try {
+                // Las políticas de backup_requests exigen sesión autenticada del dispositivo.
+                // Sin sesión la lectura correría como anon y no vería ninguna solicitud.
+                const { session, error: sessionError } = await ensureSupervisorSession();
+                if (sessionError || !session) {
+                    console.error('[AutoBackup] Sin sesión del dispositivo; se omite la revisión de solicitudes:', sessionError || 'sin sesión');
+                    return;
+                }
+
                 const { data: requestRows, error: queryError } = await supabaseCloud
                     .from('backup_requests')
                     .select('id, status, created_at')
