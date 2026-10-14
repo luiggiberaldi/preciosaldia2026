@@ -65,7 +65,8 @@ export default function CierreCajaSummaryModal({
                     </button>
                 </div>
 
-                {/* Resumen Principal */}
+                {/* Resumen Principal (oculto en cierre ciego) */}
+                {!blindClose && (
                 <div className="grid grid-cols-2 gap-3">
                     <div className="bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-2xl p-3 text-center">
                         <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Vendido USD</span>
@@ -76,6 +77,7 @@ export default function CierreCajaSummaryModal({
                         <strong className="text-lg font-black text-emerald-600 dark:text-emerald-400 mt-0.5 block">{formatBs(todayTotalBs)} Bs</strong>
                     </div>
                 </div>
+                )}
 
                 {/* Detalles de Operaciones */}
                 <div className="flex justify-between items-center text-xs px-3 py-2 bg-slate-50 dark:bg-slate-800/30 rounded-xl">

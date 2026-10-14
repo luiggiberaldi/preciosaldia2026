@@ -240,9 +240,11 @@ export default function SalesHistory({
                     <Clock size={14} className="text-slate-400" /> Historial de Ventas
                 </h3>
                 <div className="flex items-center gap-2">
+                    {isAdmin && (
                     <span className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-full">
                         {totalSalesCount || allSales.length} histórico
                     </span>
+                    )}
                     {isAdmin && (
                         <button
                             onClick={onOpenDeleteModal}
@@ -276,6 +278,7 @@ export default function SalesHistory({
                     </span>
                 </button>
 
+                {isAdmin && (
                 <button
                     onClick={() => { setHistoryTab('general'); }}
                     className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-extrabold transition-all ${
@@ -294,6 +297,7 @@ export default function SalesHistory({
                         {allSales.length}
                     </span>
                 </button>
+                )}
             </div>
 
             {(collectionCount > 0 || kindFilter !== 'ventas') && (
