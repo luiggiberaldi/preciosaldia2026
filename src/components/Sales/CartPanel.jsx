@@ -4,6 +4,7 @@ import { formatBs, formatCop, getCop, formatUsd } from '../../utils/calculatorUt
 import { mulR, round3 } from '../../utils/dinero';
 import SmartImage from '../SmartImage';
 import { FinancialEngine } from '../../core/FinancialEngine';
+import { getCartIvaOpts } from '../../config/taxConfig';
 import { showToast } from '../Toast';
 import { isGranelProduct, granelUnitLabel, parseCartQuantity, formatStockDisplay, useGranelUnitMode, formatGranelDisplay, parseWeightToCanonical } from '../../utils/granel'; // GRANEL-001
 
@@ -12,6 +13,8 @@ export default function CartPanel({
     effectiveRate,
     cartSubtotalUsd,
     cartSubtotalBs,
+    cartBaseUsd,
+    cartIvaUsd,
     cartTotalUsd,
     cartTotalBs,
     cartTotalCop,
@@ -40,7 +43,7 @@ export default function CartPanel({
         if (!cart || cart.length === 0) return 0;
         const hasDualItem = cart.some(i => i.pricingMode === 'dual_usd' && parseFloat(i.priceBsUsdRef) > 0);
         if (hasDualItem) {
-            const bsTotals = FinancialEngine.buildCartTotals(cart, discountData, effectiveRate, tasaCop, true);
+            const bsTotals = FinancialEngine.buildCartTotals(cart, discountData, effectiveRate, tasaCop, true, getCartIvaOpts());
             return bsTotals.totalBs;
         }
         return cartTotalBs;
@@ -119,9 +122,6 @@ export default function CartPanel({
                         <ShoppingCart size={16} className="opacity-80" />
                         Cesta ({cartItemCount})
                     </span>
-                </div>
-            </div>
-
                     {canRegistrarAporte && onOpenAporte && (
                         <button
                             onClick={() => { triggerHaptic && triggerHaptic(); onOpenAporte(); }}
@@ -131,6 +131,9 @@ export default function CartPanel({
                             Aporte
                         </button>
                     )}
+                </div>
+            </div>
+
             {/* Cart Items — scrollable area with touch support */}
             <div
                 className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-2 sm:p-3"
@@ -388,6 +391,20 @@ export default function CartPanel({
                             : `$${cartSubtotalUsd.toFixed(2)}`}
                     </span>
                 </div>
+
+                {/* Desglose IVA: solo si la venta tiene IVA. Sin IVA, la cesta no cambia. */}
+                {cartIvaUsd > 0 && (
+                    <div className="flex flex-col gap-0.5 text-xs font-bold text-slate-500 px-1">
+                        <div className="flex justify-between items-center">
+                            <span>Base (sin IVA)</span>
+                            <span>${formatUsd(cartBaseUsd)}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                            <span>IVA</span>
+                            <span>${formatUsd(cartIvaUsd)}{effectiveRate > 0 ? ` · Bs ${formatBs(mulR(cartIvaUsd, effectiveRate))}` : ''}</span>
+                        </div>
+                    </div>
+                )}
 
                 {/* Caja de totales doble columna */}
                 <div className="flex rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-slate-50/50 dark:bg-slate-950/20">

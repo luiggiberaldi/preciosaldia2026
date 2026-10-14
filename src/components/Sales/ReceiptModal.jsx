@@ -81,6 +81,12 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                             );
                         })()}
 
+                        {receipt.tipo !== 'AVANCE_EFECTIVO' && receipt.ivaUsd > 0 && (
+                            <p className="text-xs font-bold text-slate-500 mb-2">
+                                Base ${(receipt.baseUsd ?? (receipt.totalUsd - receipt.ivaUsd)).toFixed(2)} + IVA ${receipt.ivaUsd.toFixed(2)}
+                            </p>
+                        )}
+
                         <div className="inline-flex items-center flex-wrap justify-center gap-1.5 px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-full text-xs font-bold text-slate-600 dark:text-slate-350 mt-2">
                             {receipt.payments && receipt.payments.filter(p => p.methodId !== 'cashea' && !p.isCashea).map((p, i, arr) => (
                                 <span key={p.id} className="flex items-center gap-1">

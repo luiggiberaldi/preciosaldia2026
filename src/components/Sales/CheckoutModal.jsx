@@ -24,6 +24,8 @@ export default function CheckoutModal({
     cartTotalUsd: baseCartTotalUsd,
     cartTotalBs: baseCartTotalBs,
     cartTotalCop,
+    cartBaseUsd = 0,
+    cartIvaUsd = 0,
     discountData,
     effectiveRate,
     customers,
@@ -329,6 +331,14 @@ export default function CheckoutModal({
                 totalUsd={cartTotalUsd}
                 baseTotalUsd={baseCartTotalUsd}
             />
+
+            {/* IVA: desglose Base + IVA del total cobrado (solo si hay IVA) */}
+            {cartIvaUsd > 0 && (
+                <div className="px-4 py-1.5 text-[11px] font-bold text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800 flex justify-between">
+                    <span>Base ${cartBaseUsd.toFixed(2)}</span>
+                    <span>IVA ${cartIvaUsd.toFixed(2)}</span>
+                </div>
+            )}
 
             {/* --- SCROLLABLE BODY --- */}
             <div className="flex-1 overflow-y-auto overscroll-contain pb-28">

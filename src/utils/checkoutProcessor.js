@@ -10,6 +10,7 @@ import { deepFreeze } from './deepFreeze.js';      // FIN-008: deep freeze (no s
 import { FINANCIAL_EPSILON } from './securityConstants.js';
 import { FinancialEngine } from '../core/FinancialEngine.js';
 import { CurrencyService } from '../services/CurrencyService.js';
+import { loadTaxConfig, resolveLineIvaRate } from '../config/taxConfig.js';
 
 const SALES_KEY = 'bodega_sales_v1';
 const PRODUCTS_KEY = 'bodega_products_v1';
@@ -20,6 +21,8 @@ export async function processSaleTransaction({
     cartTotalUsd,
     cartTotalBs,
     cartSubtotalUsd,
+    cartBaseUsd,
+    cartIvaUsd,
     payments,
     changeBreakdown,
     selectedCustomerId,
@@ -42,11 +45,21 @@ export async function processSaleTransaction({
 
     let activeCartTotalUsd = cartTotalUsd;
     let activeCartTotalBs = cartTotalBs;
+    let activeBaseUsd = cartBaseUsd;
+    let activeIvaUsd = cartIvaUsd;
 
     if (hasDualItem) {
-        const computedTotals = FinancialEngine.buildCartTotals(cart, discountData, effectiveRate, copEnabled ? tasaCop : 0, isBsPayment);
+        // IVA: misma configuración que la cesta y el modal, para que el total guardado coincida.
+        const taxConfig = loadTaxConfig();
+        const ivaOpts = {
+            enabled: taxConfig.ivaEnabled,
+            resolveRate: (item) => resolveLineIvaRate(item, taxConfig),
+        };
+        const computedTotals = FinancialEngine.buildCartTotals(cart, discountData, effectiveRate, copEnabled ? tasaCop : 0, isBsPayment, ivaOpts);
         activeCartTotalUsd = computedTotals.totalUsd;
         activeCartTotalBs = computedTotals.totalBs;
+        activeBaseUsd = computedTotals.baseUsd;
+        activeIvaUsd = computedTotals.ivaUsd;
     }
 
     if (isNaN(activeCartTotalUsd) || activeCartTotalUsd < 0 || isNaN(activeCartTotalBs) || activeCartTotalBs < 0) {
@@ -226,6 +239,9 @@ export async function processSaleTransaction({
             exactBs: i.exactBs || null
         })),
         cartSubtotalUsd: cartSubtotalUsd,
+        // IVA (fase 4): base sin IVA e IVA cobrado, guardados en la venta para ticket y reportes.
+        baseUsd: activeBaseUsd ?? null,
+        ivaUsd:  activeIvaUsd ?? 0,
         discountType:       discountData?.type      || null,
         discountValue:      discountData?.value     || 0,
         discountAmountUsd:  discountData?.amountUsd || 0,

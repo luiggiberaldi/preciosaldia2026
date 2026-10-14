@@ -25,7 +25,7 @@ describe('referencias de cartera en tickets', () => {
         expect(html).toContain('500 g x');
         expect(html).toContain('750 ml x');
         expect(html).not.toContain('0.75 kg');
-    });
+    }, 20_000); // Primer test del archivo: paga la carga del módulo de ticket; bajo carga de la suite completa supera 5 s.
 
     it('muestra cuando el vuelto queda acreditado a favor', () => {
         const html = buildTicketHtml({

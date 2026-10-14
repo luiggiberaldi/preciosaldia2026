@@ -1,5 +1,5 @@
 import { formatBs, formatCop, formatUsd } from './calculatorUtils.js';
-import { mulR, divR, round0 } from './dinero.js';
+import { mulR, divR, round0, round2 } from './dinero.js';
 import { getGranelUnitMode, formatGranelDisplay, isGranelProduct } from './granel.js';
 
 function escapeHtml(str) {
@@ -181,6 +181,32 @@ export function buildTicketHtml(sale, bcvRate, paperConfig, settings) {
         `;
     }
 
+    // IVA (fase 4): fila separada solo si la venta tiene IVA. Sin IVA, el ticket no cambia.
+    let ivaBlockHtml = '';
+    if (sale.ivaUsd > 0) {
+        const baseUsdForTicket = sale.baseUsd ?? round2(sale.totalUsd - sale.ivaUsd);
+        let baseVal, ivaVal;
+        if (receiptCurrencyMode === 'bs') {
+            baseVal = 'Bs ' + formatBs(mulR(baseUsdForTicket, rate));
+            ivaVal = 'Bs ' + formatBs(mulR(sale.ivaUsd, rate));
+        } else {
+            baseVal = fmtUsd(baseUsdForTicket);
+            ivaVal = fmtUsd(sale.ivaUsd);
+        }
+        ivaBlockHtml = `
+        <table style="margin-bottom:6px; font-size:${fTiny}; border-top: 1px dashed #000; padding-top: 4px;">
+            <tr>
+                <td style="text-align:left; color:#000; font-weight:bold;">BASE:</td>
+                <td style="text-align:right; color:#000; font-weight:bold;">${baseVal}</td>
+            </tr>
+            <tr>
+                <td style="text-align:left; color:#000; font-weight:bold;">IVA:</td>
+                <td style="text-align:right; color:#000; font-weight:bold;">${ivaVal}</td>
+            </tr>
+        </table>
+        `;
+    }
+
     // Generar bloque total dinámico
     let totalBlockHtml = '';
     if (receiptCurrencyMode === 'usd') {
@@ -297,6 +323,7 @@ export function buildTicketHtml(sale, bcvRate, paperConfig, settings) {
     <!-- Total -->
     <div style="margin:8px 0;">
         ${subtotalBlockHtml}
+        ${ivaBlockHtml}
         <div class="center bold" style="font-size:${fSmall};color:#000;margin-bottom:4px;">TOTAL</div>
         ${totalBlockHtml}
     </div>

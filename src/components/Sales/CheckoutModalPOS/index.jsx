@@ -4,6 +4,7 @@ import { useProductContext } from '../../../context/ProductContext';
 import { round2, subR, mulR, divR, sumR, calculateChangeRemainder } from '../../../utils/dinero';
 import { FinancialEngine } from '../../../core/FinancialEngine';
 import { FINANCIAL_EPSILON } from '../../../utils/securityConstants';
+import { getCartIvaOpts } from '../../../config/taxConfig';
 
 // Hooks portados
 import { usePaymentState } from './hooks/usePaymentState';
@@ -30,6 +31,8 @@ export default function CheckoutModalPOS({
     cartSubtotalUsd,
     cartTotalUsd,
     cartTotalBs,
+    cartBaseUsd = 0,
+    cartIvaUsd = 0,
     discountData,
     effectiveRate,
     customers,
@@ -152,10 +155,11 @@ export default function CheckoutModalPOS({
     // Recalcular totales dinámicos si el pago es en Bolívares
     const dynamicCartTotals = useMemo(() => {
         if (!cart || cart.length === 0 || !cart.some(i => i.pricingMode === 'dual_usd' && parseFloat(i.priceBsUsdRef) > 0)) {
-            return { totalUsd: cartTotalUsd, totalBs: cartTotalBs };
+            return { totalUsd: cartTotalUsd, totalBs: cartTotalBs, baseUsd: cartBaseUsd, ivaUsd: cartIvaUsd };
         }
-        return FinancialEngine.buildCartTotals(cart, discountData, effectiveRate, tasaCop, isBsPaymentActive);
-    }, [cart, discountData, effectiveRate, tasaCop, isBsPaymentActive, cartTotalUsd, cartTotalBs]);
+        // IVA: misma configuración que la cesta, para que el total cobrado coincida con lo mostrado.
+        return FinancialEngine.buildCartTotals(cart, discountData, effectiveRate, tasaCop, isBsPaymentActive, getCartIvaOpts());
+    }, [cart, discountData, effectiveRate, tasaCop, isBsPaymentActive, cartTotalUsd, cartTotalBs, cartBaseUsd, cartIvaUsd]);
 
     // AVISO-REPRECIO (PLAN-AVISO-REPRECIO-BS · Trabajo 1): el total cambia al
     // aplicar el precio de referencia en Bs de los ítems con Doble Precio.
@@ -422,11 +426,11 @@ export default function CheckoutModalPOS({
         const actual = parseFloat(pagos[id] || 0);
         let valorFinal = 0;
         if (moneda === 'USD') {
-            const usdTotals = FinancialEngine.buildCartTotals(cart, discountData, effectiveRate, tasaCop, false);
+            const usdTotals = FinancialEngine.buildCartTotals(cart, discountData, effectiveRate, tasaCop, false, getCartIvaOpts());
             const remUsd = Math.max(0, subR(usdTotals.totalUsd, totalPagadoGlobalUSD));
             valorFinal = round2(actual + remUsd);
         } else if (moneda === 'BS') {
-            const bsTotals = FinancialEngine.buildCartTotals(cart, discountData, effectiveRate, tasaCop, true);
+            const bsTotals = FinancialEngine.buildCartTotals(cart, discountData, effectiveRate, tasaCop, true, getCartIvaOpts());
             // FIN-038: descontar también Cashea y el saldo a favor aplicado,
             // que ya cubren parte del total pero no están en totalPagadoBS.
             const cubiertoBs = sumR([
@@ -648,6 +652,8 @@ export default function CheckoutModalPOS({
                         currentFloatBs={currentFloatBs}
                         totalUSD={dynamicCartTotals.totalUsd}
                         totalBS={dynamicCartTotals.totalBs}
+                        baseUsd={dynamicCartTotals.baseUsd}
+                        ivaUsd={dynamicCartTotals.ivaUsd}
                         discountData={discountData}
                         tasaSegura={tasaSegura}
                         clienteSeleccionado={clienteSeleccionado}
@@ -701,6 +707,9 @@ export default function CheckoutModalPOS({
                                 <div className="flex flex-col">
                                     <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Total a Pagar</span>
                                     <span className="text-xl font-black leading-tight text-white">${dynamicCartTotals.totalUsd.toFixed(2)}</span>
+                                    {dynamicCartTotals.ivaUsd > 0 && (
+                                        <span className="text-[9px] font-bold text-slate-300">Base ${dynamicCartTotals.baseUsd.toFixed(2)} + IVA ${dynamicCartTotals.ivaUsd.toFixed(2)}</span>
+                                    )}
                                 </div>
                                 <div className="text-right">
                                     <span className="text-sm font-bold text-emerald-400">Bs {round2(dynamicCartTotals.totalBs).toLocaleString('es-VE', { minimumFractionDigits: 2 })}</span>

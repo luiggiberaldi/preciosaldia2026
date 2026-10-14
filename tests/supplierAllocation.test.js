@@ -64,7 +64,7 @@ describe('tasas BCV real y tasa activa en movimientos de proveedor', () => {
         expect(savedInvoice.amountBs).toBe(8_768);
         expect(savedInvoice.rateType).toBe('bcv');
         expect(savedInvoice.exchangeRate).toBe(87.68);
-    });
+    }, 20_000); // Primera renderización de SupplierModals: bajo carga de la suite completa supera 5 s por defecto.
 
     it('el panel de detalle calcula contadores y filtros de facturas sobre el historial completo', async () => {
         const historyData = [

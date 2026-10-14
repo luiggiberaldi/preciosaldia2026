@@ -14,6 +14,8 @@ const PaymentLeftColumn = ({
     currentFloatBs = 0,
     totalUSD,
     totalBS,
+    baseUsd = 0,
+    ivaUsd = 0,
     discountData,
     tasaSegura,
     clienteSeleccionado,
@@ -74,6 +76,8 @@ const PaymentLeftColumn = ({
                 <TransactionSummary
                     totalUSD={totalUSD}
                     totalBS={totalBS}
+                    baseUsd={baseUsd}
+                    ivaUsd={ivaUsd}
                     discountData={discountData}
                     tasaSegura={tasaSegura}
                 />

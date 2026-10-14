@@ -9,6 +9,7 @@ import PaymentMethodsManager from '../PaymentMethodsManager';
 import CasheaIcon from '../../CasheaIcon';
 import PrinterHardwareManager from '../PrinterHardwareManager';
 import { useProductContext } from '../../../context/ProductContext';
+import { loadTaxConfig, saveTaxConfig, resetTaxConfig, IVA_FACTORY_RATE, normalizeIvaRate } from '../../../config/taxConfig';
 
 const SUB_TABS = [
     {
@@ -85,6 +86,50 @@ export default function SettingsTabVentas({
         return isNaN(stored) || stored < 0 ? '0' : stored.toString();
     });
     const [bsRoundMode, setBsRoundMode] = useState(() => localStorage.getItem('checkout_bs_round_mode') || 'ceil');
+
+    // ── IVA (fase 3): configuración fiscal guardada en taxConfig ──
+    const [taxConfig, setTaxConfig] = useState(() => loadTaxConfig());
+    const [ivaRateInput, setIvaRateInput] = useState(() => String(loadTaxConfig().ivaRate));
+
+    const handleIvaToggle = () => {
+        const next = saveTaxConfig({ ...loadTaxConfig(), ivaEnabled: !loadTaxConfig().ivaEnabled });
+        setTaxConfig(next);
+        forceHeartbeat?.();
+        showToast?.(next.ivaEnabled ? 'IVA activado' : 'IVA desactivado', 'success');
+        triggerHaptic?.();
+    };
+
+    // Guarda solo valores válidos (0–100). Mientras se escribe no se corrige el texto.
+    const handleIvaRateChange = (e) => {
+        const raw = e.target.value;
+        setIvaRateInput(raw);
+        const rate = normalizeIvaRate(raw);
+        if (rate !== null) {
+            // Usa la configuración leída de storage en este mismo paso, no el estado del render.
+            const next = saveTaxConfig({ ...loadTaxConfig(), ivaRate: rate });
+            setTaxConfig(next);
+            forceHeartbeat?.();
+        }
+    };
+
+    // Al salir del campo, si el valor no es válido, vuelve al último valor guardado.
+    const handleIvaRateBlur = () => {
+        const rate = normalizeIvaRate(ivaRateInput);
+        if (rate === null) {
+            setIvaRateInput(String(taxConfig.ivaRate));
+        } else {
+            setIvaRateInput(String(rate));
+        }
+    };
+
+    const handleIvaRestore = () => {
+        const next = resetTaxConfig();
+        setTaxConfig(next);
+        setIvaRateInput(String(IVA_FACTORY_RATE));
+        forceHeartbeat?.();
+        showToast?.(`IVA restaurado a ${IVA_FACTORY_RATE}% (de fábrica)`, 'success');
+        triggerHaptic?.();
+    };
 
     // ── HANDLERS DE CASHEA ──
     const handleCasheaMinAmountChange = (e) => {
@@ -289,6 +334,52 @@ export default function SettingsTabVentas({
                     </SectionCard>
 
                     {/* Ticket de Venta */}
+                    <SectionCard icon={DollarSign} title="IVA" subtitle="Impuesto al valor agregado sobre la venta" iconColor="text-emerald-600">
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Cobrar IVA</p>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Suma el IVA al total de cada venta nueva. Las ventas anteriores no cambian.</p>
+                                </div>
+                                <Toggle enabled={taxConfig.ivaEnabled} onChange={handleIvaToggle} aria-label="Cobrar IVA" />
+                            </div>
+
+                            <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 space-y-2">
+                                <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                        <p className="text-xs font-extrabold text-slate-700 dark:text-slate-200">Tasa de IVA</p>
+                                        <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Porcentaje general (0 a 100). Por defecto 16%.</p>
+                                    </div>
+                                    <div className="relative flex items-center shrink-0">
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            step="0.01"
+                                            inputMode="decimal"
+                                            value={ivaRateInput}
+                                            onChange={handleIvaRateChange}
+                                            onBlur={handleIvaRateBlur}
+                                            disabled={!taxConfig.ivaEnabled}
+                                            aria-label="Tasa de IVA en porcentaje"
+                                            className="w-24 text-right font-black text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-xl pl-3 pr-7 py-2 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all shadow-inner disabled:opacity-50"
+                                        />
+                                        <span className="absolute right-2.5 text-xs font-black text-emerald-600 dark:text-emerald-400 pointer-events-none">%</span>
+                                    </div>
+                                </div>
+                                <div className="flex justify-end">
+                                    <button
+                                        type="button"
+                                        onClick={handleIvaRestore}
+                                        className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 px-3 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-900/40 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-all"
+                                    >
+                                        Restaurar {IVA_FACTORY_RATE}% (de fábrica)
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </SectionCard>
+
                     <SectionCard icon={FileText} title="Ticket de Venta" subtitle="Moneda del comprobante" iconColor="text-blue-500">
                         <div className="space-y-3 flex flex-col justify-between h-full">
                             <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">

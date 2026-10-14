@@ -2,6 +2,7 @@
 // Nota: SalesHeader.jsx y CartPanel.jsx son subcomponentes fuera de scope; se migran en P2-P4.
 import { useState, useEffect, useCallback, useRef, useMemo, useDeferredValue } from 'react';
 import { FinancialEngine } from '../core/FinancialEngine';
+import { loadTaxConfig, resolveLineIvaRate } from '../config/taxConfig';
 import { storageService } from '../utils/storageService';
 import { useSounds } from '../hooks/useSounds';
 import { useVoiceSearch } from '../hooks/useVoiceSearch';
@@ -333,10 +334,18 @@ export default function SalesView({ triggerHaptic, isActive }) {
         discountAmountBs,
         totalUsd: cartTotalUsd,
         totalBs: cartTotalBs,
-        totalCop: cartTotalCop
-    } = useMemo(() =>
-        FinancialEngine.buildCartTotals(cart, discount, effectiveRate, copEnabled ? tasaCop : 0)
-    , [cart, discount, effectiveRate, copEnabled, tasaCop]);
+        totalCop: cartTotalCop,
+        baseUsd: cartBaseUsd,
+        ivaUsd: cartIvaUsd,
+    } = useMemo(() => {
+        // IVA fase 3: lee la configuración fiscal y la tasa de cada línea.
+        const taxConfig = loadTaxConfig();
+        const ivaOpts = {
+            enabled: taxConfig.ivaEnabled,
+            resolveRate: (item) => resolveLineIvaRate(item, taxConfig),
+        };
+        return FinancialEngine.buildCartTotals(cart, discount, effectiveRate, copEnabled ? tasaCop : 0, false, ivaOpts);
+    }, [cart, discount, effectiveRate, copEnabled, tasaCop]);
 
     // Variables estáticas para pasar a los componentes hijos
     const discountData = {
@@ -414,7 +423,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
 
     // ── Checkout Flow Hook ──────────────────────────
     const { handleCheckout, handleCreateCustomer, handleSaveApertura, handleSaveAporte, isProcessing } = useCheckoutFlow({
-        cart, cartTotalUsd, cartTotalBs, cartSubtotalUsd,
+        cart, cartTotalUsd, cartTotalBs, cartSubtotalUsd, cartBaseUsd, cartIvaUsd,
         selectedCustomerId, customers, setCustomers, products, setProducts,
         effectiveRate, tasaCop, copEnabled, discountData, useAutoRate, granelUnitMode,
         setSalesData, setShowReceipt, setShowCheckout, setSelectedCustomerId,
@@ -882,6 +891,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
                         cart={cart} effectiveRate={effectiveRate}
                         canRegistrarAporte={canRegistrarAporte} onOpenAporte={() => setIsAporteOpen(true)}
                         cartSubtotalUsd={cartSubtotalUsd} cartSubtotalBs={cartSubtotalBs}
+                        cartBaseUsd={cartBaseUsd} cartIvaUsd={cartIvaUsd}
                         cartTotalUsd={cartTotalUsd} cartTotalBs={cartTotalBs} cartTotalCop={cartTotalCop} cartItemCount={cartItemCount}
                         discountData={discountData} onOpenDiscount={() => setShowDiscountModal(true)}
                         updateQty={updateQty} removeFromCart={removeFromCart}
@@ -967,6 +977,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
                                 cart={cart} effectiveRate={effectiveRate}
                         canRegistrarAporte={canRegistrarAporte} onOpenAporte={() => setIsAporteOpen(true)}
                                 cartSubtotalUsd={cartSubtotalUsd} cartSubtotalBs={cartSubtotalBs}
+                                cartBaseUsd={cartBaseUsd} cartIvaUsd={cartIvaUsd}
                                 cartTotalUsd={cartTotalUsd} cartTotalBs={cartTotalBs} cartTotalCop={cartTotalCop} cartItemCount={cartItemCount}
                                 discountData={discountData} onOpenDiscount={() => setShowDiscountModal(true)}
                                 updateQty={updateQty} removeFromCart={removeFromCart}
@@ -992,6 +1003,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
                     cart,
                     cartSubtotalUsd, cartSubtotalBs: cartSubtotalUsd * effectiveRate,
                     cartTotalUsd, cartTotalBs, cartTotalCop,
+                    cartBaseUsd, cartIvaUsd,
                     discountData, effectiveRate,
                     customers, selectedCustomerId, setSelectedCustomerId,
                     paymentMethods,

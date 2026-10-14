@@ -3,6 +3,7 @@ import { round2, divR, mulR, subR, sumR } from '../utils/dinero';
 import { FINANCIAL_EPSILON } from '../utils/securityConstants';
 import { CurrencyService } from '../services/CurrencyService';
 import { FinancialEngine } from '../core/FinancialEngine';
+import { loadTaxConfig, resolveLineIvaRate, getCartIvaOpts } from '../config/taxConfig';
 import { isTicketRepriced, repriceDeltaUsd } from '../utils/reprice.js';
 
 /**
@@ -60,7 +61,13 @@ export function useCheckoutCalculations({
         if (!cart || cart.length === 0 || !cart.some(i => i.pricingMode === 'dual_usd' && parseFloat(i.priceBsUsdRef) > 0)) { // eslint-disable-line no-restricted-syntax -- deuda preexistente
             return { totalUsd: baseCartTotalUsd, totalBs: baseCartTotalBs };
         }
-        return FinancialEngine.buildCartTotals(cart, discountData, safeRate, safeTasaCop, isBsPaymentActive);
+        // IVA fase 3: configuración fiscal leída del módulo de config.
+        const taxConfig = loadTaxConfig();
+        const ivaOpts = {
+            enabled: taxConfig.ivaEnabled,
+            resolveRate: (item) => resolveLineIvaRate(item, taxConfig),
+        };
+        return FinancialEngine.buildCartTotals(cart, discountData, safeRate, safeTasaCop, isBsPaymentActive, ivaOpts);
     }, [cart, discountData, safeRate, safeTasaCop, isBsPaymentActive, baseCartTotalUsd, baseCartTotalBs]);
 
     const cartTotalUsd = cartTotals.totalUsd;
@@ -154,11 +161,11 @@ export function useCheckoutCalculations({
         let targetBs = baseCartTotalBs;
 
         if (currency === 'BS' && cart && cart.some(i => i.pricingMode === 'dual_usd' && parseFloat(i.priceBsUsdRef) > 0)) { // eslint-disable-line no-restricted-syntax -- deuda preexistente
-            const bsTotals = FinancialEngine.buildCartTotals(cart, discountData, safeRate, safeTasaCop, true);
+            const bsTotals = FinancialEngine.buildCartTotals(cart, discountData, safeRate, safeTasaCop, true, getCartIvaOpts());
             targetUsd = bsTotals.totalUsd;
             targetBs = bsTotals.totalBs;
         } else if (currency === 'USD' && cart && cart.some(i => i.pricingMode === 'dual_usd' && parseFloat(i.priceBsUsdRef) > 0)) { // eslint-disable-line no-restricted-syntax -- deuda preexistente
-            const usdTotals = FinancialEngine.buildCartTotals(cart, discountData, safeRate, safeTasaCop, false);
+            const usdTotals = FinancialEngine.buildCartTotals(cart, discountData, safeRate, safeTasaCop, false, getCartIvaOpts());
             targetUsd = usdTotals.totalUsd;
             targetBs = usdTotals.totalBs;
         }

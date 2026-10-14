@@ -584,7 +584,7 @@ export class FinancialEngine {
      * @param {number} copRate - USD to COP Exchange rate
      * @returns {Object} Complete financial summary for the receipt.
      */
-    static buildCartTotals(cartItems, discountData, bcvRate, copRate = 0, isBsPayment = false) {
+    static buildCartTotals(cartItems, discountData, bcvRate, copRate = 0, isBsPayment = false, ivaOpts = null) {
         // Round each line item BEFORE summing to prevent IEEE 754 drift
         const lineItemsUsd = cartItems.map(item => {
             const itemPriceUsd = (isBsPayment && item.pricingMode === 'dual_usd' && item.priceBsUsdRef > 0)
@@ -616,20 +616,43 @@ export class FinancialEngine {
 
         if (discountAmountUsd > subtotalUsd) discountAmountUsd = subtotalUsd;
 
-        const totalUsd = round2(Math.max(0, subR(subtotalUsd, discountAmountUsd)));
+        const baseUsd = round2(Math.max(0, subR(subtotalUsd, discountAmountUsd)));
+
+        // IVA (fase 2 del plan 2026-10-13). Se calcula sobre la base ya descontada,
+        // por línea y con round2 antes de sumar. Sin ivaOpts.enabled no cambia nada.
+        let ivaUsd = 0;
+        if (ivaOpts && ivaOpts.enabled === true && subtotalUsd > 0) {
+            const perLine = cartItems.map((item, idx) => {
+                const lineUsd = lineItemsUsd[idx];
+                const lineShare = subtotalUsd > 0 ? divR(lineUsd, subtotalUsd) : 0;
+                const lineBaseUsd = mulR(baseUsd, lineShare);
+                const rate = typeof ivaOpts.resolveRate === 'function'
+                    ? ivaOpts.resolveRate(item)
+                    : Number(ivaOpts.rate ?? 0);
+                return mulR(lineBaseUsd, divR(rate, 100));
+            });
+            ivaUsd = round2(sumR(perLine));
+        }
+
+        const totalUsd = round2(baseUsd + ivaUsd);
 
         const discountAmountBs = mulR(discountAmountUsd, bcvRate);
-        const totalBs = round2(Math.max(0, subR(subtotalBs, discountAmountBs)));
+        const baseBs = round2(Math.max(0, subR(subtotalBs, discountAmountBs)));
+        const ivaBs = ivaUsd > 0 ? mulR(ivaUsd, bcvRate) : 0;
+        const totalBs = round2(baseBs + ivaBs);
 
         // FIN-010: totalCop unificado — divR para descuento proporcional, round2 consistente.
         // Antes: `Math.round(sumR(...) * (1 - discountAmountUsd / subtotalUsd))` mezclaba
         // raw division + Math.round con el mulR de la rama sin priceCop.
         const allItemsHaveCop = cartItems.every(i => i.priceCop != null && i.priceCop > 0);
+        // Con IVA activo, el COP lleva el mismo factor que el USD (totalUsd / baseUsd).
+        const ivaFactorCop = ivaUsd > 0 && baseUsd > 0 ? divR(totalUsd, baseUsd) : 1;
         const totalCop = copRate > 0
             ? (allItemsHaveCop
                 ? round2(mulR(
-                    sumR(cartItems.map(i => mulR(i.priceCop, i.qty))),
-                    subR(1, divR(discountAmountUsd, (subtotalUsd || 1)))
+                    mulR(sumR(cartItems.map(i => mulR(i.priceCop, i.qty))),
+                        subR(1, divR(discountAmountUsd, (subtotalUsd || 1)))),
+                    ivaFactorCop
                 ))
                 : mulR(totalUsd, copRate))
             : 0;
@@ -639,6 +662,8 @@ export class FinancialEngine {
             subtotalBs,
             discountAmountUsd,
             discountAmountBs,
+            baseUsd,
+            ivaUsd,
             totalUsd,
             totalBs,
             totalCop

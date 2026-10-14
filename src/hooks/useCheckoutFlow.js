@@ -10,7 +10,7 @@ import { buildAporteCajaRecord } from '../utils/cajaAporte';
 import { useAuthStore } from './store/useAuthStore';
 
 export function useCheckoutFlow({
-    cart, cartTotalUsd, cartTotalBs, cartSubtotalUsd,
+    cart, cartTotalUsd, cartTotalBs, cartSubtotalUsd, cartBaseUsd, cartIvaUsd,
     selectedCustomerId, customers, setCustomers, products, setProducts,
     effectiveRate, tasaCop, copEnabled, discountData, useAutoRate, granelUnitMode,
     setSalesData, setShowReceipt, setShowCheckout, setSelectedCustomerId,
@@ -28,7 +28,7 @@ export function useCheckoutFlow({
         triggerHaptic && triggerHaptic();
 
         const opts = {
-            cart, cartTotalUsd, cartTotalBs, cartSubtotalUsd, payments, changeBreakdown,
+            cart, cartTotalUsd, cartTotalBs, cartSubtotalUsd, cartBaseUsd, cartIvaUsd, payments, changeBreakdown,
             selectedCustomerId, customers, products, effectiveRate, tasaCop, copEnabled,
             discountData, useAutoRate, granelUnitMode
         };
