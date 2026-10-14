@@ -892,6 +892,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             />
             <CierreCajaSummaryModal
                 isOpen={showCierreSummary}
+                blindClose={isCajero}
                 onClose={() => setShowCierreSummary(false)}
                 summaryData={cierreSummaryData}
                 onPrint={() => {

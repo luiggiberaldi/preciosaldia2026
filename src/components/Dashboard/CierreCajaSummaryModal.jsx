@@ -9,6 +9,8 @@ export default function CierreCajaSummaryModal({
     onPrint,
     onDownload,
     onShare,
+    // Cierre ciego: el cajero no ve esperado ni diferencia tras cerrar.
+    blindClose = false,
 }) {
     if (!isOpen || !summaryData) return null;
 
@@ -83,6 +85,7 @@ export default function CierreCajaSummaryModal({
 
                 {/* Cuadre de Arqueo Físico */}
                 <div className="space-y-2">
+                    {!blindClose && (<>
                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Cuadre de Efectivo</span>
                     
                     <div className="border border-slate-100 dark:border-slate-800 rounded-2xl overflow-hidden text-xs">
@@ -143,6 +146,7 @@ export default function CierreCajaSummaryModal({
                             }
                         </div>
                     </div>
+                    </>)}
 
                     {/* Avances de Efectivo Summary */}
                     {advances && advances.count > 0 && (
