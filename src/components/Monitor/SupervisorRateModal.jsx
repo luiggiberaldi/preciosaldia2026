@@ -83,23 +83,24 @@ export default function SupervisorRateModal({ isOpen, onClose, targetDeviceId, c
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-6">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 max-w-md w-full max-h-[92vh] overflow-y-auto custom-scrollbar shadow-2xl space-y-5 sm:space-y-6">
                 
                 {/* Header */}
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="p-3 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 rounded-2xl">
-                            <TrendingUp className="w-6 h-6" />
+                <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                        <div className="p-2.5 sm:p-3 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 rounded-2xl shrink-0">
+                            <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6" />
                         </div>
-                        <div>
-                            <h3 className="text-lg font-black text-slate-800 dark:text-white">Ajustar Tasa Remota</h3>
-                            <p className="text-xs text-slate-500 font-medium">Cambia la tasa de la caja desde tu celular</p>
+                        <div className="min-w-0">
+                            <h3 className="text-base sm:text-lg font-black text-slate-800 dark:text-white truncate">Ajustar Tasa Remota</h3>
+                            <p className="text-xs text-slate-500 font-medium truncate">Cambia la tasa de la caja desde tu celular</p>
                         </div>
                     </div>
                     <button 
                         onClick={onClose}
-                        className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-slate-400 hover:text-slate-600 transition-colors"
+                        className="min-h-11 min-w-11 flex items-center justify-center p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-slate-400 hover:text-slate-600 transition-colors shrink-0"
+                        aria-label="Cerrar modal de tasa"
                     >
                         <X className="w-5 h-5" />
                     </button>

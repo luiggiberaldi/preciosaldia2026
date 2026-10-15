@@ -1263,56 +1263,72 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                         const profitPct = p.priceUsd > 0 ? Math.round((profitUsd / p.priceUsd) * 100) : 0;
 
                                         return (
-                                            <div key={p.id} data-testid={`supervisor-product-row-${p.id}`} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/50 dark:hover:bg-slate-800/10 transition-colors">
-                                                {/* Izquierda: Info de Producto */}
-                                                <div className="flex-1 min-w-0 pr-2">
-                                                    <div className="flex items-center gap-2 flex-wrap">
-                                                        <h4 className="text-xs font-black text-slate-800 dark:text-white uppercase leading-tight truncate">{p.name}</h4>
-                                                        <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${
-                                                            isAgotado 
-                                                                ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/30 dark:text-rose-400' 
-                                                                : isBajo 
-                                                                    ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400' 
-                                                                    : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400'
-                                                        }`}>
-                                                            {isAgotado ? 'Agotado' : isBajo ? 'Bajo Stock' : 'Disponible'}
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex items-center gap-3 text-[10px] text-slate-400 mt-1 font-medium">
-                                                        {p.barcode && (
-                                                            <span className="flex items-center gap-1">
-                                                                <Hash size={10} /> {p.barcode}
+                                            <div key={p.id} data-testid={`supervisor-product-row-${p.id}`} className="p-3.5 sm:p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 hover:bg-slate-50/50 dark:hover:bg-slate-800/10 transition-colors">
+                                                {/* Cabecera / Info del Producto */}
+                                                <div className="flex items-start justify-between gap-3 min-w-0 flex-1">
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <h4 className="text-xs sm:text-sm font-black text-slate-800 dark:text-white uppercase leading-tight truncate">{p.name}</h4>
+                                                            <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${
+                                                                isAgotado 
+                                                                    ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/30 dark:text-rose-400' 
+                                                                    : isBajo 
+                                                                        ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400' 
+                                                                        : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400'
+                                                            }`}>
+                                                                {isAgotado ? 'Agotado' : isBajo ? 'Bajo Stock' : 'Disponible'}
                                                             </span>
-                                                        )}
-                                                        <span>Categoría: {toTitleCase(p.category || 'Varios')}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-3 text-[10px] text-slate-400 mt-1 font-medium flex-wrap">
+                                                            {p.barcode && (
+                                                                <span className="flex items-center gap-1 font-mono">
+                                                                    <Hash size={10} /> {p.barcode}
+                                                                </span>
+                                                            )}
+                                                            <span>Categoría: {toTitleCase(p.category || 'Varios')}</span>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Stock visible en la cabecera en móviles (< md) */}
+                                                    <div className={`md:hidden shrink-0 min-w-[68px] text-center py-1.5 px-2.5 rounded-xl border ${
+                                                        isAgotado 
+                                                            ? 'bg-rose-50/50 border-rose-150/70 text-rose-700 dark:bg-rose-950/20 dark:border-rose-900/30 dark:text-rose-455' 
+                                                            : isBajo 
+                                                                ? 'bg-amber-50/50 border-amber-150/70 text-amber-700 dark:bg-amber-950/20 dark:border-amber-900/30 dark:text-amber-455' 
+                                                                : 'bg-slate-50 border-slate-150/70 text-slate-700 dark:bg-slate-850/60 dark:border-slate-800 dark:text-slate-300'
+                                                    }`}>
+                                                        <span className="text-[7px] uppercase font-black block leading-none mb-0.5 text-slate-400">Stock</span>
+                                                        <span className="font-outfit text-xs font-black tabular-nums leading-none">
+                                                            {p.isWeight ? `${stock.toFixed(3)} Kg` : `${stock} u`}
+                                                        </span>
                                                     </div>
                                                 </div>
 
-                                                {/* Derecha: Valores y Stock */}
-                                                <div className="flex items-center justify-between sm:justify-end gap-6 shrink-0">
+                                                {/* Sección de Valores y Acciones */}
+                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between md:justify-end gap-3 sm:gap-4 lg:gap-6 shrink-0">
                                                     {/* Costo, Venta, Margen */}
-                                                    <div className="grid grid-cols-3 gap-4 text-right">
+                                                    <div className="grid grid-cols-3 gap-2 sm:gap-4 p-2 sm:p-0 bg-slate-50/70 dark:bg-slate-800/30 sm:bg-transparent dark:sm:bg-transparent rounded-xl border border-slate-100 sm:border-0 dark:border-slate-800/50 text-center sm:text-right">
                                                         {/* Costo */}
-                                                        <div>
+                                                        <div className="min-w-0">
                                                             <span className="text-[8px] text-slate-400 uppercase font-black block">Costo</span>
-                                                            <span className="font-outfit text-xs font-black text-slate-500 tabular-nums">${(p.costPrice || 0).toFixed(2)}</span>
+                                                            <span className="font-outfit text-xs font-black text-slate-500 tabular-nums truncate block">${(p.costPrice || 0).toFixed(2)}</span>
                                                         </div>
                                                         {/* Venta */}
-                                                        <div>
-                                                            <span className="text-[8px] text-slate-400 uppercase font-black block">Venta (USD/Bs)</span>
+                                                        <div className="min-w-0">
+                                                            <span className="text-[8px] text-slate-400 uppercase font-black block truncate">Venta (USD/Bs)</span>
                                                             <span className="font-outfit text-xs font-black text-slate-800 dark:text-white tabular-nums block">${p.priceUsd.toFixed(2)}</span>
-                                                            <span className="font-outfit text-[8px] text-slate-400 block tabular-nums leading-none mt-0.5">{bcvRate ? `${formatBs(p.priceUsd * bcvRate)} Bs` : 'N/D'}</span>
+                                                            <span className="font-outfit text-[8px] text-slate-400 block tabular-nums leading-none mt-0.5 truncate">{bcvRate ? `${formatBs(p.priceUsd * bcvRate)} Bs` : 'N/D'}</span>
                                                         </div>
                                                         {/* Ganancia */}
-                                                        <div>
+                                                        <div className="min-w-0">
                                                             <span className="text-[8px] text-slate-400 uppercase font-black block">Ganancia</span>
-                                                            <span className="font-outfit text-xs font-black text-blue-600 dark:text-blue-400 tabular-nums block">${profitUsd.toFixed(2)}</span>
+                                                            <span className="font-outfit text-xs font-black text-blue-600 dark:text-blue-400 tabular-nums block truncate">${profitUsd.toFixed(2)}</span>
                                                             <span className="text-[8px] text-slate-400 block font-medium leading-none mt-0.5">{profitPct}%</span>
                                                         </div>
                                                     </div>
 
-                                                    {/* Stock */}
-                                                    <div className={`w-20 text-center py-2 px-2.5 rounded-2xl border ${
+                                                    {/* Stock en pantallas de escritorio (>= md) */}
+                                                    <div className={`hidden md:block w-20 text-center py-2 px-2.5 rounded-2xl border ${
                                                         isAgotado 
                                                             ? 'bg-rose-50/50 border-rose-150/70 text-rose-700 dark:bg-rose-950/20 dark:border-rose-900/30 dark:text-rose-455' 
                                                             : isBajo 
@@ -1326,7 +1342,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                                     </div>
 
                                                     {/* Acciones Remotas */}
-                                                    <div className="flex items-center gap-1">
+                                                    <div className="flex items-center justify-end gap-1.5 sm:gap-1 pt-2 sm:pt-0 border-t sm:border-0 border-slate-100 dark:border-slate-800/60">
                                                         {(SUPERVISOR_REMOTE_MUTATIONS_ENABLED || SUPERVISOR_REMOTE_INCOME_ENABLED) && (
                                                             <>
                                                                 <button
@@ -1339,10 +1355,11 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                                                         setInventoryBatchProduct(p);
                                                                         setInventoryBatchMode('ingreso');
                                                                     }}
-                                                                    className="rounded-xl p-2 text-emerald-500 transition-colors hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+                                                                    className="min-h-10 min-w-10 sm:min-h-9 sm:min-w-9 flex items-center justify-center rounded-xl p-2 text-emerald-500 transition-colors hover:bg-emerald-50 dark:hover:bg-emerald-950/30 active:scale-95"
                                                                     title="Registrar ingreso de este producto"
+                                                                    aria-label="Registrar ingreso de este producto"
                                                                 >
-                                                                    <ArrowDownToLine size={15} />
+                                                                    <ArrowDownToLine size={16} />
                                                                 </button>
                                                                 <button
                                                                     onClick={() => {
@@ -1354,10 +1371,11 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                                                         setInventoryBatchProduct(p);
                                                                         setInventoryBatchMode('egreso');
                                                                     }}
-                                                                    className="rounded-xl p-2 text-rose-500 transition-colors hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                                                    className="min-h-10 min-w-10 sm:min-h-9 sm:min-w-9 flex items-center justify-center rounded-xl p-2 text-rose-500 transition-colors hover:bg-rose-50 dark:hover:bg-rose-950/30 active:scale-95"
                                                                     title="Registrar egreso de este producto"
+                                                                    aria-label="Registrar egreso de este producto"
                                                                 >
-                                                                    <ArrowUpFromLine size={15} />
+                                                                    <ArrowUpFromLine size={16} />
                                                                 </button>
                                                             </>
                                                         )}
@@ -1372,10 +1390,11 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                                                 setShowProductFormModal(true);
                                                             }}
                                                             disabled={!SUPERVISOR_REMOTE_PRODUCTS_ENABLED || !remoteActionsAvailable}
-                                                            className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-blue-600 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                                            className="min-h-10 min-w-10 sm:min-h-9 sm:min-w-9 flex items-center justify-center p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-blue-600 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
                                                             title="Editar Producto Remotamente"
+                                                            aria-label="Editar Producto Remotamente"
                                                         >
-                                                            <Pencil size={15} />
+                                                            <Pencil size={16} />
                                                         </button>
                                                         <button
                                                             onClick={async () => {
@@ -1409,10 +1428,11 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                                                     showToast?.('Error al eliminar producto', 'error');
                                                                 }
                                                             }}
-                                                            className="p-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-400 hover:text-rose-600 rounded-xl transition-colors"
+                                                            className="min-h-10 min-w-10 sm:min-h-9 sm:min-w-9 flex items-center justify-center p-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-400 hover:text-rose-600 rounded-xl transition-colors active:scale-95"
                                                             title="Eliminar Producto Remotamente"
+                                                            aria-label="Eliminar Producto Remotamente"
                                                         >
-                                                            <Trash2 size={15} />
+                                                            <Trash2 size={16} />
                                                         </button>
                                                     </div>
                                                 </div>
@@ -1532,9 +1552,9 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
 
             {/* Modal de Confirmación de Desvinculación */}
             {showDisconnectConfirm && (
-                <div className="fixed inset-0 z-[999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 max-w-sm w-full shadow-2xl space-y-5 animate-scale-in">
-                        <div className="w-12 h-12 bg-rose-50 dark:bg-rose-950/20 rounded-2xl flex items-center justify-center text-rose-500 mx-auto">
+                <div className="fixed inset-0 z-[999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-fade-in">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-5 sm:p-6 max-w-sm w-full max-h-[92vh] overflow-y-auto custom-scrollbar shadow-2xl space-y-4 sm:space-y-5 animate-scale-in">
+                        <div className="w-12 h-12 bg-rose-50 dark:bg-rose-950/20 rounded-2xl flex items-center justify-center text-rose-500 mx-auto shrink-0">
                             <LogOut size={22} />
                         </div>
                         <div className="space-y-1.5 text-center">
@@ -1551,18 +1571,18 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                 {disconnectServerRevoked && <p className="mt-1">La próxima acción solo reintentará la limpieza; no volverá a enviar la revocación.</p>}
                             </div>
                         )}
-                        <div className="flex gap-3">
+                        <div className="flex gap-2.5 sm:gap-3 pt-1">
                             <button
                                 onClick={() => { triggerHaptic?.(); setShowDisconnectConfirm(false); setDisconnectError(''); }}
                                 disabled={disconnecting || disconnectServerRevoked}
-                                className="flex-1 py-3 px-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-350 font-black text-xs rounded-2xl border border-slate-200 dark:border-slate-700 transition-colors disabled:opacity-50"
+                                className="flex-1 min-h-11 py-2.5 px-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-350 font-black text-xs rounded-2xl border border-slate-200 dark:border-slate-700 transition-colors disabled:opacity-50"
                             >
                                 Cancelar
                             </button>
                             <button
                                 onClick={handleDisconnect}
                                 disabled={disconnecting}
-                                className="flex-1 py-3 px-4 bg-rose-500 hover:bg-rose-600 text-white font-black text-xs rounded-2xl shadow-lg shadow-rose-500/20 transition-colors disabled:opacity-50"
+                                className="flex-1 min-h-11 py-2.5 px-4 bg-rose-500 hover:bg-rose-600 text-white font-black text-xs rounded-2xl shadow-lg shadow-rose-500/20 transition-colors disabled:opacity-50"
                             >
                                 {disconnecting ? 'Procesando…' : disconnectError ? 'Reintentar' : 'Desvincular'}
                             </button>
@@ -1573,9 +1593,9 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
 
             {/* Modal Confirmación de Cierre Remoto de Turno */}
             {shiftActionConfirmModal === 'close' && (
-                <div className="fixed inset-0 z-[999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 max-w-sm w-full shadow-2xl space-y-5 animate-scale-in">
-                        <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto bg-rose-50 dark:bg-rose-950/20 text-rose-500">
+                <div className="fixed inset-0 z-[999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-fade-in">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-5 sm:p-6 max-w-sm w-full max-h-[92vh] overflow-y-auto custom-scrollbar shadow-2xl space-y-4 sm:space-y-5 animate-scale-in">
+                        <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto bg-rose-50 dark:bg-rose-950/20 text-rose-500 shrink-0">
                             <Clock size={22} />
                         </div>
                         <div className="space-y-1.5 text-center">
@@ -1586,18 +1606,18 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                 Esta acción marcará las ventas actuales como cerradas en la caja principal y registrará un cierre remoto.
                             </p>
                         </div>
-                        <div className="flex gap-3">
+                        <div className="flex gap-2.5 sm:gap-3 pt-1">
                             <button
                                 onClick={() => { triggerHaptic?.(); setShiftActionConfirmModal(null); }}
                                 disabled={sendingShiftAction}
-                                className="flex-1 py-3 px-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-350 font-black text-xs rounded-2xl border border-slate-200 dark:border-slate-700 transition-colors disabled:opacity-50"
+                                className="flex-1 min-h-11 py-2.5 px-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-350 font-black text-xs rounded-2xl border border-slate-200 dark:border-slate-700 transition-colors disabled:opacity-50"
                             >
                                 Cancelar
                             </button>
                             <button
                                 onClick={() => handleSendShiftActionRemote()}
                                 disabled={sendingShiftAction}
-                                className="flex-1 py-3 px-4 font-black text-xs rounded-2xl shadow-lg transition-colors flex items-center justify-center gap-2 text-white bg-rose-500 hover:bg-rose-600 shadow-rose-500/20 disabled:opacity-50"
+                                className="flex-1 min-h-11 py-2.5 px-4 font-black text-xs rounded-2xl shadow-lg transition-colors flex items-center justify-center gap-2 text-white bg-rose-500 hover:bg-rose-600 shadow-rose-500/20 disabled:opacity-50"
                             >
                                 {sendingShiftAction ? <RefreshCw className="animate-spin" size={14} /> : 'Confirmar Cierre'}
                             </button>

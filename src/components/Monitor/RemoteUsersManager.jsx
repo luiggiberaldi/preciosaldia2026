@@ -241,11 +241,17 @@ export default function RemoteUsersManager({ targetDeviceId }) {
 
             {/* Modal: Agregar Usuario */}
             {showAddModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
-                        <div className="flex items-center justify-between">
-                            <h3 className="text-base font-black text-slate-800 dark:text-white">Nuevo Usuario / Cajero</h3>
-                            <button onClick={() => setShowAddModal(false)}><X className="w-5 h-5 text-slate-400" /></button>
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 max-w-md w-full max-h-[92vh] overflow-y-auto custom-scrollbar shadow-2xl space-y-4">
+                        <div className="flex items-center justify-between gap-3">
+                            <h3 className="text-base font-black text-slate-800 dark:text-white truncate">Nuevo Usuario / Cajero</h3>
+                            <button 
+                                onClick={() => setShowAddModal(false)}
+                                className="min-h-11 min-w-11 flex items-center justify-center p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                aria-label="Cerrar modal"
+                            >
+                                <X className="w-5 h-5 text-slate-400" />
+                            </button>
                         </div>
                         <form onSubmit={handleAddUser} className="space-y-4">
                             <div>
@@ -256,7 +262,7 @@ export default function RemoteUsersManager({ targetDeviceId }) {
                                     placeholder="Ej: Pedro Pérez"
                                     value={formUser.nombre}
                                     onChange={e => setFormUser({ ...formUser, nombre: e.target.value })}
-                                    className="w-full mt-1 p-3 bg-slate-50 dark:bg-slate-800 border rounded-xl font-bold text-sm"
+                                    className="w-full mt-1 min-h-11 p-3 bg-slate-50 dark:bg-slate-800 border rounded-xl font-bold text-sm"
                                 />
                             </div>
                             <SupervisorSelect
@@ -277,12 +283,12 @@ export default function RemoteUsersManager({ targetDeviceId }) {
                                     placeholder="000000"
                                     value={formUser.pin}
                                     onChange={e => setFormUser({ ...formUser, pin: e.target.value })}
-                                    className="w-full mt-1 p-3 bg-slate-50 dark:bg-slate-800 border rounded-xl font-bold text-sm text-center tracking-widest"
+                                    className="w-full mt-1 min-h-11 p-3 bg-slate-50 dark:bg-slate-800 border rounded-xl font-bold text-sm text-center tracking-widest"
                                 />
                             </div>
                             <div className="flex gap-2 pt-2">
-                                <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 font-bold text-sm rounded-xl">Cancelar</button>
-                                <button type="submit" className="flex-1 py-3 bg-indigo-600 text-white font-bold text-sm rounded-xl">Crear en Caja</button>
+                                <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 min-h-11 py-3 bg-slate-100 dark:bg-slate-800 font-bold text-sm rounded-xl">Cancelar</button>
+                                <button type="submit" className="flex-1 min-h-11 py-3 bg-indigo-600 text-white font-bold text-sm rounded-xl">Crear en Caja</button>
                             </div>
                         </form>
                     </div>
@@ -291,11 +297,17 @@ export default function RemoteUsersManager({ targetDeviceId }) {
 
             {/* Modal: Reset PIN */}
             {showPinModal && selectedUser && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl space-y-4">
-                        <div className="flex items-center justify-between">
-                            <h3 className="text-base font-black text-slate-800 dark:text-white">Resetear PIN de {selectedUser.nombre}</h3>
-                            <button onClick={() => setShowPinModal(false)}><X className="w-5 h-5 text-slate-400" /></button>
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 max-w-sm w-full max-h-[92vh] overflow-y-auto custom-scrollbar shadow-2xl space-y-4">
+                        <div className="flex items-center justify-between gap-3">
+                            <h3 className="text-base font-black text-slate-800 dark:text-white truncate">Resetear PIN de {selectedUser.nombre}</h3>
+                            <button 
+                                onClick={() => setShowPinModal(false)}
+                                className="min-h-11 min-w-11 flex items-center justify-center p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                aria-label="Cerrar modal"
+                            >
+                                <X className="w-5 h-5 text-slate-400" />
+                            </button>
                         </div>
                         <form onSubmit={handleResetPin} className="space-y-4">
                             <div>
@@ -307,12 +319,12 @@ export default function RemoteUsersManager({ targetDeviceId }) {
                                     placeholder="123456"
                                     value={newPin}
                                     onChange={e => setNewPin(e.target.value)}
-                                    className="w-full mt-1 p-3 bg-slate-50 dark:bg-slate-800 border rounded-xl font-bold text-sm text-center tracking-widest"
+                                    className="w-full mt-1 min-h-11 p-3 bg-slate-50 dark:bg-slate-800 border rounded-xl font-bold text-sm text-center tracking-widest"
                                 />
                             </div>
                             <div className="flex gap-2 pt-2">
-                                <button type="button" onClick={() => setShowPinModal(false)} className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 font-bold text-sm rounded-xl">Cancelar</button>
-                                <button type="submit" className="flex-1 py-3 bg-indigo-600 text-white font-bold text-sm rounded-xl">Guardar PIN</button>
+                                <button type="button" onClick={() => setShowPinModal(false)} className="flex-1 min-h-11 py-3 bg-slate-100 dark:bg-slate-800 font-bold text-sm rounded-xl">Cancelar</button>
+                                <button type="submit" className="flex-1 min-h-11 py-3 bg-indigo-600 text-white font-bold text-sm rounded-xl">Guardar PIN</button>
                             </div>
                         </form>
                     </div>

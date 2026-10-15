@@ -6,7 +6,7 @@ export const Modal = ({ isOpen, onClose, title, children, className = '', size =
 
   return (
     // ✅ z-[100] asegura que esté por encima de la barra de navegación (z-30)
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
       
       {/* Backdrop con desenfoque */}
       <div 
@@ -23,14 +23,14 @@ export const Modal = ({ isOpen, onClose, title, children, className = '', size =
       >
         
         {/* Cabecera */}
-        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/50">
-          <h3 className="font-black text-slate-800 dark:text-white text-lg tracking-tight">{title}</h3>
+        <div className="px-4 py-3.5 sm:px-6 sm:py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/50">
+          <h3 className="font-black text-slate-800 dark:text-white text-base sm:text-lg tracking-tight truncate pr-2">{title}</h3>
           <CloseButton onClick={onClose} />
         </div>
 
         {/* Body con Scroll Mejorado */}
-        {/* ✅ CAMBIO: max-h-[85vh] para más espacio y pb-10 para margen inferior seguro */}
-        <div className="p-6 max-h-[85vh] overflow-y-auto custom-scrollbar pb-10">
+        {/* ✅ CAMBIO: max-h-[85vh] para más espacio y pb-8/10 para margen inferior seguro */}
+        <div className="p-4 sm:p-6 max-h-[85vh] overflow-y-auto custom-scrollbar pb-8 sm:pb-10">
           {children}
         </div>
       </div>
