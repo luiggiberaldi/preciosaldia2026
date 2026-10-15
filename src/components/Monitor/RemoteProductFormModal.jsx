@@ -342,12 +342,12 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
                     handleSelectImage={handleSelectImage}
                 />
 
-                {/* Actions */}
-                <div className="flex gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                {/* Actions (Sticky footer para acceso táctil instantáneo) */}
+                <div className="sticky bottom-0 -mx-4 -mb-8 sm:-mx-6 sm:-mb-10 px-4 py-3 sm:px-6 sm:py-4 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-100 dark:border-slate-800 flex gap-2.5 sm:gap-3 z-10">
                     <button
                         type="button"
                         onClick={onClose}
-                        className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-sm transition-colors"
+                        className="flex-1 min-h-11 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-sm transition-colors active:scale-98"
                     >
                         Cancelar
                     </button>
@@ -355,7 +355,7 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
                         type="button"
                         onClick={handleSubmit}
                         disabled={isSubmitting}
-                        className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm transition-all shadow-lg shadow-blue-600/20 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                        className="flex-1 min-h-11 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm transition-all shadow-lg shadow-blue-600/20 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
                     >
                         <Save className="w-4 h-4" />
                         <span>{isSubmitting ? 'Guardando en Caja...' : 'Guardar en Caja'}</span>

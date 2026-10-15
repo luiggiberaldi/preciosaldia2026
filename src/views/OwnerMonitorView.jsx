@@ -87,6 +87,8 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
     const [showRateModal, setShowRateModal] = useState(false);
     const [showProductFormModal, setShowProductFormModal] = useState(false);
     const [productToEditRemote, setProductToEditRemote] = useState(null);
+    const [productToDeleteRemote, setProductToDeleteRemote] = useState(null);
+    const [deletingRemoteProduct, setDeletingRemoteProduct] = useState(false);
     const [inventoryBatchProduct, setInventoryBatchProduct] = useState(null);
     const [inventoryBatchMode, setInventoryBatchMode] = useState(null);
     const [cierresDateRange, setCierresDateRange] = useState('all'); // 'all', 'today', 'yesterday', 'week', 'month'
@@ -395,6 +397,43 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
         } finally {
             disconnectingRef.current = false;
             setDisconnecting(false);
+        }
+    };
+
+    // Eliminación remota de producto con confirmación profesional
+    const handleConfirmDeleteProductRemote = async () => {
+        if (!productToDeleteRemote) return;
+        if (!remoteActionsAvailable) {
+            showToast?.('La caja está desconectada; no se puede enviar la orden', 'warning');
+            return;
+        }
+        if (!SUPERVISOR_REMOTE_MUTATIONS_ENABLED) {
+            showToast?.('Las mutaciones remotas están temporalmente deshabilitadas por seguridad', 'warning');
+            return;
+        }
+        triggerHaptic?.();
+        setDeletingRemoteProduct(true);
+        try {
+            const result = await sendSupervisorCommand({
+                type: 'supervisor.product.delete',
+                targetDeviceId: pairedDeviceId,
+                payload: { productId: productToDeleteRemote.id },
+            });
+            if (!result.ok) {
+                showToast?.(result.error, result.status === 'disabled' ? 'warning' : 'error');
+                return;
+            }
+            const ack = await result.ackPromise;
+            if (!ack?.ok) {
+                showToast?.(ack?.error || 'La caja no confirmó la eliminación', 'error');
+                return;
+            }
+            showToast?.(`Producto "${productToDeleteRemote.name}" eliminado en caja`, 'success');
+            setProductToDeleteRemote(null);
+        } catch (e) {
+            showToast?.('Error al eliminar producto', 'error');
+        } finally {
+            setDeletingRemoteProduct(false);
         }
     };
 
@@ -1560,38 +1599,16 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                                             <Pencil size={16} />
                                                         </button>
                                                         <button
-                                                            onClick={async () => {
+                                                            onClick={() => {
                                                                 if (!remoteActionsAvailable) {
                                                                     showToast?.('La caja está desconectada; no se puede enviar la orden', 'warning');
                                                                     return;
                                                                 }
-                                                                if (!window.confirm(`¿Eliminar remotamente "${p.name}" de la caja?`)) return;
-                                                                if (!SUPERVISOR_REMOTE_MUTATIONS_ENABLED) {
-                                                                    showToast?.('Las mutaciones remotas están temporalmente deshabilitadas por seguridad', 'warning');
-                                                                    return;
-                                                                }
                                                                 triggerHaptic?.();
-                                                                try {
-                                                                    const result = await sendSupervisorCommand({
-                                                                        type: 'supervisor.product.delete',
-                                                                        targetDeviceId: pairedDeviceId,
-                                                                        payload: { productId: p.id },
-                                                                    });
-                                                                    if (!result.ok) {
-                                                                        showToast?.(result.error, result.status === 'disabled' ? 'warning' : 'error');
-                                                                        return;
-                                                                    }
-                                                                    const ack = await result.ackPromise;
-                                                                    if (!ack?.ok) {
-                                                                        showToast?.(ack?.error || 'La caja no confirmó la eliminación', 'error');
-                                                                        return;
-                                                                    }
-                                                                    showToast?.(`Producto "${p.name}" eliminado en caja`, 'success');
-                                                                } catch (e) {
-                                                                    showToast?.('Error al eliminar producto', 'error');
-                                                                }
+                                                                setProductToDeleteRemote(p);
                                                             }}
-                                                            className="min-h-10 min-w-10 sm:min-h-9 sm:min-w-9 flex items-center justify-center p-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-400 hover:text-rose-600 rounded-xl transition-colors active:scale-95"
+                                                            disabled={!SUPERVISOR_REMOTE_PRODUCTS_ENABLED || !remoteActionsAvailable}
+                                                            className="min-h-10 min-w-10 sm:min-h-9 sm:min-w-9 flex items-center justify-center p-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-400 hover:text-rose-600 rounded-xl transition-colors active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
                                                             title="Eliminar Producto Remotamente"
                                                             aria-label="Eliminar Producto Remotamente"
                                                         >
@@ -1712,6 +1729,58 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                 productToEdit={productToEditRemote}
                 remoteAvailable={remoteActionsAvailable}
             />
+
+            {/* Modal de Confirmación de Eliminación Remota de Producto */}
+            {productToDeleteRemote && (
+                <div className="fixed inset-0 z-[999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-fade-in">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-5 sm:p-6 max-w-sm w-full max-h-[92vh] overflow-y-auto custom-scrollbar shadow-2xl space-y-4 sm:space-y-5 animate-scale-in">
+                        <div className="w-12 h-12 bg-rose-50 dark:bg-rose-950/20 rounded-2xl flex items-center justify-center text-rose-500 mx-auto shrink-0">
+                            <Trash2 size={22} />
+                        </div>
+                        <div className="space-y-2 text-center">
+                            <h4 className="text-base font-black text-slate-800 dark:text-white">Eliminar Producto en Caja</h4>
+                            <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-100 dark:border-slate-800 text-left">
+                                <p className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">{productToDeleteRemote.name}</p>
+                                <div className="flex items-center justify-between mt-1 text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                                    <span>Código: <span className="font-mono">{productToDeleteRemote.code || productToDeleteRemote.id || 'N/A'}</span></span>
+                                    {productToDeleteRemote.stock !== undefined && (
+                                        <span>Stock: <span className="font-bold">{productToDeleteRemote.stock}</span></span>
+                                    )}
+                                </div>
+                            </div>
+                            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 leading-relaxed">
+                                ¿Deseas dar de baja este producto del catálogo activo de la caja registradora? Esta orden se sincronizará de inmediato.
+                            </p>
+                        </div>
+                        <div className="flex gap-2.5 sm:gap-3 pt-1">
+                            <button
+                                onClick={() => {
+                                    triggerHaptic?.();
+                                    setProductToDeleteRemote(null);
+                                }}
+                                disabled={deletingRemoteProduct}
+                                className="flex-1 min-h-11 py-2.5 px-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-350 font-black text-xs rounded-2xl border border-slate-200 dark:border-slate-700 transition-colors disabled:opacity-50"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={handleConfirmDeleteProductRemote}
+                                disabled={deletingRemoteProduct}
+                                className="flex-1 min-h-11 py-2.5 px-4 bg-rose-500 hover:bg-rose-600 text-white font-black text-xs rounded-2xl shadow-lg shadow-rose-500/20 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+                            >
+                                {deletingRemoteProduct ? (
+                                    <>
+                                        <RefreshCw size={14} className="animate-spin" />
+                                        <span>Eliminando…</span>
+                                    </>
+                                ) : (
+                                    'Eliminar'
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Modal de Confirmación de Desvinculación */}
             {showDisconnectConfirm && (

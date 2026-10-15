@@ -148,12 +148,12 @@ export default function ProductFormQuick({
     return (
         <div className="space-y-4">
             {/* Upload and Smart URL Paste Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 select-none">
+            <div className="grid grid-cols-2 sm:grid-cols-12 gap-2.5 sm:gap-3 select-none">
                 {/* File Upload Zone */}
-                <div onClick={() => fileInputRef.current?.click()} className="sm:col-span-5 h-28 bg-slate-50 dark:bg-slate-800 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:border-emerald-500 transition-colors relative overflow-hidden">
+                <div onClick={() => fileInputRef.current?.click()} className="sm:col-span-5 h-24 sm:h-28 bg-slate-50 dark:bg-slate-800 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:border-emerald-500 transition-colors relative overflow-hidden p-2 text-center">
                     {image ? <img src={image} className="w-full h-full object-cover" alt="Product preview" /> : (
                         <>
-                            <Camera size={22} className="text-slate-400 mb-1" />
+                            <Camera size={20} className="text-slate-400 mb-1 sm:w-[22px] sm:h-[22px]" />
                             <span className="text-[10px] font-black text-slate-500">Subir foto local</span>
                         </>
                     )}
@@ -170,7 +170,7 @@ export default function ProductFormQuick({
                         }
                         handleAutoSearchImage(name);
                     }}
-                    className={`sm:col-span-7 h-28 border border-slate-200 dark:border-slate-700 rounded-2xl p-2.5 flex flex-col items-center justify-center cursor-pointer hover:border-amber-500 hover:bg-amber-500/5 transition-all relative overflow-hidden group select-none ${isSearchingImage ? 'bg-amber-500/10' : 'bg-slate-50 dark:bg-slate-800'}`}
+                    className={`sm:col-span-7 h-24 sm:h-28 border border-slate-200 dark:border-slate-700 rounded-2xl p-2 sm:p-2.5 flex flex-col items-center justify-center cursor-pointer hover:border-amber-500 hover:bg-amber-500/5 transition-all relative overflow-hidden group select-none text-center ${isSearchingImage ? 'bg-amber-500/10' : 'bg-slate-50 dark:bg-slate-800'}`}
                 >
                     {isSearchingImage ? (
                         <>
@@ -179,15 +179,15 @@ export default function ProductFormQuick({
                         </>
                     ) : (
                         <>
-                            <Sparkles size={22} className="text-amber-600 dark:text-amber-400 mb-1.5 group-hover:scale-110 transition-transform" />
+                            <Sparkles size={20} className="text-amber-600 dark:text-amber-400 mb-1 sm:mb-1.5 group-hover:scale-110 transition-transform sm:w-[22px] sm:h-[22px]" />
                             <span className="text-[10px] font-black text-amber-700 dark:text-amber-400 uppercase tracking-wider">Auto-buscar foto</span>
-                            <span className="text-[8px] text-slate-500 dark:text-slate-400 mt-1 leading-none text-center">
+                            <span className="hidden sm:block text-[8px] text-slate-500 dark:text-slate-400 mt-1 leading-none text-center">
                                 Busca automáticamente la mejor imagen en tu catálogo local y tiendas
                             </span>
                         </>
                     )}
+                </div>
             </div>
-        </div>
 
             {imageMatches && imageMatches.length > 0 && (
                 <div className="bg-slate-50 dark:bg-slate-800/40 border border-slate-150 dark:border-slate-700/50 rounded-2xl p-3 space-y-2 animate-in fade-in slide-in-from-top-1 duration-200 select-none">
@@ -307,11 +307,11 @@ export default function ProductFormQuick({
                                 <button key={pt.id}
                                     type="button"
                                     onClick={() => setPackagingType(pt.id)}
-                                    className={`flex flex-col items-center gap-1 p-3 rounded-xl border-2 transition-all active:scale-95 ${selected
+                                    className={`flex flex-col items-center gap-1 p-2 sm:p-3 rounded-xl border-2 transition-all active:scale-95 ${selected
                                         ? colorMap[pt.color]
                                         : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-300'
                                         }`}>
-                                    <pt.Icon size={22} strokeWidth={2} className={selected ? textColor[pt.color] : 'text-slate-400'} />
+                                    <pt.Icon size={20} strokeWidth={2} className={`sm:w-[22px] sm:h-[22px] ${selected ? textColor[pt.color] : 'text-slate-400'}`} />
                                     <span className={`text-[10px] font-black uppercase ${selected ? textColor[pt.color] : 'text-slate-500'}`}>{pt.label}</span>
                                     <span className="text-[8px] text-slate-400 leading-tight text-center">{pt.id === 'granel' && granelMode === GRANEL_MODE_GR_ML ? 'Por Gramo o Ml' : pt.desc}</span>
                                 </button>

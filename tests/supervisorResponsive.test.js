@@ -78,4 +78,16 @@ describe('Supervisor responsive controls', () => {
         expect(remoteProductModal).toContain('setImage(imageUrl)');
         expect(remoteProductModal).not.toContain("direction: 'egreso'");
     });
+
+    it('reemplaza window.confirm con modal profesional de confirmación para eliminar productos en caja', () => {
+        expect(ownerMonitor).not.toContain('window.confirm');
+        expect(ownerMonitor).toContain('productToDeleteRemote');
+        expect(ownerMonitor).toContain('Eliminar Producto en Caja');
+        expect(ownerMonitor).toContain('handleConfirmDeleteProductRemote');
+    });
+
+    it('mantiene la botonera de acción sticky en el modal remoto de productos', () => {
+        expect(remoteProductModal).toContain('sticky bottom-0');
+        expect(remoteProductModal).toContain('min-h-11');
+    });
 });
