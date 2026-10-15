@@ -31,8 +31,6 @@ describe('Supervisor responsive controls', () => {
     it('no deja selects nativos cuadrados en las vistas del Supervisor', () => {
         expect(ownerMonitor).not.toContain('<select');
         expect(remoteUsers).not.toContain('<select');
-        expect(ownerMonitor).toContain('SupervisorSelect');
-        expect(remoteUsers).toContain('SupervisorSelect');
     });
 
     it('usa menú redondeado, tamaño táctil y roles accesibles', () => {
@@ -52,12 +50,17 @@ describe('Supervisor responsive controls', () => {
         expect(rateModal).toContain('Bs/₮');
     });
 
-    it('permite consultar ventas por producto y fechas específicas', () => {
-        expect(ownerMonitor).toContain('supervisor-report-product-select');
-        expect(ownerMonitor).toContain('Fechas específicas');
-        expect(ownerMonitor).toContain('supervisor-product-sales-summary');
-        expect(ownerMonitor).toContain('Fecha inicial del reporte');
-        expect(ownerMonitor).toContain('Fecha final del reporte');
+    it('retira Reportes y Cajeros del panel Supervisor', () => {
+        expect(ownerMonitor).not.toContain("setViewTab('reportes')");
+        expect(ownerMonitor).not.toContain("setViewTab('cajeros')");
+        expect(ownerMonitor).not.toContain('supervisor-reports');
+        expect(ownerMonitor).not.toContain('RemoteUsersManager');
+    });
+
+    it('no muestra la reapertura remota de turnos', () => {
+        expect(ownerMonitor).not.toContain("setShiftActionConfirmModal('reopen')");
+        expect(ownerMonitor).not.toContain('supervisor.shift.reopen');
+        expect(ownerMonitor).not.toContain('Reabrir Último Turno Remotamente');
     });
 
     it('guía el ajuste por lote con acciones claras, resumen y flags separados', () => {

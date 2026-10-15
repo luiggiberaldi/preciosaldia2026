@@ -1,8 +1,8 @@
 -- COMANDOS AUTORIZADOS DEL MODO SUPERVISOR
 --
--- Esta migración NO habilita todavía las mutaciones en el frontend.
--- El flag SUPERVISOR_REMOTE_MUTATIONS_ENABLED debe permanecer en false hasta
--- validar la caja receptora y los tests E2E.
+-- La RPC acepta todas las órdenes tipadas del Supervisor. La disponibilidad
+-- del frontend se controla por flags de contención independientes y la caja
+-- receptora valida cada payload antes de aplicarlo.
 --
 -- Reemplaza el Broadcast público system_commands por una tabla RLS donde:
 -- - solo el monitor vinculado puede crear comandos mediante RPC;
@@ -156,7 +156,9 @@ BEGIN
             RAISE EXCEPTION 'Producto inválido';
         END IF;
     ELSIF p_command_type = 'supervisor.inventory.batch.adjust' THEN
-        IF p_payload->>'direction' <> 'ingreso'
+        IF p_payload->>'direction' NOT IN ('ingreso', 'egreso')
+           OR (p_payload->>'direction' = 'egreso'
+               AND p_payload->>'reasonCategory' NOT IN ('merma', 'danio', 'vencimiento', 'autoconsumo', 'devolucion', 'ajuste'))
            OR coalesce(p_payload->>'productId', '') = ''
            OR p_payload->>'inputUnit' NOT IN ('unidades', 'cajas', 'bultos')
            OR (p_payload->>'quantityInput') IS NULL
@@ -170,10 +172,28 @@ BEGIN
            OR (p_payload->>'expectedStock')::numeric < 0
            OR length(trim(coalesce(p_payload->>'reason', ''))) = 0
            OR length(p_payload->>'reason') > 240 THEN
-            RAISE EXCEPTION 'Payload de ingreso por lote inválido';
+            RAISE EXCEPTION 'Payload de ajuste por lote inválido';
         END IF;
-    ELSIF p_command_type LIKE 'supervisor.user.%' THEN
-        RAISE EXCEPTION 'Gestión remota de usuarios requiere un flujo de credencial segura';
+    ELSIF p_command_type = 'supervisor.user.create' THEN
+        IF coalesce(trim(p_payload->>'nombre'), '') = ''
+           OR p_payload->>'rol' NOT IN ('CAJERO', 'ADMIN')
+           OR coalesce(p_payload->>'pinHash', '') !~ '^pbkdf2\$[0-9]+\$[^$]+\$[^$]+$' THEN
+            RAISE EXCEPTION 'Payload de usuario inválido';
+        END IF;
+    ELSIF p_command_type = 'supervisor.user.pin.change' THEN
+        IF jsonb_typeof(p_payload->'userId') <> 'number'
+           OR coalesce(p_payload->>'pinHash', '') !~ '^pbkdf2\$[0-9]+\$[^$]+\$[^$]+$' THEN
+            RAISE EXCEPTION 'Payload de PIN inválido';
+        END IF;
+    ELSIF p_command_type = 'supervisor.user.update' THEN
+        IF jsonb_typeof(p_payload->'userId') <> 'number'
+           OR jsonb_typeof(p_payload->'patch') <> 'object' THEN
+            RAISE EXCEPTION 'Patch de usuario inválido';
+        END IF;
+    ELSIF p_command_type = 'supervisor.user.delete' THEN
+        IF jsonb_typeof(p_payload->'userId') <> 'number' THEN
+            RAISE EXCEPTION 'Usuario inválido';
+        END IF;
     ELSIF p_command_type IN ('supervisor.shift.close', 'supervisor.shift.reopen') THEN
         IF coalesce(p_payload->>'shiftId', '') = ''
            OR coalesce(p_payload->>'cierreId', '') = ''

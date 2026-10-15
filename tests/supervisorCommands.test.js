@@ -9,6 +9,7 @@ import {
     shouldAwaitSupervisorAck,
     SUPERVISOR_COMMAND_TTL_MS,
     fetchPendingSupervisorCommands,
+    isSupervisorCommandEnabled,
 } from '../src/services/supervisorCommandService';
 
 const baseCommand = (overrides = {}) => ({
@@ -124,6 +125,29 @@ describe('Supervisor command contract', () => {
         }).valid).toBe(false);
     });
 
+    it('acepta una fecha base válida y rechaza una inválida al editar productos', () => {
+        expect(validateSupervisorCommand(baseCommand({
+            type: 'supervisor.product.update',
+            payload: {
+                productId: 'product-1',
+                baseUpdatedAt: '2026-10-15T12:00:00.000Z',
+                patch: { name: 'Arroz nuevo' },
+            },
+        }), {
+            targetDeviceId: 'primary-1', monitorDeviceId: 'monitor-1', now: 2_000,
+        }).valid).toBe(true);
+        expect(validateSupervisorCommand(baseCommand({
+            type: 'supervisor.product.update',
+            payload: {
+                productId: 'product-1',
+                baseUpdatedAt: 'no-es-fecha',
+                patch: { name: 'Arroz nuevo' },
+            },
+        }), {
+            targetDeviceId: 'primary-1', monitorDeviceId: 'monitor-1', now: 2_000,
+        }).valid).toBe(false);
+    });
+
     it('rechaza una orden repetida mediante commandId', () => {
         let now = 2_000;
         const guard = new AppliedCommandGuard({ now: () => now });
@@ -152,13 +176,22 @@ describe('Supervisor command contract', () => {
         });
     });
 
-    it('no intenta red mientras las mutaciones están bloqueadas', async () => {
+    it('rechaza tipos desconocidos antes de intentar la red', async () => {
         const result = await sendSupervisorCommand({
-            type: 'supervisor.product.delete',
+            type: 'supervisor.unknown',
             targetDeviceId: 'primary-1',
-            payload: { productId: 'product-1' },
+            payload: {},
         });
         expect(result).toMatchObject({ ok: false, status: 'disabled' });
+    });
+
+    it('habilita productos, inventario, turnos y usuarios', () => {
+        expect(isSupervisorCommandEnabled('supervisor.product.create')).toBe(true);
+        expect(isSupervisorCommandEnabled('supervisor.product.update')).toBe(true);
+        expect(isSupervisorCommandEnabled('supervisor.product.delete')).toBe(true);
+        expect(isSupervisorCommandEnabled('supervisor.inventory.batch.adjust', { direction: 'egreso' })).toBe(true);
+        expect(isSupervisorCommandEnabled('supervisor.shift.close')).toBe(true);
+        expect(isSupervisorCommandEnabled('supervisor.user.create')).toBe(true);
     });
 
     it('recupera órdenes pendientes al reconectar la caja', async () => {
@@ -188,12 +221,9 @@ describe('Supervisor command contract', () => {
         expect(shouldAwaitSupervisorAck('supervisor.inventory.batch.adjust')).toBe(true);
     });
 
-    it('mantiene la tasa remota separada de las demás mutaciones', async () => {
-        const result = await sendSupervisorCommand({
-            type: 'supervisor.rate.set',
-            targetDeviceId: 'primary-1',
-            payload: { rateMode: 'euro', customRate: null },
-        });
-        expect(result).toMatchObject({ ok: false, status: 'disabled' });
+    it('mantiene habilitada la tasa remota junto con las demás mutaciones', () => {
+        expect(isSupervisorCommandEnabled('supervisor.rate.set')).toBe(true);
+        expect(isSupervisorCommandEnabled('supervisor.user.create')).toBe(true);
+        expect(isSupervisorCommandEnabled('supervisor.shift.close')).toBe(true);
     });
 });

@@ -5,6 +5,9 @@ const sql = readFileSync('supabase_supervisor_auth_recovery.sql', 'utf8');
 const commandSql = readFileSync('supabase_supervisor_commands.sql', 'utf8');
 const inventoryBatchSql = readFileSync('supabase_supervisor_inventory_batch.sql', 'utf8');
 const productionEgressSql = readFileSync('supabase_supervisor_inventory_egress_production.sql', 'utf8');
+const productCommandsSql = readFileSync('supabase/migrations/20261015_supervisor_product_commands_production.sql', 'utf8');
+const unpairCompatibilitySql = readFileSync('supabase/migrations/20261015_supervisor_unpair_owner_compatibility.sql', 'utf8');
+const backupLicenseSql = readFileSync('supabase/migrations/20261015_backup_permanent_license_rls.sql', 'utf8');
 const commandReceiver = readFileSync('src/hooks/useRemoteCommands.js', 'utf8');
 
 describe('Supervisor SQL guardrails', () => {
@@ -21,9 +24,8 @@ describe('Supervisor SQL guardrails', () => {
         expect(sql).toContain('token_hash text');
         expect((sql.match(/SET search_path = public, extensions/g) || []).length).toBe(3);
         expect(sql).toContain('token_used_at IS NULL');
-        expect(sql).toContain('OR revoked_at IS NOT NULL');
-        expect(sql).toMatch(/WHERE primary_device_id = trim\(p_device_id\)\s+AND monitor_auth_id = v_actor\s+AND revoked_at IS NULL;/);
-        expect(sql).not.toContain('OR monitor_device_id = trim(p_device_id)');
+        expect(sql).toContain('ON CONFLICT (primary_device_id) DO UPDATE');
+        expect(sql).toMatch(/WHERE \(primary_device_id = trim\(p_device_id\)\s+OR monitor_device_id = trim\(p_device_id\)\)\s+AND \(owner_auth_id = v_actor OR monitor_auth_id = v_actor\)\s+AND revoked_at IS NULL;/);
         expect(sql).not.toMatch(/CREATE POLICY\s+"sync_documents_anon_access"/i);
     });
 
@@ -45,6 +47,17 @@ describe('Supervisor SQL guardrails', () => {
         expect(commandReceiver).toContain('applyInventoryBatchCommand');
         expect(commandSql).not.toMatch(/GRANT\s+[^;]*\bTO\s+anon\b/i);
         expect((commandSql.match(/SET search_path = public, extensions/g) || []).length).toBe(2);
+    });
+
+    it('mantiene la corrección productiva de desvinculación para caja y monitor', () => {
+        expect(unpairCompatibilitySql).toContain('ON CONFLICT (primary_device_id) DO UPDATE');
+        expect(unpairCompatibilitySql).not.toContain('código de dueño');
+        expect(unpairCompatibilitySql).toContain('WHERE monitor_device_id = v_monitor_id');
+        expect(unpairCompatibilitySql).toContain('REVOKE ALL ON FUNCTION public.pair_monitor_device(text, text) FROM PUBLIC, anon');
+        expect(unpairCompatibilitySql).toContain('owner_auth_id = v_actor OR monitor_auth_id = v_actor');
+        expect(unpairCompatibilitySql).toContain('monitor_auth_id = NULL');
+        expect(unpairCompatibilitySql).toMatch(/REVOKE ALL ON FUNCTION public\.unpair_monitor\(text\) FROM PUBLIC, anon/);
+        expect(unpairCompatibilitySql).toContain('GRANT EXECUTE ON FUNCTION public.unpair_monitor(text) TO authenticated, service_role');
     });
 
     it('mantiene la migración de ingreso por lote aditiva y cerrada', () => {
@@ -72,5 +85,26 @@ describe('Supervisor SQL guardrails', () => {
         expect(productionEgressSql).toContain('ROLLBACK');
         expect(productionEgressSql).not.toMatch(/GRANT\s+[^;]*\bTO\s+anon\b/i);
         expect(productionEgressSql).not.toMatch(/DROP\s+TABLE/i);
+    });
+
+    it('habilita crear y editar productos en el trigger productivo', () => {
+        expect(productCommandsSql).toContain("NEW.command_type = 'supervisor.product.create'");
+        expect(productCommandsSql).toContain("NEW.command_type = 'supervisor.product.update'");
+        expect(productCommandsSql).toContain("RAISE EXCEPTION 'Payload de producto inválido'");
+        expect(productCommandsSql).toContain("RAISE EXCEPTION 'Patch de producto inválido'");
+        expect(productCommandsSql).toContain('DROP TRIGGER IF EXISTS supervisor_income_pairing_guard');
+        expect(productCommandsSql).toContain('ROLLBACK');
+        expect(productCommandsSql).not.toMatch(/GRANT\s+[^;]*\bTO\s+anon\b/i);
+        expect(productCommandsSql).not.toMatch(/DROP\s+TABLE/i);
+    });
+
+    it('limita cloud_backups a licencias permanentes activas', () => {
+        expect(backupLicenseSql).toContain('has_permanent_backup_license');
+        expect(backupLicenseSql).toContain("lower(trim(l.type)) = 'permanent'");
+        expect(backupLicenseSql).toContain('l.is_active IS TRUE');
+        expect(backupLicenseSql).toContain('DROP POLICY IF EXISTS "cloud_backups_device_isolation"');
+        expect(backupLicenseSql).toContain('public.has_permanent_backup_license(device_id)');
+        expect(backupLicenseSql).toContain('COMMIT;');
+        expect(backupLicenseSql).not.toMatch(/DROP\s+TABLE/i);
     });
 });

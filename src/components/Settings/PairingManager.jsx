@@ -3,30 +3,32 @@ import QRCode from 'qrcode';
 import { supabaseCloud } from '../../config/supabaseCloud';
 import { showToast } from '../Toast';
 import { ensureSupervisorSession } from '../../services/supervisorAuth';
+import {
+    createPairingToken,
+    watchPairing,
+    getPairingErrorMessage,
+} from '../../services/supervisorPairingService';
+import { getActivePairingSlots, readPairingRow } from '../../services/supervisorPairingState';
 import { 
     QrCode, Trash2, KeyRound, Loader2, CheckCircle2, 
     Smartphone, ShieldAlert, RefreshCw, X 
 } from 'lucide-react';
 
+const MAX_PAIRED_SUPERVISORS = 2;
+
 export default function PairingManager({ deviceId, triggerHaptic }) {
     const [pairingState, setPairingState] = useState('idle'); // 'idle', 'generating', 'show_qr', 'loading_status', 'paired'
-    const [pairedDevice, setPairedDevice] = useState(null);
+    const [pairedDevices, setPairedDevices] = useState([]);
     const [token, setToken] = useState('');
     const [timeLeft, setTimeLeft] = useState(0);
     const [checkingStatus, setCheckingStatus] = useState(false);
     const [showConfirmUnpair, setShowConfirmUnpair] = useState(false);
-    const [claimCode, setClaimCode] = useState('');
-    const [claimTimeLeft, setClaimTimeLeft] = useState(0);
-    const [claimInput, setClaimInput] = useState('');
-    const [claimBusy, setClaimBusy] = useState(false);
-    const claimTimerRef = useRef(null);
     
     const canvasRef = useRef(null);
     const timerRef = useRef(null);
-    const pollRef = useRef(null);
+    const pairingWatchCleanupRef = useRef(null);
     const pairingSubscriptionRef = useRef(null);
     const pairingStateRef = useRef('idle');
-    const pollingFailuresRef = useRef(0);
 
     useEffect(() => {
         pairingStateRef.current = pairingState;
@@ -39,26 +41,23 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
         try {
             const { session, error: sessionError } = await ensureSupervisorSession();
             if (sessionError || !session) {
-                setPairedDevice(null);
+                setPairedDevices([]);
                 setPairingState('idle');
                 return false;
             }
 
-            const { data, error } = await supabaseCloud
-                .from('device_pairings')
-                .select('monitor_device_id, monitor_auth_id, paired_at, revoked_at, token_expires_at')
-                .eq('primary_device_id', deviceId)
-                .maybeSingle();
+            const { data, error } = await readPairingRow({ supabase: supabaseCloud, primaryDeviceId: deviceId });
 
             if (error) throw error;
 
-            if (data && data.monitor_device_id && data.monitor_auth_id && !data.revoked_at) {
-                setPairedDevice(data.monitor_device_id);
+            const activeDevices = getActivePairingSlots(data);
+            if (activeDevices.length) {
+                setPairedDevices(activeDevices);
                 setPairingState('paired');
                 return true;
             }
 
-            setPairedDevice(null);
+            setPairedDevices([]);
             setPairingState('idle');
             return false;
         } catch (err) {
@@ -88,12 +87,12 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
                     filter: `primary_device_id=eq.${deviceId}`
                 }, (payload) => {
                     const row = payload.new || payload.old;
-                    const hasMonitor = payload.eventType !== 'DELETE'
-                        && Boolean(row?.monitor_device_id || row?.monitor_auth_id)
-                        && !row?.revoked_at;
+                    const activeDevices = payload.eventType !== 'DELETE'
+                        ? getActivePairingSlots(row)
+                        : [];
 
-                    if (hasMonitor) {
-                        setPairedDevice(row.monitor_device_id || 'monitor');
+                    if (activeDevices.length) {
+                        setPairedDevices(activeDevices);
                         setPairingState('paired');
                         return;
                     }
@@ -101,7 +100,7 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
                     // Si el QR está abierto, conservarlo; si estaba vinculado,
                     // reflejar inmediatamente la desvinculación remota.
                     if (pairingStateRef.current === 'paired') {
-                        setPairedDevice(null);
+                        setPairedDevices([]);
                         setToken('');
                         setPairingState('idle');
                     }
@@ -120,8 +119,8 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
         return () => {
             disposed = true;
             clearInterval(timerRef.current);
-            clearInterval(pollRef.current);
-            clearInterval(claimTimerRef.current);
+            pairingWatchCleanupRef.current?.();
+            pairingWatchCleanupRef.current = null;
             const channel = pairingSubscriptionRef.current;
             pairingSubscriptionRef.current = null;
             if (channel) supabaseCloud.removeChannel(channel).catch(() => {});
@@ -139,27 +138,19 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
         setPairingState('generating');
 
         try {
-            const { session, error: sessionError } = await ensureSupervisorSession();
-            if (sessionError || !session) throw sessionError || new Error('No hay sesión segura del dispositivo');
+            const generated = await createPairingToken({ deviceId });
 
-            const { data: generatedToken, error } = await supabaseCloud.rpc('generate_pairing_token', {
-                p_device_id: deviceId
-            });
-
-            if (error) throw error;
-
-            setToken(generatedToken);
+            setToken(generated.token);
             setPairingState('show_qr');
-            setTimeLeft(300); // 5 minutos (300 segundos)
-            pollingFailuresRef.current = 0;
+            setTimeLeft(generated.ttlSeconds);
 
-            // Temporizador de expiración
             clearInterval(timerRef.current);
             timerRef.current = setInterval(() => {
                 setTimeLeft(prev => {
                     if (prev <= 1) {
                         clearInterval(timerRef.current);
-                        clearInterval(pollRef.current);
+                        pairingWatchCleanupRef.current?.();
+                        pairingWatchCleanupRef.current = null;
                         setPairingState('idle');
                         setToken('');
                         showToast('El código QR ha expirado', 'warning');
@@ -169,48 +160,29 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
                 });
             }, 1000);
 
-            // Polling para detectar cuando el monitor se vincule (cada 3 segundos)
-            clearInterval(pollRef.current);
-            pollRef.current = setInterval(async () => {
-                try {
-                    const { data, error: pollError } = await supabaseCloud
-                        .from('device_pairings')
-                        .select('monitor_device_id, monitor_auth_id, paired_at, revoked_at')
-                        .eq('primary_device_id', deviceId)
-                        .maybeSingle();
-
-                    if (pollError) {
-                        pollingFailuresRef.current += 1;
-                        if (pollingFailuresRef.current >= 3) {
-                            clearInterval(pollRef.current);
-                            pollRef.current = null;
-                            showToast('No se pudo confirmar el vínculo. Revisa la conexión e inténtalo de nuevo.', 'error');
-                        }
-                        return;
-                    }
-
-                    pollingFailuresRef.current = 0;
-                    if (data?.monitor_device_id && data?.monitor_auth_id && !data.revoked_at) {
-                        clearInterval(timerRef.current);
-                        clearInterval(pollRef.current);
-                        pollRef.current = null;
-                        triggerHaptic?.();
-                        setPairedDevice(data.monitor_device_id);
-                        setPairingState('paired');
-                        showToast('¡Celular del supervisor vinculado con éxito!', 'success');
-                    }
-                } catch (e) {
-                    pollingFailuresRef.current += 1;
-                    if (pollingFailuresRef.current >= 3) {
-                        clearInterval(pollRef.current);
-                        pollRef.current = null;
-                    }
-                }
-            }, 3000);
-
+            pairingWatchCleanupRef.current?.();
+            pairingWatchCleanupRef.current = watchPairing({
+                deviceId,
+                onPaired: (data) => {
+                    clearInterval(timerRef.current);
+                    pairingWatchCleanupRef.current?.();
+                    pairingWatchCleanupRef.current = null;
+                    triggerHaptic?.();
+                    const activeDevices = getActivePairingSlots(data);
+                    setPairedDevices(activeDevices);
+                    setToken('');
+                    setPairingState('paired');
+                    showToast('¡Celular del supervisor vinculado con éxito!', 'success');
+                },
+                onError: () => {
+                    pairingWatchCleanupRef.current?.();
+                    pairingWatchCleanupRef.current = null;
+                    showToast('No se pudo confirmar el vínculo. Revisa la conexión e inténtalo de nuevo.', 'error');
+                },
+            });
         } catch (err) {
             console.error('[PairingManager] Error generando token:', err);
-            showToast('Error al generar el token QR', 'error');
+            showToast(getPairingErrorMessage(err), 'error');
             setPairingState('idle');
         }
     };
@@ -236,77 +208,12 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
         }
     }, [pairingState, token]);
 
-    // 4a. Código de reclamo de dueño (007): la caja lo muestra; el dueño lo canjea.
-    const handleCreateClaimCode = async () => {
-        triggerHaptic?.();
-        setClaimBusy(true);
-        try {
-            const { session, error: sessionError } = await ensureSupervisorSession();
-            if (sessionError || !session) throw sessionError || new Error('No hay sesión segura del dispositivo');
-
-            const { data: code, error } = await supabaseCloud.rpc('create_owner_claim_code', {
-                p_device_id: deviceId
-            });
-            if (error) throw error;
-
-            setClaimCode(code);
-            setClaimTimeLeft(600); // 10 minutos, igual que la expiración en servidor
-            clearInterval(claimTimerRef.current);
-            claimTimerRef.current = setInterval(() => {
-                setClaimTimeLeft(prev => {
-                    if (prev <= 1) {
-                        clearInterval(claimTimerRef.current);
-                        setClaimCode('');
-                        return 0;
-                    }
-                    return prev - 1;
-                });
-            }, 1000);
-        } catch (err) {
-            console.error('[PairingManager] Error creando código de reclamo:', err);
-            showToast(err?.message?.includes('ya tiene dueño')
-                ? 'Esta caja ya tiene dueño registrado'
-                : 'No se pudo generar el código de reclamo', 'error');
-        } finally {
-            setClaimBusy(false);
-        }
-    };
-
-    // 4b. El dueño canjea el código mostrado en la caja.
-    const handleClaimOwner = async () => {
-        const code = claimInput.trim().toUpperCase();
-        if (!code) return;
-        triggerHaptic?.();
-        setClaimBusy(true);
-        try {
-            const { session, error: sessionError } = await ensureSupervisorSession();
-            if (sessionError || !session) throw sessionError || new Error('No hay sesión segura del dispositivo');
-
-            const { data, error } = await supabaseCloud.rpc('claim_owner_device', {
-                p_device_id: deviceId,
-                p_code: code
-            });
-            if (error) throw error;
-            if (!data?.success) {
-                showToast(data?.message || 'No se pudo reclamar la caja', 'error');
-                return;
-            }
-
-            setClaimInput('');
-            showToast('Dueño de la caja registrado', 'success');
-        } catch (err) {
-            console.error('[PairingManager] Error reclamando caja:', err);
-            showToast('No se pudo reclamar la caja', 'error');
-        } finally {
-            setClaimBusy(false);
-        }
-    };
-
     // 4. Cancelar emparejamiento / Cerrar QR
     const handleCancelPairing = () => {
         triggerHaptic?.();
         clearInterval(timerRef.current);
-        clearInterval(pollRef.current);
+        pairingWatchCleanupRef.current?.();
+        pairingWatchCleanupRef.current = null;
         setPairingState('idle');
         setToken('');
     };
@@ -336,7 +243,7 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
             if (stillPaired) {
                 throw new Error('El servidor aún reporta el vínculo activo');
             }
-            setPairedDevice(null);
+            setPairedDevices([]);
             setPairingState('idle');
             setToken('');
             showToast('Dispositivo desvinculado con éxito', 'success');
@@ -369,32 +276,42 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
                     <div className="p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-800/30 rounded-2xl flex gap-3 items-start">
                         <CheckCircle2 className="text-emerald-500 shrink-0 mt-0.5" size={20} />
                         <div>
-                            <h4 className="text-sm font-black text-emerald-800 dark:text-emerald-400">Celular del supervisor vinculado</h4>
+                            <h4 className="text-sm font-black text-emerald-800 dark:text-emerald-400">Supervisores vinculados</h4>
                             <p className="text-[11px] text-emerald-700 dark:text-emerald-500 leading-normal mt-1">
-                                Un dispositivo externo tiene acceso en tiempo real a las estadísticas y el inventario del negocio en modo solo lectura.
+                                {pairedDevices.length} de {MAX_PAIRED_SUPERVISORS} dispositivos tienen acceso en tiempo real en modo solo lectura.
                             </p>
                         </div>
                     </div>
 
-                    <div className="bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800 p-4 rounded-2xl flex flex-col gap-4">
-                        <div className="flex items-center gap-3">
-                            <Smartphone className="text-emerald-500" size={24} />
-                            <div>
-                                <span className="text-[9px] uppercase tracking-wider font-bold text-slate-400 block">Celular Conectado</span>
-                                <span className="text-xs font-bold text-slate-700 dark:text-slate-200 block">
-                                    Dispositivo en vivo (Modo Supervisor Activo)
-                                </span>
+                    <div className="space-y-2">
+                        {pairedDevices.map((pairedDevice, index) => (
+                            <div key={pairedDevice.id} className="bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800 p-4 rounded-2xl flex items-center justify-between gap-3">
+                                <div className="flex min-w-0 items-center gap-3">
+                                    <Smartphone className="shrink-0 text-emerald-500" size={22} />
+                                    <div className="min-w-0">
+                                        <span className="text-[9px] uppercase tracking-wider font-bold text-slate-400 block">Supervisor {index + 1}</span>
+                                        <span className="block truncate text-xs font-bold text-slate-700 dark:text-slate-200" title={pairedDevice.id}>
+                                            {pairedDevice.id}
+                                        </span>
+                                        <span className="mt-0.5 block text-[10px] font-semibold text-emerald-600">Activo ahora</span>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                        
-                        <button
-                            onClick={handleUnpair}
-                            className="w-full py-2.5 bg-rose-500 hover:bg-rose-600 text-white font-black text-xs rounded-xl flex items-center justify-center gap-2 shadow-md shadow-rose-500/15 active:scale-[0.97] transition-all"
-                        >
-                            <Trash2 size={14} />
-                            <span>Desactivar Modo Supervisor (Desvincular)</span>
-                        </button>
+                        ))}
                     </div>
+
+                    <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5 text-[11px] font-bold text-slate-500 dark:bg-slate-800/30 dark:text-slate-400">
+                        <span>{MAX_PAIRED_SUPERVISORS - pairedDevices.length} cupo{MAX_PAIRED_SUPERVISORS - pairedDevices.length === 1 ? '' : 's'} disponible{MAX_PAIRED_SUPERVISORS - pairedDevices.length === 1 ? '' : 's'}</span>
+                        <span className="text-emerald-600">Límite: {MAX_PAIRED_SUPERVISORS}</span>
+                    </div>
+
+                    <button
+                        onClick={handleUnpair}
+                        className="w-full py-2.5 bg-rose-500 hover:bg-rose-600 text-white font-black text-xs rounded-xl flex items-center justify-center gap-2 shadow-md shadow-rose-500/15 active:scale-[0.97] transition-all"
+                    >
+                        <Trash2 size={14} />
+                        <span>Desvincular {pairedDevices.length > 1 ? 'supervisores' : 'supervisor'}</span>
+                    </button>
                 </div>
             ) : pairingState === 'show_qr' ? (
                 /* Estado: Mostrando QR */
@@ -474,47 +391,6 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
                         )}
                     </button>
 
-                    {/* 007: reclamo del primer dueño por posesión física */}
-                    <div className="p-4 bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800 rounded-2xl space-y-3">
-                        <div>
-                            <h4 className="text-xs font-black text-slate-700 dark:text-slate-200">Reclamar dueño de esta caja</h4>
-                            <p className="text-[10px] text-slate-400 leading-normal mt-1">
-                                Muestra un código de un solo uso en esta pantalla y canjéalo desde la cuenta del dueño.
-                            </p>
-                        </div>
-
-                        {claimCode ? (
-                            <div className="text-center space-y-1">
-                                <div className="text-2xl font-black tracking-widest text-slate-800 dark:text-white select-all">{claimCode}</div>
-                                <span className="text-[10px] text-slate-400 font-bold">Expira en {formatTimeLeft(claimTimeLeft)}</span>
-                            </div>
-                        ) : (
-                            <button
-                                onClick={handleCreateClaimCode}
-                                disabled={claimBusy}
-                                className="w-full py-2.5 bg-slate-700 hover:bg-slate-800 text-white font-black text-xs rounded-xl disabled:opacity-50 transition-all"
-                            >
-                                Generar código de reclamo
-                            </button>
-                        )}
-
-                        <div className="flex gap-2">
-                            <input
-                                value={claimInput}
-                                onChange={(e) => setClaimInput(e.target.value)}
-                                placeholder="Código del dueño"
-                                maxLength={24}
-                                className="flex-1 px-3 py-2 text-xs font-bold uppercase rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
-                            />
-                            <button
-                                onClick={handleClaimOwner}
-                                disabled={claimBusy || !claimInput.trim()}
-                                className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-black text-xs rounded-xl disabled:opacity-50 transition-all"
-                            >
-                                Canjear
-                            </button>
-                        </div>
-                    </div>
                 </div>
             )}
 
@@ -526,9 +402,9 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
                             <Trash2 size={22} />
                         </div>
                         <div className="space-y-1.5 text-center">
-                            <h4 className="text-base font-black text-slate-800 dark:text-white">Desvincular Supervisor</h4>
+                            <h4 className="text-base font-black text-slate-800 dark:text-white">Desvincular supervisores</h4>
                             <p className="text-xs font-semibold text-slate-500 leading-relaxed">
-                                ¿Estás seguro de que deseas desvincular el celular del supervisor? Perderá el acceso de monitoreo en tiempo real a las transacciones de esta caja.
+                                ¿Estás seguro de que deseas desvincular {pairedDevices.length > 1 ? 'los supervisores vinculados' : 'el supervisor vinculado'}? Perderá{pairedDevices.length > 1 ? 'n' : ''} el acceso de monitoreo en tiempo real a las transacciones de esta caja.
                             </p>
                         </div>
                         <div className="flex gap-3">

@@ -2,12 +2,15 @@ import { useEffect } from 'react';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { pushLocalSync, pushCloudSync } from './useCloudSync';
 import { storageService } from '../utils/storageService';
+import { useAuthStore } from './store/useAuthStore';
 import { withLock } from '../utils/withLock';
 import { showToast } from '../components/Toast';
 import { ensureSupervisorSession } from '../services/supervisorAuth';
 import { AppliedCommandGuard, validateSupervisorCommand } from '../services/supervisorContracts';
 import { fetchPendingSupervisorCommands } from '../services/supervisorCommandService';
 import { applySupervisorInventoryBatchTransaction } from '../services/supervisorInventoryCommand';
+import { applySupervisorProductCommand } from '../services/supervisorProductCommand';
+import { applySupervisorUserCommand } from '../services/supervisorUserCommand';
 
 function rowToCommand(row, deviceId) {
     const issuedAt = new Date(row.issued_at).getTime();
@@ -25,14 +28,32 @@ function rowToCommand(row, deviceId) {
     };
 }
 
+function isRetryableAckError(error) {
+    const status = Number(error?.status || error?.statusCode);
+    if ([400, 401, 403, 404, 409, 422].includes(status)) return false;
+    if (typeof status === 'number' && status >= 500) return true;
+    return !status;
+}
+
 async function ackCommand(commandId, status, ackPayload = {}, errorMessage = null) {
-    const { error } = await supabaseCloud.rpc('ack_supervisor_command', {
-        p_command_id: commandId,
-        p_status: status,
-        p_ack_payload: ackPayload,
-        p_error_message: errorMessage,
-    });
-    if (error) throw error;
+    let lastError = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+            const { error } = await supabaseCloud.rpc('ack_supervisor_command', {
+                p_command_id: commandId,
+                p_status: status,
+                p_ack_payload: ackPayload,
+                p_error_message: errorMessage,
+            });
+            if (error) throw error;
+            return;
+        } catch (error) {
+            lastError = error;
+            if (!isRetryableAckError(error) || attempt === 2) throw error;
+            await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+        }
+    }
+    throw lastError || new Error('No se pudo confirmar la orden');
 }
 
 const APPLIED_COMMANDS_KEY = 'supervisor_applied_commands_v1';
@@ -85,6 +106,21 @@ export function useRemoteCommands(deviceId, enabled = true) {
         });
         let channel = null;
 
+        const handlePairingRevoked = (event) => {
+            if (event.detail?.deviceId && event.detail.deviceId !== deviceId) return;
+            if (channel) {
+                supabaseCloud.removeChannel(channel).catch(() => {});
+                channel = null;
+            }
+            supervisorLog('Listener detenido: vínculo revocado', { deviceId: shortSupervisorId(deviceId) });
+        };
+        const handlePairingActive = (event) => {
+            if (event.detail?.deviceId && event.detail.deviceId !== deviceId) return;
+            if (!channel && !disposed) initialize();
+        };
+        window.addEventListener('supervisor_pairing_revoked', handlePairingRevoked);
+        window.addEventListener('supervisor_pairing_active', handlePairingActive);
+
         const applyRateCommand = async (payload) => {
             const { rateMode, customRate } = payload || {};
             if (!['bcv', 'euro', 'usdt', 'manual'].includes(rateMode)) {
@@ -109,31 +145,26 @@ export function useRemoteCommands(deviceId, enabled = true) {
         };
 
         const applyProductCommand = async (payload) => {
-            const { action, product, productId } = payload || {};
-            if (!['create', 'edit', 'delete'].includes(action)) throw new Error('Acción de producto inválida');
-            if (action !== 'delete' && (!product || typeof product.id !== 'string')) throw new Error('Producto inválido');
-            if (action === 'delete' && typeof productId !== 'string') throw new Error('Producto inválido');
-
+            let result;
             await withLock('pos_write_lock', async () => {
                 const currentProducts = await storageService.getItem('bodega_products_v1', []) || [];
-                let updatedProducts;
+                result = applySupervisorProductCommand(currentProducts, payload);
 
-                if (action === 'delete') {
-                    updatedProducts = currentProducts.filter(item => item.id !== productId);
-                } else if (action === 'edit') {
-                    updatedProducts = currentProducts.map(item => item.id === product.id ? { ...item, ...product } : item);
-                } else {
-                    const exists = currentProducts.some(item => item.id === product.id);
-                    updatedProducts = exists
-                        ? currentProducts.map(item => item.id === product.id ? { ...item, ...product } : item)
-                        : [product, ...currentProducts];
+                await storageService.setItem('bodega_products_v1', result.products);
+                const pushResult = await pushCloudSync('bodega_products_v1', result.products, true);
+                if (!pushResult.ok && !pushResult.skipped) {
+                    await storageService.setItem('bodega_products_v1', currentProducts);
+                    throw new Error(pushResult.error);
                 }
-
-                await storageService.setItem('bodega_products_v1', updatedProducts);
-                const pushResult = await pushCloudSync('bodega_products_v1', updatedProducts, true);
-                if (!pushResult.ok && !pushResult.skipped) throw new Error(pushResult.error);
                 window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_products_v1', source: 'remote' } }));
             });
+
+            return {
+                commandId: payload.commandId,
+                action: result.action,
+                productId: result.productId,
+                status: 'applied',
+            };
         };
 
         const applyInventoryBatchCommand = async (payload, commandId) => {
@@ -231,6 +262,18 @@ export function useRemoteCommands(deviceId, enabled = true) {
             });
         };
 
+        const applyUserCommand = async (payload) => {
+            const result = await applySupervisorUserCommand(storageService, payload, {
+                // Zustand persiste en localStorage; actualizarlo aquí mantiene
+                // la sesión viva y evita que la caja siga usando un catálogo
+                // de usuarios anterior hasta el próximo reinicio.
+                onUsersChanged: users => useAuthStore.setState({ usuarios: users }),
+            });
+            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'abasto-auth-storage', source: 'remote' } }));
+            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_users_catalog_v1', source: 'remote' } }));
+            return result;
+        };
+
         const processCommand = async (row) => {
             if (disposed || !row || row.status !== 'pending') return;
 
@@ -261,8 +304,9 @@ export function useRemoteCommands(deviceId, enabled = true) {
             }
             if (!appliedCommands.accept(row.command_id, command.expiresAt)) return;
 
+            let appliedPayload = null;
             try {
-                let appliedPayload = { commandId: row.command_id };
+                appliedPayload = { commandId: row.command_id };
                 if (command.type === 'supervisor.rate.set') {
                     await applyRateCommand(command.payload);
                     supervisorLog('Tasa aplicada localmente', {
@@ -272,12 +316,14 @@ export function useRemoteCommands(deviceId, enabled = true) {
                     });
                     showToast('💱 Tasa actualizada por el Supervisor', 'success');
                 } else if (command.type === 'supervisor.product.create') {
-                    await applyProductCommand({ ...command.payload, action: 'create' });
+                    appliedPayload = await applyProductCommand({ ...command.payload, action: 'create', commandId: row.command_id });
                     showToast('📦 Producto creado por el Supervisor', 'success');
                 } else if (command.type === 'supervisor.product.update') {
-                    await applyProductCommand({
+                    appliedPayload = await applyProductCommand({
                         action: 'edit',
                         product: { id: command.payload.productId, ...command.payload.patch },
+                        baseUpdatedAt: command.payload.baseUpdatedAt,
+                        commandId: row.command_id,
                     });
                     showToast('📦 Producto actualizado por el Supervisor', 'success');
                 } else if (command.type === 'supervisor.product.delete') {
@@ -293,23 +339,41 @@ export function useRemoteCommands(deviceId, enabled = true) {
                     });
                     showToast('🔒 Acción de turno aplicada por el Supervisor', 'info');
                 } else if (command.type.startsWith('supervisor.user.')) {
-                    // Los PINs no deben viajar por comandos remotos. Esta capacidad
-                    // queda bloqueada hasta definir un flujo de credencial segura.
-                    throw new Error('Gestión remota de usuarios temporalmente bloqueada');
+                    appliedPayload = await applyUserCommand({
+                        ...command.payload,
+                        action: command.type === 'supervisor.user.create'
+                            ? 'add'
+                            : command.type === 'supervisor.user.pin.change'
+                                ? 'change_pin'
+                                : command.type === 'supervisor.user.update'
+                                    ? 'edit'
+                                    : 'delete',
+                    });
+                    showToast('👤 Usuario actualizado por el Supervisor', 'success');
                 } else {
                     throw new Error('Tipo de comando no soportado');
                 }
 
-                await ackCommand(row.command_id, 'applied', appliedPayload);
-                supervisorLog('ACK enviado', {
-                    commandId: shortSupervisorId(row.command_id),
-                    status: 'applied',
-                });
+                // Guardar primero el resultado local evita repetir la operación
+                // si el ACK se pierde. El siguiente intento solo confirma.
                 await rememberAppliedCommand(row.command_id, {
                     status: 'applied',
                     ackPayload: appliedPayload,
                     errorMessage: null,
                     expiresAt: command.expiresAt,
+                });
+                try {
+                    await ackCommand(row.command_id, 'applied', appliedPayload);
+                } catch (ackError) {
+                    supervisorLog('ACK aplicado pendiente de reintento', {
+                        commandId: shortSupervisorId(row.command_id),
+                        error: ackError?.message || ackError,
+                    });
+                    return;
+                }
+                supervisorLog('ACK enviado', {
+                    commandId: shortSupervisorId(row.command_id),
+                    status: 'applied',
                 });
             } catch (error) {
                 const errorMessage = error?.message || 'Error aplicando comando';
@@ -317,13 +381,20 @@ export function useRemoteCommands(deviceId, enabled = true) {
                     commandId: shortSupervisorId(row.command_id),
                     error: errorMessage,
                 });
-                await ackCommand(row.command_id, 'failed', {}, errorMessage);
                 await rememberAppliedCommand(row.command_id, {
                     status: 'failed',
                     ackPayload: {},
                     errorMessage,
                     expiresAt: command.expiresAt,
                 });
+                try {
+                    await ackCommand(row.command_id, 'failed', {}, errorMessage);
+                } catch (ackError) {
+                    supervisorLog('ACK fallido pendiente de reintento', {
+                        commandId: shortSupervisorId(row.command_id),
+                        error: ackError?.message || ackError,
+                    });
+                }
                 console.error('[RemoteCommands] Comando rechazado:', error);
             }
         };
@@ -397,6 +468,8 @@ export function useRemoteCommands(deviceId, enabled = true) {
 
         return () => {
             disposed = true;
+            window.removeEventListener('supervisor_pairing_revoked', handlePairingRevoked);
+            window.removeEventListener('supervisor_pairing_active', handlePairingActive);
             if (channel) supabaseCloud.removeChannel(channel).catch(() => {});
         };
     }, [deviceId, enabled]);

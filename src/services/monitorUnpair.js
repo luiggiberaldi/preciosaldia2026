@@ -12,7 +12,10 @@ const MONITOR_ONLY_LOCAL_KEYS = Object.freeze([
 const LAST_PUSH_HASH_PREFIX = 'bodega_last_periodic_push_hash_';
 
 export function isPairingRevocationConfirmed(pairing, monitorAuthId) {
-    return Boolean(pairing && (pairing.revoked_at || pairing.monitor_auth_id !== monitorAuthId));
+    return Boolean(pairing && (
+        pairing.revoked_at
+        || (pairing.monitor_auth_id !== monitorAuthId && pairing.monitor_auth_id_2 !== monitorAuthId)
+    ));
 }
 
 export class MonitorUnpairError extends Error {

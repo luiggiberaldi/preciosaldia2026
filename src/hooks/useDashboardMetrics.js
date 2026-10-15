@@ -4,6 +4,7 @@ import { computeReceivablesMovements } from '../utils/receivablesReport';
 import { sumR, mulR } from '../utils/dinero';
 import { getLocalISODate } from '../utils/dateHelpers';
 import { isLowStockProduct } from '../utils/granel';
+import { CASH_SHIFT_TYPES, findOpenCashShift, isRecordInOpenCashShift } from '../utils/cashShift';
 
 /**
  * Hook de métricas del Dashboard.
@@ -25,35 +26,38 @@ export function useDashboardMetrics(sales, customers, products, bcvRate) {
         });
     }, [sales, today]);
 
+    // La caja activa no depende del calendario: sigue abierta después de las
+    // 12:00 a. m. hasta que exista un cierre manual.
+    const activeOpening = useMemo(() => findOpenCashShift(salesWithLocalDate), [salesWithLocalDate]);
+    const isInActiveShift = useCallback((record) => {
+        if (activeOpening) return isRecordInOpenCashShift(record, activeOpening);
+        return record.localDate === today && record.cajaCerrada !== true;
+    }, [activeOpening, today]);
+
     const todaySales = useMemo(() =>
         salesWithLocalDate.filter(s => {
             if (s.status === 'ANULADA') return false;
             if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'VENTA_CASHEA') return false;
-            if (s.cajaCerrada === true) return false;
-            return s.localDate === today;
+            return isInActiveShift(s);
         }),
-        [salesWithLocalDate, today]
+        [salesWithLocalDate, isInActiveShift]
     );
 
     // Movimientos reales de caja para el cuadre (Ventas + Abonos + Egresos + Apertura)
     const todayCashFlow = useMemo(() =>
         salesWithLocalDate.filter(s => {
             if (s.status === 'ANULADA') return false;
-            if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'VENTA_CASHEA' && s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'COBRO_CASHEA' && s.tipo !== 'PAGO_PROVEEDOR' && s.tipo !== 'GASTO_INTERNO' && s.tipo !== 'APERTURA_CAJA' && s.tipo !== 'APORTE_CAJA') return false;
+            if (!CASH_SHIFT_TYPES.has(s.tipo)) return false;
             if ((s.tipo === 'PAGO_PROVEEDOR' || s.tipo === 'GASTO_INTERNO') && s.afectaCaja === false) return false;
-            if (s.cajaCerrada === true) return false;
-            return s.localDate === today;
+            return isInActiveShift(s);
         }),
-        [salesWithLocalDate, today]
+        [salesWithLocalDate, isInActiveShift]
     );
 
-    // Detect if apertura was already registered today
+    // Detecta la apertura abierta, aunque haya comenzado en una fecha anterior.
     const todayApertura = useMemo(() => {
-        return salesWithLocalDate.find(s => {
-            if (s.tipo !== 'APERTURA_CAJA' || s.cajaCerrada) return false;
-            return s.localDate === today;
-        });
-    }, [salesWithLocalDate, today]);
+        return activeOpening;
+    }, [activeOpening]);
 
     const todayTotalBs = useMemo(() => sumR(todaySales.map(s => s.totalBs || 0)), [todaySales]);
     const todayTotalUsd = useMemo(() => sumR(todaySales.map(s => s.totalUsd || 0)), [todaySales]);
@@ -66,10 +70,9 @@ export function useDashboardMetrics(sales, customers, products, bcvRate) {
             if (s.status === 'ANULADA') return false;
             if (s.tipo !== 'PAGO_PROVEEDOR' && s.tipo !== 'GASTO_INTERNO') return false;
             if ((s.tipo === 'PAGO_PROVEEDOR' || s.tipo === 'GASTO_INTERNO') && s.afectaCaja === false) return false;
-            if (s.cajaCerrada === true) return false;
-            return s.localDate === today;
+            return isInActiveShift(s);
         });
-    }, [salesWithLocalDate, today]);
+    }, [salesWithLocalDate, isInActiveShift]);
     const todayExpensesUsd = useMemo(() => sumR(todayExpenses.map(s => Math.abs(s.totalUsd || 0))), [todayExpenses]);
 
     // Gastos internos del día (excluyendo proveedores)
@@ -77,10 +80,9 @@ export function useDashboardMetrics(sales, customers, products, bcvRate) {
         return salesWithLocalDate.filter(s => {
             if (s.status === 'ANULADA') return false;
             if (s.tipo !== 'GASTO_INTERNO') return false;
-            if (s.cajaCerrada === true) return false;
-            return s.localDate === today;
+            return isInActiveShift(s);
         });
-    }, [salesWithLocalDate, today]);
+    }, [salesWithLocalDate, isInActiveShift]);
     const todayGastosUsd = useMemo(() => sumR(todayGastos.map(s => Math.abs(s.totalUsd || 0))), [todayGastos]);
 
     const todayProfit = useMemo(() =>

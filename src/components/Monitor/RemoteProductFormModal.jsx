@@ -7,7 +7,7 @@ import { prepareProductFormState } from '../../hooks/useProductForm';
 import { getGranelUnitMode } from '../../utils/granel';
 import { showToast } from '../Toast';
 import { Save } from 'lucide-react';
-import { SUPERVISOR_REMOTE_MUTATIONS_ENABLED } from '../../config/supervisorPolicy';
+import { SUPERVISOR_REMOTE_PRODUCTS_ENABLED } from '../../config/supervisorPolicy';
 import { sendSupervisorCommand } from '../../services/supervisorCommandService';
 
 export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId, productToEdit = null, remoteAvailable = true }) {
@@ -211,8 +211,8 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
             return;
         }
 
-        if (!SUPERVISOR_REMOTE_MUTATIONS_ENABLED) {
-            showToast('Las mutaciones remotas están temporalmente deshabilitadas por seguridad', 'warning');
+        if (!SUPERVISOR_REMOTE_PRODUCTS_ENABLED) {
+            showToast('La edición remota de productos todavía no está habilitada', 'warning');
             return;
         }
 
@@ -268,7 +268,11 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
                 type: isEdit ? 'supervisor.product.update' : 'supervisor.product.create',
                 targetDeviceId,
                 payload: isEdit
-                    ? { productId: productPayload.id, patch: productPayload }
+                    ? {
+                        productId: productPayload.id,
+                        baseUpdatedAt: productToEdit.updatedAt || productToEdit.updated_at || null,
+                        patch: productPayload,
+                    }
                     : { product: productPayload },
             });
 

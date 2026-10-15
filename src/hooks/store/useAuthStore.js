@@ -327,6 +327,103 @@ export const useAuthStore = create(
             },
 
             /**
+             * Autoriza una operación sensible con un PIN ADMIN sin cambiar la
+             * sesión operativa del dispositivo. Se reutiliza el mismo rate
+             * limit persistido de login, pero nunca se llama `login` porque el
+             * administrador no debe reemplazar al cajero actualmente activo.
+             *
+             * @param {string} pinInput
+             * @returns {Promise<{ success: boolean, user?: object, error?: string }>}
+             */
+            verifyAdminPin: async (pinInput) => {
+                const now = Date.now();
+                let state = get();
+
+                if (
+                    state.lastFailedAttemptTs > 0
+                    && (now - state.lastFailedAttemptTs) > LOGIN_RATE_LIMIT.RESET_WINDOW_MS
+                ) {
+                    set({ failedAttempts: 0, lockUntil: null, consecutiveLockouts: 0 });
+                    state = get();
+                }
+
+                if (state.lockUntil && now < state.lockUntil) {
+                    const secsLeft = Math.ceil((state.lockUntil - now) / 1000);
+                    return { success: false, error: `Bloqueado. Intente en ${secsLeft}s` };
+                }
+                if (state.lockUntil && now >= state.lockUntil) {
+                    set({ lockUntil: null });
+                    state = get();
+                }
+
+                const admins = (state.usuarios || []).filter(
+                    user => String(user?.rol || '').toUpperCase() === 'ADMIN'
+                );
+                let adminEncontrado = null;
+                let needsRehash = false;
+
+                for (const admin of admins) {
+                    try {
+                        const result = await verifyPin(String(pinInput ?? ''), admin.pin);
+                        if (result.valid) {
+                            adminEncontrado = admin;
+                            needsRehash = result.needsRehash;
+                            break;
+                        }
+                    } catch (error) {
+                        if (import.meta.env?.DEV) {
+                            console.warn('[useAuthStore] verifyAdminPin lanzó:', error?.message ?? error);
+                        }
+                    }
+                }
+
+                if (adminEncontrado) {
+                    const auditUser = {
+                        id: adminEncontrado.id,
+                        nombre: adminEncontrado.nombre,
+                        rol: adminEncontrado.rol,
+                    };
+                    set({
+                        failedAttempts: 0,
+                        lockUntil: null,
+                        consecutiveLockouts: 0,
+                        lastFailedAttemptTs: 0,
+                    });
+
+                    if (needsRehash) {
+                        try {
+                            const newHash = await hashPin(String(pinInput));
+                            set((current) => ({
+                                usuarios: current.usuarios.map(user =>
+                                    user.id === adminEncontrado.id ? { ...user, pin: newHash } : user
+                                ),
+                            }));
+                        } catch (error) {
+                            if (import.meta.env?.DEV) {
+                                console.warn('[useAuthStore] Re-hash de PIN admin falló:', error?.message ?? error);
+                            }
+                        }
+                    }
+
+                    logEvent('AUTH', 'ADMIN_PIN_AUTHORIZED', 'PIN de administrador autorizado para operación sensible.', auditUser);
+                    return { success: true, user: auditUser };
+                }
+
+                const { newAttempts, lockUntil, newConsecutiveLockouts } = _computeLockout(
+                    get().failedAttempts,
+                    get().consecutiveLockouts,
+                );
+                set({
+                    failedAttempts: newAttempts,
+                    lockUntil,
+                    consecutiveLockouts: newConsecutiveLockouts,
+                    lastFailedAttemptTs: now,
+                });
+                logEvent('AUTH', 'ADMIN_PIN_DENIED', 'Intento fallido de autorización administrativa.', get().usuarioActivo);
+                return { success: false, error: 'PIN de administrador incorrecto' };
+            },
+
+            /**
              * SEC-015: Re-valida el PIN del usuario activo para volver de un lock.
              * A diferencia de `login`, NO persiste una nueva sesión si ya hay una activa:
              * solo verifica que el PIN ingresado coincida con el usuario activo.

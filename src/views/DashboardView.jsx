@@ -24,6 +24,7 @@ import { useSecurity } from '../hooks/useSecurity';
 import { useAudit } from '../hooks/useAudit';
 import { useAuthStore } from '../hooks/store/useAuthStore';
 import { getLocalISODate } from '../utils/dateHelpers';
+import { CASH_SHIFT_TYPES, isRecordInOpenCashShift } from '../utils/cashShift';
 import Skeleton from '../components/Skeleton';
 import { useDashboardData } from '../hooks/useDashboardData';
 import { useDashboardMetrics } from '../hooks/useDashboardMetrics';
@@ -276,11 +277,22 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         let summaryObj = null;
         const activeUser = useAuthStore.getState().usuarioActivo;
 
+        const isManualCloseRecord = (record) => {
+            if (!record || record.cajaCerrada === true || !CASH_SHIFT_TYPES.has(record.tipo)) return false;
+            if (todayApertura) return isRecordInOpenCashShift(record, todayApertura);
+            const recordDay = record.timestamp
+                ? getLocalISODate(new Date(record.timestamp))
+                : today;
+            return recordDay === today;
+        };
+
         if (todayCashFlow.length > 0 || todaySales.length > 0) {
-            const allTodayForReport = sales.filter(s => {
-                const saleLocalDay = s.timestamp ? getLocalISODate(new Date(s.timestamp)) : getLocalISODate(new Date());
-                return saleLocalDay === today && !s.cajaCerrada && s.tipo !== 'APERTURA_CAJA';
-            });
+            // El resumen contiene toda la caja abierta, incluso movimientos
+            // anteriores a medianoche. El cierre es manual, nunca por fecha.
+            const allTodayForReport = sales.filter(s => (
+                isManualCloseRecord(s)
+                && s.tipo !== 'APERTURA_CAJA'
+            ));
             const salesForPDF = todayCashFlow.filter(s => s.tipo !== 'APERTURA_CAJA');
 
             const todayAdvances = extractAdvancesFromSales(todayCashFlow);
@@ -320,8 +332,6 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         const currentCierreId = new Date().getTime();
         const existingCloses = sales.filter(s => s.tipo === 'REGISTRO_CIERRE');
         const cierreNumber = existingCloses.reduce((mx, s) => Math.max(mx, s.cierreNumber || 0), 0) + 1;
-        const validTiposParaCerrar = ['VENTA', 'VENTA_FIADA', 'VENTA_CASHEA', 'COBRO_DEUDA', 'COBRO_CASHEA', 'PAGO_PROVEEDOR', 'GASTO_INTERNO', 'APERTURA_CAJA', 'AVANCE_EFECTIVO', 'APORTE_CAJA'];
-        
         // Registrar el cierre formalmente en el log de transacciones para sincronización con el supervisor
         let registroCierre = null;
         if (summaryObj) {
@@ -362,7 +372,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         }
 
         const updatedSales = sales.map(s => {
-            if (!s.cajaCerrada && validTiposParaCerrar.includes(s.tipo || 'VENTA')) {
+            if (isManualCloseRecord(s)) {
                 return { ...s, cajaCerrada: true, cierreId: currentCierreId };
             }
             return s;

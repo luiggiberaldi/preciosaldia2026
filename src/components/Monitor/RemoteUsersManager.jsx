@@ -4,6 +4,8 @@ import { storageService } from '../../utils/storageService';
 import { showToast } from '../Toast';
 import { SUPERVISOR_REMOTE_MUTATIONS_ENABLED } from '../../config/supervisorPolicy';
 import { sendSupervisorCommand } from '../../services/supervisorCommandService';
+import { hashPin } from '../../utils/crypto';
+import { validatePin } from '../../utils/securityConstants';
 import SupervisorSelect from './SupervisorSelect';
 
 export default function RemoteUsersManager({ targetDeviceId }) {
@@ -73,15 +75,31 @@ export default function RemoteUsersManager({ targetDeviceId }) {
                 return false;
             }
 
+            const pinInput = payload.newPin ?? payload.pin;
+            const pinError = ['add', 'change_pin'].includes(payload.action)
+                ? validatePin(String(pinInput ?? ''))
+                : null;
+            if (pinError) {
+                showToast(pinError, 'error');
+                return false;
+            }
+            const pinHash = pinInput == null ? undefined : await hashPin(String(pinInput));
+            const commandPayload = {
+                action: payload.action,
+                nombre: payload.nombre,
+                rol: payload.rol,
+                userId: payload.userId,
+                bypassPin: payload.bypassPin,
+                pinHash,
+                patch: payload.action === 'edit'
+                    ? { nombre: payload.nombre, rol: payload.rol, bypassPin: payload.bypassPin }
+                    : undefined,
+            };
+
             const result = await sendSupervisorCommand({
                 type,
                 targetDeviceId,
-                payload: {
-                    ...payload,
-                    patch: payload.action === 'edit'
-                        ? { nombre: payload.nombre, rol: payload.rol, bypassPin: payload.bypassPin }
-                        : undefined,
-                },
+                payload: commandPayload,
             });
             if (!result.ok) {
                 showToast(result.error, result.status === 'disabled' ? 'warning' : 'error');

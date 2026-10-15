@@ -1,11 +1,11 @@
-import React, { useState, useMemo, useRef } from 'react';
-import { Download, CheckCircle2, X } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Download, CheckCircle2, Link2 } from 'lucide-react';
 import { useAuthStore } from '../../hooks/store/useAuthStore';
 import UserCard from './UserCard';
 import LoginPinModal from './LoginPinModal';
 import EmergencyPinResetModal from './EmergencyPinResetModal';
 
-export default function LockScreen({ onOpenPairing, installPrompt, onInstall, showIOSButton, onShowIOSInstall, onOpenRemotion }) {
+export default function LockScreen({ onOpenPairing, onOpenPairingIssuer = () => {}, adminLoginRequest = 0, installPrompt, onInstall, showIOSButton, onShowIOSInstall, onOpenRemotion }) {
   const { usuarios, login, loginDirect, requireCajeroPin, requireAdminPin, resetPinEmergency } = useAuthStore();
   const [selectedUser, setSelectedUser] = useState(null);
   const [showEmergencyModal, setShowEmergencyModal] = useState(false);
@@ -14,6 +14,12 @@ export default function LockScreen({ onOpenPairing, installPrompt, onInstall, sh
   const [showWelcome, setShowWelcome] = useState(() => {
     return localStorage.getItem('pda_welcome_dismissed') !== 'true';
   });
+
+  useEffect(() => {
+    if (!adminLoginRequest) return;
+    const admin = (usuarios || []).find(user => String(user?.rol || '').toUpperCase() === 'ADMIN');
+    if (admin) setSelectedUser(admin);
+  }, [adminLoginRequest, usuarios]);
 
   const handleLogoClick = () => {
     if (clickTimeoutRef.current) clearTimeout(clickTimeoutRef.current);
@@ -69,7 +75,7 @@ export default function LockScreen({ onOpenPairing, installPrompt, onInstall, sh
   };
 
   return (
-    <div className="fixed inset-0 z-[250] bg-slate-50 text-slate-800 font-sans overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-[250] bg-slate-50 text-slate-800 font-sans overflow-y-auto overflow-x-hidden flex min-h-full flex-col">
       {/* Background glow */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-[30%] -left-[15%] w-[600px] h-[600px] bg-sky-500/10 rounded-full blur-[120px]" />
@@ -98,7 +104,7 @@ export default function LockScreen({ onOpenPairing, installPrompt, onInstall, sh
       {/* Version Tag - Top Left */}
       <div className="absolute top-4 left-4 z-30 flex items-center gap-2">
         <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-900/5 dark:bg-slate-100/10 border border-slate-900/10 dark:border-slate-100/10 rounded-xl backdrop-blur-md">
-          <span className="text-[11px] font-black text-slate-500 dark:text-slate-400 tracking-wider">v2.0.0</span>
+          <span className="text-[11px] font-black text-slate-500 dark:text-slate-400 tracking-wider">v1.7.1</span>
         </div>
       </div>
 
@@ -133,7 +139,7 @@ export default function LockScreen({ onOpenPairing, installPrompt, onInstall, sh
       </div>
 
       {/* Footer */}
-      <div className="relative z-10 pb-6 text-center flex flex-col items-center gap-3">
+      <div className="relative z-10 shrink-0 pb-8 text-center flex flex-col items-center gap-3">
         <p className="text-[10px] text-slate-400 font-medium tracking-wider">
           {(usuarios || []).every(u => u?.requirePin === false)
             ? 'Acceso directo activado para todos los usuarios'
@@ -154,6 +160,17 @@ export default function LockScreen({ onOpenPairing, installPrompt, onInstall, sh
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
           Entrar en Modo Supervisor
         </button>
+
+        <div className="mt-2 flex flex-col items-center gap-2">
+          <span className="text-[10px] text-slate-400">¿Necesitas conectar otro dispositivo?</span>
+          <button
+            onClick={onOpenPairingIssuer}
+            className="min-h-11 px-5 py-2.5 bg-white/80 hover:bg-emerald-50 active:scale-95 text-emerald-700 hover:text-emerald-800 border border-emerald-200/80 rounded-2xl text-[10px] font-extrabold uppercase tracking-wider transition-all shadow-sm flex items-center gap-2 cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+          >
+            <Link2 size={14} strokeWidth={2.5} />
+            Vincular supervisor
+          </button>
+        </div>
       </div>
 
       {/* PIN Modal */}

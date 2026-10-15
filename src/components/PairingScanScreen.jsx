@@ -263,7 +263,14 @@ export default function PairingScanScreen({ onCancel, triggerHaptic }) {
             }
         } catch (err) {
             console.error('[PairingScanScreen] Error al vincular:', err);
-            setErrorMsg(err.message || 'Error de conexión con el servidor.');
+            const errorMessage = String(err?.message || '');
+            const isMonitorConflict = err?.code === '23505'
+                || /device_pairings_monitor_device_id_key/i.test(errorMessage);
+            setErrorMsg(
+                isMonitorConflict
+                    ? 'Este celular ya tenía un vínculo anterior. Vuelve a intentarlo para reemplazarlo.'
+                    : errorMessage || 'Error de conexión con el servidor.'
+            );
             startScanning(); // Volver a habilitar cámara
         } finally {
             setLoading(false);

@@ -1,12 +1,14 @@
 import { supabaseCloud } from '../config/supabaseCloud';
 import {
     SUPERVISOR_REMOTE_MUTATIONS_ENABLED,
+    SUPERVISOR_REMOTE_PRODUCTS_ENABLED,
     SUPERVISOR_REMOTE_INCOME_ENABLED,
     SUPERVISOR_REMOTE_RATE_ENABLED,
     SUPERVISOR_REMOTE_EGRESS_ENABLED,
 } from '../config/supervisorPolicy';
 import { ensureSupervisorSession } from './supervisorAuth';
-import { validateSupervisorCommand } from './supervisorContracts';
+import { readPairingRow } from './supervisorPairingState';
+import { SUPERVISOR_COMMAND_TYPES, validateSupervisorCommand } from './supervisorContracts';
 
 export const SUPERVISOR_COMMAND_TTL_MS = 60_000;
 export const SUPERVISOR_ACK_TIMEOUT_MS = 10_000;
@@ -27,6 +29,20 @@ export function fetchPendingSupervisorCommands(client, targetDeviceId) {
 // interactiva ni convierte la notificación en un timeout visible.
 export function shouldAwaitSupervisorAck(type) {
     return type !== 'supervisor.rate.set';
+}
+
+export function isSupervisorCommandEnabled(type, payload = {}) {
+    if (!SUPERVISOR_COMMAND_TYPES.includes(type)) return false;
+    const isProductChange = type === 'supervisor.product.create' || type === 'supervisor.product.update';
+    const isIncomeBatch = type === 'supervisor.inventory.batch.adjust' && payload?.direction === 'ingreso';
+    const isEgressBatch = type === 'supervisor.inventory.batch.adjust' && payload?.direction === 'egreso';
+    const isRateChange = type === 'supervisor.rate.set';
+
+    return SUPERVISOR_REMOTE_MUTATIONS_ENABLED
+        || (isProductChange && SUPERVISOR_REMOTE_PRODUCTS_ENABLED)
+        || (isIncomeBatch && SUPERVISOR_REMOTE_INCOME_ENABLED)
+        || (isEgressBatch && SUPERVISOR_REMOTE_EGRESS_ENABLED)
+        || (isRateChange && SUPERVISOR_REMOTE_RATE_ENABLED);
 }
 
 function generateCommandId() {
@@ -117,22 +133,8 @@ async function waitForCommandAck(commandId, timeoutMs = SUPERVISOR_ACK_TIMEOUT_M
 }
 
 export async function sendSupervisorCommand({ type, targetDeviceId, payload }) {
-    const isIncomeBatch = type === 'supervisor.inventory.batch.adjust' && payload?.direction === 'ingreso';
-    const isEgressBatch = type === 'supervisor.inventory.batch.adjust' && payload?.direction === 'egreso';
-    const isRateChange = type === 'supervisor.rate.set';
-    if (!SUPERVISOR_REMOTE_MUTATIONS_ENABLED
-        && !(isIncomeBatch && SUPERVISOR_REMOTE_INCOME_ENABLED)
-        && !(isEgressBatch && SUPERVISOR_REMOTE_EGRESS_ENABLED)
-        && !(isRateChange && SUPERVISOR_REMOTE_RATE_ENABLED)) {
+    if (!isSupervisorCommandEnabled(type, payload)) {
         return { ok: false, status: 'disabled', error: 'Las mutaciones remotas están temporalmente deshabilitadas por seguridad' };
-    }
-    if (type?.startsWith('supervisor.user.')) {
-        return { ok: false, status: 'disabled', error: 'La gestión remota de usuarios requiere un flujo de credencial segura' };
-    }
-    if (type === 'supervisor.inventory.batch.adjust'
-        && payload?.direction === 'egreso'
-        && !SUPERVISOR_REMOTE_EGRESS_ENABLED) {
-        return { ok: false, status: 'disabled', error: 'Los egresos remotos permanecen bloqueados hasta completar M4' };
     }
     if (!supabaseCloud || !targetDeviceId) {
         return { ok: false, status: 'invalid', error: 'No hay caja objetivo' };
@@ -143,25 +145,30 @@ export async function sendSupervisorCommand({ type, targetDeviceId, payload }) {
         return { ok: false, status: 'unauthenticated', error: sessionError?.message || 'No hay sesión segura' };
     }
 
-    const { data: pairing, error: pairingError } = await supabaseCloud
-        .from('device_pairings')
-        .select('monitor_device_id, monitor_auth_id')
-        .eq('primary_device_id', targetDeviceId)
-        .maybeSingle();
+    const { data: pairing, error: pairingError } = await readPairingRow({
+        supabase: supabaseCloud,
+        primaryDeviceId: targetDeviceId,
+    });
 
-    if (pairingError || !pairing?.monitor_device_id || !pairing?.monitor_auth_id) {
+    const actorId = session.user?.id;
+    const authorizedMonitor = [
+        { deviceId: pairing?.monitor_device_id, authId: pairing?.monitor_auth_id },
+        { deviceId: pairing?.monitor_device_id_2, authId: pairing?.monitor_auth_id_2 },
+    ].find((monitor) => monitor.deviceId && monitor.authId && monitor.authId === actorId);
+
+    if (pairingError || !authorizedMonitor) {
         return { ok: false, status: 'unauthorized', error: 'El monitor no tiene un vínculo autorizado' };
     }
 
     const command = buildSupervisorCommand({
         type,
         targetDeviceId,
-        monitorDeviceId: pairing.monitor_device_id,
+        monitorDeviceId: authorizedMonitor.deviceId,
         payload,
     });
     const validation = validateSupervisorCommand(command, {
         targetDeviceId,
-        monitorDeviceId: pairing.monitor_device_id,
+        monitorDeviceId: authorizedMonitor.deviceId,
     });
     if (!validation.valid) {
         return { ok: false, status: 'invalid', error: validation.error };
@@ -199,4 +206,5 @@ export default {
     buildSupervisorCommand,
     sendSupervisorCommand,
     shouldAwaitSupervisorAck,
+    isSupervisorCommandEnabled,
 };

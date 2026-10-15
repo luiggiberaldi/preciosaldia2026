@@ -28,6 +28,23 @@ async function getSessionUserId() {
     }
 }
 
+function isRegistrationRpcUnavailable(error) {
+    const code = error?.code;
+    const message = String(error?.message || '');
+    return code === 'PGRST202'
+        || code === '42883'
+        || /register_device_session|function .* does not exist/i.test(message);
+}
+
+function rpcFailureToIdentityError(data) {
+    const message = data?.message || 'No se pudo registrar la sesión del dispositivo';
+    return {
+        code: data?.code
+            || (message.toLowerCase().includes('vinculada') ? 'DEVICE_SESSION_CONFLICT' : 'DEVICE_SESSION_REGISTRATION_FAILED'),
+        message,
+    };
+}
+
 /**
  * Registra (o reconcilia) la identidad del dispositivo. Idempotente.
  * Debe llamarse con la sesión ya establecida (ensureSupervisorSession).
@@ -43,6 +60,33 @@ export async function ensureDeviceSessionRegistered(deviceId) {
     const userId = await getSessionUserId();
     if (!userId) {
         return { ok: false, registered: false, reclaimed: false, error: 'sin sesión activa' };
+    }
+
+    // Staging revoca INSERT directo sobre device_sessions. La RPC mantiene
+    // la misma validación de auth.uid() en el servidor sin abrir esa tabla.
+    if (typeof supabaseCloud.rpc === 'function') {
+        const { data: rpcData, error: rpcError } = await supabaseCloud.rpc('register_device_session', {
+            p_device_id: deviceId,
+        });
+
+        if (!rpcError) {
+            if (rpcData?.success === false) {
+                return {
+                    ok: false,
+                    registered: false,
+                    reclaimed: false,
+                    error: rpcFailureToIdentityError(rpcData),
+                };
+            }
+
+            return { ok: true, registered: true, reclaimed: false, error: null };
+        }
+
+        // Older production schemas do not have the RPC yet. Preserve their
+        // existing direct-table path until the migration is applied.
+        if (!isRegistrationRpcUnavailable(rpcError)) {
+            return { ok: false, registered: false, reclaimed: false, error: rpcError };
+        }
     }
 
     // 1. INSERT (caso normal: primera vez en esta máquina).

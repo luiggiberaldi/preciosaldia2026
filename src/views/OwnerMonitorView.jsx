@@ -5,10 +5,10 @@ import { storageService } from '../utils/storageService';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { showToast } from '../components/Toast';
 import { 
-    TrendingUp, Package, Coins, Users, LogOut, Download,
+    TrendingUp, Package, Coins, Users, LogOut,
     RefreshCw, Wifi, WifiOff, Clock, FileText, DollarSign,
-    Wallet, CreditCard, Smartphone, Banknote, ArrowDownRight,
-    ShieldCheck, Hash, AlertTriangle, Search, X, ChevronLeft, ChevronRight,
+    Wallet, CreditCard, Smartphone, Banknote, ArrowDownRight, ArrowDownToLine, ArrowUpFromLine,
+    ShieldCheck, Hash, AlertTriangle, ChevronLeft, ChevronRight,
     Plus, Pencil, Trash2
 } from 'lucide-react';
 import { formatBs, formatCop } from '../utils/calculatorUtils';
@@ -16,30 +16,27 @@ import { getLocalISODate, getDateRange } from '../utils/dateHelpers';
 import { toTitleCase } from '../config/paymentMethods';
 import SupervisorRateModal from '../components/Monitor/SupervisorRateModal';
 import RemoteProductFormModal from '../components/Monitor/RemoteProductFormModal';
-import SupervisorInventoryBatchModal from '../components/Monitor/SupervisorInventoryBatchModal';
-import RemoteUsersManager from '../components/Monitor/RemoteUsersManager';
-import SupervisorSelect from '../components/Monitor/SupervisorSelect';
+import SupervisorInventoryBatchPanel from '../components/Monitor/SupervisorInventoryBatchPanel';
+import SupervisorInventoryToolbar from '../components/Monitor/SupervisorInventoryToolbar';
 import {
     SUPERVISOR_REMOTE_MUTATIONS_ENABLED,
+    SUPERVISOR_REMOTE_PRODUCTS_ENABLED,
     SUPERVISOR_REMOTE_INCOME_ENABLED,
 } from '../config/supervisorPolicy';
-import { calculateInventoryMetrics, calculateSalesProfit } from '../services/supervisorMetrics';
-import { buildSupervisorRegisterCloses, calculateSupervisorPaymentBreakdown } from '../services/supervisorFinancials';
+import { calculateInventoryMetrics, calculateInventoryMovementMetrics, calculateSalesProfit } from '../services/supervisorMetrics';
+import {
+    buildSupervisorRegisterCloses,
+    calculateSupervisorPaymentBreakdown,
+    isSupervisorTurnIncomeMovement,
+} from '../services/supervisorFinancials';
 import { ensureSupervisorSession } from '../services/supervisorAuth';
 import { MONITOR_CLEANUP_PENDING_KEY, isPairingRevocationConfirmed, revokeAndClearMonitor } from '../services/monitorUnpair';
 import { SUPERVISOR_SYNC_STATES } from '../services/supervisorSyncService';
 import { sendSupervisorCommand } from '../services/supervisorCommandService';
 import { matchesSearch as matchesSearchFields } from '../utils/searchMatch';
-import {
-    calculateSupervisorCashSummary,
-    buildSupervisorExpenseReport,
-    buildSupervisorInventoryMovements,
-    filterSupervisorInventoryMovements,
-    buildSupervisorProductReport,
-    buildSupervisorCloseCashSummary,
-    filterSupervisorRecords,
-    shouldShowSupervisorCop,
-} from '../services/supervisorReportData';
+import { shouldShowSupervisorCop } from '../services/supervisorReportData';
+import { useSupervisorControl } from '../hooks/useSupervisorControl';
+import SupervisorControlPanel from '../components/Monitor/SupervisorControlPanel';
 
 // Helper: icon por método de pago
 const PAYMENT_METHOD_ICONS = {
@@ -59,7 +56,7 @@ function getMethodIcon(methodId) {
 
 export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, rates }) {
     const pairedDeviceId = localStorage.getItem('pda_paired_device_id');
-    const { products, effectiveRate: bcvRate, copEnabled, tasaCop } = useProductContext();
+    const { products, effectiveRate: bcvRate, copEnabled } = useProductContext();
     const {
         isConnected,
         lastSync,
@@ -79,24 +76,29 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
     const [disconnectError, setDisconnectError] = useState('');
     const [disconnectServerRevoked, setDisconnectServerRevoked] = useState(false);
     const disconnectingRef = useRef(false);
-    const [viewTab, setViewTab] = useState('activo'); // 'activo' o 'cierres'
+    const [viewTab, setViewTab] = useState('activo'); // 'activo', 'cierres', 'inventario' o 'control'
+    const supervisorControl = useSupervisorControl({
+        targetDeviceId: pairedDeviceId,
+        enabled: viewTab === 'control' && Boolean(pairedDeviceId),
+    });
     const [selectedCierreId, setSelectedCierreId] = useState(null);
     const [searchTermInventario, setSearchTermInventario] = useState('');
-    const [filterStockInventario, setFilterStockInventario] = useState('todos'); // 'todos', 'bajo', 'agotado'
+    const [filterStockInventario, setFilterStockInventario] = useState('todos'); // 'todos', 'bajo', 'agotado', 'movidos'
     const [showRateModal, setShowRateModal] = useState(false);
     const [showProductFormModal, setShowProductFormModal] = useState(false);
     const [productToEditRemote, setProductToEditRemote] = useState(null);
     const [inventoryBatchProduct, setInventoryBatchProduct] = useState(null);
+    const [inventoryBatchMode, setInventoryBatchMode] = useState(null);
     const [cierresDateRange, setCierresDateRange] = useState('all'); // 'all', 'today', 'yesterday', 'week', 'month'
-    const [shiftActionConfirmModal, setShiftActionConfirmModal] = useState(null); // 'close' | 'reopen' | null
+    const [shiftActionConfirmModal, setShiftActionConfirmModal] = useState(null); // 'close' | null
     const [sendingShiftAction, setSendingShiftAction] = useState(false);
-    const [reportsDateRange, setReportsDateRange] = useState('all');
-    const [reportsFrom, setReportsFrom] = useState(getLocalISODate());
-    const [reportsTo, setReportsTo] = useState(getLocalISODate());
-    const [reportsCierreId, setReportsCierreId] = useState('all');
-    const [reportsProductId, setReportsProductId] = useState('all');
-    const [inventoryMovementFilter, setInventoryMovementFilter] = useState('todos');
-    const [inventoryMovementSearch, setInventoryMovementSearch] = useState('');
+
+    const movedProductIds = useMemo(() => new Set(
+        sales
+            .filter(record => record?.tipo === 'AJUSTE_ENTRADA' || record?.tipo === 'AJUSTE_SALIDA' || record?.direction === 'ingreso' || record?.direction === 'egreso')
+            .map(record => String(record.productId || record.product_id || record.items?.[0]?.id || ''))
+            .filter(Boolean)
+    ), [sales]);
 
     const filteredProducts = useMemo(() => {
         if (!products) return [];
@@ -111,9 +113,12 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
             if (filterStockInventario === 'agotado') {
                 return p.stock <= 0;
             }
+            if (filterStockInventario === 'movidos') {
+                return movedProductIds.has(String(p.id));
+            }
             return true;
         });
-    }, [products, searchTermInventario, filterStockInventario]);
+    }, [products, searchTermInventario, filterStockInventario, movedProductIds]);
 
     const [currentPageInventario, setCurrentPageInventario] = useState(1);
     const ITEMS_PER_PAGE_INVENTARIO = 15;
@@ -130,48 +135,8 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
     }, [filteredProducts, currentPageInventario]);
 
     const inventoryMetrics = useMemo(() => calculateInventoryMetrics(products), [products]);
+    const inventoryMovementMetrics = useMemo(() => calculateInventoryMovementMetrics(sales), [sales]);
     const shouldShowCop = shouldShowSupervisorCop(copEnabled);
-    const allProductSales = useMemo(() => buildSupervisorProductReport(sales), [sales]);
-    const reportProductOptions = useMemo(() => {
-        const byId = new Map();
-        for (const product of products || []) {
-            if (product?.id == null) continue;
-            byId.set(String(product.id), product.name || 'Producto sin nombre');
-        }
-        for (const sale of allProductSales) {
-            if (!byId.has(String(sale.productId))) byId.set(String(sale.productId), sale.productName);
-        }
-        return [
-            { value: 'all', label: 'Todos los productos' },
-            ...[...byId.entries()]
-                .sort((left, right) => left[1].localeCompare(right[1], 'es'))
-                .map(([value, label]) => ({ value, label })),
-        ];
-    }, [products, allProductSales]);
-    const reportRecords = useMemo(() => filterSupervisorRecords(sales, {
-        range: reportsDateRange,
-        from: reportsFrom,
-        to: reportsTo,
-        cierreId: reportsCierreId,
-    }), [sales, reportsDateRange, reportsFrom, reportsTo, reportsCierreId]);
-    const supervisorReportData = useMemo(() => ({
-        cash: calculateSupervisorCashSummary(reportRecords, bcvRate),
-        inventoryMovements: buildSupervisorInventoryMovements(reportRecords),
-        productsSold: buildSupervisorProductReport(reportRecords),
-        expenses: buildSupervisorExpenseReport(reportRecords),
-    }), [reportRecords, bcvRate]);
-    const visibleProductSales = useMemo(() => (
-        reportsProductId === 'all'
-            ? supervisorReportData.productsSold
-            : supervisorReportData.productsSold.filter(product => String(product.productId) === String(reportsProductId))
-    ), [reportsProductId, supervisorReportData.productsSold]);
-    const selectedProductName = reportProductOptions.find(option => option.value === reportsProductId)?.label || 'Producto seleccionado';
-    const visibleInventoryMovements = useMemo(() => filterSupervisorInventoryMovements(
-        supervisorReportData.inventoryMovements,
-        { direction: inventoryMovementFilter, search: inventoryMovementSearch }
-    ), [supervisorReportData.inventoryMovements, inventoryMovementFilter, inventoryMovementSearch]);
-
-    const today = getLocalISODate();
 
     // 1. Cargar datos locales (que son actualizados por useMonitorSync)
     const loadLocalData = async () => {
@@ -253,6 +218,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
     const activeShiftPaymentBreakdown = useMemo(() => {
         const activeFlow = sales.filter(sale => {
             if (sale.status === 'ANULADA' || sale.cajaCerrada) return false;
+            if (!isSupervisorTurnIncomeMovement(sale)) return false;
             return !activeShiftApertura || new Date(sale.timestamp) >= new Date(activeShiftApertura.timestamp);
         });
         return calculateSupervisorPaymentBreakdown(activeFlow, bcvRate);
@@ -272,11 +238,6 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
         () => buildSupervisorRegisterCloses(sales, products, bcvRate),
         [sales, products, bcvRate]
     );
-
-    const selectedReportClose = useMemo(() => {
-        if (reportsCierreId === 'all') return null;
-        return registerCloses.find(close => String(close.cierreId) === String(reportsCierreId)) || null;
-    }, [registerCloses, reportsCierreId]);
 
     // Filtro de cierres por rango de fechas
     const filteredRegisterCloses = useMemo(() => {
@@ -300,8 +261,8 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
         }
     }, [filteredRegisterCloses, selectedCierreId]);
 
-    // Emite Broadcast para cierre o reapertura remota de turno
-    const handleSendShiftActionRemote = async (action) => {
+    // Envía únicamente el cierre remoto; la reapertura se hace manualmente en la caja.
+    const handleSendShiftActionRemote = async () => {
         if (!remoteActionsAvailable) {
             showToast('La caja está desconectada; no se puede enviar la orden', 'warning');
             return;
@@ -315,21 +276,16 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
             showToast('Dispositivo no vinculado a la nube', 'error');
             return;
         }
-        const shiftId = action === 'close'
-            ? (activeShiftApertura?.shiftId || activeShiftApertura?.id)
-            : selectedCierreId;
+        const shiftId = activeShiftApertura?.shiftId || activeShiftApertura?.id;
         if (shiftId == null || String(shiftId).length === 0) {
-            showToast(
-                action === 'close' ? 'No hay un turno activo para cerrar' : 'Selecciona un cierre para reabrir',
-                'error'
-            );
+            showToast('No hay un turno activo para cerrar', 'error');
             return;
         }
-        const cierreId = action === 'close' ? String(Date.now()) : String(selectedCierreId);
+        const cierreId = String(Date.now());
         setSendingShiftAction(true);
         try {
             const result = await sendSupervisorCommand({
-                type: action === 'close' ? 'supervisor.shift.close' : 'supervisor.shift.reopen',
+                type: 'supervisor.shift.close',
                 targetDeviceId: pairedDeviceId,
                 payload: {
                     shiftId: String(shiftId),
@@ -345,12 +301,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                 showToast(ack?.error || 'La caja no confirmó la acción de turno', 'error');
                 return;
             }
-            showToast(
-                action === 'close'
-                    ? '🔒 Cierre confirmado en la caja'
-                    : '🔓 Reapertura confirmada en la caja',
-                'success'
-            );
+            showToast('🔒 Cierre confirmado en la caja', 'success');
             setShiftActionConfirmModal(null);
         } catch (e) {
             console.error('[OwnerMonitorView] Error al enviar supervisor_shift_action:', e);
@@ -360,42 +311,6 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
         }
     };
 
-
-    const reportRangeLabels = {
-        all: 'Todos los movimientos',
-        today: 'Hoy',
-        yesterday: 'Ayer',
-        week: 'Esta semana',
-        month: 'Este mes',
-        lastMonth: 'Mes anterior',
-        custom: 'Personalizado',
-    };
-
-    const handleDownloadSupervisorReport = async (reportType) => {
-        try {
-            const { generateSupervisorReportPDF } = await import('../utils/supervisorReportGenerator');
-            const closeCash = reportType === 'close' && selectedReportClose
-                ? buildSupervisorCloseCashSummary(selectedReportClose, supervisorReportData.cash)
-                : supervisorReportData.cash;
-
-            await generateSupervisorReportPDF({
-                reportType,
-                rangeLabel: reportRangeLabels[reportsDateRange] || reportsDateRange,
-                cierreId: reportsCierreId,
-                records: reportRecords,
-                cash: closeCash,
-                productsSold: visibleProductSales,
-                expenses: supervisorReportData.expenses,
-                inventoryMovements: supervisorReportData.inventoryMovements,
-                copEnabled: shouldShowCop,
-                businessName: localStorage.getItem('business_name') || 'Mi Negocio',
-            });
-            showToast('PDF del Supervisor descargado', 'success');
-        } catch (error) {
-            console.error('[OwnerMonitorView] Error generando PDF de Supervisor:', error);
-            showToast('No se pudo generar el PDF', 'error');
-        }
-    };
 
     // ── COMPONENTES GENERALES ──
 
@@ -413,6 +328,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
         setDisconnecting(true);
         setDisconnectError('');
         const resumeCleanup = localStorage.getItem(MONITOR_CLEANUP_PENDING_KEY) === 'true';
+        const monitorDeviceId = localStorage.getItem('pda_device_id');
         setDisconnectServerRevoked(resumeCleanup);
         triggerHaptic?.();
 
@@ -422,9 +338,25 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
             await revokeAndClearMonitor({
                 deviceId: pairedDeviceId || localStorage.getItem('pda_paired_device_id'),
                 ensureSession: ensureSupervisorSession,
-                revokePairing: (deviceId) => {
-                    if (!supabaseCloud) return Promise.resolve({ error: new Error('Sin conexión a la nube') });
-                    return supabaseCloud.rpc('unpair_monitor', { p_device_id: deviceId });
+                revokePairing: async (primaryDeviceId) => {
+                    if (!supabaseCloud) return { error: new Error('Sin conexión a la nube') };
+
+                    // Producción puede tener la RPC legacy, que identifica el vínculo
+                    // por la caja, o la nueva, que también acepta el device_id del
+                    // monitor. Probar ambos IDs no amplía permisos: la RPC sigue
+                    // validando auth.uid() y el vínculo activo en el servidor.
+                    const targets = [...new Set([monitorDeviceId, primaryDeviceId].filter(Boolean))];
+                    let lastResponse = { error: new Error('No se encontró un identificador de vínculo') };
+
+                    for (const target of targets) {
+                        const response = await supabaseCloud.rpc('unpair_monitor', {
+                            p_device_id: target,
+                        });
+                        if (!response.error) return response;
+                        lastResponse = response;
+                    }
+
+                    return lastResponse;
                 },
                 serverAlreadyRevoked: resumeCleanup,
                 onServerRevoked: () => setDisconnectServerRevoked(true),
@@ -435,6 +367,8 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
 
                     const { data, error } = await supabaseCloud
                         .from('device_pairings')
+                        // Mantener esta verificación compatible con instalaciones
+                        // que todavía no tienen las columnas del segundo monitor.
                         .select('monitor_auth_id, revoked_at')
                         .eq('primary_device_id', deviceId)
                         .maybeSingle();
@@ -477,6 +411,13 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
 
     // Determinar si la caja está actualmente inactiva (sin turno abierto)
     const isShiftActive = activeShiftApertura !== null || activeShiftSales.length > 0;
+    const connectionLabel = isConnected
+        ? (syncState === SUPERVISOR_SYNC_STATES.CONNECTED ? 'En Vivo' : 'Sincronizando')
+        : syncState === SUPERVISOR_SYNC_STATES.PULLING
+            ? 'Recuperando'
+            : syncState === SUPERVISOR_SYNC_STATES.DEGRADED
+                ? 'Conexión degradada'
+                : 'Desconectado';
 
     return (
         <div data-testid="supervisor-panel" className="min-h-screen w-full min-w-0 bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 font-sans pb-12 transition-colors duration-300 overflow-x-hidden">
@@ -511,12 +452,12 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                         {isConnected ? (
                             <>
                                 <Wifi size={12} className="shrink-0" />
-                                <span>{syncState === SUPERVISOR_SYNC_STATES.CONNECTED ? 'En Vivo' : 'Sincronizando'}</span>
+                                <span>{connectionLabel}</span>
                             </>
                         ) : (
                             <>
                                 <WifiOff size={12} className="shrink-0" />
-                                <span>Desconectado</span>
+                                <span>{connectionLabel}</span>
                             </>
                         )}
                     </div>
@@ -620,26 +561,24 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                         Inventario
                     </button>
                     <button
-                        onClick={() => { triggerHaptic?.(); setViewTab('reportes'); }}
+                        onClick={() => { triggerHaptic?.(); setViewTab('control'); }}
                         className={`shrink-0 min-h-11 flex-1 py-2 px-3 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap ${
-                            viewTab === 'reportes'
+                            viewTab === 'control'
                                 ? 'bg-white dark:bg-slate-800 text-slate-850 dark:text-white shadow-sm'
                                 : 'text-slate-400 hover:text-slate-650 dark:hover:text-slate-200'
                         }`}
                     >
-                        Reportes
-                    </button>
-                    <button
-                        onClick={() => { triggerHaptic?.(); setViewTab('cajeros'); }}
-                        className={`shrink-0 min-h-11 flex-1 py-2 px-3 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap ${
-                            viewTab === 'cajeros' 
-                                ? 'bg-white dark:bg-slate-800 text-slate-850 dark:text-white shadow-sm' 
-                                : 'text-slate-400 hover:text-slate-650 dark:hover:text-slate-200'
-                        }`}
-                    >
-                        Cajeros
+                        Control
                     </button>
                 </div>
+
+                {viewTab === 'control' && (
+                    <SupervisorControlPanel
+                        control={supervisorControl}
+                        isConnected={isConnected}
+                        onToast={showToast}
+                    />
+                )}
 
                 {/* ── SECCIÓN 1: TURNO ACTIVO ── */}
                 {viewTab === 'activo' && (
@@ -666,19 +605,11 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                     <Clock size={14} />
                                     <span>Cerrar Turno Remotamente</span>
                                 </button>
-                            ) : (
-                                <button
-                                    onClick={() => { triggerHaptic?.(); setShiftActionConfirmModal('reopen'); }}
-                                    className="w-full sm:w-auto min-h-11 px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:hover:bg-amber-950/50 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-sm"
-                                >
-                                    <RefreshCw size={14} />
-                                    <span>Reabrir Último Turno Remotamente</span>
-                                </button>
-                            )}
+                            ) : null}
                         </div>
 
                         {/* Fila 1: Tarjetas de Métricas de Turno Activo */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-5">
                             {/* Ventas Turno USD */}
                             <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-3xl border border-slate-200/60 dark:border-slate-800/80 shadow-sm flex flex-col justify-between min-h-[105px] sm:min-h-[125px]">
                                 <div className="flex items-center justify-between w-full">
@@ -814,68 +745,70 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                         {activeShiftPaymentBreakdown.length === 0 ? (
                                             <div className="py-8 text-center text-slate-400 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
                                                 <Wallet size={28} className="mx-auto text-slate-300 mb-2" />
-                                                <p className="text-xs font-black">Sin transacciones registradas</p>
-                                                <p className="text-[10px] text-slate-450 mt-1">El desglose por método de pago aparecerá aquí.</p>
+                                                <p className="text-xs font-black">Sin ventas cobradas en este turno</p>
+                                                <p className="text-[10px] text-slate-450 mt-1">Los gastos, avances y ajustes no se cuentan como ingresos.</p>
                                             </div>
                                         ) : (
                                             <div className="space-y-2.5">
                                                 {activeShiftPaymentBreakdown
                                                     .filter(([methodId]) => copEnabled || !methodId.toLowerCase().includes('cop'))
                                                     .map(([methodId, data]) => {
-                                                    const IconComp = getMethodIcon(methodId);
-                                                    const pct = activeShiftMetrics.totalUsd > 0 
-                                                        ? Math.round((data.totalUsd / activeShiftMetrics.totalUsd) * 100) 
-                                                        : 0;
+                                                        const IconComp = getMethodIcon(methodId);
+                                                        const pct = activeShiftMetrics.totalUsd > 0
+                                                            ? Math.round((data.totalUsd / activeShiftMetrics.totalUsd) * 100)
+                                                            : 0;
 
-                                                    return (
-                                                        <div key={methodId} className="flex items-center gap-3 p-3.5 bg-slate-50/70 dark:bg-slate-800/20 border border-slate-100 dark:border-slate-800/40 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-                                                            <div className="w-9 h-9 bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-400 shrink-0 shadow-sm">
-                                                                <IconComp size={16} />
-                                                            </div>
-                                                            <div className="flex-1 min-w-0">
-                                                                <div className="flex items-center justify-between gap-2">
-                                                                    <span className="text-xs font-black text-slate-700 dark:text-slate-200 truncate">{data.label}</span>
-                                                                    <span className="font-outfit text-xs font-black text-slate-800 dark:text-white tabular-nums shrink-0">${data.totalUsd.toFixed(2)}</span>
+                                                        return (
+                                                            <div key={methodId} className="flex items-center gap-3 p-3.5 bg-slate-50/70 dark:bg-slate-800/20 border border-slate-100 dark:border-slate-800/40 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                                                                <div className="w-9 h-9 bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-400 shrink-0 shadow-sm">
+                                                                    <IconComp size={16} />
                                                                 </div>
-                                                                <div className="flex items-center justify-between gap-2 mt-1">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className="text-[9px] font-bold text-slate-400">{data.count} {data.count === 1 ? 'transacción' : 'transacciones'}</span>
-                                                                        <span className="text-[9px] font-black text-violet-500 bg-violet-50 dark:bg-violet-950/20 dark:text-violet-400 px-1.5 py-0.5 rounded-md">{pct}%</span>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <div className="flex items-center justify-between gap-2">
+                                                                        <span className="text-xs font-black text-slate-700 dark:text-slate-200 truncate">{data.label}</span>
+                                                                        <span className="font-outfit text-xs font-black text-slate-800 dark:text-white tabular-nums shrink-0">${data.totalUsd.toFixed(2)}</span>
                                                                     </div>
-                                                                    <span className="font-outfit text-[10px] font-bold text-slate-400 tabular-nums">{formatBs(data.totalBs)} Bs</span>
-                                                                </div>
-                                                                <div className="mt-1.5 h-1 bg-slate-200/60 dark:bg-slate-800 rounded-full overflow-hidden">
-                                                                    <div 
-                                                                        className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full transition-all duration-500" 
-                                                                        style={{ width: `${Math.max(2, pct)}%` }} 
-                                                                    />
+                                                                    <div className="flex items-center justify-between gap-2 mt-1">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="text-[9px] font-bold text-slate-400">{data.count} {data.count === 1 ? 'transacción' : 'transacciones'}</span>
+                                                                            <span className="text-[9px] font-black text-violet-500 bg-violet-50 dark:bg-violet-950/20 dark:text-violet-400 px-1.5 py-0.5 rounded-md">{pct}%</span>
+                                                                        </div>
+                                                                        <span className="font-outfit text-[10px] font-bold text-slate-400 tabular-nums">{formatBs(data.totalBs)} Bs</span>
+                                                                    </div>
+                                                                    <div className="mt-1.5 h-1 bg-slate-200/60 dark:bg-slate-800 rounded-full overflow-hidden">
+                                                                        <div
+                                                                            className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full transition-all duration-500"
+                                                                            style={{ width: `${Math.max(2, pct)}%` }}
+                                                                        />
+                                                                    </div>
                                                                 </div>
                                                             </div>
-                                                        </div>
-                                                    );
-                                                })}
-
-                                                {/* Resumen total */}
-                                                <div className="mt-3 pt-3 border-t border-slate-200/60 dark:border-slate-800 flex items-center justify-between px-1">
-                                                    <div className="flex items-center gap-2">
-                                                        <Hash size={14} className="text-slate-400" />
-                                                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                                                            Total Acumulado ({activeShiftMetrics.count} {activeShiftMetrics.count === 1 ? 'venta' : 'ventas'})
-                                                        </span>
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <span className="font-outfit text-sm font-black text-slate-850 dark:text-white tabular-nums">${activeShiftMetrics.totalUsd.toFixed(2)}</span>
-                                                        <span className="font-outfit text-[10px] font-bold text-slate-400 ml-2">{formatBs(activeShiftMetrics.totalBs)} Bs</span>
-                                                    </div>
-                                                </div>
-
-                                                {/* Ticket promedio */}
-                                                <div className="flex items-center justify-between px-1 mt-1">
-                                                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Ticket Promedio</span>
-                                                    <span className="font-outfit text-xs font-black text-blue-650 dark:text-blue-400 tabular-nums">${activeShiftAvgTicket.toFixed(2)}</span>
-                                                </div>
+                                                        );
+                                                    })}
                                             </div>
                                         )}
+
+                                        {/* Resumen total: siempre representa ventas válidas del turno, no movimientos operativos. */}
+                                        <div className="mt-3 pt-3 border-t border-slate-200/60 dark:border-slate-800 flex items-center justify-between px-1">
+                                            <div className="flex items-center gap-2">
+                                                <Hash size={14} className="text-slate-400" />
+                                                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                                                    Total Acumulado ({activeShiftMetrics.count} {activeShiftMetrics.count === 1 ? 'venta' : 'ventas'})
+                                                </span>
+                                            </div>
+                                            <div className="text-right">
+                                                <span className="font-outfit text-sm font-black text-slate-850 dark:text-white tabular-nums">${activeShiftMetrics.totalUsd.toFixed(2)}</span>
+                                                <span className="font-outfit text-[10px] font-bold text-slate-400 ml-2">{formatBs(activeShiftMetrics.totalBs)} Bs</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Ticket promedio */}
+                                        <div className="flex items-center justify-between px-1 mt-1">
+                                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Ticket Promedio</span>
+                                            <span className="font-outfit text-xs font-black text-blue-650 dark:text-blue-400 tabular-nums">
+                                                {activeShiftSales.length > 0 ? `$${activeShiftAvgTicket.toFixed(2)}` : '—'}
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -1272,79 +1205,40 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                     </span>
                                 </div>
                             </div>
-                        </div>
 
-                        {/* Barra de Filtro y Búsqueda */}
-                        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between">
-                            {/* Input de Búsqueda */}
-                            <div className="relative flex-1">
-                                <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-450">
-                                    <Search size={14} />
-                                </span>
-                                <input
-                                    type="text"
-                                    placeholder="Buscar producto por nombre o código..."
-                                    value={searchTermInventario}
-                                    onChange={(e) => setSearchTermInventario(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 text-xs rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950 text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500/70 transition-colors"
-                                />
-                                {searchTermInventario && (
-                                    <button 
-                                        onClick={() => setSearchTermInventario('')}
-                                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-650"
-                                    >
-                                        <X size={14} />
-                                    </button>
-                                )}
-                            </div>
-
-                            {/* Botón Crear Producto Remoto */}
-                            <button
-                                onClick={() => {
-                                    triggerHaptic?.();
-                                    setProductToEditRemote(null);
-                                    setShowProductFormModal(true);
-                                }}
-                                className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-2xl shadow-md transition-all shrink-0 active:scale-95"
-                            >
-                                <Plus size={16} />
-                                <span>Nuevo Producto</span>
+                            {/* Movimientos de inventario */}
+                            <button type="button" onClick={() => setFilterStockInventario('movidos')} className="text-left bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-3xl border border-slate-200/60 dark:border-slate-800/80 shadow-sm transition hover:border-emerald-300 dark:hover:border-emerald-700 min-h-[90px] sm:min-h-[110px]">
+                                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-400">Movimientos registrados</span>
+                                <div className="mt-1 flex items-end justify-between">
+                                    <span className="font-outfit text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 tabular-nums leading-none">{inventoryMovementMetrics.total}</span>
+                                    <span className="text-[10px] font-bold text-slate-400">+{inventoryMovementMetrics.incomeUnits} / −{inventoryMovementMetrics.egressUnits} u</span>
+                                </div>
                             </button>
-
-                            {/* Filtro de Segmentación de Stock */}
-                            <div className="flex bg-slate-100 dark:bg-slate-950 p-1 rounded-2xl border border-slate-200/60 dark:border-slate-850 self-start md:self-auto shrink-0 shadow-inner">
-                                <button
-                                    onClick={() => { triggerHaptic?.(); setFilterStockInventario('todos'); }}
-                                    className={`px-3 py-1.5 text-[10px] sm:text-xs font-black rounded-xl transition-all ${
-                                        filterStockInventario === 'todos'
-                                            ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-white shadow-sm'
-                                            : 'text-slate-450 hover:text-slate-650 dark:hover:text-slate-350'
-                                    }`}
-                                >
-                                    Todos ({inventoryMetrics.count})
-                                </button>
-                                <button
-                                    onClick={() => { triggerHaptic?.(); setFilterStockInventario('bajo'); }}
-                                    className={`px-3 py-1.5 text-[10px] sm:text-xs font-black rounded-xl transition-all flex items-center gap-1 ${
-                                        filterStockInventario === 'bajo'
-                                            ? 'bg-amber-500 text-white shadow-sm'
-                                            : 'text-amber-600 dark:text-amber-400 hover:text-amber-700'
-                                    }`}
-                                >
-                                    Bajo Stock ({inventoryMetrics.lowStockCount})
-                                </button>
-                                <button
-                                    onClick={() => { triggerHaptic?.(); setFilterStockInventario('agotado'); }}
-                                    className={`px-3 py-1.5 text-[10px] sm:text-xs font-black rounded-xl transition-all flex items-center gap-1 ${
-                                        filterStockInventario === 'agotado'
-                                            ? 'bg-rose-500 text-white shadow-sm'
-                                            : 'text-rose-600 dark:text-rose-400 hover:text-rose-700'
-                                    }`}
-                                >
-                                    Agotados ({inventoryMetrics.outOfStockCount})
-                                </button>
-                            </div>
                         </div>
+
+                        <SupervisorInventoryToolbar
+                            searchTerm={searchTermInventario}
+                            onSearchChange={setSearchTermInventario}
+                            onOpenBatch={(mode) => {
+                                if (!remoteActionsAvailable) {
+                                    showToast?.('La caja está desconectada; no se puede enviar la orden', 'warning');
+                                    return;
+                                }
+                                setInventoryBatchProduct(null);
+                                setInventoryBatchMode(mode);
+                            }}
+                            onNewProduct={() => {
+                                triggerHaptic?.();
+                                setProductToEditRemote(null);
+                                setShowProductFormModal(true);
+                            }}
+                            filter={filterStockInventario}
+                            onFilterChange={setFilterStockInventario}
+                            counts={{ total: inventoryMetrics.count, low: inventoryMetrics.lowStockCount, out: inventoryMetrics.outOfStockCount, moved: movedProductIds.size }}
+                            canMutate={remoteActionsAvailable && SUPERVISOR_REMOTE_MUTATIONS_ENABLED}
+                            canCreateProduct={remoteActionsAvailable && SUPERVISOR_REMOTE_PRODUCTS_ENABLED}
+                            triggerHaptic={triggerHaptic}
+                        />
 
                         {/* Listado de Productos */}
                         <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm overflow-hidden">
@@ -1369,7 +1263,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                         const profitPct = p.priceUsd > 0 ? Math.round((profitUsd / p.priceUsd) * 100) : 0;
 
                                         return (
-                                            <div key={p.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/50 dark:hover:bg-slate-800/10 transition-colors">
+                                            <div key={p.id} data-testid={`supervisor-product-row-${p.id}`} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/50 dark:hover:bg-slate-800/10 transition-colors">
                                                 {/* Izquierda: Info de Producto */}
                                                 <div className="flex-1 min-w-0 pr-2">
                                                     <div className="flex items-center gap-2 flex-wrap">
@@ -1434,20 +1328,38 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                                     {/* Acciones Remotas */}
                                                     <div className="flex items-center gap-1">
                                                         {(SUPERVISOR_REMOTE_MUTATIONS_ENABLED || SUPERVISOR_REMOTE_INCOME_ENABLED) && (
-                                                            <button
-                                                                onClick={() => {
-                                                                    if (!remoteActionsAvailable) {
-                                                                        showToast?.('La caja está desconectada; no se puede enviar la orden', 'warning');
-                                                                        return;
-                                                                    }
-                                                                    triggerHaptic?.();
-                                                                    setInventoryBatchProduct(p);
-                                                                }}
-                                                                className="rounded-xl p-2 text-emerald-500 transition-colors hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
-                                                                title="Ajustar stock remotamente"
-                                                            >
-                                                                <Plus size={15} />
-                                                            </button>
+                                                            <>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        if (!remoteActionsAvailable) {
+                                                                            showToast?.('La caja está desconectada; no se puede enviar la orden', 'warning');
+                                                                            return;
+                                                                        }
+                                                                        triggerHaptic?.();
+                                                                        setInventoryBatchProduct(p);
+                                                                        setInventoryBatchMode('ingreso');
+                                                                    }}
+                                                                    className="rounded-xl p-2 text-emerald-500 transition-colors hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+                                                                    title="Registrar ingreso de este producto"
+                                                                >
+                                                                    <ArrowDownToLine size={15} />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        if (!remoteActionsAvailable) {
+                                                                            showToast?.('La caja está desconectada; no se puede enviar la orden', 'warning');
+                                                                            return;
+                                                                        }
+                                                                        triggerHaptic?.();
+                                                                        setInventoryBatchProduct(p);
+                                                                        setInventoryBatchMode('egreso');
+                                                                    }}
+                                                                    className="rounded-xl p-2 text-rose-500 transition-colors hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                                                    title="Registrar egreso de este producto"
+                                                                >
+                                                                    <ArrowUpFromLine size={15} />
+                                                                </button>
+                                                            </>
                                                         )}
                                                         <button
                                                             onClick={() => {
@@ -1459,7 +1371,8 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                                                 setProductToEditRemote(p);
                                                                 setShowProductFormModal(true);
                                                             }}
-                                                            className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-blue-600 rounded-xl transition-colors"
+                                                            disabled={!SUPERVISOR_REMOTE_PRODUCTS_ENABLED || !remoteActionsAvailable}
+                                                            className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-blue-600 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                                                             title="Editar Producto Remotamente"
                                                         >
                                                             <Pencil size={15} />
@@ -1547,288 +1460,36 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                 </button>
                             </div>
                         )}
-                    </div>
-                )}
 
-                {/* ── SECCIÓN 4: REPORTES DEL SUPERVISOR (SOLO LECTURA) ── */}
-                {viewTab === 'reportes' && (
-                    <div data-testid="supervisor-reports" className="space-y-5 sm:space-y-6 animate-fade-in min-w-0">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                            <div>
-                                <h2 className="text-base sm:text-lg font-black text-slate-800 dark:text-white">Reportes del Supervisor</h2>
-                                <p className="text-[10px] sm:text-xs text-slate-400 font-medium">Información sincronizada de la caja · Solo lectura</p>
-                            </div>
-                            <span className="self-start px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                                {supervisorReportData.cash.cashMovementCount} movimientos de caja
-                            </span>
-                        </div>
-
-                        <div data-testid="supervisor-report-filters" className="bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm space-y-3">
-                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                                <SupervisorSelect
-                                    label="Período"
-                                    ariaLabel="Filtrar reportes por período"
-                                    value={reportsDateRange}
-                                    onChange={setReportsDateRange}
-                                    testId="supervisor-report-period-select"
-                                    options={[
-                                        { value: 'all', label: 'Todos los movimientos' },
-                                        { value: 'today', label: 'Hoy' },
-                                        { value: 'yesterday', label: 'Ayer' },
-                                        { value: 'week', label: 'Esta semana' },
-                                        { value: 'month', label: 'Este mes' },
-                                        { value: 'lastMonth', label: 'Mes anterior' },
-                                        { value: 'custom', label: 'Fechas específicas' },
-                                    ]}
-                                />
-                                <SupervisorSelect
-                                    label="Cierre / turno"
-                                    ariaLabel="Filtrar reportes por cierre o turno"
-                                    value={reportsCierreId}
-                                    onChange={setReportsCierreId}
-                                    testId="supervisor-report-close-select"
-                                    options={[
-                                        { value: 'all', label: 'Todos los cierres' },
-                                        ...registerCloses.map(close => ({
-                                            value: String(close.cierreId),
-                                            label: `Cierre #${close.cierreNumber || String(close.cierreId).slice(-4)}`,
-                                        })),
-                                    ]}
-                                />
-                                <SupervisorSelect
-                                    label="Producto vendido"
-                                    ariaLabel="Elegir producto para consultar sus ventas"
-                                    value={reportsProductId}
-                                    onChange={setReportsProductId}
-                                    testId="supervisor-report-product-select"
-                                    options={reportProductOptions}
-                                />
-                            </div>
-                            {reportsDateRange === 'custom' && (
-                                <div className="grid grid-cols-1 gap-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-3 dark:border-blue-900/30 dark:bg-blue-950/20 sm:grid-cols-2">
-                                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                                        Desde
-                                        <input
-                                            type="date"
-                                            aria-label="Fecha inicial del reporte"
-                                            value={reportsFrom}
-                                            onChange={(event) => setReportsFrom(event.target.value)}
-                                            className="mt-1.5 min-h-11 w-full rounded-2xl border border-blue-100 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-blue-500 dark:border-blue-900/40 dark:bg-slate-900 dark:text-white"
-                                        />
-                                    </label>
-                                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                                        Hasta
-                                        <input
-                                            type="date"
-                                            aria-label="Fecha final del reporte"
-                                            value={reportsTo}
-                                            onChange={(event) => setReportsTo(event.target.value)}
-                                            className="mt-1.5 min-h-11 w-full rounded-2xl border border-blue-100 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-blue-500 dark:border-blue-900/40 dark:bg-slate-900 dark:text-white"
-                                        />
-                                    </label>
-                                </div>
-                            )}
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                <button onClick={() => handleDownloadSupervisorReport('close')} className="min-h-11 px-3 py-2 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-black flex items-center justify-center gap-2 transition-colors">
-                                    <Download size={14} /> PDF Cierre
-                                </button>
-                                <button onClick={() => handleDownloadSupervisorReport('products')} className="min-h-11 px-3 py-2 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black flex items-center justify-center gap-2 transition-colors">
-                                    <Download size={14} /> PDF Ventas
-                                </button>
-                                <button onClick={() => handleDownloadSupervisorReport('expenses')} className="min-h-11 px-3 py-2 rounded-2xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-black flex items-center justify-center gap-2 transition-colors">
-                                    <Download size={14} /> PDF Gastos
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                            <div className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm min-w-0">
-                                <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Efectivo esperado USD</span>
-                                <strong className="block mt-2 text-xl font-outfit font-black text-slate-800 dark:text-white tabular-nums break-words">
-                                    ${supervisorReportData.cash.expected.USD.toFixed(2)}
-                                </strong>
-                                <span className="text-[10px] text-slate-400 block mt-1">Apertura: ${supervisorReportData.cash.opening.USD.toFixed(2)}</span>
-                            </div>
-                            <div className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm min-w-0">
-                                <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Efectivo esperado Bs</span>
-                                <strong className="block mt-2 text-xl font-outfit font-black text-emerald-600 dark:text-emerald-400 tabular-nums break-words">
-                                    {formatBs(supervisorReportData.cash.expected.BS)} Bs
-                                </strong>
-                                <span className="text-[10px] text-slate-400 block mt-1">Apertura: {formatBs(supervisorReportData.cash.opening.BS)} Bs</span>
-                            </div>
-                            {shouldShowCop && (
-                                <div className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm min-w-0">
-                                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Efectivo esperado COP</span>
-                                    <strong className="block mt-2 text-xl font-outfit font-black text-amber-600 dark:text-amber-400 tabular-nums break-words">
-                                        {formatCop(supervisorReportData.cash.expected.COP)} COP
-                                    </strong>
-                                    <span className="text-[10px] text-slate-400 block mt-1">Sin duplicar cambios dejados</span>
-                                </div>
-                            )}
-                            <div className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm min-w-0">
-                                <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Cambios dejados</span>
-                                <div className="mt-2 space-y-1 text-xs font-outfit font-black tabular-nums">
-                                    <span className="block text-slate-800 dark:text-white">${supervisorReportData.cash.tipsLeft.USD.toFixed(2)}</span>
-                                    <span className="block text-emerald-600 dark:text-emerald-400">{formatBs(supervisorReportData.cash.tipsLeft.BS)} Bs</span>
-                                    {shouldShowCop && <span className="block text-amber-600 dark:text-amber-400">{formatCop(supervisorReportData.cash.tipsLeft.COP)} COP</span>}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 p-4 sm:p-5 shadow-sm min-w-0 overflow-hidden">
-                                <div className="flex items-center justify-between gap-3 mb-4">
+                        {inventoryMovementMetrics.recent.length > 0 && (
+                            <div className="rounded-3xl border border-slate-200/60 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
+                                <div className="mb-3 flex items-center justify-between gap-3">
                                     <div>
-                                        <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-white">Ventas por producto</h3>
-                                        <p className="mt-1 text-[10px] text-slate-400">Elige un producto arriba para consultar cuánto vendió.</p>
+                                        <h3 className="text-xs font-black uppercase tracking-wider text-slate-600 dark:text-slate-200">Últimos movimientos</h3>
+                                        <p className="mt-1 text-[10px] font-medium text-slate-400">Auditoría rápida de ingresos y egresos confirmados.</p>
                                     </div>
-                                    <span className="text-[10px] font-bold text-slate-400">{visibleProductSales.length} productos</span>
+                                    <button type="button" onClick={() => setFilterStockInventario('movidos')} className="text-[10px] font-black text-emerald-600 hover:text-emerald-700 dark:text-emerald-400">Ver productos movidos</button>
                                 </div>
-                                {visibleProductSales.length === 0 ? (
-                                    <p className="py-8 text-center text-xs text-slate-400">Sin ventas para el producto o período seleccionado.</p>
-                                ) : (
-                                    <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
-                                        {visibleProductSales.slice(0, 10).map(product => (
-                                            <div key={product.productId} className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800/60 min-w-0">
-                                                <div className="min-w-0">
-                                                    <p className="text-xs font-black text-slate-700 dark:text-slate-200 break-words">{product.productName}</p>
-                                                    <p className="text-[10px] text-slate-400 mt-0.5">{product.salesCount} ventas · ${product.revenueUsd.toFixed(2)} · {formatBs(product.revenueBs)} Bs</p>
+                                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                                    {inventoryMovementMetrics.recent.slice(0, 4).map((movement) => {
+                                        const isIncome = movement.tipo === 'AJUSTE_ENTRADA' || movement.direction === 'ingreso';
+                                        return (
+                                            <div key={movement.id || movement.movementId || movement.commandId} className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-950">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <span className={`text-[9px] font-black uppercase ${isIncome ? 'text-emerald-600' : 'text-rose-600'}`}>{isIncome ? 'Ingreso' : 'Egreso'}</span>
+                                                    <span className="text-[9px] text-slate-400">{movement.timestamp ? new Date(movement.timestamp).toLocaleDateString() : '—'}</span>
                                                 </div>
-                                                <span className="shrink-0 text-xs font-outfit font-black text-emerald-600 dark:text-emerald-400">{product.quantity} uds</span>
+                                                <p className="mt-1 truncate text-xs font-black text-slate-700 dark:text-slate-200">{movement.productNameSnapshot || movement.productName || movement.reason || 'Movimiento de stock'}</p>
+                                                <p className="mt-0.5 text-[10px] font-bold text-slate-400">{isIncome ? '+' : '−'}{movement.unitsDelta ?? movement.quantityInput ?? 0} unidades</p>
                                             </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-
-                            {reportsProductId !== 'all' && (
-                                <div data-testid="supervisor-product-sales-summary" className="bg-blue-600 rounded-3xl p-4 sm:p-5 shadow-sm min-w-0 text-white">
-                                    <span className="text-[9px] font-black uppercase tracking-wider text-blue-100">Resumen del producto</span>
-                                    <h3 className="mt-2 text-base font-black break-words">{selectedProductName}</h3>
-                                    <div className="mt-4 grid grid-cols-3 gap-2">
-                                        <div className="rounded-2xl bg-white/10 p-3">
-                                            <span className="block text-[9px] font-bold text-blue-100">Unidades</span>
-                                            <strong className="mt-1 block text-lg font-black">{visibleProductSales[0]?.quantity || 0}</strong>
-                                        </div>
-                                        <div className="rounded-2xl bg-white/10 p-3">
-                                            <span className="block text-[9px] font-bold text-blue-100">Ventas</span>
-                                            <strong className="mt-1 block text-lg font-black">{visibleProductSales[0]?.salesCount || 0}</strong>
-                                        </div>
-                                        <div className="rounded-2xl bg-white/10 p-3">
-                                            <span className="block text-[9px] font-bold text-blue-100">Total USD</span>
-                                            <strong className="mt-1 block text-lg font-black">${(visibleProductSales[0]?.revenueUsd || 0).toFixed(2)}</strong>
-                                        </div>
-                                    </div>
-                                    <p className="mt-3 text-[10px] font-semibold text-blue-100">Período aplicado: {reportsDateRange === 'custom' ? `${reportsFrom} al ${reportsTo}` : reportRangeLabels[reportsDateRange]}</p>
-                                </div>
-                            )}
-
-                            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 p-4 sm:p-5 shadow-sm min-w-0 overflow-hidden">
-                                <div className="flex items-center justify-between gap-3 mb-4">
-                                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-white">Gastos y egresos</h3>
-                                    <span className="text-[10px] font-bold text-slate-400">{supervisorReportData.expenses.length} movimientos</span>
-                                </div>
-                                {supervisorReportData.expenses.length === 0 ? (
-                                    <p className="py-8 text-center text-xs text-slate-400">Sin gastos registrados.</p>
-                                ) : (
-                                    <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
-                                        {supervisorReportData.expenses.slice(0, 10).map(expense => (
-                                            <div key={expense.id} className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800/60 min-w-0">
-                                                <div className="min-w-0">
-                                                    <p className="text-xs font-black text-slate-700 dark:text-slate-200 break-words">{expense.description}</p>
-                                                    <p className="text-[10px] text-slate-400 mt-0.5">{toTitleCase(expense.category)} · {expense.affectsCash ? 'Afecta caja' : 'No afecta caja'}</p>
-                                                </div>
-                                                <span className={`shrink-0 text-xs font-outfit font-black ${expense.isAutoconsumo ? 'text-violet-600 dark:text-violet-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                                                    -${expense.totalUsd.toFixed(2)}
-                                                </span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 p-4 sm:p-5 shadow-sm min-w-0 overflow-hidden">
-                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
-                                <div>
-                                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-white">Movimientos de inventario</h3>
-                                    <p className="text-[10px] text-slate-400 mt-1">Entradas y salidas detectadas en los datos sincronizados.</p>
-                                </div>
-                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                                    <input
-                                        type="search"
-                                        aria-label="Buscar movimiento de inventario"
-                                        placeholder="Buscar producto, lote o proveedor"
-                                        value={inventoryMovementSearch}
-                                        onChange={(event) => setInventoryMovementSearch(event.target.value)}
-                                        className="min-h-9 w-full sm:w-52 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-3 text-[10px] font-bold text-slate-700 dark:text-white outline-none focus:border-emerald-500"
-                                    />
-                                    <div className="flex bg-slate-100 dark:bg-slate-950 p-1 rounded-xl border border-slate-200/60 dark:border-slate-800">
-                                        {[
-                                            ['todos', 'Todos'],
-                                            ['ingreso', 'Entradas'],
-                                            ['egreso', 'Salidas'],
-                                        ].map(([value, label]) => (
-                                            <button
-                                                key={value}
-                                                type="button"
-                                                onClick={() => setInventoryMovementFilter(value)}
-                                                className={`min-h-9 px-2.5 text-[9px] font-black rounded-lg transition-colors ${
-                                                    inventoryMovementFilter === value
-                                                        ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-white shadow-sm'
-                                                        : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
-                                                }`}
-                                            >
-                                                {label}
-                                            </button>
-                                        ))}
-                                    </div>
-                                    <span className="text-[10px] font-bold text-slate-400 whitespace-nowrap">{visibleInventoryMovements.length} movimientos</span>
+                                        );
+                                    })}
                                 </div>
                             </div>
-                            {visibleInventoryMovements.length === 0 ? (
-
-                                <div className="py-8 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
-                                    <Package size={24} className="mx-auto text-slate-300 dark:text-slate-700 mb-2" />
-                                    <p className="text-xs font-black text-slate-500 dark:text-slate-400">Sin movimientos de lotes sincronizados</p>
-                                    <p className="text-[10px] text-slate-400 mt-1">Los movimientos aparecerán cuando la caja los registre.</p>
-                                </div>
-                            ) : (
-                                <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1">
-                                    {visibleInventoryMovements.slice(0, 20).map(movement => (
-                                        <div key={movement.movementId} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800/60">
-                                            <div className="min-w-0">
-                                                <div className="flex items-center gap-2 flex-wrap">
-                                                    <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-lg ${movement.direction === 'ingreso' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400' : 'bg-rose-100 text-rose-700 dark:bg-rose-950/30 dark:text-rose-400'}`}>
-                                                        {movement.direction}
-                                                    </span>
-                                                    <span className="text-xs font-black text-slate-700 dark:text-slate-200 break-words">{movement.productName}</span>
-                                                </div>
-                                                <p className="text-[10px] text-slate-400 mt-1 break-words">{movement.reason} · {movement.inputUnit} · {movement.operatorName || 'Usuario no informado'}</p>
-                                                <p className="text-[10px] text-slate-400 mt-1 break-words">
-                                                    Stock: {movement.stockBefore == null ? '—' : movement.stockBefore} → {movement.stockAfter == null ? '—' : movement.stockAfter}
-                                                    {movement.unitsPerPackage > 1 ? ` · ${movement.unitsPerPackage} uds/${movement.inputUnit === 'bultos' ? 'bulto' : 'caja'}` : ''}
-                                                </p>
-                                                <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                                                    {movement.lotReference && <span className="text-[9px] text-slate-500 dark:text-slate-400">Lote: {movement.lotReference}</span>}
-                                                    {movement.supplierName && <span className="text-[9px] text-slate-500 dark:text-slate-400">Proveedor: {movement.supplierName}</span>}
-                                                    {movement.invoiceReference && <span className="text-[9px] text-slate-500 dark:text-slate-400">Factura: {movement.invoiceReference}</span>}
-                                                    {movement.isIncomplete && <span className="text-[9px] font-black text-amber-600 dark:text-amber-400">Datos incompletos</span>}
-                                                </div>
-                                            </div>
-                                            <span className="shrink-0 self-start sm:self-center text-xs font-outfit font-black text-slate-700 dark:text-slate-200">{movement.unitsDelta} uds</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
+                        )}
                     </div>
                 )}
 
-                {/* ── SECCIÓN 5: CAJEROS Y USUARIOS ── */}
-                {viewTab === 'cajeros' && (
-                    <RemoteUsersManager targetDeviceId={pairedDeviceId} />
-                )}
             </main>
 
             {/* Modal Ajustar Tasa Remota */}
@@ -1842,13 +1503,19 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                 remoteAvailable={remoteActionsAvailable}
             />
 
-            {/* Modal Ajuste de stock por lote del Supervisor */}
-            <SupervisorInventoryBatchModal
-                isOpen={Boolean(inventoryBatchProduct)}
-                onClose={() => setInventoryBatchProduct(null)}
-                product={inventoryBatchProduct}
+            {/* Panel de recepción/egreso rápido del Supervisor */}
+            <SupervisorInventoryBatchPanel
+                isOpen={Boolean(inventoryBatchMode)}
+                direction={inventoryBatchMode || 'ingreso'}
+                initialProduct={inventoryBatchProduct}
+                products={products}
                 targetDeviceId={pairedDeviceId}
                 remoteAvailable={remoteActionsAvailable}
+                onClose={() => {
+                    setInventoryBatchMode(null);
+                    setInventoryBatchProduct(null);
+                }}
+                onCompleted={() => triggerRefresh?.()}
             />
 
             {/* Modal Editar / Crear Producto Remoto */}
@@ -1904,25 +1571,19 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                 </div>
             )}
 
-            {/* Modal Confirmación Cierre / Reapertura Remota de Turno */}
-            {shiftActionConfirmModal && (
+            {/* Modal Confirmación de Cierre Remoto de Turno */}
+            {shiftActionConfirmModal === 'close' && (
                 <div className="fixed inset-0 z-[999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
                     <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 max-w-sm w-full shadow-2xl space-y-5 animate-scale-in">
-                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mx-auto ${
-                            shiftActionConfirmModal === 'close' 
-                                ? 'bg-rose-50 dark:bg-rose-950/20 text-rose-500' 
-                                : 'bg-amber-50 dark:bg-amber-950/20 text-amber-500'
-                        }`}>
-                            {shiftActionConfirmModal === 'close' ? <Clock size={22} /> : <RefreshCw size={22} />}
+                        <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto bg-rose-50 dark:bg-rose-950/20 text-rose-500">
+                            <Clock size={22} />
                         </div>
                         <div className="space-y-1.5 text-center">
                             <h4 className="text-base font-black text-slate-800 dark:text-white">
-                                {shiftActionConfirmModal === 'close' ? 'Cerrar Turno Remotamente' : 'Reabrir Último Turno'}
+                                Cerrar Turno Remotamente
                             </h4>
                             <p className="text-xs font-semibold text-slate-500 leading-relaxed">
-                                {shiftActionConfirmModal === 'close'
-                                    ? 'Esta acción marcará las ventas actuales como cerradas en la caja principal y registrará un cierre remoto.'
-                                    : 'Esta acción deshará el último cierre registrado y reactivará el turno anterior en la caja principal.'}
+                                Esta acción marcará las ventas actuales como cerradas en la caja principal y registrará un cierre remoto.
                             </p>
                         </div>
                         <div className="flex gap-3">
@@ -1934,15 +1595,11 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                 Cancelar
                             </button>
                             <button
-                                onClick={() => handleSendShiftActionRemote(shiftActionConfirmModal)}
+                                onClick={() => handleSendShiftActionRemote()}
                                 disabled={sendingShiftAction}
-                                className={`flex-1 py-3 px-4 font-black text-xs rounded-2xl shadow-lg transition-colors flex items-center justify-center gap-2 text-white ${
-                                    shiftActionConfirmModal === 'close'
-                                        ? 'bg-rose-500 hover:bg-rose-600 shadow-rose-500/20'
-                                        : 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20'
-                                } disabled:opacity-50`}
+                                className="flex-1 py-3 px-4 font-black text-xs rounded-2xl shadow-lg transition-colors flex items-center justify-center gap-2 text-white bg-rose-500 hover:bg-rose-600 shadow-rose-500/20 disabled:opacity-50"
                             >
-                                {sendingShiftAction ? <RefreshCw className="animate-spin" size={14} /> : (shiftActionConfirmModal === 'close' ? 'Confirmar Cierre' : 'Confirmar Reapertura')}
+                                {sendingShiftAction ? <RefreshCw className="animate-spin" size={14} /> : 'Confirmar Cierre'}
                             </button>
                         </div>
                     </div>

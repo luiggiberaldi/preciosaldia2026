@@ -97,14 +97,21 @@ function validateCommandPayload(type, payload) {
         case 'supervisor.product.create':
             return typeof payload.product?.id === 'string' && typeof payload.product?.name === 'string';
         case 'supervisor.product.update':
-            return typeof payload.productId === 'string' && isPlainObject(payload.patch);
+            return typeof payload.productId === 'string'
+                && isPlainObject(payload.patch)
+                && (payload.baseUpdatedAt == null
+                    || (typeof payload.baseUpdatedAt === 'string' && !Number.isNaN(Date.parse(payload.baseUpdatedAt))));
         case 'supervisor.product.delete':
             return typeof payload.productId === 'string';
         case 'supervisor.user.create':
             return typeof payload.nombre === 'string'
-                && ['CAJERO', 'ADMIN'].includes(payload.rol);
+                && ['CAJERO', 'ADMIN'].includes(payload.rol)
+                && typeof payload.pinHash === 'string'
+                && /^pbkdf2\$\d+\$[^$]+\$[^$]+$/.test(payload.pinHash);
         case 'supervisor.user.pin.change':
-            return Number.isFinite(payload.userId) && typeof payload.newPin === 'string';
+            return Number.isFinite(payload.userId)
+                && typeof payload.pinHash === 'string'
+                && /^pbkdf2\$\d+\$[^$]+\$[^$]+$/.test(payload.pinHash);
         case 'supervisor.user.update':
             return Number.isFinite(payload.userId) && isPlainObject(payload.patch);
         case 'supervisor.user.delete':

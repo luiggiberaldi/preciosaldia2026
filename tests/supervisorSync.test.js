@@ -9,6 +9,7 @@ import {
     buildSupervisorRealtimeChannelName,
     isNewerSyncDocument,
     readSyncEnvelope,
+    getSupervisorRecoveryIntervalMs,
     withSyncRetry,
 } from '../src/services/supervisorSyncService';
 
@@ -78,5 +79,9 @@ describe('Supervisor sync contract', () => {
         await expect(withSyncRetry(async () => {
             throw new Error('definitivo');
         }, { attempts: 2, sleep: async () => {} })).rejects.toThrow('definitivo');
+    });
+
+    it('mantiene un intervalo de recuperación moderado', () => {
+        expect(getSupervisorRecoveryIntervalMs()).toBe(30_000);
     });
 });

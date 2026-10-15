@@ -6,7 +6,6 @@ import { validatePin, LOGIN_RATE_LIMIT } from '../src/utils/securityConstants';
 import { escapeHtml } from '../src/utils/printerUtils';
 import { verifyLicenseToken, encodeToken, decodeToken } from '../src/security/tokenCrypto';
 import { generateFingerprint, verifyStoredFingerprint, getFingerprintAnchor, seedFingerprintAnchor } from '../src/security/deviceFingerprint';
-import { isSupervisorStagingMode } from '../src/config/supabaseTarget';
 
 // ─── verifyLicenseToken (SEC-001/SEC-007) ────────────────────────────────────
 
@@ -475,24 +474,15 @@ describe('SEC-021: supabaseClient lanza error claro si falta anon key', () => {
   it('en dev (sin env vars) crea stub que rechaza llamadas con mensaje claro', async () => {
     const { supabase } = await import('../src/core/supabaseClient');
 
-    // Misma regla que usa supabaseClient.js para elegir URL/clave (staging o producción).
-    const env = {
-      VITE_SUPERVISOR_E2E_STAGING: import.meta.env.VITE_SUPERVISOR_E2E_STAGING,
-      VITE_SUPABASE_STAGING_URL: import.meta.env.VITE_SUPABASE_STAGING_URL,
-      VITE_SUPABASE_STAGING_KEY: import.meta.env.VITE_SUPABASE_STAGING_KEY,
-    };
-    const staging = isSupervisorStagingMode(env);
-    const url = staging ? env.VITE_SUPABASE_STAGING_URL : import.meta.env.VITE_SUPABASE_URL;
-    const key = staging ? env.VITE_SUPABASE_STAGING_KEY : import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-    // Si faltan credenciales efectivas, `supabase` es un Proxy que rechaza cualquier
-    // llamada con el mensaje SEC-021.
-    if (!url || !key) {
+    // Si las env vars están ausentes (caso default en CI), `supabase` es un Proxy
+    // que rechaza cualquier llamada con el mensaje SEC-021.
+    if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
       let caught = null;
       try {
-        // Se invoca como método (no desenlazado) para que `this` sea el cliente.
-        // En el stub, el proxy devuelve una función que rechaza con el mensaje SEC-021.
-        await supabase.from('whatever');
+        // `supabase.from` devuelve una función (proxy get trap) que al invocarse
+        // devuelve una promesa rechazada.
+        const fromFn = supabase.from;
+        await fromFn('whatever');
       } catch (e) {
         caught = e;
       }

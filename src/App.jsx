@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useMemo, Suspense } from 'react';
-import { Home, ShoppingCart, Store, Users, Download, FlaskConical, BarChart3, WifiOff, X, Settings, Clock } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo, Suspense, lazy } from 'react';
+import { Home, ShoppingCart, Store, Users, Download, FlaskConical, Moon, Sun, BarChart3, WifiOff, X, Settings, Clock } from 'lucide-react';
 
 import DashboardView from './views/DashboardView';
 
@@ -16,6 +16,7 @@ const AIAssistantWidget = lazyWithRetry(() => import('./components/AIAssistantWi
 
 import { useRates } from './hooks/useRates';
 import { useSecurity } from './hooks/useSecurity';
+import { getCachedPermanentBackupEntitlement } from './services/backupEntitlement';
 import { RateProvider } from './context/RateContext';
 import { ProductProvider } from './context/ProductContext';
 import { CartProvider, useCart } from './context/CartContext';
@@ -29,19 +30,22 @@ import CommandPalette from './components/CommandPalette';
 import LockScreen from './components/security/LockScreen';
 import { useAutoLock } from './hooks/useAutoLock';
 import { useAuthStore } from './hooks/store/useAuthStore';
+import { LogOut } from 'lucide-react';
 import { purgeOldEntries } from './services/auditService';
 import { UpdateBanner } from './components/UpdateBanner';
 import { useCloudSync } from './hooks/useCloudSync';
 import { ImagePrecacheRunner } from './hooks/useImagePrecache';
-import { purgeForeignImageCache } from './services/imageBlobCache';
 import {
   SUPERVISOR_REMOTE_MUTATIONS_ENABLED,
+  SUPERVISOR_REMOTE_PRODUCTS_ENABLED,
   SUPERVISOR_REMOTE_INCOME_ENABLED,
   SUPERVISOR_REMOTE_RATE_ENABLED,
+  SUPERVISOR_REMOTE_EGRESS_ENABLED,
 } from './config/supervisorPolicy';
 
 const OwnerMonitorView = lazyWithRetry(() => import('./views/OwnerMonitorView'), 'OwnerMonitorView');
 import PairingScanScreen from './components/PairingScanScreen';
+import QuickSupervisorPairingModal from './components/security/QuickSupervisorPairingModal';
 import SplashScreenPlayer from './remotion/SplashScreenPlayer';
 import { getLocalISODate } from './utils/dateHelpers';
 
@@ -51,20 +55,27 @@ export default function App() {
   const [showIOSInstall, setShowIOSInstall] = useState(false);
   const [mountedViews, setMountedViews] = useState({});
   const [showPairingScan, setShowPairingScan] = useState(false);
+  const [showPairingIssuer, setShowPairingIssuer] = useState(false);
+  const [adminLoginRequest, setAdminLoginRequest] = useState(0);
   const isMonitorMode = localStorage.getItem('pda_pairing_mode') === 'monitor';
 
   useEffect(() => {
     setMountedViews(prev => ({...prev, [activeTab]: true}));
   }, [activeTab]);
 
-  const { isPremium, isDemo, loading: isLicenseLoading, demoTimeLeft, demoExpiredMsg, dismissExpiredMsg, deviceId, isMonthlyGracePeriod, monthlyGraceDaysLeft, forceHeartbeat } = useSecurity();
+  const { isPremium, isDemo, demoTimeLeft, demoExpiredMsg, dismissExpiredMsg, deviceId, isMonthlyGracePeriod, monthlyGraceDaysLeft, forceHeartbeat } = useSecurity();
   const { isOnline, cacheRates } = useOfflineQueue();
-  useAutoBackup(isPremium, isDemo, deviceId);
-  // El monitor no debe montar listeners de la caja. Las mutaciones remotas
-  // permanecen deshabilitadas hasta completar el hardening server-side.
+  const permanentBackupAllowed = getCachedPermanentBackupEntitlement({ isPremium, isDemo }).allowed;
+  useAutoBackup(isPremium, isDemo, deviceId, permanentBackupAllowed);
+  // El monitor no debe montar listeners de la caja. La caja receptora sí debe
+  // escuchar mientras exista al menos una capacidad remota activa.
   useRemoteCommands(
     isMonitorMode ? null : deviceId,
-    SUPERVISOR_REMOTE_MUTATIONS_ENABLED || SUPERVISOR_REMOTE_INCOME_ENABLED || SUPERVISOR_REMOTE_RATE_ENABLED
+    SUPERVISOR_REMOTE_MUTATIONS_ENABLED
+      || SUPERVISOR_REMOTE_PRODUCTS_ENABLED
+      || SUPERVISOR_REMOTE_INCOME_ENABLED
+      || SUPERVISOR_REMOTE_RATE_ENABLED
+      || SUPERVISOR_REMOTE_EGRESS_ENABLED
   );
 
   const { usuarioActivo, requireLogin } = useAuthStore();
@@ -79,6 +90,12 @@ export default function App() {
   // Al iniciar sesión, redirigir al punto de venta si es cajero, o a inicio si es admin
   useEffect(() => {
     if (usuarioActivo) {
+      const shouldOpenSettings = sessionStorage.getItem('pda_open_settings_after_pairing') === 'true';
+      if (shouldOpenSettings && usuarioActivo.rol === 'ADMIN') {
+        sessionStorage.removeItem('pda_open_settings_after_pairing');
+        setActiveTab('ajustes');
+        return;
+      }
       if (usuarioActivo.rol === 'CAJERO') {
         setActiveTab('ventas');
       } else {
@@ -155,13 +172,10 @@ export default function App() {
 
   const lastClickTimeRef = useRef(0);
 
-  const { rates, rateDiscrepancyWarning, updateData, loading: ratesLoading } = useRates();
+  const { rates, rateDiscrepancyWarning } = useRates();
 
   // Purge old audit log entries on startup
   useEffect(() => { purgeOldEntries(); }, []);
-
-  // Descarta imágenes cacheadas de otro proyecto Supabase (URLs que ya no resuelven)
-  useEffect(() => { purgeForeignImageCache(); }, []);
 
   // Cache rates whenever they update
   useEffect(() => { if (rates) cacheRates(rates); }, [rates, cacheRates]);
@@ -300,7 +314,7 @@ export default function App() {
   if (isMonitorMode) {
     return (
       <ErrorBoundary>
-        <RateProvider rates={rates} rateDiscrepancyWarning={rateDiscrepancyWarning} updateData={updateData} ratesLoading={ratesLoading}>
+        <RateProvider rates={rates} rateDiscrepancyWarning={rateDiscrepancyWarning}>
           <ProductProvider rates={rates} rateDiscrepancyWarning={rateDiscrepancyWarning}>
             <ImagePrecacheRunner />
             <Suspense fallback={<div className="flex-1 flex items-center justify-center p-6 text-slate-500 font-bold">Cargando monitor...</div>}>
@@ -317,13 +331,15 @@ export default function App() {
       <UpdateBanner />
 
       {/* Terms and Conditions Overlay (First Use) */}
-      <TermsOverlay onAccept={forceHeartbeat} isLicenseLoading={isLicenseLoading} isPremium={isPremium} isDemo={isDemo} />
+      <TermsOverlay onAccept={forceHeartbeat} />
 
 
       {/* Lock Screen — solo si login está activado y no hay sesión activa */}
       {requireLogin && !usuarioActivo && (
         <LockScreen
           onOpenPairing={() => setShowPairingScan(true)}
+          onOpenPairingIssuer={() => setShowPairingIssuer(true)}
+          adminLoginRequest={adminLoginRequest}
           installPrompt={installPrompt}
           onInstall={handleInstall}
           showIOSButton={showIOSButton}
@@ -334,6 +350,20 @@ export default function App() {
 
       {showPairingScan && (
         <PairingScanScreen onCancel={() => setShowPairingScan(false)} triggerHaptic={triggerHaptic} />
+      )}
+
+      {showPairingIssuer && (
+        <QuickSupervisorPairingModal
+          isOpen={showPairingIssuer}
+          deviceId={deviceId}
+          onClose={() => setShowPairingIssuer(false)}
+          triggerHaptic={triggerHaptic}
+          onOpenSettings={() => {
+            setShowPairingIssuer(false);
+            sessionStorage.setItem('pda_open_settings_after_pairing', 'true');
+            setAdminLoginRequest((value) => value + 1);
+          }}
+        />
       )}
 
 
@@ -413,7 +443,7 @@ export default function App() {
       )}
 
 
-      <RateProvider rates={rates} rateDiscrepancyWarning={rateDiscrepancyWarning} updateData={updateData} ratesLoading={ratesLoading}>
+      <RateProvider rates={rates} rateDiscrepancyWarning={rateDiscrepancyWarning}>
       <CartProvider>
       <ProductProvider>
         {/* OFFLINE-IMG: precalienta el cache del SW con TODAS las imágenes del inventario */}
@@ -440,7 +470,7 @@ export default function App() {
           </ErrorBoundary>
         </div>
 
-        <div className={`flex-1 min-h-0 flex flex-col ${activeTab === 'catalogo' ? '' : 'hidden'}`}>
+        <div className={`flex-1 flex flex-col ${activeTab === 'catalogo' ? '' : 'hidden'}`}>
           <ErrorBoundary>
             <PremiumGuard featureName="Inventario de Productos">
               {(activeTab === 'catalogo' || mountedViews.catalogo) && (

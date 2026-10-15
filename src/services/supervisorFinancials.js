@@ -3,6 +3,18 @@ import { divR, round2, sumR } from '../utils/dinero.js';
 import { getGeneratedWalletCredit } from '../utils/customerLedger.js';
 
 const SALE_TYPES = Object.freeze(['VENTA', 'VENTA_FIADA', 'VENTA_CASHEA']);
+export const SUPERVISOR_PAYMENT_TYPES = Object.freeze([
+    ...SALE_TYPES,
+    'COBRO_DEUDA',
+    'COBRO_CASHEA',
+    'APERTURA_CAJA',
+    'APORTE_CAJA',
+]);
+const SUPERVISOR_TURN_INCOME_TYPES = Object.freeze([
+    ...SALE_TYPES,
+    'COBRO_DEUDA',
+    'COBRO_CASHEA',
+]);
 const CASH_FLOW_TYPES = Object.freeze([
     ...SALE_TYPES,
     'COBRO_DEUDA',
@@ -69,6 +81,8 @@ export const normalizeReconciliation = (reconData) => {
 };
 
 export const isSale = (sale) => SALE_TYPES.includes(sale?.tipo);
+export const isSupervisorPaymentMovement = (sale) => SUPERVISOR_PAYMENT_TYPES.includes(sale?.tipo);
+export const isSupervisorTurnIncomeMovement = (sale) => SUPERVISOR_TURN_INCOME_TYPES.includes(sale?.tipo);
 
 export const isCashFlowMovement = (sale) => {
     if (!CASH_FLOW_TYPES.includes(sale?.tipo)) return false;
@@ -121,6 +135,8 @@ export function calculateSupervisorPaymentBreakdown(sales = [], bcvRate = 1) {
     };
 
     for (const sale of sales) {
+        if (!isSupervisorPaymentMovement(sale)) continue;
+
         if (sale.tipo === 'APERTURA_CAJA') {
             if (finite(sale.openingUsd) > 0) add('efectivo_usd', sale.openingUsd, 0, 'Efectivo $', 'USD');
             if (finite(sale.openingBs) > 0) add('efectivo_bs', 0, sale.openingBs, 'Efectivo Bs', 'BS');

@@ -10,11 +10,12 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-const { _insertMock, _updateMock, _updateEqMock, _getSessionMock } = vi.hoisted(() => ({
+const { _insertMock, _updateMock, _updateEqMock, _getSessionMock, _rpcMock } = vi.hoisted(() => ({
     _insertMock: vi.fn(),
     _updateMock: vi.fn(),
     _updateEqMock: vi.fn(),
     _getSessionMock: vi.fn(),
+    _rpcMock: vi.fn(),
 }));
 
 vi.mock('../src/config/supabaseCloud', () => ({
@@ -23,6 +24,7 @@ vi.mock('../src/config/supabaseCloud', () => ({
             insert: _insertMock,
             update: _updateMock.mockImplementation(() => ({ eq: _updateEqMock })),
         })),
+        rpc: _rpcMock,
         auth: {
             getSession: _getSessionMock,
         },
@@ -36,21 +38,39 @@ import { dirname, join } from 'path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const MIGRATION_PATH = join(here, '..', 'supabase', 'migrations', '001_device_own_row_rls.sql');
+const REGISTRATION_MIGRATION_PATH = join(here, '..', 'supabase', 'migrations', '20261015_supervisor_device_session_registration.sql');
 
 beforeEach(() => {
     _insertMock.mockReset();
     _updateMock.mockReset();
     _updateEqMock.mockReset();
     _getSessionMock.mockReset();
+    _rpcMock.mockReset();
     _getSessionMock.mockResolvedValue({
         data: { session: { user: { id: 'user-1111-2222' } } },
     });
     // Cadena real: update(...).eq(...)
     _updateMock.mockImplementation(() => ({ eq: _updateEqMock }));
     _updateEqMock.mockResolvedValue({ error: null });
+    _rpcMock.mockResolvedValue({ data: null, error: { code: 'PGRST202' } });
 });
 
 describe('ensureDeviceSessionRegistered', () => {
+    it('usa el RPC seguro cuando el ambiente revoca INSERT directo', async () => {
+        _rpcMock.mockResolvedValue({
+            data: { success: true, device_id: 'PDA-TEST' },
+            error: null,
+        });
+
+        const res = await ensureDeviceSessionRegistered('PDA-TEST');
+
+        expect(res).toEqual({ ok: true, registered: true, reclaimed: false, error: null });
+        expect(_rpcMock).toHaveBeenCalledWith('register_device_session', {
+            p_device_id: 'PDA-TEST',
+        });
+        expect(_insertMock).not.toHaveBeenCalled();
+    });
+
     it('INSERT exitoso devuelve registered=true', async () => {
         _insertMock.mockResolvedValue({ error: null });
         const res = await ensureDeviceSessionRegistered('PDA-TEST');
@@ -101,6 +121,21 @@ describe('ensureDeviceSessionRegistered', () => {
         expect(res.ok).toBe(false);
         expect(res.error && res.error.code).toBe('42501');
     });
+
+    it('rechazo explícito del RPC no intenta un INSERT que podría saltarse la política del ambiente', async () => {
+        _rpcMock.mockResolvedValue({
+            data: { success: false, message: 'Esta caja ya está vinculada a otra sesión.' },
+            error: null,
+        });
+
+        const res = await ensureDeviceSessionRegistered('PDA-TEST');
+
+        expect(res.ok).toBe(false);
+        expect(res.error).toEqual(expect.objectContaining({
+            code: 'DEVICE_SESSION_CONFLICT',
+        }));
+        expect(_insertMock).not.toHaveBeenCalled();
+    });
 });
 
 describe('migracion 001_device_own_row_rls.sql (saneamiento)', () => {
@@ -145,4 +180,15 @@ describe('migracion 001_device_own_row_rls.sql (saneamiento)', () => {
         expect(sql).not.toMatch(/for delete to anon/);
         expect(sql).not.toMatch(/for delete to anon, authenticated/);
     });
+});
+
+describe('registro server-side de device_sessions', () => {
+    it('la migración de producción limita la RPC a sesiones autenticadas', () => {
+        const sql = readFileSync(REGISTRATION_MIGRATION_PATH, 'utf8');
+        expect(sql).toContain('CREATE OR REPLACE FUNCTION public.register_device_session');
+        expect(sql).toContain("'DEVICE_SESSION_CONFLICT'");
+        expect(sql).toContain('REVOKE ALL ON FUNCTION public.register_device_session(text) FROM PUBLIC, anon');
+        expect(sql).toContain('GRANT EXECUTE ON FUNCTION public.register_device_session(text) TO authenticated, service_role');
+    });
+
 });

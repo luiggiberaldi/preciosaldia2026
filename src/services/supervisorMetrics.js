@@ -37,7 +37,26 @@ export function calculateSalesProfit(sales = [], products = [], bcvRate = 1) {
     return calculateSupervisorSalesMetrics(sales, products, bcvRate);
 }
 
+export function calculateInventoryMovementMetrics(sales = []) {
+    const movements = (Array.isArray(sales) ? sales : [])
+        .filter(record => record?.tipo === 'AJUSTE_ENTRADA' || record?.tipo === 'AJUSTE_SALIDA' || record?.direction === 'ingreso' || record?.direction === 'egreso')
+        .sort((left, right) => new Date(right.timestamp || 0) - new Date(left.timestamp || 0));
+    const income = movements.filter(record => record.tipo === 'AJUSTE_ENTRADA' || record.direction === 'ingreso');
+    const egress = movements.filter(record => record.tipo === 'AJUSTE_SALIDA' || record.direction === 'egreso');
+    const units = record => Number(record.unitsDelta ?? record.quantityInput ?? 0) || 0;
+
+    return {
+        total: movements.length,
+        incomeCount: income.length,
+        egressCount: egress.length,
+        incomeUnits: income.reduce((sum, record) => sum + units(record), 0),
+        egressUnits: egress.reduce((sum, record) => sum + units(record), 0),
+        recent: movements.slice(0, 8),
+    };
+}
+
 export default {
     calculateInventoryMetrics,
     calculateSalesProfit,
+    calculateInventoryMovementMetrics,
 };

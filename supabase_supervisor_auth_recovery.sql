@@ -130,13 +130,13 @@ DECLARE
     v_token text;
     v_hash text;
     v_owner uuid := auth.uid();
-    v_updated integer;
+    v_device_id text := NULLIF(trim(p_device_id), '');
 BEGIN
     IF v_owner IS NULL THEN
         RAISE EXCEPTION 'Sesión no autenticada';
     END IF;
 
-    IF p_device_id IS NULL OR length(trim(p_device_id)) < 8 OR length(trim(p_device_id)) > 160 THEN
+    IF v_device_id IS NULL OR length(v_device_id) < 8 OR length(v_device_id) > 160 THEN
         RAISE EXCEPTION 'Identificador de dispositivo inválido';
     END IF;
 
@@ -144,43 +144,32 @@ BEGIN
     v_token := upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 24));
     v_hash := encode(digest(v_token, 'sha256'), 'hex');
 
-    UPDATE public.device_pairings
+    -- Una caja tiene una sola fila. Si ya existe, se reutiliza sin exigir
+    -- códigos de dueño ni crear una segunda fila.
+    INSERT INTO public.device_pairings (
+        primary_device_id,
+        owner_auth_id,
+        token_hash,
+        token_expires_at,
+        created_at
+    )
+    VALUES (
+        v_device_id,
+        v_owner,
+        v_hash,
+        now() + interval '5 minutes',
+        now()
+    )
+    ON CONFLICT (primary_device_id) DO UPDATE
     SET pairing_token = NULL,
-        token_hash = v_hash,
-        token_expires_at = now() + interval '5 minutes',
+        token_hash = EXCLUDED.token_hash,
+        token_expires_at = EXCLUDED.token_expires_at,
         token_used_at = NULL,
         monitor_device_id = NULL,
         monitor_auth_id = NULL,
         paired_at = NULL,
         revoked_at = NULL,
-        owner_auth_id = v_owner
-    WHERE primary_device_id = trim(p_device_id)
-      AND (
-          owner_auth_id IS NULL
-          OR owner_auth_id = v_owner
-          -- Un vínculo revocado puede ser reclamado por la sesión actual
-          -- para volver a vincular físicamente la misma caja.
-          OR revoked_at IS NOT NULL
-      );
-
-    GET DIAGNOSTICS v_updated = ROW_COUNT;
-
-    IF v_updated = 0 THEN
-        INSERT INTO public.device_pairings (
-            primary_device_id,
-            owner_auth_id,
-            token_hash,
-            token_expires_at,
-            created_at
-        )
-        VALUES (
-            trim(p_device_id),
-            v_owner,
-            v_hash,
-            now() + interval '5 minutes',
-            now()
-        );
-    END IF;
+        owner_auth_id = EXCLUDED.owner_auth_id;
 
     RETURN v_token;
 END;
@@ -195,6 +184,7 @@ SET search_path = public, extensions
 AS $$
 DECLARE
     v_monitor uuid := auth.uid();
+    v_monitor_id text := NULLIF(trim(p_monitor_device_id), '');
     v_pairing public.device_pairings%ROWTYPE;
 BEGIN
     IF v_monitor IS NULL THEN
@@ -203,6 +193,10 @@ BEGIN
 
     IF p_token IS NULL OR length(trim(p_token)) < 16 OR length(trim(p_token)) > 64 THEN
         RETURN json_build_object('success', false, 'message', 'Código inválido.');
+    END IF;
+
+    IF v_monitor_id IS NULL OR length(v_monitor_id) < 8 OR length(v_monitor_id) > 160 THEN
+        RETURN json_build_object('success', false, 'message', 'Identificador del celular inválido.');
     END IF;
 
     SELECT *
@@ -223,8 +217,19 @@ BEGIN
         RETURN json_build_object('success', false, 'message', 'El vínculo ya está ocupado.');
     END IF;
 
+    -- Un celular solo puede estar vinculado a una caja. Si tenía un vínculo
+    -- anterior, se limpia antes de reutilizarlo en la nueva caja.
     UPDATE public.device_pairings
-    SET monitor_device_id = NULLIF(trim(p_monitor_device_id), ''),
+    SET monitor_device_id = NULL,
+        monitor_auth_id = NULL,
+        token_used_at = NULL,
+        paired_at = NULL,
+        revoked_at = now()
+    WHERE monitor_device_id = v_monitor_id
+      AND id <> v_pairing.id;
+
+    UPDATE public.device_pairings
+    SET monitor_device_id = v_monitor_id,
         monitor_auth_id = v_monitor,
         pairing_token = NULL,
         token_hash = NULL,
@@ -239,9 +244,9 @@ BEGIN
 END;
 $$;
 
--- 6) Desvincular: solo el monitor autenticado del vínculo activo.
--- Conserva monitor_auth_id en la fila revocada para que solo esa sesión pueda
--- verificar revoked_at tras una respuesta perdida. RLS sigue bloqueando sync_documents.
+-- 6) Desvincular: la caja dueña o el monitor autenticado del vínculo activo.
+-- La caja primaria debe poder desactivar el modo Supervisor desde sus ajustes,
+-- igual que el flujo sencillo de producción anterior.
 CREATE OR REPLACE FUNCTION public.unpair_monitor(p_device_id text)
 RETURNS void
 LANGUAGE plpgsql
@@ -257,14 +262,16 @@ BEGIN
 
     UPDATE public.device_pairings
     SET monitor_device_id = NULL,
+        monitor_auth_id = NULL,
         pairing_token = NULL,
         token_hash = NULL,
         token_expires_at = NULL,
         token_used_at = NULL,
         paired_at = NULL,
         revoked_at = now()
-    WHERE primary_device_id = trim(p_device_id)
-      AND monitor_auth_id = v_actor
+    WHERE (primary_device_id = trim(p_device_id)
+           OR monitor_device_id = trim(p_device_id))
+      AND (owner_auth_id = v_actor OR monitor_auth_id = v_actor)
       AND revoked_at IS NULL;
 
     IF NOT FOUND THEN

@@ -58,6 +58,10 @@ export function getSyncMetadataKey(docId) {
     return `supervisor_sync_updated_at_${docId}`;
 }
 
+export function getSupervisorRecoveryIntervalMs() {
+    return 30_000;
+}
+
 /**
  * Cada ciclo de vida usa un topic único para que React StrictMode, un cambio
  * de dispositivo o una reconexión no intenten añadir callbacks a un canal ya

@@ -2,15 +2,18 @@ import { useEffect, useRef, useState } from 'react';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { runWithoutEco } from '../utils/syncFlags';
 import localforage from 'localforage';
-import { validateSupervisorSyncDocument } from '../services/supervisorContracts';
+import { SUPERVISOR_SYNC_KEYS, validateSupervisorSyncDocument } from '../services/supervisorContracts';
 import { ensureSupervisorSession } from '../services/supervisorAuth';
 import {
     getSyncMetadataKey,
     isNewerSyncDocument,
     readSyncEnvelope,
     buildSupervisorRealtimeChannelName,
+    getSupervisorRecoveryIntervalMs,
     SUPERVISOR_SYNC_STATES,
 } from '../services/supervisorSyncService';
+import { clearMonitorCache } from '../services/monitorUnpair';
+import { isMonitorPairingActive, readPairingRow } from '../services/supervisorPairingState';
 
 localforage.config({ name: 'BodegaApp', storeName: 'bodega_app_data' });
 
@@ -39,6 +42,10 @@ export function useMonitorSync(pairedDeviceId) {
     const lifecycleRef = useRef(0);
     const subscribeInFlightRef = useRef(null);
     const removeInFlightRef = useRef(Promise.resolve());
+    const recoveryTimerRef = useRef(null);
+    const recoveryPullInFlightRef = useRef(null);
+    const documentQueuesRef = useRef(new Map());
+    const remoteRevocationHandledRef = useRef(false);
 
     const updateLastSync = (value) => {
         lastSyncRef.current = value;
@@ -94,9 +101,10 @@ export function useMonitorSync(pairedDeviceId) {
             return { applied: false, rejected: true, error: `Colección remota rechazada: ${collection}` };
         }
 
+        const incomingUpdatedAt = envelope.updatedAt || doc?.updated_at || null;
         const metadataKey = getSyncMetadataKey(docId);
         const previousUpdatedAt = localStorage.getItem(metadataKey);
-        if (!isNewerSyncDocument(envelope.updatedAt, previousUpdatedAt)) {
+        if (!isNewerSyncDocument(incomingUpdatedAt, previousUpdatedAt)) {
             return { applied: false, rejected: true, stale: true, error: 'Documento antiguo o repetido' };
         }
 
@@ -123,8 +131,24 @@ export function useMonitorSync(pairedDeviceId) {
             }
         });
 
-        if (envelope.updatedAt) localStorage.setItem(metadataKey, envelope.updatedAt);
-        return { applied: true, rejected: false, updatedAt: envelope.updatedAt };
+        if (incomingUpdatedAt) localStorage.setItem(metadataKey, incomingUpdatedAt);
+        return { applied: true, rejected: false, updatedAt: incomingUpdatedAt };
+    };
+
+    const enqueueDocApplication = (doc, lifecycleId = lifecycleRef.current) => {
+        const queueKey = String(doc?.doc_id || '__unknown__');
+        const previous = documentQueuesRef.current.get(queueKey) || Promise.resolve();
+        let next;
+        next = previous
+            .catch(() => {})
+            .then(() => applyDocToLocal(doc, lifecycleId))
+            .finally(() => {
+                if (documentQueuesRef.current.get(queueKey) === next) {
+                    documentQueuesRef.current.delete(queueKey);
+                }
+            });
+        documentQueuesRef.current.set(queueKey, next);
+        return next;
     };
 
     const applyBatch = async (docs, lifecycleId = lifecycleRef.current) => {
@@ -133,7 +157,7 @@ export function useMonitorSync(pairedDeviceId) {
         for (const doc of docs || []) {
             if (!isActiveLifecycle(lifecycleId)) break;
             try {
-                const result = await applyDocToLocal(doc, lifecycleId);
+                const result = await enqueueDocApplication(doc, lifecycleId);
                 if (result.applied) applied += 1;
                 if (result.rejected && !result.stale) rejected += 1;
             } catch (error) {
@@ -142,6 +166,36 @@ export function useMonitorSync(pairedDeviceId) {
             }
         }
         return { applied, rejected };
+    };
+
+    const handleRemotePairingChange = async () => {
+        if (!pairedDeviceId || remoteRevocationHandledRef.current) return;
+
+        // Sin la identidad del monitor no podemos validar qué slot le pertenece.
+        const monitorDeviceId = localStorage.getItem('pda_device_id');
+        if (!monitorDeviceId) return;
+
+        const { data, error } = await readPairingRow({
+            supabase: supabaseCloud,
+            primaryDeviceId: pairedDeviceId,
+        });
+        if (error || isMonitorPairingActive(data, monitorDeviceId)) return;
+
+        remoteRevocationHandledRef.current = true;
+        await stopMonitorSync();
+
+        try {
+            const monitorStore = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
+            await clearMonitorCache({ idbStore: monitorStore, localStorage });
+            window.dispatchEvent(new CustomEvent('supervisor_pairing_revoked', {
+                detail: { deviceId: pairedDeviceId, source: 'remote_pairing_change' },
+            }));
+            setTimeout(() => window.location.reload(), 250);
+        } catch (cleanupError) {
+            remoteRevocationHandledRef.current = false;
+            setSyncState(SUPERVISOR_SYNC_STATES.REVOKED);
+            setSyncError(cleanupError?.message || 'El vínculo fue revocado; falta limpiar la copia local');
+        }
     };
 
     const subscribeToRealtime = (lifecycleId = lifecycleRef.current) => {
@@ -180,7 +234,7 @@ export function useMonitorSync(pairedDeviceId) {
                         filter: `device_id=eq.${pairedDeviceId}`,
                     }, async (realtimePayload) => {
                         if (!isActiveLifecycle(lifecycleId) || !realtimePayload.new) return;
-                        const application = applyDocToLocal(realtimePayload.new, lifecycleId);
+                        const application = enqueueDocApplication(realtimePayload.new, lifecycleId);
                         pendingApplicationsRef.current.add(application);
                         try {
                             const result = await application;
@@ -195,6 +249,14 @@ export function useMonitorSync(pairedDeviceId) {
                         } finally {
                             pendingApplicationsRef.current.delete(application);
                         }
+                    })
+                    .on('postgres_changes', {
+                        event: '*',
+                        schema: 'public',
+                        table: 'device_pairings',
+                        filter: `primary_device_id=eq.${pairedDeviceId}`,
+                    }, () => {
+                        void handleRemotePairingChange();
                     })
                     .subscribe((status) => {
                         if (!isActiveLifecycle(lifecycleId)) {
@@ -227,6 +289,61 @@ export function useMonitorSync(pairedDeviceId) {
         });
     };
 
+    const pullDocuments = async (lifecycleId = lifecycleRef.current) => {
+        if (!isActiveLifecycle(lifecycleId)) return { ok: false, skipped: true, error: 'Ciclo de sincronización obsoleto' };
+        if (recoveryPullInFlightRef.current) return recoveryPullInFlightRef.current;
+
+        const pull = (async () => {
+            const { session, error: sessionError } = await ensureSupervisorSession();
+            if (sessionError || !session) throw sessionError || new Error('No hay sesión segura del monitor');
+            if (!isActiveLifecycle(lifecycleId)) return { ok: false, skipped: true, error: 'Ciclo de sincronización obsoleto' };
+
+            const { data: docs, error } = await supabaseCloud
+                .from('sync_documents')
+                .select('collection, doc_id, data, updated_at')
+                .eq('device_id', pairedDeviceId)
+                .in('collection', ['store', 'local'])
+                .in('doc_id', SUPERVISOR_SYNC_KEYS);
+
+            if (error) throw error;
+
+            const batch = await applyBatch(docs || [], lifecycleId);
+            if (!isActiveLifecycle(lifecycleId)) return { ok: false, skipped: true, error: 'Ciclo de sincronización obsoleto' };
+            if (batch.applied > 0) updateLastSync(new Date());
+            return { ok: true, ...batch };
+        })();
+
+        recoveryPullInFlightRef.current = pull;
+        return pull.finally(() => {
+            if (recoveryPullInFlightRef.current === pull) recoveryPullInFlightRef.current = null;
+        });
+    };
+
+    const startRecoveryTimer = (lifecycleId) => {
+        if (recoveryTimerRef.current || !isActiveLifecycle(lifecycleId)) return;
+        recoveryTimerRef.current = setInterval(() => {
+            if (!isActiveLifecycle(lifecycleId)) return;
+            void handleRemotePairingChange();
+            pullDocuments(lifecycleId)
+                .then((result) => {
+                    if (!result?.ok || !isActiveLifecycle(lifecycleId)) return;
+                    setSyncError(null);
+                    if (subscriptionRef.current) setSyncState(SUPERVISOR_SYNC_STATES.CONNECTED);
+                })
+                .catch((error) => {
+                    if (!isActiveLifecycle(lifecycleId)) return;
+                    setSyncState(SUPERVISOR_SYNC_STATES.DEGRADED);
+                    setSyncError(error?.message || 'No se pudo recuperar la sincronización');
+                    scheduleReconnect(lifecycleId);
+                });
+        }, getSupervisorRecoveryIntervalMs());
+    };
+
+    const stopRecoveryTimer = () => {
+        if (recoveryTimerRef.current) clearInterval(recoveryTimerRef.current);
+        recoveryTimerRef.current = null;
+    };
+
     const initMonitor = async (lifecycleId = lifecycleRef.current) => {
         if (!isActiveLifecycle(lifecycleId)) return { ok: false, error: 'Ciclo de sincronización obsoleto' };
         if (initInFlightRef.current) return initInFlightRef.current;
@@ -251,19 +368,11 @@ export function useMonitorSync(pairedDeviceId) {
                 if (!isActiveLifecycle(lifecycleId)) return { ok: false, error: 'Ciclo de sincronización obsoleto' };
 
                 setSyncState(SUPERVISOR_SYNC_STATES.PULLING);
-                const { data: docs, error } = await supabaseCloud
-                    .from('sync_documents')
-                    .select('collection, doc_id, data, updated_at')
-                    .eq('device_id', pairedDeviceId)
-                    .in('collection', ['store', 'local']);
-
-                if (error) throw error;
-
-                const batch = await applyBatch(docs || [], lifecycleId);
-                if (!isActiveLifecycle(lifecycleId)) return { ok: false, error: 'Ciclo de sincronización obsoleto' };
-                if (batch.applied > 0) updateLastSync(new Date());
+                const batch = await pullDocuments(lifecycleId);
+                if (!batch.ok) return batch;
 
                 const realtime = await subscribeToRealtime(lifecycleId);
+                startRecoveryTimer(lifecycleId);
                 if (!realtime.ok) {
                     setIsConnected(false);
                     setSyncState(SUPERVISOR_SYNC_STATES.DEGRADED);
@@ -300,6 +409,7 @@ export function useMonitorSync(pairedDeviceId) {
         lifecycleRef.current += 1;
         if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;
+        stopRecoveryTimer();
 
         const initialization = initInFlightRef.current;
         if (initialization) await initialization.catch(() => {});
@@ -314,6 +424,7 @@ export function useMonitorSync(pairedDeviceId) {
     useEffect(() => {
         disposedRef.current = false;
         syncSuspendedRef.current = false;
+        remoteRevocationHandledRef.current = false;
         const lifecycleId = lifecycleRef.current + 1;
         lifecycleRef.current = lifecycleId;
         reconnectAttemptRef.current = 0;
@@ -344,10 +455,13 @@ export function useMonitorSync(pairedDeviceId) {
         return () => {
             disposedRef.current = true;
             lifecycleRef.current += 1;
+            const documentQueues = documentQueuesRef.current;
             window.removeEventListener('online', handleOnline);
             window.removeEventListener('offline', handleOffline);
             if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
             reconnectTimerRef.current = null;
+            stopRecoveryTimer();
+            documentQueues.clear();
             initInFlightRef.current = null;
             subscribeInFlightRef.current = null;
             clearSubscription();

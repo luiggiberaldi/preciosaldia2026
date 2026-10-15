@@ -102,16 +102,16 @@ export default function SettingsTabSistema({
                             handleSyncCloud?.();
                         }}
                         aria-disabled={!isLicensedCloud}
-                        title={!isLicensedCloud ? 'Disponible con licencia completa' : undefined}
+                        title={!isLicensedCloud ? 'Disponible con licencia permanente activa' : undefined}
                         className={`w-full flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 rounded-xl transition-colors group active:scale-[0.98] ${isLicensedCloud ? 'hover:bg-slate-100 dark:hover:bg-slate-800' : 'opacity-50 cursor-not-allowed'}`}
                     >
                         <div className="p-2 bg-sky-50 dark:bg-sky-900/30 rounded-lg"><Cloud size={18} className="text-sky-500" /></div>
                         <div className="text-left flex-1">
                             <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Sincronizar con la Nube</p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">Restaurar o guardar backup en la nube</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Disponible solo con licencia permanente activa</p>
                         </div>
                         {!isLicensedCloud && (
-                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 uppercase tracking-wide">Demo</span>
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 uppercase tracking-wide">Solo permanente</span>
                         )}
                         <ChevronRight size={16} className="text-slate-300" />
                     </button>

@@ -23,6 +23,7 @@ import { useCloudBackup } from '../hooks/useCloudBackup';
 import { useDataImportExport } from '../hooks/useDataImportExport';
 import { useAuthStore } from '../hooks/store/useAuthStore';
 import WalletView from './WalletView';
+import { getCachedPermanentBackupEntitlement } from '../services/backupEntitlement';
 
 
 // ───────────────────────────────────────────────────── Tab Config
@@ -54,8 +55,9 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
     const isAdmin = !requireLogin || !usuarioActivo || usuarioActivo.rol === 'ADMIN';
 
     const { deviceId, forceHeartbeat, isPremium, isDemo } = useSecurity();
-    // LICENCIA-CLOUD: solo licencias completas (premium y no demo) acceden a la nube.
-    const isLicensedCloud = isPremium && !isDemo;
+    // El respaldo remoto, manual y automático, queda reservado para licencia
+    // permanente activa. Las cuentas restantes conservan exportar/importar local.
+    const isLicensedCloud = getCachedPermanentBackupEntitlement({ isPremium, isDemo }).allowed;
     const { log: auditLog } = useAudit();
     const fileInputRef = useRef(null);
     const [activeTab, setActiveTab] = useState('negocio');

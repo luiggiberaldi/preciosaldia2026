@@ -6,6 +6,8 @@ import {
     normalizeProduct,
     normalizeReconciliation,
     normalizeSale,
+    isSupervisorPaymentMovement,
+    isSupervisorTurnIncomeMovement,
 } from '../src/services/supervisorFinancials';
 import { validateSupervisorCommand } from '../src/services/supervisorContracts';
 
@@ -98,6 +100,27 @@ describe('Supervisor financial contract', () => {
             { id: 'close', tipo: 'REGISTRO_CIERRE', cierreId: 1, summary: {} },
         ])[0];
         expect(close.canonicalBreakdown.efectivo_cop.total).toBe(12000);
+    });
+
+    it('ignora cierres, gastos, avances y ajustes sin pago real', () => {
+        const breakdown = calculateSupervisorPaymentBreakdown([
+            { tipo: 'REGISTRO_CIERRE', totalUsd: 0, totalBs: 0 },
+            { tipo: 'GASTO_INTERNO', totalUsd: 0, totalBs: 0 },
+            { tipo: 'PAGO_PROVEEDOR', totalUsd: 0, totalBs: 0 },
+            { tipo: 'AVANCE_EFECTIVO', totalUsd: 0, totalBs: 0 },
+            { tipo: 'AJUSTE_SALIDA', unitsDelta: -4 },
+        ]);
+
+        expect(breakdown).toEqual([]);
+    });
+
+    it('clasifica solamente movimientos admitidos para el desglose de pagos', () => {
+        expect(isSupervisorPaymentMovement({ tipo: 'VENTA' })).toBe(true);
+        expect(isSupervisorPaymentMovement({ tipo: 'COBRO_DEUDA' })).toBe(true);
+        expect(isSupervisorPaymentMovement({ tipo: 'GASTO_INTERNO' })).toBe(false);
+        expect(isSupervisorPaymentMovement({ tipo: 'AJUSTE_ENTRADA' })).toBe(false);
+        expect(isSupervisorTurnIncomeMovement({ tipo: 'APERTURA_CAJA' })).toBe(false);
+        expect(isSupervisorTurnIncomeMovement({ tipo: 'VENTA_CASHEA' })).toBe(true);
     });
 
     it('agrupa por cierreId explícito y no mezcla dos turnos', () => {

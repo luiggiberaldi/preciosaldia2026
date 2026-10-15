@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     calculateInventoryMetrics,
+    calculateInventoryMovementMetrics,
     calculateSalesProfit,
 } from '../src/services/supervisorMetrics';
 
@@ -50,5 +51,19 @@ describe('Supervisor metrics contract', () => {
         expect(sales.revenueUsd).toBe(0);
         expect(sales.costUsd).toBe(0);
         expect(Number.isNaN(sales.profitUsd)).toBe(false);
+    });
+});
+
+describe('calculateInventoryMovementMetrics', () => {
+    it('separa ingresos y egresos y ordena los movimientos recientes', () => {
+        const metrics = calculateInventoryMovementMetrics([
+            { tipo: 'AJUSTE_ENTRADA', timestamp: '2026-01-01T10:00:00Z', unitsDelta: 12 },
+            { tipo: 'VENTA', timestamp: '2026-01-01T12:00:00Z', unitsDelta: 99 },
+            { tipo: 'AJUSTE_SALIDA', timestamp: '2026-01-01T11:00:00Z', unitsDelta: 2 },
+        ]);
+        expect(metrics.total).toBe(2);
+        expect(metrics.incomeUnits).toBe(12);
+        expect(metrics.egressUnits).toBe(2);
+        expect(metrics.recent[0].tipo).toBe('AJUSTE_SALIDA');
     });
 });

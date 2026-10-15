@@ -22,31 +22,15 @@ async function bootSupervisor(page) {
     });
     await page.goto('/');
     await expect(page.getByTestId('supervisor-panel')).toBeVisible();
-    await page.getByRole('button', { name: 'Reportes', exact: true }).click();
 }
 
-test.describe('Supervisor reportes seguros', () => {
-    test('muestra filtros y controles PDF sin overflow', async ({ page }) => {
+test.describe('Supervisor zonas retiradas', () => {
+    test('no muestra Reportes ni Cajeros', async ({ page }) => {
         requireSafeE2EEnvironment();
         await bootSupervisor(page);
 
-        await expect(page.getByTestId('supervisor-reports')).toBeVisible();
-        await expect(page.getByTestId('supervisor-report-filters')).toBeVisible();
-        await expect(page.getByRole('button', { name: 'PDF Cierre', exact: true })).toBeVisible();
-        await expect(page.getByRole('button', { name: 'PDF Ventas', exact: true })).toBeVisible();
-        await expect(page.getByRole('button', { name: 'PDF Gastos', exact: true })).toBeVisible();
-
-        const periodControl = page.getByTestId('supervisor-report-period-select');
-        await periodControl.locator('button[aria-haspopup="listbox"]').click();
-        await expect(periodControl.getByRole('listbox')).toBeVisible();
-        await expect(periodControl.locator('select')).toHaveCount(0);
-        await expect(periodControl.getByRole('option', { name: 'Hoy', exact: true })).toBeVisible();
-        await periodControl.getByRole('option', { name: 'Hoy', exact: true }).click();
-
-        const dimensions = await page.evaluate(() => ({
-            documentWidth: document.documentElement.scrollWidth,
-            documentClientWidth: document.documentElement.clientWidth,
-        }));
-        expect(dimensions.documentWidth).toBeLessThanOrEqual(dimensions.documentClientWidth + 1);
+        await expect(page.getByRole('button', { name: 'Reportes', exact: true })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Cajeros', exact: true })).toHaveCount(0);
+        await expect(page.getByTestId('supervisor-reports')).toHaveCount(0);
     });
 });

@@ -29,10 +29,12 @@ test.describe('Supervisor lectura segura', () => {
         requireSafeE2EEnvironment();
         await bootSupervisor(page);
 
-        for (const tab of ['Cierres', 'Inventario', 'Reportes', 'Cajeros']) {
+        for (const tab of ['Cierres', 'Inventario']) {
             await page.getByRole('button', { name: tab, exact: true }).click();
             await expect(page.getByTestId('supervisor-panel')).toBeVisible({ timeout: 15_000 });
         }
+        await expect(page.getByRole('button', { name: 'Reportes', exact: true })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Cajeros', exact: true })).toHaveCount(0);
         await expect(page.getByRole('button', { name: 'Terminales', exact: true })).toHaveCount(0);
 
         await expect(page.getByText(/mutaciones remotas/i)).toHaveCount(0);

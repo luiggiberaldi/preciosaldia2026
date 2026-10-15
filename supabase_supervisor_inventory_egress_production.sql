@@ -221,6 +221,17 @@ BEGIN
            ) THEN
             RAISE EXCEPTION 'Payload de tasa inválido';
         END IF;
+    ELSIF NEW.command_type = 'supervisor.product.create' THEN
+        IF jsonb_typeof(NEW.payload->'product') <> 'object'
+           OR coalesce(NEW.payload->'product'->>'id', '') = ''
+           OR coalesce(NEW.payload->'product'->>'name', '') = '' THEN
+            RAISE EXCEPTION 'Payload de producto inválido';
+        END IF;
+    ELSIF NEW.command_type = 'supervisor.product.update' THEN
+        IF coalesce(NEW.payload->>'productId', '') = ''
+           OR jsonb_typeof(NEW.payload->'patch') <> 'object' THEN
+            RAISE EXCEPTION 'Patch de producto inválido';
+        END IF;
     ELSIF NEW.command_type = 'supervisor.inventory.batch.adjust' THEN
         IF coalesce(NEW.payload->>'direction', '') NOT IN ('ingreso', 'egreso')
            OR (
@@ -232,7 +243,7 @@ BEGIN
             RAISE EXCEPTION 'Payload de ajuste por lote inválido';
         END IF;
     ELSE
-        RAISE EXCEPTION 'Solo tasas e ingresos/egresos por lote están habilitados';
+        RAISE EXCEPTION 'Este tipo de orden Supervisor no está habilitado';
     END IF;
 
     IF NOT EXISTS (
