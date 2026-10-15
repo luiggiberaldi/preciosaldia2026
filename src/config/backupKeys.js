@@ -53,7 +53,6 @@ export const LS_KEYS = Object.freeze([
   'cop_enabled',
   'cop_primary',
   'monitor_rates_v12',
-  'premium_token',
   'printer_paper_width',
   'street_rate_bs',
   'tasa_cop',

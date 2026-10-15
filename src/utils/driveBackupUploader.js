@@ -35,6 +35,4 @@ export async function uploadToGoogleDrive(payload, deviceId, clientName) {
     } catch (e) {
         return null;
     }
-
-    return null;
 }

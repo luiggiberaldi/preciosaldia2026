@@ -122,7 +122,12 @@ function renderBackupHook() {
 }
 
 function HookHarness() {
-    useAutoBackup(true, false, 'PDA-DEVICE-01');
+    useAutoBackup(true, false, 'PDA-DEVICE-01', true);
+    return null;
+}
+
+function NonPermanentHookHarness() {
+    useAutoBackup(true, false, 'PDA-DEVICE-01', false);
     return null;
 }
 
@@ -165,6 +170,7 @@ describe('useAutoBackup remote request reconciliation', () => {
         cloudClient.from.mockClear();
         cloudClient.removeChannel.mockClear();
         cloudClient.channel.mockClear();
+        startBackupRequestPolling.mockClear();
         storageGet.mockReset();
         storageGet.mockResolvedValue(null);
         localStorage.clear();
@@ -201,6 +207,20 @@ describe('useAutoBackup remote request reconciliation', () => {
         await flushPromises();
         expect(backupQuery.update).toHaveBeenCalledTimes(1);
         view.unmount();
+    });
+
+    it('does not open remote backup listeners without permanent license', async () => {
+        const container = document.createElement('div');
+        document.body.appendChild(container);
+        const root = createRoot(container);
+        act(() => root.render(createElement(NonPermanentHookHarness)));
+        await flushPromises();
+
+        expect(startBackupRequestPolling).not.toHaveBeenCalled();
+        expect(cloudClient.channel).not.toHaveBeenCalled();
+
+        act(() => root.unmount());
+        container.remove();
     });
 
     it('does not retry a failed request before its exponential backoff expires', async () => {
@@ -294,10 +314,10 @@ describe('useAutoBackup remote request reconciliation', () => {
         const view = renderBackupHook();
         await flushPromises();
 
-        // Este entorno no tiene CompressionStream: el respaldo no es .json.gz y Storage lo rechaza
+        // Este entorno no tiene CompressionStream: el respaldo remoto se rechaza
         // sin llamar a red. Nunca se marca completed.
         expect(backupQuery.update).toHaveBeenCalledWith(
-            expect.objectContaining({ status: 'failed', error: expect.stringContaining('no se sube a Storage') })
+            expect.objectContaining({ status: 'failed', error: expect.stringContaining('no soporta compresión gzip') })
         );
         expect(backupQuery.update).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }));
         expect(sessionStorage.getItem('backup_processed_no-remote-destination')).toBeNull();

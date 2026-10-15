@@ -2,12 +2,11 @@ import { useEffect, useRef, useCallback } from 'react';
 import { storageService } from '../utils/storageService';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { IDB_KEYS, LS_KEYS } from '../config/backupKeys';
-import { compressString, isCompressionSupported } from '../utils/compression';
 import { validateBackupJson, applyBackupToStorage } from '../utils/backupRestoreService';
-import { buildCloudBackupsRow } from '../config/cloudSchema';
 import { startBackupRequestPolling } from '../services/backupRequestPolling';
-import { uploadBackupToStorage } from '../utils/backupStorageUpload';
 import { ensureSupervisorSession } from '../services/supervisorAuth';
+import { createCompressedBackupPayload } from '../utils/backupArchive';
+import { uploadCompressedBackupToCloud } from '../services/cloudBackupUpload';
 
 
 // ─── Configuración optimizada ───────────────────────────────────────────────
@@ -90,7 +89,7 @@ function quickHash(obj) {
     return `${str.length}_${h >>> 0}`;
 }
 
-export function useAutoBackup(isPremium, isDemo, deviceId) {
+export function useAutoBackup(isPremium, isDemo, deviceId, isPermanentLicense = false) {
     const intervalRef = useRef(null);
     const initialTimerRef = useRef(null);
     const performBackupRef = useRef(null);
@@ -98,13 +97,13 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
     const runningTimeoutRef = useRef(null);
     const processedIdsRef = useRef(new Set());
 
-    const configRef = useRef({ isPremium, isDemo, deviceId });
+    const configRef = useRef({ isPremium, isDemo, deviceId, isPermanentLicense });
     useEffect(() => {
-        configRef.current = { isPremium, isDemo, deviceId };
-    }, [isPremium, isDemo, deviceId]);
+        configRef.current = { isPremium, isDemo, deviceId, isPermanentLicense };
+    }, [isPremium, isDemo, deviceId, isPermanentLicense]);
 
     const performBackup = useCallback(async (forceUpload = false) => {
-        const { isPremium: premium, isDemo: demo, deviceId: devId } = configRef.current;
+        const { deviceId: devId, isPermanentLicense: permanent } = configRef.current;
         try {
                 // ── Recolectar IndexedDB ────────────────────────────────
                 const idbData = {};
@@ -135,62 +134,45 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
                 // Guardar copia local
                 await storageService.setItem(BACKUP_KEY, fullBackup);
 
-                // Subir a la nube solo si hay conexión, deviceId y emparejamiento/licencia cloud activa
-                // GUARDA-RAIL LICENCIA: los equipos en modo demo NO suben respaldos periódicos a Drive ni a la nube, salvo que sea una solicitud forzada
-                if (demo && !forceUpload) return { ok: false, error: 'Equipo en demo: respaldo periódico omitido' };
+                // El backup local se hace para todos. La nube es exclusiva de
+                // licencia permanente activa; forceUpload nunca salta esta regla.
+                if (!permanent) return { ok: false, error: 'Backup remoto disponible solo con licencia permanente activa' };
 
-                const hasCloudPairing = localStorage.getItem('pda_cloud_session') || localStorage.getItem('pda_paired_device') || premium;
-                const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-
-                // En entorno local (localhost) sin sesión de nube activa, omitir llamadas remotas para mantener la consola de desarrollo limpia
-                if (isLocalhost && !hasCloudPairing && !forceUpload) return { ok: false, error: 'Localhost sin sesión de nube: respaldo remoto omitido' };
-
-                if (devId && supabaseCloud && (hasCloudPairing || forceUpload)) {
+                if (devId && supabaseCloud) {
                     const todayStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
                     const lastDailyBackup = localStorage.getItem('bodega_last_daily_backup_date');
 
-                    // Si no es premium y ya respaldó hoy, omitir para evitar peticiones redundantes
-                    if (!premium && lastDailyBackup === todayStr && !forceUpload) return { ok: false, error: 'Ya respaldó hoy (no premium)' };
+                    // Una licencia permanente no necesita más de un backup diario
+                    // si no hubo cambios. Una solicitud forzada siempre puede pasar.
+                    if (lastDailyBackup === todayStr && !forceUpload) return { ok: false, error: 'Ya respaldó hoy' };
 
-                    const currentHash = quickHash(idbData);
+                    const currentHash = quickHash({ idb: idbData, ls: lsData });
                     const lastHash = localStorage.getItem(LAST_UPLOAD_HASH_KEY);
 
                     // forceUpload=true omite la verificación de hash (solicitud manual)
                     if (!forceUpload && currentHash === lastHash) return { ok: false, error: 'Sin cambios desde el último respaldo' };
 
-                    let payloadToUpload = fullBackup;
-                    if (isCompressionSupported()) {
-                        try {
-                            const compressedData = await compressString(JSON.stringify(fullBackup));
-                            payloadToUpload = {
-                                compressed: true,
-                                version: '2.0',
-                                timestamp: fullBackup.timestamp,
-                                appName: fullBackup.appName,
-                                device: fullBackup.device,
-                                data: compressedData
-                            };
-                        } catch (err) {
-                            console.error('[AutoBackup] Error al comprimir backup, usando raw JSON:', err);
-                        }
+                    let payloadToUpload;
+                    try {
+                        payloadToUpload = await createCompressedBackupPayload(fullBackup);
+                    } catch (err) {
+                        return { ok: false, error: err?.message || 'No se pudo comprimir el backup' };
                     }
 
-                    // Subida a Storage de Estación: solo es éxito la respuesta verificada
-                    // del servidor (ok:true). Un fallo no marca hash/fecha como respaldados.
-                    if (!payloadToUpload.compressed || typeof payloadToUpload.data !== 'string') {
-                        return { ok: false, driveUrl: null, error: 'Respaldo sin comprimir: no se sube a Storage' };
-                    }
-                    const gzipBytes = Uint8Array.from(atob(payloadToUpload.data), (c) => c.charCodeAt(0));
-                    const upload = await uploadBackupToStorage(devId, gzipBytes);
+                    // cloud_backups es el camino operativo inmediato: guarda el
+                    // payload completo comprimido y es restaurable por la ruta
+                    // manual de nube existente. Storage dedicado queda como
+                    // segunda etapa, sin bloquear este flujo.
+                    const upload = await uploadCompressedBackupToCloud(devId, payloadToUpload);
                     if (!upload.ok) {
-                        return { ok: false, driveUrl: null, error: upload.error || 'Subida a Storage fallida' };
+                        return { ok: false, error: upload.error || 'Subida a Supabase fallida' };
                     }
                     // SEC-009 (excepción documentada): hash y fecha son controles locales del
                     // respaldo, no datos de negocio. No están en LOCAL_KEYS/SYNC_KEYS y no deben
                     // ir a storageService, que encola sincronización con la nube.
                     localStorage.setItem(LAST_UPLOAD_HASH_KEY, currentHash);
                     localStorage.setItem('bodega_last_daily_backup_date', todayStr);
-                    return { ok: true, driveUrl: null, backupId: upload.backupId, operationId: upload.operationId };
+                    return { ok: true, destination: upload.destination };
                 }
 
                 return { ok: false, error: 'Sin deviceId o sin cliente de nube' };
@@ -224,8 +206,8 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
     useEffect(() => {
         // Solo dispositivos con licencia activa (no demo) escuchan solicitudes remotas de la Estación Maestra.
         // Los demos no tienen acceso a backup remoto en Drive.
-        const { isDemo: demoActive } = configRef.current;
-        if (!deviceId || !supabaseCloud || demoActive) return;
+        const { isDemo: demoActive, isPermanentLicense: permanent } = configRef.current;
+        if (!deviceId || !supabaseCloud || demoActive || !permanent) return;
 
         let channel = null;
 

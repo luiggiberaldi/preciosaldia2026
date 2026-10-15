@@ -1,8 +1,7 @@
 # Respaldo y Restauración — Caminos, Estado Real y Solución de Problemas
 
-> Estado documentado: 2026-09-09, tras la serie de fixes `b709d9e`…`5adf84d`.
-> Todo lo aquí descrito fue verificado con pruebas automatizadas (423 tests)
-> y un E2E en vivo contra el proyecto Supabase real (`sodgzkablshladvbtnes`).
+> Estado documentado: 2026-10-15, tras la auditoría de producción y la
+> activación del camino automático comprimido para licencias permanentes.
 
 ---
 
@@ -11,13 +10,14 @@
 | Camino | Estado en producción | Cuándo usarlo |
 | :--- | :--- | :--- |
 | **1. Archivo (export/import JSON)** | ✅ **Funciona hoy** — verificado round-trip completo | Respaldo diario del negocio, migración entre equipos, emergencia |
-| **2. Nube directa (dispositivo ↔ `cloud_backups`)** | ⛔ **Bloqueado por RLS** — requiere aplicar la migración SQL `001_device_own_row_rls.sql` | Cuando la migración esté aplicada en Supabase |
-| **3. Relay Estación Maestra** | 🟡 **Listo, pendiente de deploy** — endpoint creado en el repo, no desplegado a Vercel | Hoy como fallback automático; tras la migración queda como red de seguridad |
+| **2. Nube directa (dispositivo ↔ `cloud_backups`)** | ✅ **Camino operativo** — payload completo comprimido; requiere licencia permanente activa y sesión del dispositivo | Backup automático y sincronización manual |
+| **3. Relay Estación Maestra** | 🟡 **Fallback disponible** — depende del despliegue de Estación Maestra | Recuperación cuando RLS bloquee la ruta directa |
 
-**Recomendación operativa hoy:** usa el camino 1 (archivo) como respaldo
-regular del negocio. El botón "Sincronizar con la Nube" funciona vía relay en
-cuanto se despliegue la Estación Maestra; el camino 2 se activa solo al
-aplicar la migración SQL.
+**Recomendación operativa hoy:** las cuentas con licencia permanente activa
+pueden usar el backup automático comprimido hacia `cloud_backups`. Las demás
+cuentas conservan únicamente el backup local y el export/import de archivo.
+El Storage privado dedicado queda como segunda etapa; no bloquea el camino
+actual.
 
 ---
 
@@ -46,30 +46,35 @@ aplicar la migración SQL.
 
 ---
 
-## Camino 2: Nube directa (dispositivo ↔ `cloud_backups`) — ⛔ Bloqueado por RLS
+## Camino 2: Nube directa (dispositivo ↔ `cloud_backups`) — ✅ Operativo
 
 **UI:** Configuración → Sistema → *"Sincronizar con la Nube"*.
 
-### Cómo funciona (una vez aplicada la migración)
+### Cómo funciona
 1. `handleSyncCloud` establece sesión (`ensureSupervisorSession`) y registra
    la identidad del dispositivo en `device_sessions`
    (`ensureDeviceSessionRegistered`).
-2. Lectura de `cloud_backups` para el `pda_device_id` propio:
+2. El backup automático solo continúa si la licencia local confirmada es
+   `permanent` y está activa. Demo, mensual, vencida o sin licencia se detienen
+   después de guardar la copia local.
+3. Se genera el payload completo y se comprime con gzip+base64 antes de guardarlo
+   en `cloud_backups.backup_data`.
+4. Lectura de `cloud_backups` para el `pda_device_id` propio:
    - Nube con datos + dispositivo vacío → **restauración automática**.
    - Ambos con datos → **resolutor de conflictos** (elegir nube o local).
    - Nube vacía → sube el payload completo comprimido (gzip+base64).
-3. Escritura vía `buildCloudBackupsRow` (contrato de esquema con allowlist;
+5. Escritura vía `buildCloudBackupsRow` (contrato de esquema con allowlist;
    una columna inexistente lanza en desarrollo, no produce PGRST204 en
    producción).
 
-### Por qué está bloqueado hoy
-E2E en vivo contra Supabase demostró:
-- **INSERT/UPDATE → 42501** (`row-level security`).
-- **SELECT → 0 filas silenciosamente** (no hay error: la app cree que la nube
-  está vacía).
+### Requisitos de producción
+La producción actual ya contiene las políticas own-row de `cloud_backups`,
+`sync_documents` y `device_sessions`. La aplicación intenta usar la RPC
+`register_device_session` y conserva un fallback compatible con instalaciones
+anteriores que todavía no la tengan.
 
-### Activarlo
-Aplicar `supabase/migrations/001_device_own_row_rls.sql` (idempotente):
+Si una instalación no tiene estas políticas, aplicar
+`supabase/migrations/001_device_own_row_rls.sql` (idempotente):
 - Tabla puente `device_sessions` (`device_id` ↔ `user_id` de la sesión
   anónima, con reclaim si la sesión se regenera).
 - Políticas own-row (insert/update/select) para `cloud_backups` y
@@ -80,12 +85,15 @@ Aplicar `supabase/migrations/001_device_own_row_rls.sql` (idempotente):
 supabase db push          # o pegar el SQL en el SQL Editor del proyecto
 ```
 
-No hay que cambiar nada en la app: el camino directo es primario y el relay
-pasa a ser red de seguridad inactiva.
+El registro recomendado de sesión está en
+`supabase/migrations/20261015_supervisor_device_session_registration.sql`.
+La restricción de servidor para aceptar únicamente licencias permanentes está
+en `supabase/migrations/20261015_backup_permanent_license_rls.sql` y debe
+aplicarse antes de publicar el backup automático para usuarios finales.
 
 ---
 
-## Camino 3: Relay Estación Maestra — 🟡 Listo, pendiente de deploy
+## Camino 3: Relay Estación Maestra — 🟡 Fallback
 
 **Endpoint (lado Estación Maestra):** `src/app/api/backup/relay/route.ts`
 - `POST { deviceId, backup_data }` → upsert en `cloud_backups` con
