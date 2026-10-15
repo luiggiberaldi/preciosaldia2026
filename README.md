@@ -68,18 +68,16 @@ Este módulo forma parte de la suite corporativa integrada y está preparado par
    - `.env.example` solo contiene placeholders vacíos; si ves secretos reales,
      reportar y rotar siguiendo `scripts/rotate-secrets.md`.
 
-4. **`VITE_GOOGLE_SCRIPT_URL` es OBLIGATORIO** (INFRA-003):
-   El dev server `/api/rates` no tiene fallback hardcoded. Si la variable no
-   está definida, `/api/rates` cae al fallback de `ve.dolarapi.com` pero
-   registrará un warning en consola. En producción, el Worker usa dolarapi
-   directamente y NO requiere Google Script.
+4. **Las tasas no dependen de Google Script**:
+   `/api/rates` usa el BCV/DolarApi y conserva una caché de respaldo. Google
+   Script queda, si se configura, únicamente para el flujo legacy de respaldos.
 
 5. **Iniciar servidor de desarrollo** (HMR):
    ```bash
    bun run dev
    ```
    El dev server expone:
-   - `/api/rates` — proxy a Google Script o dolarapi (CORS restringido, INFRA-012).
+   - `/api/rates` — proxy al BCV/DolarApi (CORS restringido, INFRA-012).
    - `/api/analyze` — proxy a Groq (CORS restringido + token efímero, SEC-011).
      Requiere header `X-Dev-Token: $DEV_ANALYZE_TOKEN` y solo acepta prompts
      de máximo 4000 chars.
@@ -144,8 +142,8 @@ wrangler secret put ALLOWED_ORIGINS
 # Genera con: openssl rand -hex 32  (hex 64 chars)
 wrangler secret put BACKUP_ENCRYPTION_KEY
 
-# Opcionales (si el Worker necesita llamar a Google Script o Exchangerate):
-wrangler secret put VITE_GOOGLE_SCRIPT_URL
+# Opcionales (Google Script solo para respaldos legacy o Exchangerate):
+wrangler secret put VITE_GOOGLE_SCRIPT_BACKUPS_URL
 wrangler secret put VITE_EXCHANGERATE_KEY
 ```
 

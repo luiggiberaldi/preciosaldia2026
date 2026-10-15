@@ -109,32 +109,7 @@ export async function fetchBcvRates() {
     } catch (bcvError) {
         console.warn(`[BCV Scraper] Falla en conexión directa al BCV: ${bcvError.message}. Iniciando esquema de respaldo...`);
         
-        // 5. Esquema de Respaldo (Fallback)
-        // Intentar primero Google Script (VITE_GOOGLE_SCRIPT_URL o GOOGLE_SCRIPT_URL)
-        const googleScriptUrl = process.env.VITE_GOOGLE_SCRIPT_URL || process.env.GOOGLE_SCRIPT_URL;
-        if (googleScriptUrl) {
-            try {
-                const controller = new AbortController();
-                const timeout = setTimeout(() => controller.abort(), 8000);
-                const gRes = await fetch(googleScriptUrl, { signal: controller.signal });
-                clearTimeout(timeout);
-                if (gRes.ok) {
-                    const gData = await gRes.json();
-                    if (gData && gData.bcv) {
-                        return {
-                            bcv: parseFloat(gData.bcv.price || gData.bcv),
-                            euro: parseFloat(gData.euro?.price || gData.euro || (gData.bcv * 1.09)),
-                            usdt: primaryUsdt || parseFloat(gData.usdt?.price || gData.usdt || (gData.bcv * 1.12)),
-                            source: 'Google API (Fallback)'
-                        };
-                    }
-                }
-            } catch (gErr) {
-                console.warn(`[BCV Scraper Fallback] Falla en Google Script: ${gErr.message}`);
-            }
-        }
-
-        // Si falla Google Script, intentar dolarapi (tanto para dólares como para euros)
+        // 5. Esquema de respaldo: DolarApi (tanto para dólares como para euros).
         try {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 8000);

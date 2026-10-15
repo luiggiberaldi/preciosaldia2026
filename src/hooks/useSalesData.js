@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { storageService } from '../utils/storageService';
 import { getActivePaymentMethods, INTERNAL_CREDIT_PAYMENT_METHOD } from '../config/paymentMethods';
-import { getLocalISODate } from '../utils/dateHelpers';
 import { migrateCustomerLedger } from '../utils/customerMigration';
 import { isGranelProduct, normalizeCartQuantity } from '../utils/granel'; // GRANEL-001
+import { findOpenCashShift } from '../utils/cashShift';
 
 export const SALES_KEY = 'bodega_sales_v1';
 
@@ -67,13 +67,9 @@ export function useSalesData({ setCart, cartRef, isActive }) {
                     setCart(cleanCart);
                 }
 
-                // Check Apertura (timezone-safe)
-                const todayStr = getLocalISODate(new Date());
-                const apertura = savedSales.find(s => {
-                    if (s.tipo !== 'APERTURA_CAJA' || s.cajaCerrada) return false;
-                    const saleDay = s.timestamp ? getLocalISODate(new Date(s.timestamp)) : todayStr;
-                    return saleDay === todayStr;
-                });
+                // La apertura permanece activa hasta el cierre manual, incluso si
+                // la jornada cruza medianoche.
+                const apertura = findOpenCashShift(savedSales);
                 setTodayAperturaData(apertura || null);
 
                 setIsLoadingLocal(false);
@@ -97,14 +93,9 @@ export function useSalesData({ setCart, cartRef, isActive }) {
             setCustomers(savedCustomers);
             setSalesData(savedSales);
 
-            // Recalculate Apertura (uses imported getLocalISODate)
-            const todayStr = getLocalISODate(new Date());
-
-            const apertura = savedSales.find(s => {
-                if (s.tipo !== 'APERTURA_CAJA' || s.cajaCerrada) return false;
-                const saleLocalDay = s.timestamp ? getLocalISODate(new Date(s.timestamp)) : todayStr;
-                return saleLocalDay === todayStr;
-            });
+            // La apertura permanece activa hasta el cierre manual, incluso si
+            // la jornada cruza medianoche.
+            const apertura = findOpenCashShift(savedSales);
             setTodayAperturaData(apertura || null);
         }).catch(err => console.error('[useSalesData] Error al recargar datos:', err));
     }, [isActive]);

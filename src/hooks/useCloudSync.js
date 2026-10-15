@@ -4,6 +4,7 @@ import { supabaseCloud } from '../config/supabaseCloud';
 import { useAuthStore } from './store/useAuthStore';
 import { SUPERVISOR_SYNC_KEYS, validateSupervisorSyncDocument } from '../services/supervisorContracts';
 import { ensureSupervisorSession } from '../services/supervisorAuth';
+import { isPrimaryPairingActive, readPairingRow } from '../services/supervisorPairingState';
 import { mergeLedgerEntries, rebuildCustomersFromLedger } from '../utils/customerLedger';
 import {
     buildSyncEnvelope,
@@ -83,10 +84,13 @@ function _debouncePush(key, value) {
     }, delay);
 }
 
-export const pushCloudSync = async (key, value, forceUnconditional = false) => {
+export const pushCloudSync = async (key, value, forceUnconditional = false, allowBeforePairing = false) => {
     if (!supabaseCloud) return { ok: false, skipped: true, error: 'Supabase no disponible' };
     if (isSyncingFromCloud) return { ok: false, skipped: true, error: 'Cambio remoto en aplicación' };
-    if (!isCloudSyncActive) return { ok: false, skipped: true, error: 'Sync no activo' };
+    // El primer pairing necesita publicar el snapshot antes de que exista
+    // monitor_device_id. Solo forceSyncAllPOSData(..., allowBeforePairing=true)
+    // puede abrir esta excepción; los pushes normales siguen bloqueados.
+    if (!isCloudSyncActive && !allowBeforePairing) return { ok: false, skipped: true, error: 'Sync no activo' };
     if (!SYNC_KEYS.includes(key)) return { ok: false, skipped: true, error: 'Clave no allowlisted' };
     if (!_currentDeviceId) return { ok: false, skipped: true, error: 'Dispositivo no definido' };
 
@@ -165,27 +169,34 @@ export const queueCloudSync = (key, value) => {
  * Empuja de forma forzada TODOS los datos del punto de venta a la nube Supabase.
  * Se invoca al iniciar la app o al vincular el dispositivo.
  */
-export const forceSyncAllPOSData = async (overrideDeviceId, forceUnconditional = false) => {
-    if (!supabaseCloud) return;
+export const forceSyncAllPOSData = async (overrideDeviceId, forceUnconditional = false, allowBeforePairing = false) => {
+    if (!supabaseCloud) return { ok: false, error: 'Supabase no disponible', pushed: 0 };
     const isMonitor = localStorage.getItem('pda_pairing_mode') === 'monitor';
-    if (isMonitor) return;
+    if (isMonitor) return { ok: false, error: 'El modo supervisor no puede publicar datos', pushed: 0 };
 
     const activeDeviceId = overrideDeviceId || _currentDeviceId || localStorage.getItem('pda_device_id');
-    if (!activeDeviceId) return;
+    if (!activeDeviceId) return { ok: false, error: 'Dispositivo no definido', pushed: 0 };
 
-    if (!isCloudSyncActive) return { ok: false, error: 'Sync no activo' };
+    if (!isCloudSyncActive && !allowBeforePairing) return { ok: false, error: 'La sincronización no está activa', pushed: 0 };
 
     try {
         const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
         const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_customer_ledger_v1', 'bodega_accounts_v2'];
+        let pushed = 0;
         for (const key of criticalKeys) {
             const val = await lf.getItem(key);
             if (val !== null) {
-                await pushCloudSync(key, val, forceUnconditional);
+                const result = await pushCloudSync(key, val, forceUnconditional, allowBeforePairing);
+                if (!result.ok && !result.skipped) {
+                    return { ok: false, error: result.error || `No se pudo sincronizar ${key}`, pushed };
+                }
+                pushed += 1;
             }
         }
+        return { ok: true, error: null, pushed };
     } catch (e) {
         console.warn('[CloudSync] Error en sincronización forzada POS:', e);
+        return { ok: false, error: e?.message || 'Error de sincronización', pushed: 0 };
     }
 };
 
@@ -297,6 +308,7 @@ async function _applyFromCloud(docId, collection, data) {
 // ─── Hook de React ─────────────────────────────────────────────────────────
 export function useCloudSync(deviceId) {
     const isInitialized = useRef(false);
+    const pairingRecoveryHandlerRef = useRef(null);
 
     useEffect(() => {
         if (!supabaseCloud || !deviceId) {
@@ -344,47 +356,74 @@ export function useCloudSync(deviceId) {
                     authUserId: shortCloudSyncId(session.user?.id),
                 });
 
-                const { data: pairing, error: pairingError } = await supabaseCloud
-                    .from('device_pairings')
-                    .select('monitor_device_id')
-                    .eq('primary_device_id', deviceId)
-                    .maybeSingle();
+                const { data: pairing, error: pairingError } = await readPairingRow({
+                    supabase: supabaseCloud,
+                    primaryDeviceId: deviceId,
+                });
+
+                const handlePairingChange = async () => {
+                    const latest = await readPairingRow({
+                        supabase: supabaseCloud,
+                        primaryDeviceId: deviceId,
+                    });
+                    if (latest.error) return;
+
+                    const active = isPrimaryPairingActive(latest.data);
+                    window.dispatchEvent(new CustomEvent(
+                        active ? 'supervisor_pairing_active' : 'supervisor_pairing_revoked',
+                        { detail: { deviceId, source: 'pairing_realtime' } }
+                    ));
+
+                    const shouldRestart = active ? !isInitialized.current : isInitialized.current;
+                    if (shouldRestart) {
+                        isCloudSyncActive = false;
+                        isInitialized.current = false;
+                        const staleChannel = globalSubscription;
+                        globalSubscription = null;
+                        if (staleChannel) await supabaseCloud.removeChannel(staleChannel).catch(() => {});
+                        void initSync();
+                    }
+                };
+                pairingRecoveryHandlerRef.current = handlePairingChange;
+
+                const subscribeToPairingChanges = () => {
+                    if (globalSubscription) return;
+                    globalSubscription = supabaseCloud
+                        .channel(`device_pairings:${deviceId}`)
+                        .on('postgres_changes', {
+                            event: '*',
+                            schema: 'public',
+                            table: 'device_pairings',
+                            filter: `primary_device_id=eq.${deviceId}`
+                        }, () => {
+                            void handlePairingChange();
+                        })
+                        .subscribe();
+                };
 
                 console.info('[CloudSync] Pairing consultado', {
                     deviceId: shortCloudSyncId(deviceId),
-                    paired: Boolean(pairing?.monitor_device_id),
-                    monitorDeviceId: shortCloudSyncId(pairing?.monitor_device_id),
+                    paired: isPrimaryPairingActive(pairing),
+                    monitorDeviceId: shortCloudSyncId(pairing?.monitor_device_id || pairing?.monitor_device_id_2),
                     error: pairingError?.message || null,
                 });
 
-                if (pairingError || !pairing?.monitor_device_id) {
+                if (pairingError || !isPrimaryPairingActive(pairing)) {
                     isCloudSyncActive = false;
                     console.warn('[CloudSync] Sincronización pausada hasta completar el pairing', {
                         reason: pairingError?.message || 'pairing_sin_monitor',
                         deviceId: shortCloudSyncId(deviceId),
                     });
-                    if (!globalSubscription) {
-                        globalSubscription = supabaseCloud
-                            .channel(`device_pairings:${deviceId}`)
-                            .on('postgres_changes', {
-                                event: '*',
-                                schema: 'public',
-                                table: 'device_pairings',
-                                filter: `primary_device_id=eq.${deviceId}`
-                            }, () => {
-                                isInitialized.current = false;
-                                initSync();
-                            })
-                            .subscribe();
-                    }
+                    subscribeToPairingChanges();
                     return;
                 }
 
                 isCloudSyncActive = true;
                 isInitialized.current = true;
+                subscribeToPairingChanges();
                 console.info('[CloudSync] Receptor activo', {
                     deviceId: shortCloudSyncId(deviceId),
-                    monitorDeviceId: shortCloudSyncId(pairing.monitor_device_id),
+                    monitorDeviceId: shortCloudSyncId(pairing.monitor_device_id || pairing.monitor_device_id_2),
                 });
 
                 // Sincronizar automáticamente todos los datos del POS a la nube en segundo plano (Patrón Donde Juancho)
@@ -480,6 +519,13 @@ export function useCloudSync(deviceId) {
 
         initSync();
 
+        // Fallback económico si Realtime está temporalmente desconectado:
+        // una lectura pequeña por minuto evita dejar activa una vinculación
+        // revocada sin convertir el polling en tráfico constante.
+        const pairingRecoveryTimer = setInterval(() => {
+            void pairingRecoveryHandlerRef.current?.();
+        }, 60_000);
+
         // ── MECANISMOS DE SINCRONIZACIÓN AUTOMÁTICA Y CONTINUA ──
         //
         // EGRESS-FIX (RC2): ELIMINADO el listener de `app_storage_update` que
@@ -523,6 +569,8 @@ export function useCloudSync(deviceId) {
 
         return () => {
             isCloudSyncActive = false;
+            pairingRecoveryHandlerRef.current = null;
+            clearInterval(pairingRecoveryTimer);
             window.removeEventListener('online', forcePushLocalData);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
 

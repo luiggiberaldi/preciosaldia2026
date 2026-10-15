@@ -13,9 +13,8 @@ const DEFAULT_EUR_USD_RATIO = 1.18;
 const UPDATE_INTERVAL = 15 * 60 * 1000; // 15 minutos
 const CACHE_MAX_AGE_MS = 14 * 60 * 1000; // refrescar si tiene más de 14 min
 
-// Fallback directo (solo si el endpoint /api/rates no está disponible)
+// Fallback externo (solo si el endpoint /api/rates no está disponible)
 const EXCHANGERATE_KEY = import.meta.env.VITE_EXCHANGERATE_KEY || '';
-const GOOGLE_SCRIPT_URL = import.meta.env.VITE_GOOGLE_SCRIPT_RATES_URL || import.meta.env.VITE_GOOGLE_SCRIPT_URL || '';
 
 export function useRates() {
     const [rates, setRates] = useState(() => {
@@ -157,7 +156,6 @@ export function useRates() {
         try {
             // Fetch en paralelo de todas las fuentes disponibles
             const taskCacheApi = fetchGeneric('/api/rates');
-            const taskPrivate = GOOGLE_SCRIPT_URL ? fetchGeneric(GOOGLE_SCRIPT_URL) : Promise.resolve(null);
             const taskDolarApi = fetchGeneric('https://ve.dolarapi.com/v1/dolares');
             const taskExternal = getExternalRatesFallback();
             
@@ -167,9 +165,8 @@ export function useRates() {
                 taskClient = client.getRaw().catch(() => null);
             }
 
-            const [cacheApiData, privateData, bcvFallbackData, externalRates, clientData] = await Promise.all([
+            const [cacheApiData, bcvFallbackData, externalRates, clientData] = await Promise.all([
                 taskCacheApi.catch(() => null),
-                taskPrivate.catch(() => null),
                 taskDolarApi.catch(() => null),
                 taskExternal.catch(() => ({ eur: DEFAULT_EUR_USD_RATIO, cop: null })),
                 taskClient
@@ -204,16 +201,7 @@ export function useRates() {
                 }
             }
 
-            // 2. Candidato: privateData (Google Script)
-            if (privateData) {
-                const rawBcv = privateData.bcv || privateData.usd;
-                const price = validateMagnitude(parseSafeFloat(typeof rawBcv === 'object' ? rawBcv.price : rawBcv));
-                if (price > 10.0) {
-                    candidates.push({ val: price, source: 'Google Script (VITE_GOOGLE_SCRIPT_URL)' });
-                }
-            }
-
-            // 3. Candidato: bcvFallbackData (DolarApi)
+            // 2. Candidato: bcvFallbackData (DolarApi)
             if (bcvFallbackData) {
                 const oficial = Array.isArray(bcvFallbackData) 
                     ? bcvFallbackData.find(d => d.fuente === 'oficial' || d.nombre === 'Oficial') 
@@ -226,7 +214,7 @@ export function useRates() {
                 }
             }
 
-            // 4. Candidato: clientData (BcvApiClient)
+            // 3. Candidato: clientData (BcvApiClient)
             if (clientData && clientData.ok && clientData.tasa > 0) {
                 const price = validateMagnitude(parseSafeFloat(clientData.tasa));
                 if (price > 10.0) {
@@ -269,13 +257,7 @@ export function useRates() {
             let newEuroPrice = 0;
             let euroSource = 'Calculado';
 
-            if (privateData) {
-                const rawEuro = privateData.euro || privateData.eur;
-                newEuroPrice = validateMagnitude(parseSafeFloat(typeof rawEuro === 'object' ? rawEuro.price : rawEuro));
-                if (newEuroPrice > 0) euroSource = 'Google Script (VITE_GOOGLE_SCRIPT_URL)';
-            }
-
-            if (newEuroPrice <= 0 && cacheApiData && cacheApiData.euro?.price > 0) {
+            if (cacheApiData && cacheApiData.euro?.price > 0) {
                 newEuroPrice = validateMagnitude(parseSafeFloat(cacheApiData.euro.price));
                 if (newEuroPrice > 0) euroSource = cacheApiData.euro.source || '/api/rates';
             }
@@ -289,13 +271,7 @@ export function useRates() {
             let newUsdtPrice = 0;
             let usdtSource = 'Default';
 
-            if (privateData && privateData.usdt) {
-                const rawUsdt = privateData.usdt;
-                const usdP = parseSafeFloat(typeof rawUsdt === 'object' ? rawUsdt.price : rawUsdt);
-                newUsdtPrice = validateMagnitude(usdP);
-                if (newUsdtPrice > 0) usdtSource = 'Google Script';
-            }
-            if (newUsdtPrice <= 0 && cacheApiData && cacheApiData.usdt?.price > 0) {
+            if (cacheApiData && cacheApiData.usdt?.price > 0) {
                 newUsdtPrice = validateMagnitude(parseSafeFloat(cacheApiData.usdt.price));
                 if (newUsdtPrice > 0) usdtSource = cacheApiData.usdt.source || '/api/rates';
             }

@@ -17,6 +17,14 @@ import { getUsd } from './calculatorUtils';
 // Dimensiones de la etiqueta individual en mm
 const LABEL_W = 58;
 
+// Offsets de impresión no son importes monetarios: Number conserva valores negativos
+// y descarta entradas corruptas de calibración sin distorsionar la posición.
+const parseLabelOffset = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+};
+const offsetFor = (key, fallback) => parseLabelOffset(localStorage.getItem(key) || fallback);
+
 export const generarEtiquetas = async (productos, effectiveRate, copEnabled, tasaCop) => {
     const paperWidthSetting = localStorage.getItem('printer_paper_width') || '58';
     if (paperWidthSetting === '80') {
@@ -81,20 +89,20 @@ export const generarEtiquetas = async (productos, effectiveRate, copEnabled, tas
     const defFontFooter = isMixto ? '4' : '4';
 
     // Cargar offsets personalizados de calibración desde localStorage
-    const offsetNameX = parseFloat(localStorage.getItem(`label_offset_name_x${modeSuffix}`) || defNameX);
-    const offsetNameY = parseFloat(localStorage.getItem(`label_offset_name_y${modeSuffix}`) || defNameY);
-    const offsetPriceX = parseFloat(localStorage.getItem(`label_offset_price_x${modeSuffix}`) || defPriceX);
-    const offsetPriceY = parseFloat(localStorage.getItem(`label_offset_price_y${modeSuffix}`) || defPriceY);
-    const offsetSecPriceX = parseFloat(localStorage.getItem(`label_offset_sec_price_x${modeSuffix}`) || defSecPriceX);
-    const offsetSecPriceY = parseFloat(localStorage.getItem(`label_offset_sec_price_y${modeSuffix}`) || defSecPriceY);
-    const offsetFooterX = parseFloat(localStorage.getItem(`label_offset_footer_x${modeSuffix}`) || defFooterX);
-    const offsetFooterY = parseFloat(localStorage.getItem(`label_offset_footer_y${modeSuffix}`) || defFooterY);
+    const offsetNameX = offsetFor(`label_offset_name_x${modeSuffix}`, defNameX);
+    const offsetNameY = offsetFor(`label_offset_name_y${modeSuffix}`, defNameY);
+    const offsetPriceX = offsetFor(`label_offset_price_x${modeSuffix}`, defPriceX);
+    const offsetPriceY = offsetFor(`label_offset_price_y${modeSuffix}`, defPriceY);
+    const offsetSecPriceX = offsetFor(`label_offset_sec_price_x${modeSuffix}`, defSecPriceX);
+    const offsetSecPriceY = offsetFor(`label_offset_sec_price_y${modeSuffix}`, defSecPriceY);
+    const offsetFooterX = offsetFor(`label_offset_footer_x${modeSuffix}`, defFooterX);
+    const offsetFooterY = offsetFor(`label_offset_footer_y${modeSuffix}`, defFooterY);
 
     // Cargar offsets de tamaño de fuente (tipografía)
-    const offsetFontName = parseFloat(localStorage.getItem(`label_offset_font_name${modeSuffix}`) || defFontName);
-    const offsetFontPrice = parseFloat(localStorage.getItem(`label_offset_font_price${modeSuffix}`) || defFontPrice);
-    const offsetFontSecPrice = parseFloat(localStorage.getItem(`label_offset_font_sec_price${modeSuffix}`) || defFontSecPrice);
-    const offsetFontFooter = parseFloat(localStorage.getItem(`label_offset_font_footer${modeSuffix}`) || defFontFooter);
+    const offsetFontName = offsetFor(`label_offset_font_name${modeSuffix}`, defFontName);
+    const offsetFontPrice = offsetFor(`label_offset_font_price${modeSuffix}`, defFontPrice);
+    const offsetFontSecPrice = offsetFor(`label_offset_font_sec_price${modeSuffix}`, defFontSecPrice);
+    const offsetFontFooter = offsetFor(`label_offset_font_footer${modeSuffix}`, defFontFooter);
 
     // Helper ergonómico para centrar texto de forma manual (evita bugs de alineación de jsPDF)
     const centrarTexto = (texto, y, fontSize, fontStyle = 'normal', color = [0, 0, 0], offsetX = 0, offsetY = 0) => {
@@ -363,18 +371,18 @@ export const generarPreviewLabel = async (effectiveRate = 36.5, copEnabled = fal
     const defFontSecPrice = isMixto ? '14.5' : '0';
     const defFontFooter = isMixto ? '4' : '2';
 
-    const offsetNameX       = parseFloat(localStorage.getItem(`label_offset_name_x${modeSuffix}`)       || defNameX);
-    const offsetNameY       = parseFloat(localStorage.getItem(`label_offset_name_y${modeSuffix}`)       || defNameY);
-    const offsetPriceX      = parseFloat(localStorage.getItem(`label_offset_price_x${modeSuffix}`)      || defPriceX);
-    const offsetPriceY      = parseFloat(localStorage.getItem(`label_offset_price_y${modeSuffix}`)      || defPriceY);
-    const offsetSecPriceX   = parseFloat(localStorage.getItem(`label_offset_sec_price_x${modeSuffix}`)  || defSecPriceX);
-    const offsetSecPriceY   = parseFloat(localStorage.getItem(`label_offset_sec_price_y${modeSuffix}`)  || defSecPriceY);
-    const offsetFooterX     = parseFloat(localStorage.getItem(`label_offset_footer_x${modeSuffix}`)     || defFooterX);
-    const offsetFooterY     = parseFloat(localStorage.getItem(`label_offset_footer_y${modeSuffix}`)     || defFooterY);
-    const offsetFontName     = parseFloat(localStorage.getItem(`label_offset_font_name${modeSuffix}`)      || defFontName);
-    const offsetFontPrice    = parseFloat(localStorage.getItem(`label_offset_font_price${modeSuffix}`)     || defFontPrice);
-    const offsetFontSecPrice = parseFloat(localStorage.getItem(`label_offset_font_sec_price${modeSuffix}`) || defFontSecPrice);
-    const offsetFontFooter   = parseFloat(localStorage.getItem(`label_offset_font_footer${modeSuffix}`)    || defFontFooter);
+    const offsetNameX       = offsetFor(`label_offset_name_x${modeSuffix}`, defNameX);
+    const offsetNameY       = offsetFor(`label_offset_name_y${modeSuffix}`, defNameY);
+    const offsetPriceX      = offsetFor(`label_offset_price_x${modeSuffix}`, defPriceX);
+    const offsetPriceY      = offsetFor(`label_offset_price_y${modeSuffix}`, defPriceY);
+    const offsetSecPriceX   = offsetFor(`label_offset_sec_price_x${modeSuffix}`, defSecPriceX);
+    const offsetSecPriceY   = offsetFor(`label_offset_sec_price_y${modeSuffix}`, defSecPriceY);
+    const offsetFooterX     = offsetFor(`label_offset_footer_x${modeSuffix}`, defFooterX);
+    const offsetFooterY     = offsetFor(`label_offset_footer_y${modeSuffix}`, defFooterY);
+    const offsetFontName     = offsetFor(`label_offset_font_name${modeSuffix}`, defFontName);
+    const offsetFontPrice    = offsetFor(`label_offset_font_price${modeSuffix}`, defFontPrice);
+    const offsetFontSecPrice = offsetFor(`label_offset_font_sec_price${modeSuffix}`, defFontSecPrice);
+    const offsetFontFooter   = offsetFor(`label_offset_font_footer${modeSuffix}`, defFontFooter);
 
     const doc = new jsPDF('p', 'mm', [LABEL_W_L, labelH]);
 
@@ -540,18 +548,18 @@ export const generarEtiquetas80 = async (productos, effectiveRate, copEnabled, t
     const defFontFooter = '3';
 
     // Cargar offsets de localStorage
-    const offsetNameX       = parseFloat(localStorage.getItem(`label_offset_name_x${modeSuffix}`)       || defNameX);
-    const offsetNameY       = parseFloat(localStorage.getItem(`label_offset_name_y${modeSuffix}`)       || defNameY);
-    const offsetPriceX      = parseFloat(localStorage.getItem(`label_offset_price_x${modeSuffix}`)      || defPriceX);
-    const offsetPriceY      = parseFloat(localStorage.getItem(`label_offset_price_y${modeSuffix}`)      || defPriceY);
-    const offsetSecPriceX   = parseFloat(localStorage.getItem(`label_offset_sec_price_x${modeSuffix}`)  || defSecPriceX);
-    const offsetSecPriceY   = parseFloat(localStorage.getItem(`label_offset_sec_price_y${modeSuffix}`)  || defSecPriceY);
-    const offsetFooterX     = parseFloat(localStorage.getItem(`label_offset_footer_x${modeSuffix}`)     || defFooterX);
-    const offsetFooterY     = parseFloat(localStorage.getItem(`label_offset_footer_y${modeSuffix}`)     || defFooterY);
-    const offsetFontName     = parseFloat(localStorage.getItem(`label_offset_font_name${modeSuffix}`)      || defFontName);
-    const offsetFontPrice    = parseFloat(localStorage.getItem(`label_offset_font_price${modeSuffix}`)     || defFontPrice);
-    const offsetFontSecPrice = parseFloat(localStorage.getItem(`label_offset_font_sec_price${modeSuffix}`) || defFontSecPrice);
-    const offsetFontFooter   = parseFloat(localStorage.getItem(`label_offset_font_footer${modeSuffix}`)    || defFontFooter);
+    const offsetNameX       = offsetFor(`label_offset_name_x${modeSuffix}`, defNameX);
+    const offsetNameY       = offsetFor(`label_offset_name_y${modeSuffix}`, defNameY);
+    const offsetPriceX      = offsetFor(`label_offset_price_x${modeSuffix}`, defPriceX);
+    const offsetPriceY      = offsetFor(`label_offset_price_y${modeSuffix}`, defPriceY);
+    const offsetSecPriceX   = offsetFor(`label_offset_sec_price_x${modeSuffix}`, defSecPriceX);
+    const offsetSecPriceY   = offsetFor(`label_offset_sec_price_y${modeSuffix}`, defSecPriceY);
+    const offsetFooterX     = offsetFor(`label_offset_footer_x${modeSuffix}`, defFooterX);
+    const offsetFooterY     = offsetFor(`label_offset_footer_y${modeSuffix}`, defFooterY);
+    const offsetFontName     = offsetFor(`label_offset_font_name${modeSuffix}`, defFontName);
+    const offsetFontPrice    = offsetFor(`label_offset_font_price${modeSuffix}`, defFontPrice);
+    const offsetFontSecPrice = offsetFor(`label_offset_font_sec_price${modeSuffix}`, defFontSecPrice);
+    const offsetFontFooter   = offsetFor(`label_offset_font_footer${modeSuffix}`, defFontFooter);
 
     const centrarTexto = (texto, y, fontSize, fontStyle = 'normal', color = [0, 0, 0], offsetX = 0, offsetY = 0) => {
         doc.setFont('helvetica', fontStyle);
@@ -773,18 +781,18 @@ export const generarPreviewLabel80 = async (effectiveRate = 36.5, copEnabled = f
     const defFontSecPrice = isMixto ? '12' : '0';
     const defFontFooter = '3';
 
-    const offsetNameX       = parseFloat(localStorage.getItem(`label_offset_name_x${modeSuffix}`)       || defNameX);
-    const offsetNameY       = parseFloat(localStorage.getItem(`label_offset_name_y${modeSuffix}`)       || defNameY);
-    const offsetPriceX      = parseFloat(localStorage.getItem(`label_offset_price_x${modeSuffix}`)      || defPriceX);
-    const offsetPriceY      = parseFloat(localStorage.getItem(`label_offset_price_y${modeSuffix}`)      || defPriceY);
-    const offsetSecPriceX   = parseFloat(localStorage.getItem(`label_offset_sec_price_x${modeSuffix}`)  || defSecPriceX);
-    const offsetSecPriceY   = parseFloat(localStorage.getItem(`label_offset_sec_price_y${modeSuffix}`)  || defSecPriceY);
-    const offsetFooterX     = parseFloat(localStorage.getItem(`label_offset_footer_x${modeSuffix}`)     || defFooterX);
-    const offsetFooterY     = parseFloat(localStorage.getItem(`label_offset_footer_y${modeSuffix}`)     || defFooterY);
-    const offsetFontName     = parseFloat(localStorage.getItem(`label_offset_font_name${modeSuffix}`)      || defFontName);
-    const offsetFontPrice    = parseFloat(localStorage.getItem(`label_offset_font_price${modeSuffix}`)     || defFontPrice);
-    const offsetFontSecPrice = parseFloat(localStorage.getItem(`label_offset_font_sec_price${modeSuffix}`) || defFontSecPrice);
-    const offsetFontFooter   = parseFloat(localStorage.getItem(`label_offset_font_footer${modeSuffix}`)    || defFontFooter);
+    const offsetNameX       = offsetFor(`label_offset_name_x${modeSuffix}`, defNameX);
+    const offsetNameY       = offsetFor(`label_offset_name_y${modeSuffix}`, defNameY);
+    const offsetPriceX      = offsetFor(`label_offset_price_x${modeSuffix}`, defPriceX);
+    const offsetPriceY      = offsetFor(`label_offset_price_y${modeSuffix}`, defPriceY);
+    const offsetSecPriceX   = offsetFor(`label_offset_sec_price_x${modeSuffix}`, defSecPriceX);
+    const offsetSecPriceY   = offsetFor(`label_offset_sec_price_y${modeSuffix}`, defSecPriceY);
+    const offsetFooterX     = offsetFor(`label_offset_footer_x${modeSuffix}`, defFooterX);
+    const offsetFooterY     = offsetFor(`label_offset_footer_y${modeSuffix}`, defFooterY);
+    const offsetFontName     = offsetFor(`label_offset_font_name${modeSuffix}`, defFontName);
+    const offsetFontPrice    = offsetFor(`label_offset_font_price${modeSuffix}`, defFontPrice);
+    const offsetFontSecPrice = offsetFor(`label_offset_font_sec_price${modeSuffix}`, defFontSecPrice);
+    const offsetFontFooter   = offsetFor(`label_offset_font_footer${modeSuffix}`, defFontFooter);
 
     const centrarTexto = (texto, y, fontSize, fontStyle = 'normal', color = [0, 0, 0], ox = 0, oy = 0) => {
         doc.setFont('helvetica', fontStyle);

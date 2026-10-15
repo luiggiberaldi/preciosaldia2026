@@ -390,11 +390,12 @@ describe('HOOK-041: backupKeys.js — listas canónicas', () => {
     expect(IDB_KEYS).toContain('my_categories_v1');
   });
 
-  it('LS_KEYS incluye claves de configuración y auth', () => {
+  it('LS_KEYS incluye configuración pero excluye credenciales/licencias', () => {
     expect(LS_KEYS).toContain('street_rate_bs');
     expect(LS_KEYS).toContain('bodega_use_auto_rate');
     expect(LS_KEYS).toContain('business_name');
-    expect(LS_KEYS).toContain('premium_token');
+    expect(LS_KEYS).not.toContain('premium_token');
+    expect(LS_KEYS).not.toContain('abasto-auth-storage');
   });
 
   it('PROTECTED_KEYS incluye los flags que NO se deben borrar en import', () => {
