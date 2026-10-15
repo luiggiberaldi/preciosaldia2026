@@ -527,48 +527,55 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
             )}
 
             {/* Contenido Principal */}
-            <main data-testid="supervisor-main" className="max-w-7xl mx-auto w-full min-w-0 px-3 sm:px-4 mt-4 sm:mt-6 space-y-5 sm:space-y-6">
-                {/* Selector de Pestañas */}
-                <div data-testid="supervisor-tabs" className="flex bg-slate-200/60 dark:bg-slate-900/60 p-1 rounded-2xl w-full max-w-full sm:max-w-2xl shadow-sm overflow-x-auto overscroll-x-contain scrollbar-hide">
+            <main data-testid="supervisor-main" className="max-w-7xl mx-auto w-full min-w-0 px-3 sm:px-4 mt-4 sm:mt-6 space-y-5 sm:space-y-6 pb-24 sm:pb-8">
+                {/* Selector de Pestañas / Barra de Navegación Responsiva (Bottom Nav en Móvil / Pill Bar en Escritorio) */}
+                <div 
+                    data-testid="supervisor-tabs" 
+                    className="fixed bottom-0 inset-x-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200/80 dark:border-slate-800 p-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-lg flex justify-around sm:static sm:z-auto sm:border-0 sm:shadow-sm sm:max-w-2xl sm:p-1 sm:rounded-2xl sm:bg-slate-200/60 sm:dark:bg-slate-900/60 sm:overflow-x-auto sm:scrollbar-hide"
+                >
                     <button
                         onClick={() => { triggerHaptic?.(); setViewTab('activo'); }}
-                        className={`shrink-0 min-h-11 flex-1 py-2 px-3 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap ${
+                        className={`shrink-0 min-h-12 sm:min-h-11 flex-1 py-1.5 sm:py-2 px-2 sm:px-3 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap active:scale-95 ${
                             viewTab === 'activo' 
                                 ? 'bg-white dark:bg-slate-800 text-slate-850 dark:text-white shadow-sm' 
                                 : 'text-slate-400 hover:text-slate-650 dark:hover:text-slate-200'
                         }`}
                     >
-                        Turno Activo
+                        <Clock size={17} className={viewTab === 'activo' ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400'} />
+                        <span>Turno Activo</span>
                     </button>
                     <button
                         onClick={() => { triggerHaptic?.(); setViewTab('cierres'); }}
-                        className={`shrink-0 min-h-11 flex-1 py-2 px-3 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap ${
+                        className={`shrink-0 min-h-12 sm:min-h-11 flex-1 py-1.5 sm:py-2 px-2 sm:px-3 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap active:scale-95 ${
                             viewTab === 'cierres' 
                                 ? 'bg-white dark:bg-slate-800 text-slate-850 dark:text-white shadow-sm' 
                                 : 'text-slate-400 hover:text-slate-650 dark:hover:text-slate-200'
                         }`}
                     >
-                        Cierres
+                        <FileText size={17} className={viewTab === 'cierres' ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400'} />
+                        <span>Cierres</span>
                     </button>
                     <button
                         onClick={() => { triggerHaptic?.(); setViewTab('inventario'); }}
-                        className={`shrink-0 min-h-11 flex-1 py-2 px-3 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap ${
+                        className={`shrink-0 min-h-12 sm:min-h-11 flex-1 py-1.5 sm:py-2 px-2 sm:px-3 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap active:scale-95 ${
                             viewTab === 'inventario' 
                                 ? 'bg-white dark:bg-slate-800 text-slate-850 dark:text-white shadow-sm' 
                                 : 'text-slate-400 hover:text-slate-650 dark:hover:text-slate-200'
                         }`}
                     >
-                        Inventario
+                        <Package size={17} className={viewTab === 'inventario' ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400'} />
+                        <span>Inventario</span>
                     </button>
                     <button
                         onClick={() => { triggerHaptic?.(); setViewTab('control'); }}
-                        className={`shrink-0 min-h-11 flex-1 py-2 px-3 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap ${
+                        className={`shrink-0 min-h-12 sm:min-h-11 flex-1 py-1.5 sm:py-2 px-2 sm:px-3 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap active:scale-95 ${
                             viewTab === 'control'
                                 ? 'bg-white dark:bg-slate-800 text-slate-850 dark:text-white shadow-sm'
                                 : 'text-slate-400 hover:text-slate-650 dark:hover:text-slate-200'
                         }`}
                     >
-                        Control
+                        <ShieldCheck size={17} className={viewTab === 'control' ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400'} />
+                        <span>Control</span>
                     </button>
                 </div>
 
