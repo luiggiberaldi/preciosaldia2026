@@ -329,6 +329,7 @@ Este proyecto implementa protocolos estables que garantizan alta disponibilidad,
 - ESLint con guardrails: `Math.round`/`toFixed` prohibidos en código financiero
   (usar `round2`/`mulR`/`divR` de `src/utils/dinero.js`); `localStorage.setItem`
   solo permitido vía `storageService`.
+- **Línea Base Estable y Rollback:** Para procedimientos de contingencia o retorno a versiones estables anteriores en GitHub, consultar [docs/ROLLBACK-STABLE-BASELINE.md](file:///c:/Users/luigg/Desktop/sistemas%20generales/precios%20al%20dia%20final/preciosaldia-supervisor-production-alignment/docs/ROLLBACK-STABLE-BASELINE.md).
 
 El proyecto fue desarrollado y estructurado siguiendo principios avanzados de
 optimización y responsividad UI/UX con enfoque corporativo.
