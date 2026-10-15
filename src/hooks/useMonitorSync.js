@@ -10,6 +10,8 @@ import {
     readSyncEnvelope,
     buildSupervisorRealtimeChannelName,
     getSupervisorRecoveryIntervalMs,
+    shouldRunSupervisorRecovery,
+    getChangedSyncDocumentIds,
     SUPERVISOR_SYNC_STATES,
 } from '../services/supervisorSyncService';
 import { clearMonitorCache } from '../services/monitorUnpair';
@@ -44,6 +46,7 @@ export function useMonitorSync(pairedDeviceId) {
     const removeInFlightRef = useRef(Promise.resolve());
     const recoveryTimerRef = useRef(null);
     const recoveryPullInFlightRef = useRef(null);
+    const lastRecoveryAtRef = useRef(0);
     const documentQueuesRef = useRef(new Map());
     const remoteRevocationHandledRef = useRef(false);
 
@@ -289,7 +292,7 @@ export function useMonitorSync(pairedDeviceId) {
         });
     };
 
-    const pullDocuments = async (lifecycleId = lifecycleRef.current) => {
+    const pullDocuments = async (lifecycleId = lifecycleRef.current, { full = false } = {}) => {
         if (!isActiveLifecycle(lifecycleId)) return { ok: false, skipped: true, error: 'Ciclo de sincronización obsoleto' };
         if (recoveryPullInFlightRef.current) return recoveryPullInFlightRef.current;
 
@@ -298,16 +301,48 @@ export function useMonitorSync(pairedDeviceId) {
             if (sessionError || !session) throw sessionError || new Error('No hay sesión segura del monitor');
             if (!isActiveLifecycle(lifecycleId)) return { ok: false, skipped: true, error: 'Ciclo de sincronización obsoleto' };
 
-            const { data: docs, error } = await supabaseCloud
-                .from('sync_documents')
-                .select('collection, doc_id, data, updated_at')
-                .eq('device_id', pairedDeviceId)
-                .in('collection', ['store', 'local'])
-                .in('doc_id', SUPERVISOR_SYNC_KEYS);
+            let docs = [];
+            if (full) {
+                const { data, error } = await supabaseCloud
+                    .from('sync_documents')
+                    .select('collection, doc_id, data, updated_at')
+                    .eq('device_id', pairedDeviceId)
+                    .in('collection', ['store', 'local'])
+                    .in('doc_id', SUPERVISOR_SYNC_KEYS);
+                if (error) throw error;
+                docs = data || [];
+            } else {
+                // Primero transferimos solo metadatos. El payload pesado se
+                // solicita únicamente para documentos realmente modificados.
+                const { data: metadata, error: metadataError } = await supabaseCloud
+                    .from('sync_documents')
+                    .select('collection, doc_id, updated_at')
+                    .eq('device_id', pairedDeviceId)
+                    .in('collection', ['store', 'local'])
+                    .in('doc_id', SUPERVISOR_SYNC_KEYS);
 
-            if (error) throw error;
+                if (metadataError) throw metadataError;
 
-            const batch = await applyBatch(docs || [], lifecycleId);
+                const changedDocIds = getChangedSyncDocumentIds(
+                    metadata,
+                    (docId) => localStorage.getItem(getSyncMetadataKey(docId)),
+                );
+
+                if (changedDocIds.length === 0) {
+                    return { ok: true, applied: 0, rejected: 0, skipped: true, reason: 'Sin cambios remotos' };
+                }
+
+                const { data, error } = await supabaseCloud
+                    .from('sync_documents')
+                    .select('collection, doc_id, data, updated_at')
+                    .eq('device_id', pairedDeviceId)
+                    .in('collection', ['store', 'local'])
+                    .in('doc_id', changedDocIds);
+                if (error) throw error;
+                docs = data || [];
+            }
+
+            const batch = await applyBatch(docs, lifecycleId);
             if (!isActiveLifecycle(lifecycleId)) return { ok: false, skipped: true, error: 'Ciclo de sincronización obsoleto' };
             if (batch.applied > 0) updateLastSync(new Date());
             return { ok: true, ...batch };
@@ -323,6 +358,16 @@ export function useMonitorSync(pairedDeviceId) {
         if (recoveryTimerRef.current || !isActiveLifecycle(lifecycleId)) return;
         recoveryTimerRef.current = setInterval(() => {
             if (!isActiveLifecycle(lifecycleId)) return;
+
+            // Mientras Realtime está conectado, cada pull sería una copia
+            // completa innecesaria del inventario/ventas del dispositivo.
+            if (!shouldRunSupervisorRecovery({
+                realtimeConnected: Boolean(subscriptionRef.current),
+                recoveryInFlight: Boolean(recoveryPullInFlightRef.current),
+                lastRecoveryAt: lastRecoveryAtRef.current,
+            })) return;
+
+            lastRecoveryAtRef.current = Date.now();
             void handleRemotePairingChange();
             pullDocuments(lifecycleId)
                 .then((result) => {
@@ -368,7 +413,7 @@ export function useMonitorSync(pairedDeviceId) {
                 if (!isActiveLifecycle(lifecycleId)) return { ok: false, error: 'Ciclo de sincronización obsoleto' };
 
                 setSyncState(SUPERVISOR_SYNC_STATES.PULLING);
-                const batch = await pullDocuments(lifecycleId);
+                const batch = await pullDocuments(lifecycleId, { full: true });
                 if (!batch.ok) return batch;
 
                 const realtime = await subscribeToRealtime(lifecycleId);
@@ -428,6 +473,7 @@ export function useMonitorSync(pairedDeviceId) {
         const lifecycleId = lifecycleRef.current + 1;
         lifecycleRef.current = lifecycleId;
         reconnectAttemptRef.current = 0;
+        lastRecoveryAtRef.current = 0;
         if (!supabaseCloud || !pairedDeviceId) {
             setLoading(false);
             setIsConnected(false);

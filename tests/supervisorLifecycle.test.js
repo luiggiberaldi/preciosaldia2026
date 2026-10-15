@@ -33,12 +33,14 @@ describe('Supervisor lifecycle guardrails', () => {
         expect(pairingManager).toContain('stillPaired');
     });
 
-    it('prepara los datos antes de generar el QR y recupera cada 30 segundos', () => {
+    it('prepara los datos antes de generar el QR y usa reconciliación protegida por hash', () => {
         expect(pairingManager).toContain('createPairingToken({ deviceId })');
         expect(pairingService).toContain('syncBeforeIssue(normalizedDeviceId, false, true)');
         expect(cloudSync).toContain('return { ok: true, error: null, pushed }');
         expect(monitorSync).toContain('getSupervisorRecoveryIntervalMs()');
         expect(monitorSync).toContain(".in('doc_id', SUPERVISOR_SYNC_KEYS)");
+        expect(cloudSync).toContain('forceSyncAllPOSData(deviceId, false)');
+        expect(cloudSync).not.toContain('forceSyncAllPOSData(deviceId, true)');
     });
 
     it('usa la sesión Auth del dueño o del monitor para el pairing', () => {

@@ -10,6 +10,8 @@ import {
     isNewerSyncDocument,
     readSyncEnvelope,
     getSupervisorRecoveryIntervalMs,
+    shouldRunSupervisorRecovery,
+    getChangedSyncDocumentIds,
     withSyncRetry,
 } from '../src/services/supervisorSyncService';
 
@@ -82,6 +84,30 @@ describe('Supervisor sync contract', () => {
     });
 
     it('mantiene un intervalo de recuperación moderado', () => {
-        expect(getSupervisorRecoveryIntervalMs()).toBe(30_000);
+        expect(getSupervisorRecoveryIntervalMs()).toBe(5 * 60_000);
+    });
+
+    it('no hace polling cuando Realtime está conectado o ya hay un pull en curso', () => {
+        expect(shouldRunSupervisorRecovery({ realtimeConnected: true, now: 600_000 })).toBe(false);
+        expect(shouldRunSupervisorRecovery({ recoveryInFlight: true, now: 600_000 })).toBe(false);
+    });
+
+    it('solo recupera cuando el intervalo de fallback ya venció', () => {
+        expect(shouldRunSupervisorRecovery({ lastRecoveryAt: 100_000, now: 399_999 })).toBe(false);
+        expect(shouldRunSupervisorRecovery({ lastRecoveryAt: 100_000, now: 400_000 })).toBe(true);
+    });
+
+    it('detecta solo documentos nuevos o modificados a partir de metadatos', () => {
+        const previous = {
+            products: '2026-10-15T10:00:00.000Z',
+            sales: '2026-10-15T10:05:00.000Z',
+        };
+        const changed = getChangedSyncDocumentIds([
+            { doc_id: 'products', updated_at: '2026-10-15T10:00:00.000Z' },
+            { doc_id: 'sales', updated_at: '2026-10-15T10:06:00.000Z' },
+            { doc_id: 'customers', updated_at: '2026-10-15T10:01:00.000Z' },
+        ], (docId) => previous[docId] || null);
+
+        expect(changed).toEqual(['sales', 'customers']);
     });
 });

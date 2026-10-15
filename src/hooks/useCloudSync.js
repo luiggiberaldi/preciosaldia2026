@@ -9,6 +9,7 @@ import { mergeLedgerEntries, rebuildCustomersFromLedger } from '../utils/custome
 import {
     buildSyncEnvelope,
     getSyncMetadataKey,
+    getSupervisorRecoveryIntervalMs,
     isNewerSyncDocument,
     readSyncEnvelope,
     withSyncRetry,
@@ -426,8 +427,9 @@ export function useCloudSync(deviceId) {
                     monitorDeviceId: shortCloudSyncId(pairing.monitor_device_id || pairing.monitor_device_id_2),
                 });
 
-                // Sincronizar automáticamente todos los datos del POS a la nube en segundo plano (Patrón Donde Juancho)
-                forceSyncAllPOSData(deviceId, true).catch(() => {});
+                // Reconciliación inicial protegida por hash: evita volver a
+                // subir documentos completos que no cambiaron desde el último push.
+                forceSyncAllPOSData(deviceId, false).catch(() => {});
 
                 // ── Pull Inicial / Sincronización de Importación ──
                 // Declarar el snapshot fuera de la rama condicional: el bloque de
@@ -519,12 +521,11 @@ export function useCloudSync(deviceId) {
 
         initSync();
 
-        // Fallback económico si Realtime está temporalmente desconectado:
-        // una lectura pequeña por minuto evita dejar activa una vinculación
-        // revocada sin convertir el polling en tráfico constante.
+        // Fallback económico si Realtime está temporalmente desconectado.
+        // Realtime es la vía primaria; esta lectura pequeña solo es respaldo.
         const pairingRecoveryTimer = setInterval(() => {
             void pairingRecoveryHandlerRef.current?.();
-        }, 60_000);
+        }, getSupervisorRecoveryIntervalMs());
 
         // ── MECANISMOS DE SINCRONIZACIÓN AUTOMÁTICA Y CONTINUA ──
         //

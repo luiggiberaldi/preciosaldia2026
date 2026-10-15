@@ -59,7 +59,30 @@ export function getSyncMetadataKey(docId) {
 }
 
 export function getSupervisorRecoveryIntervalMs() {
-    return 30_000;
+    // Realtime es la vía primaria. El pull solo es un salvavidas cuando el
+    // canal está degradado, por eso no debe ejecutarse cada pocos segundos.
+    return 5 * 60_000;
+}
+
+export function shouldRunSupervisorRecovery({
+    realtimeConnected,
+    recoveryInFlight = false,
+    lastRecoveryAt = 0,
+    now = Date.now(),
+    intervalMs = getSupervisorRecoveryIntervalMs(),
+} = {}) {
+    if (realtimeConnected || recoveryInFlight) return false;
+    if (!Number.isFinite(lastRecoveryAt) || lastRecoveryAt <= 0) return true;
+    return now - lastRecoveryAt >= intervalMs;
+}
+
+export function getChangedSyncDocumentIds(metadata = [], getPreviousUpdatedAt = () => null) {
+    return [...new Set((metadata || [])
+        .filter((doc) => doc?.doc_id && isNewerSyncDocument(
+            doc.updated_at,
+            getPreviousUpdatedAt(doc.doc_id),
+        ))
+        .map((doc) => doc.doc_id))];
 }
 
 /**
@@ -100,6 +123,9 @@ export default {
     readSyncEnvelope,
     isNewerSyncDocument,
     getSyncMetadataKey,
+    getSupervisorRecoveryIntervalMs,
+    shouldRunSupervisorRecovery,
+    getChangedSyncDocumentIds,
     buildSupervisorRealtimeChannelName,
     withSyncRetry,
 };

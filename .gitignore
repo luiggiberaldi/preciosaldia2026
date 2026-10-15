@@ -87,6 +87,7 @@ $RECYCLE.BIN/
 # ── Test y herramientas ──
 test-results/
 test-results-af/
+dogfood-output/
 supabase/.temp/
 .freebuff/
 scratch/
