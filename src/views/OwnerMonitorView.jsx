@@ -34,7 +34,7 @@ import { MONITOR_CLEANUP_PENDING_KEY, isPairingRevocationConfirmed, revokeAndCle
 import { SUPERVISOR_SYNC_STATES } from '../services/supervisorSyncService';
 import { sendSupervisorCommand } from '../services/supervisorCommandService';
 import { matchesSearch as matchesSearchFields } from '../utils/searchMatch';
-import { shouldShowSupervisorCop } from '../services/supervisorReportData';
+import { shouldShowSupervisorCop, calculateSupervisorCashSummary } from '../services/supervisorReportData';
 import { useSupervisorControl } from '../hooks/useSupervisorControl';
 import SupervisorControlPanel from '../components/Monitor/SupervisorControlPanel';
 
@@ -90,8 +90,6 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
     const [inventoryBatchProduct, setInventoryBatchProduct] = useState(null);
     const [inventoryBatchMode, setInventoryBatchMode] = useState(null);
     const [cierresDateRange, setCierresDateRange] = useState('all'); // 'all', 'today', 'yesterday', 'week', 'month'
-    const [shiftActionConfirmModal, setShiftActionConfirmModal] = useState(null); // 'close' | null
-    const [sendingShiftAction, setSendingShiftAction] = useState(false);
 
     const movedProductIds = useMemo(() => new Set(
         sales
@@ -261,55 +259,33 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
         }
     }, [filteredRegisterCloses, selectedCierreId]);
 
-    // Envía únicamente el cierre remoto; la reapertura se hace manualmente en la caja.
-    const handleSendShiftActionRemote = async () => {
-        if (!remoteActionsAvailable) {
-            showToast('La caja está desconectada; no se puede enviar la orden', 'warning');
-            return;
+    // Registros del turno activo para el cálculo de arqueo y efectivo
+    const activeShiftRecords = useMemo(() => {
+        const records = sales.filter(s => {
+            if (s.status === 'ANULADA' || s.cajaCerrada) return false;
+            if (activeShiftApertura) {
+                return new Date(s.timestamp) >= new Date(activeShiftApertura.timestamp);
+            }
+            return true;
+        });
+        if (activeShiftApertura && !records.some(r => r.id === activeShiftApertura.id || (r.tipo === 'APERTURA_CAJA' && r.timestamp === activeShiftApertura.timestamp))) {
+            records.unshift(activeShiftApertura);
         }
-        if (!SUPERVISOR_REMOTE_MUTATIONS_ENABLED) {
-            showToast('Las mutaciones remotas están temporalmente deshabilitadas por seguridad', 'warning');
-            return;
-        }
+        return records;
+    }, [sales, activeShiftApertura]);
 
-        if (!supabaseCloud || !pairedDeviceId) {
-            showToast('Dispositivo no vinculado a la nube', 'error');
-            return;
-        }
-        const shiftId = activeShiftApertura?.shiftId || activeShiftApertura?.id;
-        if (shiftId == null || String(shiftId).length === 0) {
-            showToast('No hay un turno activo para cerrar', 'error');
-            return;
-        }
-        const cierreId = String(Date.now());
-        setSendingShiftAction(true);
-        try {
-            const result = await sendSupervisorCommand({
-                type: 'supervisor.shift.close',
-                targetDeviceId: pairedDeviceId,
-                payload: {
-                    shiftId: String(shiftId),
-                    cierreId,
-                },
-            });
-            if (!result.ok) {
-                showToast(result.error, result.status === 'disabled' ? 'warning' : 'error');
-                return;
-            }
-            const ack = await result.ackPromise;
-            if (!ack?.ok) {
-                showToast(ack?.error || 'La caja no confirmó la acción de turno', 'error');
-                return;
-            }
-            showToast('🔒 Cierre confirmado en la caja', 'success');
-            setShiftActionConfirmModal(null);
-        } catch (e) {
-            console.error('[OwnerMonitorView] Error al enviar supervisor_shift_action:', e);
-            showToast('Error al enviar la solicitud', 'error');
-        } finally {
-            setSendingShiftAction(false);
-        }
-    };
+    // Resumen de efectivo esperado y apertura en vivo del turno activo
+    const activeShiftCashSummary = useMemo(() => {
+        return calculateSupervisorCashSummary(activeShiftRecords, bcvRate);
+    }, [activeShiftRecords, bcvRate]);
+
+    const openingUsd = activeShiftCashSummary.opening.USD || activeShiftApertura?.openingUsd || 0;
+    const openingBs = activeShiftCashSummary.opening.BS || activeShiftApertura?.openingBs || 0;
+    const openingCop = activeShiftCashSummary.opening.COP || activeShiftApertura?.openingCop || 0;
+
+    const expectedCashUsd = activeShiftCashSummary.expected.USD;
+    const expectedCashBs = activeShiftCashSummary.expected.BS;
+    const expectedCashCop = activeShiftCashSummary.expected.COP;
 
 
     // ── COMPONENTES GENERALES ──
@@ -442,9 +418,9 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                     </div>
                 </div>
 
-                <div className="flex w-full shrink-0 items-center justify-end gap-1.5 sm:w-auto sm:gap-3 sm:pl-3">
+                <div className="flex w-full sm:w-auto shrink-0 items-center justify-between sm:justify-end gap-2 sm:gap-3 sm:pl-3">
                     {/* Status Badge */}
-                    <div data-testid="supervisor-connection-status" className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-[9px] sm:text-[10px] font-black tracking-wider uppercase shadow-sm transition-colors duration-300 ${
+                    <div data-testid="supervisor-connection-status" className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full text-[9px] sm:text-[10px] font-black tracking-wider uppercase shadow-xs transition-colors duration-300 shrink-0 ${
                         isConnected 
                             ? 'bg-emerald-50 border border-emerald-200/50 text-emerald-600 dark:bg-emerald-950/20 dark:border-emerald-800/30 dark:text-emerald-400' 
                             : 'bg-rose-50 border border-rose-200/50 text-rose-600 dark:bg-rose-950/20 dark:border-rose-800/30 dark:text-rose-400 animate-pulse'
@@ -462,46 +438,49 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                         )}
                     </div>
 
-                    <button 
-                        onClick={async () => { 
-                            triggerHaptic?.();                            const result = await triggerRefresh();
-                            if (result?.ok) {
-                                showToast?.('Datos actualizados', 'success');
-                            } else {
-                                showToast?.(result?.error || 'No se pudieron actualizar los datos', 'error');
-                            }
-                        }}
-                        disabled={syncLoading}
-                        className="min-h-11 min-w-11 p-2.5 rounded-2xl text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 dark:hover:text-emerald-400 transition-colors disabled:opacity-50"
-                        title="Actualizar Datos"
-                    >
-                        <RefreshCw size={16} className={syncLoading ? "animate-spin text-emerald-500" : ""} />
-                    </button>
+                    <div className="flex items-center gap-1.5 sm:gap-2">
+                        <button 
+                            onClick={async () => { 
+                                triggerHaptic?.();
+                                const result = await triggerRefresh();
+                                if (result?.ok) {
+                                    showToast?.('Datos actualizados', 'success');
+                                } else {
+                                    showToast?.(result?.error || 'No se pudieron actualizar los datos', 'error');
+                                }
+                            }}
+                            disabled={syncLoading}
+                            className="min-h-10 min-w-10 sm:min-h-11 sm:min-w-11 p-2 sm:p-2.5 rounded-2xl text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 dark:hover:text-emerald-400 transition-colors disabled:opacity-50 flex items-center justify-center shrink-0"
+                            title="Actualizar Datos"
+                        >
+                            <RefreshCw size={15} className={syncLoading ? "animate-spin text-emerald-500" : ""} />
+                        </button>
 
-                    <button 
-                        onClick={() => { triggerHaptic?.(); setShowRateModal(true); }}
-                        disabled={!remoteActionsAvailable}
+                        <button 
+                            onClick={() => { triggerHaptic?.(); setShowRateModal(true); }}
+                            disabled={!remoteActionsAvailable}
+                            className="min-h-10 min-w-10 sm:min-h-11 flex items-center justify-center gap-1.5 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-700 shadow-xs transition-all hover:bg-emerald-100 active:scale-95 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-300 shrink-0 sm:px-3 sm:text-xs"
+                            title="Ajustar Tasa Remota"
+                        >
+                            <TrendingUp size={14} className="shrink-0" />
+                            <span className="hidden sm:inline">Ajustar Tasa</span><span className="sm:hidden">Tasa</span>
+                        </button>
 
-                        className="min-h-11 flex flex-1 items-center justify-center gap-1.5 rounded-2xl border border-emerald-200 bg-emerald-50 px-2 py-2 text-[10px] font-bold text-emerald-700 shadow-sm transition-all hover:bg-emerald-100 active:scale-95 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-300 sm:flex-none sm:px-3 sm:text-xs"
-                        title="Ajustar Tasa Remota"
-                    >
-                        <TrendingUp size={14} />
-                        <span className="hidden sm:inline">Ajustar Tasa</span><span className="sm:hidden">Tasa</span>
-                    </button>
-                    <button 
-                        onClick={() => {
-                            triggerHaptic?.();
-                            const cleanupPending = localStorage.getItem(MONITOR_CLEANUP_PENDING_KEY) === 'true';
-                            setDisconnectServerRevoked(cleanupPending);
-                            setDisconnectError(cleanupPending ? 'El vínculo ya fue revocado; falta limpiar la copia local.' : '');
-                            setShowDisconnectConfirm(true);
-                        }}
-                        disabled={disconnecting}
-                        className="min-h-11 min-w-11 p-2.5 rounded-2xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 dark:hover:text-rose-400 transition-colors disabled:opacity-50"
-                        title="Desvincular Dispositivo"
-                    >
-                        <LogOut size={16} />
-                    </button>
+                        <button 
+                            onClick={() => {
+                                triggerHaptic?.();
+                                const cleanupPending = localStorage.getItem(MONITOR_CLEANUP_PENDING_KEY) === 'true';
+                                setDisconnectServerRevoked(cleanupPending);
+                                setDisconnectError(cleanupPending ? 'El vínculo ya fue revocado; falta limpiar la copia local.' : '');
+                                setShowDisconnectConfirm(true);
+                            }}
+                            disabled={disconnecting}
+                            className="min-h-10 min-w-10 sm:min-h-11 sm:min-w-11 p-2 sm:p-2.5 rounded-2xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 dark:hover:text-rose-400 transition-colors disabled:opacity-50 flex items-center justify-center shrink-0"
+                            title="Desvincular Dispositivo"
+                        >
+                            <LogOut size={15} />
+                        </button>
+                    </div>
                 </div>
             </header>
 
@@ -605,18 +584,110 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                             </div>
 
                             {isShiftActive ? (
-                                <button
-                                    onClick={() => { triggerHaptic?.(); setShiftActionConfirmModal('close'); }}
-                                    className="w-full sm:w-auto min-h-11 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/30 dark:hover:bg-rose-950/50 dark:text-rose-400 border border-rose-200 dark:border-rose-900/40 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-sm"
-                                >
-                                    <Clock size={14} />
-                                    <span>Cerrar Turno Remotamente</span>
-                                </button>
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/40 text-[10px] font-black uppercase tracking-wider shrink-0">
+                                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                    En Curso
+                                </span>
                             ) : null}
                         </div>
 
-                        {/* Fila 1: Tarjetas de Métricas de Turno Activo */}
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-5">
+                        {/* Control de Caja y Arqueo en Vivo: Monto de Apertura y Efectivo Esperado */}
+                        {isShiftActive && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                                {/* Tarjeta: Monto de Apertura */}
+                                <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-3xl border border-slate-200/60 dark:border-slate-800/80 shadow-sm flex flex-col justify-between relative overflow-hidden">
+                                    <div className="flex items-center justify-between w-full">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="w-8 h-8 sm:w-9 sm:h-9 bg-amber-50 dark:bg-amber-950/30 rounded-xl flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
+                                                <ArrowDownRight size={17} />
+                                            </div>
+                                            <div>
+                                                <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 block">
+                                                    Monto de Apertura
+                                                </span>
+                                                <span className="text-[9px] text-slate-400 font-medium block">
+                                                    Fondo inicial en caja
+                                                </span>
+                                            </div>
+                                        </div>
+                                        {activeShiftApertura?.timestamp && (
+                                            <span className="text-[10px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-lg shrink-0">
+                                                {formatTime(activeShiftApertura.timestamp)}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="mt-3.5 pt-3 border-t border-slate-100 dark:border-slate-800/60 grid grid-cols-2 gap-3">
+                                        <div className="min-w-0">
+                                            <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">USD Inicial</span>
+                                            <span className="font-outfit text-base sm:text-xl font-black text-slate-800 dark:text-white tabular-nums block truncate">
+                                                ${openingUsd.toFixed(2)}
+                                            </span>
+                                        </div>
+                                        <div className="min-w-0">
+                                            <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">Bs Inicial</span>
+                                            <span className="font-outfit text-base sm:text-xl font-black text-amber-600 dark:text-amber-400 tabular-nums block truncate">
+                                                {formatBs(openingBs)} Bs
+                                            </span>
+                                        </div>
+                                        {shouldShowSupervisorCop(copEnabled) && openingCop > 0 && (
+                                            <div className="min-w-0 col-span-2 pt-1 border-t border-slate-100 dark:border-slate-800/40">
+                                                <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">COP Inicial</span>
+                                                <span className="font-outfit text-sm font-black text-slate-700 dark:text-slate-300 tabular-nums block truncate">
+                                                    {formatCop(openingCop)} COP
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Tarjeta: Efectivo Esperado en Caja */}
+                                <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-3xl border border-emerald-200/60 dark:border-emerald-800/60 shadow-sm flex flex-col justify-between relative overflow-hidden bg-gradient-to-br from-emerald-50/20 via-white to-white dark:from-emerald-950/10 dark:via-slate-900 dark:to-slate-900">
+                                    <div className="flex items-center justify-between w-full">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="w-8 h-8 sm:w-9 sm:h-9 bg-emerald-100 dark:bg-emerald-950/40 rounded-xl flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+                                                <Wallet size={17} />
+                                            </div>
+                                            <div>
+                                                <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-slate-800 dark:text-white block">
+                                                    Efectivo Esperado en Caja
+                                                </span>
+                                                <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-semibold block">
+                                                    Físico en gaveta (arqueo)
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <span className="text-[9px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300 bg-emerald-100/80 dark:bg-emerald-950/60 px-2 py-0.5 rounded-lg shrink-0">
+                                            Gaveta
+                                        </span>
+                                    </div>
+                                    <div className="mt-3.5 pt-3 border-t border-emerald-100/60 dark:border-emerald-900/40 grid grid-cols-2 gap-3">
+                                        <div className="min-w-0">
+                                            <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">USD Esperado</span>
+                                            <span className="font-outfit text-base sm:text-xl font-black text-slate-850 dark:text-white tabular-nums block truncate">
+                                                ${expectedCashUsd.toFixed(2)}
+                                            </span>
+                                        </div>
+                                        <div className="min-w-0">
+                                            <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">Bs Esperado</span>
+                                            <span className="font-outfit text-base sm:text-xl font-black text-emerald-600 dark:text-emerald-400 tabular-nums block truncate">
+                                                {formatBs(expectedCashBs)} Bs
+                                            </span>
+                                        </div>
+                                        {shouldShowSupervisorCop(copEnabled) && (expectedCashCop > 0 || openingCop > 0) && (
+                                            <div className="min-w-0 col-span-2 pt-1 border-t border-emerald-100/40 dark:border-emerald-900/30">
+                                                <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">COP Esperado</span>
+                                                <span className="font-outfit text-sm font-black text-slate-700 dark:text-slate-300 tabular-nums block truncate">
+                                                    {formatCop(expectedCashCop)} COP
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Fila 1: Tarjetas de Métricas de Ventas de Turno Activo */}
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
                             {/* Ventas Turno USD */}
                             <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-3xl border border-slate-200/60 dark:border-slate-800/80 shadow-sm flex flex-col justify-between min-h-[105px] sm:min-h-[125px]">
                                 <div className="flex items-center justify-between w-full">
@@ -1592,41 +1663,6 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                 className="flex-1 min-h-11 py-2.5 px-4 bg-rose-500 hover:bg-rose-600 text-white font-black text-xs rounded-2xl shadow-lg shadow-rose-500/20 transition-colors disabled:opacity-50"
                             >
                                 {disconnecting ? 'Procesando…' : disconnectError ? 'Reintentar' : 'Desvincular'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Modal Confirmación de Cierre Remoto de Turno */}
-            {shiftActionConfirmModal === 'close' && (
-                <div className="fixed inset-0 z-[999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-fade-in">
-                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-5 sm:p-6 max-w-sm w-full max-h-[92vh] overflow-y-auto custom-scrollbar shadow-2xl space-y-4 sm:space-y-5 animate-scale-in">
-                        <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto bg-rose-50 dark:bg-rose-950/20 text-rose-500 shrink-0">
-                            <Clock size={22} />
-                        </div>
-                        <div className="space-y-1.5 text-center">
-                            <h4 className="text-base font-black text-slate-800 dark:text-white">
-                                Cerrar Turno Remotamente
-                            </h4>
-                            <p className="text-xs font-semibold text-slate-500 leading-relaxed">
-                                Esta acción marcará las ventas actuales como cerradas en la caja principal y registrará un cierre remoto.
-                            </p>
-                        </div>
-                        <div className="flex gap-2.5 sm:gap-3 pt-1">
-                            <button
-                                onClick={() => { triggerHaptic?.(); setShiftActionConfirmModal(null); }}
-                                disabled={sendingShiftAction}
-                                className="flex-1 min-h-11 py-2.5 px-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-350 font-black text-xs rounded-2xl border border-slate-200 dark:border-slate-700 transition-colors disabled:opacity-50"
-                            >
-                                Cancelar
-                            </button>
-                            <button
-                                onClick={() => handleSendShiftActionRemote()}
-                                disabled={sendingShiftAction}
-                                className="flex-1 min-h-11 py-2.5 px-4 font-black text-xs rounded-2xl shadow-lg transition-colors flex items-center justify-center gap-2 text-white bg-rose-500 hover:bg-rose-600 shadow-rose-500/20 disabled:opacity-50"
-                            >
-                                {sendingShiftAction ? <RefreshCw className="animate-spin" size={14} /> : 'Confirmar Cierre'}
                             </button>
                         </div>
                     </div>
