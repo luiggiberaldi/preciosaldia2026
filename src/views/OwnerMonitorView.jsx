@@ -291,7 +291,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
     // ── COMPONENTES GENERALES ──
 
     // Productos Críticos (Stock Agotado o Stock Bajo)
-    const criticalProducts = useMemo(() => {
+    const allCriticalProducts = useMemo(() => {
         return products
             .filter(p => {
                 const stock = Number(p.stock) || 0;
@@ -302,9 +302,24 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                 const stockA = Number(a.stock) || 0;
                 const stockB = Number(b.stock) || 0;
                 return stockA - stockB;
-            })
-            .slice(0, 20);
+            });
     }, [products]);
+
+    const outOfStockCount = useMemo(() => {
+        return products.filter(p => (Number(p.stock) || 0) <= 0).length;
+    }, [products]);
+
+    const lowStockCount = useMemo(() => {
+        return products.filter(p => {
+            const stock = Number(p.stock) || 0;
+            const minStock = Number(p.minStock ?? p.lowStockAlert) || 5;
+            return stock > 0 && stock <= minStock;
+        }).length;
+    }, [products]);
+
+    const criticalProducts = useMemo(() => {
+        return allCriticalProducts.slice(0, 5);
+    }, [allCriticalProducts]);
 
     // Desvincular Monitor: mantener esta sesión abierta hasta confirmar servidor y limpieza local.
     const handleDisconnect = async () => {
@@ -958,55 +973,91 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                     {/* Columna Derecha: Stock Crítico */}
                                     <div className="space-y-6">
                                         <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 p-4 sm:p-6 shadow-sm min-w-0 overflow-hidden">
-                                            <h3 className="text-sm font-black text-slate-800 dark:text-white mb-4 flex items-center gap-2">
-                                                <Package size={18} className="text-rose-500" />
-                                                Stock Crítico (Bajo y Agotado)
-                                            </h3>
+                                            <div className="flex items-center justify-between mb-3.5 gap-2">
+                                                <h3 className="text-sm font-black text-slate-800 dark:text-white flex items-center gap-2 truncate">
+                                                    <Package size={18} className="text-rose-500 shrink-0" />
+                                                    <span>Stock Crítico</span>
+                                                </h3>
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                    {outOfStockCount > 0 && (
+                                                        <button
+                                                            onClick={() => { triggerHaptic?.(); setViewTab('inventario'); setFilterStockInventario('agotado'); }}
+                                                            className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-950/50 text-rose-600 border border-rose-200/50 dark:border-rose-900/40 transition-colors"
+                                                            title="Ver agotados en Inventario"
+                                                        >
+                                                            {outOfStockCount} agotados
+                                                        </button>
+                                                    )}
+                                                    {lowStockCount > 0 && (
+                                                        <button
+                                                            onClick={() => { triggerHaptic?.(); setViewTab('inventario'); setFilterStockInventario('bajo'); }}
+                                                            className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/30 dark:hover:bg-amber-950/50 text-amber-600 dark:text-amber-400 border border-amber-200/50 dark:border-amber-900/40 transition-colors"
+                                                            title="Ver bajo stock en Inventario"
+                                                        >
+                                                            {lowStockCount} bajos
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
 
-                                            {criticalProducts.length === 0 ? (
+                                            {allCriticalProducts.length === 0 ? (
                                                 <div className="py-6 text-center text-slate-400">
                                                     <p className="text-xs font-black text-emerald-600">¡Todo en orden!</p>
                                                     <p className="text-[10px] text-slate-400 mt-0.5">No hay productos con stock bajo o agotado.</p>
                                                 </div>
                                             ) : (
-                                                <div className="space-y-3">
-                                                    {criticalProducts.map(prod => {
-                                                        const stock = Number(prod.stock) || 0;
-                                                        const isOutOfStock = stock <= 0;
-                                                        const rawPrice = prod.price != null ? prod.price : (prod.priceUsdt != null ? prod.priceUsdt : prod.precio);
-                                                        const priceVal = Number(rawPrice);
-                                                        const priceDisplay = Number.isFinite(priceVal) ? priceVal.toFixed(2) : '0.00';
+                                                <>
+                                                    <div className="space-y-2.5">
+                                                        {criticalProducts.map(prod => {
+                                                            const stock = Number(prod.stock) || 0;
+                                                            const isOutOfStock = stock <= 0;
+                                                            const rawPrice = prod.price != null ? prod.price : (prod.priceUsdt != null ? prod.priceUsdt : prod.precio);
+                                                            const priceVal = Number(rawPrice);
+                                                            const priceDisplay = Number.isFinite(priceVal) ? priceVal.toFixed(2) : '0.00';
 
-                                                        return (
-                                                            <div key={prod.id} className="flex justify-between items-center py-2.5 border-b border-slate-100 dark:border-slate-800 last:border-0 gap-2">
-                                                                <div className="min-w-0 pr-2">
-                                                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200 block truncate" title={prod.name}>
-                                                                        {prod.name}
-                                                                    </span>
-                                                                    <div className="flex items-center gap-2 mt-0.5">
-                                                                        <span className="font-outfit text-[10px] text-slate-400 font-medium">
-                                                                            Precio: ${priceDisplay}
+                                                            return (
+                                                                <div key={prod.id} className="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-800/80 last:border-0 gap-2">
+                                                                    <div className="min-w-0 pr-2">
+                                                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-200 block truncate" title={prod.name}>
+                                                                            {prod.name}
                                                                         </span>
-                                                                        {!isOutOfStock && (
-                                                                            <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">
-                                                                                • Stock: {stock}
+                                                                        <div className="flex items-center gap-2 mt-0.5">
+                                                                            <span className="font-outfit text-[10px] text-slate-400 font-medium">
+                                                                                Precio: ${priceDisplay}
                                                                             </span>
-                                                                        )}
+                                                                            {!isOutOfStock && (
+                                                                                <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">
+                                                                                    • Stock: {stock}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
                                                                     </div>
+                                                                    {isOutOfStock ? (
+                                                                        <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-rose-50 dark:bg-rose-950/20 text-rose-600 border border-rose-200/50 dark:border-rose-900/30 shrink-0">
+                                                                            Agotado
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 border border-amber-200/50 dark:border-amber-900/30 shrink-0">
+                                                                            Bajo ({stock})
+                                                                        </span>
+                                                                    )}
                                                                 </div>
-                                                                {isOutOfStock ? (
-                                                                    <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-rose-50 dark:bg-rose-950/20 text-rose-600 border border-rose-200/50 dark:border-rose-900/30 shrink-0">
-                                                                        Agotado
-                                                                    </span>
-                                                                ) : (
-                                                                    <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 border border-amber-200/50 dark:border-amber-900/30 shrink-0">
-                                                                        Bajo ({stock})
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+
+                                                    <button
+                                                        onClick={() => {
+                                                            triggerHaptic?.();
+                                                            setViewTab('inventario');
+                                                            setFilterStockInventario(outOfStockCount > 0 ? 'agotado' : 'bajo');
+                                                        }}
+                                                        className="w-full mt-3 py-2 px-3 rounded-2xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-black border border-slate-200/70 dark:border-slate-700/60 transition-all flex items-center justify-center gap-1.5 active:scale-95 shadow-xs"
+                                                    >
+                                                        <span>Ver los {allCriticalProducts.length} productos en Inventario</span>
+                                                        <ChevronRight size={14} className="text-slate-400" />
+                                                    </button>
+                                                </>
                                             )}
                                         </div>
                                     </div>
