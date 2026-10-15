@@ -290,11 +290,20 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
 
     // ── COMPONENTES GENERALES ──
 
-    // Productos Críticos (Stock <= 0)
+    // Productos Críticos (Stock Agotado o Stock Bajo)
     const criticalProducts = useMemo(() => {
         return products
-            .filter(p => p.stock <= 0)
-            .slice(0, 10);
+            .filter(p => {
+                const stock = Number(p.stock) || 0;
+                const minStock = Number(p.minStock ?? p.lowStockAlert) || 5;
+                return stock <= minStock;
+            })
+            .sort((a, b) => {
+                const stockA = Number(a.stock) || 0;
+                const stockB = Number(b.stock) || 0;
+                return stockA - stockB;
+            })
+            .slice(0, 20);
     }, [products]);
 
     // Desvincular Monitor: mantener esta sesión abierta hasta confirmar servidor y limpieza local.
@@ -951,27 +960,52 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                         <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 p-4 sm:p-6 shadow-sm min-w-0 overflow-hidden">
                                             <h3 className="text-sm font-black text-slate-800 dark:text-white mb-4 flex items-center gap-2">
                                                 <Package size={18} className="text-rose-500" />
-                                                Stock Crítico (Agotados)
+                                                Stock Crítico (Bajo y Agotado)
                                             </h3>
 
                                             {criticalProducts.length === 0 ? (
                                                 <div className="py-6 text-center text-slate-400">
                                                     <p className="text-xs font-black text-emerald-600">¡Todo en orden!</p>
-                                                    <p className="text-[10px] text-slate-400 mt-0.5">No hay productos sin inventario.</p>
+                                                    <p className="text-[10px] text-slate-400 mt-0.5">No hay productos con stock bajo o agotado.</p>
                                                 </div>
                                             ) : (
                                                 <div className="space-y-3">
-                                                    {criticalProducts.map(prod => (
-                                                        <div key={prod.id} className="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-800 last:border-0">
-                                                            <div className="min-w-0 pr-2">
-                                                                <span className="text-xs font-bold text-slate-700 dark:text-slate-200 block truncate">{prod.name}</span>
-                                                                <span className="font-outfit text-[10px] text-slate-400">Precio: ${prod.price?.toFixed(2)}</span>
+                                                    {criticalProducts.map(prod => {
+                                                        const stock = Number(prod.stock) || 0;
+                                                        const isOutOfStock = stock <= 0;
+                                                        const rawPrice = prod.price != null ? prod.price : (prod.priceUsdt != null ? prod.priceUsdt : prod.precio);
+                                                        const priceVal = Number(rawPrice);
+                                                        const priceDisplay = Number.isFinite(priceVal) ? priceVal.toFixed(2) : '0.00';
+
+                                                        return (
+                                                            <div key={prod.id} className="flex justify-between items-center py-2.5 border-b border-slate-100 dark:border-slate-800 last:border-0 gap-2">
+                                                                <div className="min-w-0 pr-2">
+                                                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200 block truncate" title={prod.name}>
+                                                                        {prod.name}
+                                                                    </span>
+                                                                    <div className="flex items-center gap-2 mt-0.5">
+                                                                        <span className="font-outfit text-[10px] text-slate-400 font-medium">
+                                                                            Precio: ${priceDisplay}
+                                                                        </span>
+                                                                        {!isOutOfStock && (
+                                                                            <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">
+                                                                                • Stock: {stock}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                                {isOutOfStock ? (
+                                                                    <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-rose-50 dark:bg-rose-950/20 text-rose-600 border border-rose-200/50 dark:border-rose-900/30 shrink-0">
+                                                                        Agotado
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 border border-amber-200/50 dark:border-amber-900/30 shrink-0">
+                                                                        Bajo ({stock})
+                                                                    </span>
+                                                                )}
                                                             </div>
-                                                            <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-rose-50 dark:bg-rose-950/20 text-rose-600 shrink-0">
-                                                                Agotado
-                                                            </span>
-                                                        </div>
-                                                    ))}
+                                                        );
+                                                    })}
                                                 </div>
                                             )}
                                         </div>
