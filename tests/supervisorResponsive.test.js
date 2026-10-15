@@ -90,4 +90,12 @@ describe('Supervisor responsive controls', () => {
         expect(remoteProductModal).toContain('sticky bottom-0');
         expect(remoteProductModal).toContain('min-h-11');
     });
+
+    it('muestra tarjeta de stock crítico con pestañas segmentadas escroleables y stock bajo de primero', () => {
+        expect(ownerMonitor).toContain("criticalStockTab === 'bajo'");
+        expect(ownerMonitor).toContain("criticalStockTab === 'agotado'");
+        expect(ownerMonitor).toContain('Stock Bajo');
+        expect(ownerMonitor).toContain('Agotados');
+        expect(ownerMonitor).toContain('overflow-y-auto');
+    });
 });

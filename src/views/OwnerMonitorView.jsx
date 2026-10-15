@@ -92,6 +92,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
     const [inventoryBatchProduct, setInventoryBatchProduct] = useState(null);
     const [inventoryBatchMode, setInventoryBatchMode] = useState(null);
     const [cierresDateRange, setCierresDateRange] = useState('all'); // 'all', 'today', 'yesterday', 'week', 'month'
+    const [criticalStockTab, setCriticalStockTab] = useState('bajo'); // 'bajo', 'agotado', 'todos'
 
     const movedProductIds = useMemo(() => new Set(
         sales
@@ -293,12 +294,13 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
     // ── COMPONENTES GENERALES ──
 
     // Productos Críticos (Stock Agotado o Stock Bajo)
-    const allCriticalProducts = useMemo(() => {
+    // 1. Stock Bajo (existencia > 0 pero <= minStock). Ordenados de menor a mayor existencia
+    const lowStockProducts = useMemo(() => {
         return products
             .filter(p => {
                 const stock = Number(p.stock) || 0;
                 const minStock = Number(p.minStock ?? p.lowStockAlert) || 5;
-                return stock <= minStock;
+                return stock > 0 && stock <= minStock;
             })
             .sort((a, b) => {
                 const stockA = Number(a.stock) || 0;
@@ -307,21 +309,27 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
             });
     }, [products]);
 
-    const outOfStockCount = useMemo(() => {
-        return products.filter(p => (Number(p.stock) || 0) <= 0).length;
+    // 2. Agotados (existencia <= 0)
+    const outOfStockProducts = useMemo(() => {
+        return products
+            .filter(p => (Number(p.stock) || 0) <= 0)
+            .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     }, [products]);
 
-    const lowStockCount = useMemo(() => {
-        return products.filter(p => {
-            const stock = Number(p.stock) || 0;
-            const minStock = Number(p.minStock ?? p.lowStockAlert) || 5;
-            return stock > 0 && stock <= minStock;
-        }).length;
-    }, [products]);
+    const lowStockCount = lowStockProducts.length;
+    const outOfStockCount = outOfStockProducts.length;
 
-    const criticalProducts = useMemo(() => {
-        return allCriticalProducts.slice(0, 5);
-    }, [allCriticalProducts]);
+    // Stock bajo va primero por requerimiento operativo, seguido de los agotados
+    const allCriticalProducts = useMemo(() => {
+        return [...lowStockProducts, ...outOfStockProducts];
+    }, [lowStockProducts, outOfStockProducts]);
+
+    // Lista activa según la pestaña seleccionada ('bajo' | 'agotado' | 'todos')
+    const activeCriticalProducts = useMemo(() => {
+        if (criticalStockTab === 'bajo') return lowStockProducts;
+        if (criticalStockTab === 'agotado') return outOfStockProducts;
+        return allCriticalProducts;
+    }, [criticalStockTab, lowStockProducts, outOfStockProducts, allCriticalProducts]);
 
     // Desvincular Monitor: mantener esta sesión abierta hasta confirmar servidor y limpieza local.
     const handleDisconnect = async () => {
@@ -1011,93 +1019,180 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
 
                                     {/* Columna Derecha: Stock Crítico */}
                                     <div className="space-y-6">
-                                        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 p-4 sm:p-6 shadow-sm min-w-0 overflow-hidden">
-                                            <div className="flex items-center justify-between mb-3.5 gap-2">
+                                        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 p-4 sm:p-5 shadow-sm min-w-0 overflow-hidden">
+                                            {/* Cabecera de la Tarjeta */}
+                                            <div className="flex items-center justify-between mb-3 gap-2">
                                                 <h3 className="text-sm font-black text-slate-800 dark:text-white flex items-center gap-2 truncate">
-                                                    <Package size={18} className="text-rose-500 shrink-0" />
+                                                    <Package size={18} className="text-amber-500 shrink-0" />
                                                     <span>Stock Crítico</span>
                                                 </h3>
-                                                <div className="flex items-center gap-1.5 shrink-0">
-                                                    {outOfStockCount > 0 && (
-                                                        <button
-                                                            onClick={() => { triggerHaptic?.(); setViewTab('inventario'); setFilterStockInventario('agotado'); }}
-                                                            className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-950/50 text-rose-600 border border-rose-200/50 dark:border-rose-900/40 transition-colors"
-                                                            title="Ver agotados en Inventario"
-                                                        >
-                                                            {outOfStockCount} agotados
-                                                        </button>
-                                                    )}
-                                                    {lowStockCount > 0 && (
-                                                        <button
-                                                            onClick={() => { triggerHaptic?.(); setViewTab('inventario'); setFilterStockInventario('bajo'); }}
-                                                            className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/30 dark:hover:bg-amber-950/50 text-amber-600 dark:text-amber-400 border border-amber-200/50 dark:border-amber-900/40 transition-colors"
-                                                            title="Ver bajo stock en Inventario"
-                                                        >
-                                                            {lowStockCount} bajos
-                                                        </button>
-                                                    )}
-                                                </div>
+                                                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-350 shrink-0">
+                                                    {allCriticalProducts.length} total
+                                                </span>
                                             </div>
 
-                                            {allCriticalProducts.length === 0 ? (
-                                                <div className="py-6 text-center text-slate-400">
-                                                    <p className="text-xs font-black text-emerald-600">¡Todo en orden!</p>
-                                                    <p className="text-[10px] text-slate-400 mt-0.5">No hay productos con stock bajo o agotado.</p>
+                                            {/* Selector Segmentado de Pestañas: Stock Bajo (Primero) y Agotados */}
+                                            <div className="p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl flex gap-1 mb-3 select-none" role="tablist" aria-label="Filtro de stock crítico">
+                                                <button
+                                                    type="button"
+                                                    role="tab"
+                                                    aria-selected={criticalStockTab === 'bajo'}
+                                                    onClick={() => {
+                                                        triggerHaptic?.();
+                                                        setCriticalStockTab('bajo');
+                                                    }}
+                                                    className={`flex-1 min-h-10 sm:min-h-9 py-1.5 px-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+                                                        criticalStockTab === 'bajo'
+                                                            ? 'bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 shadow-sm border border-slate-200/60 dark:border-slate-700/60'
+                                                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                                                    }`}
+                                                >
+                                                    <span>Stock Bajo</span>
+                                                    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+                                                        criticalStockTab === 'bajo'
+                                                            ? 'bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300'
+                                                            : 'bg-slate-200/80 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                                                    }`}>
+                                                        {lowStockCount}
+                                                    </span>
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    role="tab"
+                                                    aria-selected={criticalStockTab === 'agotado'}
+                                                    onClick={() => {
+                                                        triggerHaptic?.();
+                                                        setCriticalStockTab('agotado');
+                                                    }}
+                                                    className={`flex-1 min-h-10 sm:min-h-9 py-1.5 px-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+                                                        criticalStockTab === 'agotado'
+                                                            ? 'bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-sm border border-slate-200/60 dark:border-slate-700/60'
+                                                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                                                    }`}
+                                                >
+                                                    <span>Agotados</span>
+                                                    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+                                                        criticalStockTab === 'agotado'
+                                                            ? 'bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300'
+                                                            : 'bg-slate-200/80 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                                                    }`}>
+                                                        {outOfStockCount}
+                                                    </span>
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    role="tab"
+                                                    aria-selected={criticalStockTab === 'todos'}
+                                                    onClick={() => {
+                                                        triggerHaptic?.();
+                                                        setCriticalStockTab('todos');
+                                                    }}
+                                                    className={`min-h-10 sm:min-h-9 py-1.5 px-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center ${
+                                                        criticalStockTab === 'todos'
+                                                            ? 'bg-white dark:bg-slate-900 text-slate-800 dark:text-white shadow-sm border border-slate-200/60 dark:border-slate-700/60'
+                                                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                                                    }`}
+                                                    title="Ver lista completa"
+                                                >
+                                                    <span>Todos</span>
+                                                </button>
+                                            </div>
+
+                                            {/* Lista Escroleable */}
+                                            {activeCriticalProducts.length === 0 ? (
+                                                <div className="py-8 text-center text-slate-400 space-y-1">
+                                                    <p className="text-xs font-black text-emerald-600 dark:text-emerald-400">
+                                                        {criticalStockTab === 'bajo'
+                                                            ? '¡Sin stock bajo!'
+                                                            : criticalStockTab === 'agotado'
+                                                            ? '¡Sin agotados!'
+                                                            : '¡Todo el inventario en orden!'}
+                                                    </p>
+                                                    <p className="text-[10px] text-slate-400">
+                                                        {criticalStockTab === 'bajo'
+                                                            ? 'No hay productos con existencias reducidas.'
+                                                            : criticalStockTab === 'agotado'
+                                                            ? 'No hay productos totalmente agotados.'
+                                                            : 'No hay alertas críticas en la caja.'}
+                                                    </p>
                                                 </div>
                                             ) : (
-                                                <>
-                                                    <div className="space-y-2.5">
-                                                        {criticalProducts.map(prod => {
-                                                            const stock = Number(prod.stock) || 0;
-                                                            const isOutOfStock = stock <= 0;
-                                                            const rawPrice = prod.price != null ? prod.price : (prod.priceUsdt != null ? prod.priceUsdt : prod.precio);
-                                                            const priceVal = Number(rawPrice);
-                                                            const priceDisplay = Number.isFinite(priceVal) ? priceVal.toFixed(2) : '0.00';
+                                                <div className="space-y-2 max-h-[320px] overflow-y-auto custom-scrollbar pr-1 select-none">
+                                                    {activeCriticalProducts.map(prod => {
+                                                        const stock = Number(prod.stock) || 0;
+                                                        const isOutOfStock = stock <= 0;
+                                                        const rawPrice = prod.price != null ? prod.price : (prod.priceUsdt != null ? prod.priceUsdt : prod.precio);
+                                                        const priceVal = Number(rawPrice);
+                                                        const priceDisplay = Number.isFinite(priceVal) ? priceVal.toFixed(2) : '0.00';
 
-                                                            return (
-                                                                <div key={prod.id} className="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-800/80 last:border-0 gap-2">
-                                                                    <div className="min-w-0 pr-2">
-                                                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-200 block truncate" title={prod.name}>
-                                                                            {prod.name}
+                                                        return (
+                                                            <div
+                                                                key={prod.id}
+                                                                onClick={() => {
+                                                                    if (SUPERVISOR_REMOTE_PRODUCTS_ENABLED && remoteActionsAvailable) {
+                                                                        triggerHaptic?.();
+                                                                        setProductToEditRemote(prod);
+                                                                        setShowProductFormModal(true);
+                                                                    }
+                                                                }}
+                                                                className={`p-2.5 rounded-2xl border border-slate-100 dark:border-slate-800/80 hover:border-slate-200 dark:hover:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 flex justify-between items-center transition-colors gap-2.5 ${
+                                                                    SUPERVISOR_REMOTE_PRODUCTS_ENABLED && remoteActionsAvailable ? 'cursor-pointer hover:bg-slate-100/60 dark:hover:bg-slate-800/60' : ''
+                                                                }`}
+                                                                title={SUPERVISOR_REMOTE_PRODUCTS_ENABLED && remoteActionsAvailable ? 'Clic para editar producto remotamente' : prod.name}
+                                                            >
+                                                                <div className="min-w-0 flex-1">
+                                                                    <span className="text-xs font-black text-slate-800 dark:text-slate-100 block truncate">
+                                                                        {prod.name}
+                                                                    </span>
+                                                                    <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-slate-400 font-medium">
+                                                                        <span className="font-outfit font-bold text-slate-600 dark:text-slate-350">
+                                                                            ${priceDisplay}
                                                                         </span>
-                                                                        <div className="flex items-center gap-2 mt-0.5">
-                                                                            <span className="font-outfit text-[10px] text-slate-400 font-medium">
-                                                                                Precio: ${priceDisplay}
-                                                                            </span>
-                                                                            {!isOutOfStock && (
-                                                                                <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">
-                                                                                    • Stock: {stock}
-                                                                                </span>
-                                                                            )}
-                                                                        </div>
+                                                                        {prod.barcode && (
+                                                                            <>
+                                                                                <span>•</span>
+                                                                                <span className="font-mono text-[9px] text-slate-400 truncate max-w-[80px]">{prod.barcode}</span>
+                                                                            </>
+                                                                        )}
                                                                     </div>
-                                                                    {isOutOfStock ? (
-                                                                        <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-rose-50 dark:bg-rose-950/20 text-rose-600 border border-rose-200/50 dark:border-rose-900/30 shrink-0">
-                                                                            Agotado
-                                                                        </span>
-                                                                    ) : (
-                                                                        <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 border border-amber-200/50 dark:border-amber-900/30 shrink-0">
-                                                                            Bajo ({stock})
-                                                                        </span>
-                                                                    )}
                                                                 </div>
-                                                            );
-                                                        })}
-                                                    </div>
 
-                                                    <button
-                                                        onClick={() => {
-                                                            triggerHaptic?.();
-                                                            setViewTab('inventario');
-                                                            setFilterStockInventario(outOfStockCount > 0 ? 'agotado' : 'bajo');
-                                                        }}
-                                                        className="w-full mt-3 py-2 px-3 rounded-2xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-black border border-slate-200/70 dark:border-slate-700/60 transition-all flex items-center justify-center gap-1.5 active:scale-95 shadow-xs"
-                                                    >
-                                                        <span>Ver los {allCriticalProducts.length} productos en Inventario</span>
-                                                        <ChevronRight size={14} className="text-slate-400" />
-                                                    </button>
-                                                </>
+                                                                {isOutOfStock ? (
+                                                                    <span className="text-[10px] font-black px-2 py-0.5 rounded-xl bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border border-rose-200/60 dark:border-rose-900/40 shrink-0">
+                                                                        Agotado
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="text-[10px] font-black px-2 py-0.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-900/40 shrink-0 flex items-center gap-1">
+                                                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                                                        Bajo ({stock})
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
                                             )}
+
+                                            {/* Botón dinámico a Inventario */}
+                                            <button
+                                                onClick={() => {
+                                                    triggerHaptic?.();
+                                                    setViewTab('inventario');
+                                                    setFilterStockInventario(criticalStockTab === 'todos' ? (lowStockCount > 0 ? 'bajo' : 'agotado') : criticalStockTab);
+                                                }}
+                                                className="w-full mt-3 py-2.5 px-3 rounded-2xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-black border border-slate-200/70 dark:border-slate-700/60 transition-all flex items-center justify-center gap-1.5 active:scale-98 shadow-xs"
+                                            >
+                                                <span>
+                                                    {criticalStockTab === 'bajo'
+                                                        ? `Ver los ${lowStockCount} productos con bajo stock en Inventario`
+                                                        : criticalStockTab === 'agotado'
+                                                        ? `Ver los ${outOfStockCount} productos agotados en Inventario`
+                                                        : `Ver los ${allCriticalProducts.length} productos críticos en Inventario`}
+                                                </span>
+                                                <ChevronRight size={14} className="text-slate-400" />
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
