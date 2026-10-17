@@ -9,7 +9,7 @@ import {
     RefreshCw, Wifi, WifiOff, Clock, FileText, DollarSign,
     Wallet, CreditCard, Smartphone, Banknote, ArrowDownRight, ArrowDownToLine, ArrowUpFromLine,
     ShieldCheck, Hash, AlertTriangle, ChevronLeft, ChevronRight,
-    Plus, Pencil, Trash2
+    Plus, Minus, Check, X, Pencil, Trash2
 } from 'lucide-react';
 import { formatBs, formatCop } from '../utils/calculatorUtils';
 import { getLocalISODate, getDateRange } from '../utils/dateHelpers';
@@ -18,6 +18,24 @@ import SupervisorRateModal from '../components/Monitor/SupervisorRateModal';
 import RemoteProductFormModal from '../components/Monitor/RemoteProductFormModal';
 import SupervisorInventoryBatchPanel from '../components/Monitor/SupervisorInventoryBatchPanel';
 import SupervisorInventoryToolbar from '../components/Monitor/SupervisorInventoryToolbar';
+import SupervisorInventoryCatalog from '../components/Monitor/SupervisorInventoryCatalog';
+import { createInventoryDraft, addInventoryDraftLine } from '../services/supervisorInventoryDraft';
+import { sendSupervisorInventoryBatch } from '../services/supervisorInventoryBatchSender';
+import {
+    applyBatchStockTargets,
+    applyStockOpResult,
+    beginBatchStockTargets,
+    beginStockAdjust,
+    believedStockOf as believedStockOfService,
+    classifyStockOpResult,
+    clearStockOp as clearStockOpMap,
+    isStockAdjustBlocked,
+    nextStockOpAfterInspection,
+    patchProductStock,
+    planStockOpReconciliation,
+    shouldAnnounceStockOpFailure,
+    withStockOp,
+} from '../services/supervisorStockOps';
 import {
     SUPERVISOR_REMOTE_MUTATIONS_ENABLED,
     SUPERVISOR_REMOTE_PRODUCTS_ENABLED,
@@ -32,7 +50,7 @@ import {
 import { ensureSupervisorSession } from '../services/supervisorAuth';
 import { MONITOR_CLEANUP_PENDING_KEY, isPairingRevocationConfirmed, revokeAndClearMonitor } from '../services/monitorUnpair';
 import { SUPERVISOR_SYNC_STATES } from '../services/supervisorSyncService';
-import { sendSupervisorCommand } from '../services/supervisorCommandService';
+import { inspectSupervisorCommandState, sendSupervisorCommand } from '../services/supervisorCommandService';
 import { matchesSearch as matchesSearchFields } from '../utils/searchMatch';
 import { shouldShowSupervisorCop, calculateSupervisorCashSummary } from '../services/supervisorReportData';
 import { useSupervisorControl } from '../hooks/useSupervisorControl';
@@ -91,8 +109,219 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
     const [deletingRemoteProduct, setDeletingRemoteProduct] = useState(false);
     const [inventoryBatchProduct, setInventoryBatchProduct] = useState(null);
     const [inventoryBatchMode, setInventoryBatchMode] = useState(null);
+    // Edición directa de stock en la fila: número pulsable + botones +/- que
+    // cambian la cantidad al instante (sin modal), con confirmación explícita y
+    // estado visible por producto: sending / applied / failed / pending.
+    const [stockEditProductId, setStockEditProductId] = useState(null);
+    const [stockEditValue, setStockEditValue] = useState('');
+    const [stockPendingConfirm, setStockPendingConfirm] = useState(null); // { product, nextStock }
+    const [stockOpStatus, setStockOpStatus] = useState({}); // productId -> { state, error, targetStock, commandId }
     const [cierresDateRange, setCierresDateRange] = useState('all'); // 'all', 'today', 'yesterday', 'week', 'month'
     const [criticalStockTab, setCriticalStockTab] = useState('bajo'); // 'bajo', 'agotado', 'todos'
+
+    const formatStockValue = (product, value) => (
+        product?.isWeight ? `${Number(value).toFixed(3)} Kg` : `${Number(value)} u`
+    );
+
+    /**
+     * Aplica un stock objetivo como un movimiento de lote de una línea (ingreso
+     * o egreso), reutilizando el mismo canal batch v2 con ACK que usan
+     * "Recepción rápida" y "Egreso rápido".
+     */
+    // ── Optimistic update (unificado) ───────────────────────────────────────────
+    // La máquina de estados de operaciones de stock por producto vive en
+    // supervisorStockOps y se comparte entre el ajuste de fila (+/− / edición
+    // directa) y el panel de lote de inventario. Aquí solo se cablea a React y a
+    // los efectos visibles (toasts, temporizadores, inspección de comandos).
+    const believedStockOf = (product) => believedStockOfService(product, stockOpStatus);
+
+    const notifyStockOpRevert = () => {
+        // Reversión del valor provisional: la fila vuelve al stock real.
+        showToast?.('No se aplicó el cambio de stock; se revirtió el valor provisional', 'error');
+    };
+
+    const setStockOp = (productId, op) => {
+        setStockOpStatus(current => withStockOp(current, String(productId), op));
+        if (shouldAnnounceStockOpFailure(op)) notifyStockOpRevert();
+    };
+
+    const clearStockOp = (productId, options = {}) => {
+        setStockOpStatus(current => clearStockOpMap(current, String(productId), options));
+    };
+
+    // Resultado de una operación (ajuste único) → estado por producto. El fallo
+    // con aviso es solo del ajuste único: los lotes avisan por su panel.
+    const applyStockOpOutcome = (target, result) => {
+        setStockOpStatus(current => applyStockOpResult(current, target, result, { announce: true }));
+        if (classifyStockOpResult(result) === 'failed') notifyStockOpRevert();
+    };
+
+    // Optimistic update del panel de lote: los stocks objetivo del lote se
+    // reflejan en la fila como provisionales mientras la caja confirma. El ACK
+    // global se reconcilia igual que un ajuste individual (commandId + sync).
+    const applyInventoryBatchTargets = (result, targets = []) => {
+        setStockOpStatus(current => applyBatchStockTargets(current, result, targets));
+    };
+
+    const handleInventoryBatchSubmitting = (targets = []) => {
+        setStockOpStatus(current => beginBatchStockTargets(current, targets));
+    };
+
+    const applyTargetStock = async (product, targetStock) => {
+        // Optimistic update: el movimiento se calcula contra el stock "creído"
+        // (objetivo de un ajuste anterior confirmado aún sin sincronizar), que es
+        // el estado que la caja ya tiene.
+        const current = believedStockOf(product);
+        const delta = Number(targetStock) - current;
+        const productId = String(product.id);
+        if (!Number.isFinite(delta) || Math.abs(delta) < 1e-9) return;
+        if (delta < 0 && !SUPERVISOR_REMOTE_MUTATIONS_ENABLED) {
+            showToast?.('Los egresos remotos están deshabilitados', 'warning');
+            return;
+        }
+        if (!remoteActionsAvailable) {
+            showToast?.('La caja está desconectada; no se puede enviar la orden', 'warning');
+            return;
+        }
+
+        const direction = delta > 0 ? 'ingreso' : 'egreso';
+        const draft = createInventoryDraft(direction, direction === 'egreso'
+            ? { reason: 'Ajuste de stock', reasonCategory: 'ajuste' }
+            : { reason: 'Ajuste de stock' });
+        const result = addInventoryDraftLine(draft, {
+            productId: product.id,
+            productName: product.name,
+            inputUnit: 'unidades',
+            quantityInput: Math.abs(delta),
+            unitsPerPackage: 1,
+        });
+        if (result.error) {
+            showToast?.(result.error, 'error');
+            return;
+        }
+        setStockOpStatus(current => beginStockAdjust(current, { productId, targetStock }));
+        try {
+            // expectedStock debe describir la base contra la que se calculó el
+            // movimiento: si el stock local aún no refleja un ajuste confirmado, se
+            // usa el valor creído para que la caja valide la concurrencia correcta.
+            const baseProducts = Math.abs(current - Number(product.stock || 0)) < 1e-9
+                ? products
+                : patchProductStock(products, productId, current);
+            const batchResult = await sendSupervisorInventoryBatch({
+                draft: result.draft,
+                products: baseProducts,
+                targetDeviceId: pairedDeviceId,
+            });
+            // Un solo lugar decide el estado por producto según el resultado
+            // (applied / pending incierto / failed con reversión).
+            applyStockOpOutcome({ productId, targetStock, commandId: batchResult.commandId ?? null }, batchResult);
+            if (batchResult.ok) triggerRefresh?.();
+        } catch (error) {
+            applyStockOpOutcome({ productId, targetStock }, {
+                ok: false,
+                uncertain: false,
+                error: error?.message || 'No se pudo actualizar el stock',
+            });
+        }
+    };
+
+    // Reconciliación automática de un ajuste sin confirmar: el aviso nunca debe
+    // quedar pegado si la caja YA aplicó el cambio. El plan lo decide el servicio
+    // (promociones por sincronía, retiros de franja, inspecciones por commandId);
+    // aquí solo se ejecutan los temporizadores y las consultas de estado.
+    useEffect(() => {
+        const plan = planStockOpReconciliation(stockOpStatus, products);
+        if (!plan.promoted.length && !plan.retire.length && !plan.inspect.length) return undefined;
+        if (plan.promoted.length) setStockOpStatus(plan.map);
+
+        let cancelled = false;
+        const timers = [];
+        plan.retire.forEach(({ id, targetStock }) => {
+            // El stock sincronizado ya coincide con el objetivo: el valor optimista
+            // es el real y la franja se retira sola en unos segundos.
+            timers.push(setTimeout(() => clearStockOp(id, { onlyAppliedTarget: targetStock }), 2500));
+        });
+        plan.inspect.forEach(({ id, op }) => {
+            // Consulta del estado del comando cada pocos segundos (lectura sola;
+            // jamás crea otro comando).
+            const check = async () => {
+                try {
+                    const inspection = await inspectSupervisorCommandState(op.commandId);
+                    if (cancelled) return;
+                    const next = nextStockOpAfterInspection(op, inspection);
+                    if (next) setStockOp(id, next);
+                    // 'active' / 'absent': sigue pendiente; se re-consulta en el próximo tick.
+                } catch {
+                    // Sin conexión en este momento: se reintenta en el próximo tick.
+                }
+            };
+            check();
+            timers.push(setInterval(check, 5000));
+        });
+
+        return () => {
+            cancelled = true;
+            timers.forEach(timer => { clearTimeout(timer); clearInterval(timer); });
+        };
+    }, [products, stockOpStatus]);
+
+    const openStockEditor = (product) => {
+        if (isStockAdjustBlocked(stockOpStatus, product.id)) {
+            showToast?.('Espera la confirmación de la caja antes de ajustar de nuevo', 'warning');
+            return;
+        }
+        triggerHaptic?.();
+        setStockEditProductId(String(product.id));
+        setStockEditValue(String(believedStockOf(product)));
+    };
+
+    // Muestra el cambio propuesto en la fila (sin modal): el usuario confirma
+    // con el botón ✓ o cancela con ✗ antes de enviar nada a la caja.
+    const commitStockEdit = async (product) => {
+        const parsed = Number(stockEditValue);
+        const valid = product?.isWeight
+            ? (Number.isFinite(parsed) && parsed >= 0)
+            : (Number.isInteger(parsed) && parsed >= 0);
+        if (!valid) {
+            showToast?.(product?.isWeight
+                ? 'Escribe una cantidad válida (0 o más, admite decimales)'
+                : 'Escribe un número entero mayor o igual a 0', 'error');
+            return;
+        }
+        setStockEditProductId(null);
+        if (parsed === believedStockOf(product)) {
+            setStockPendingConfirm(null);
+            return;
+        }
+        setStockPendingConfirm({ product, nextStock: parsed });
+    };
+
+    // Los botones +/− cambian la cantidad al instante (sin modal). El cambio se
+    // envía recién al pulsar ✓ en la franja de confirmación de la fila.
+    const stepStockEdit = (product, step) => {
+        const productId = String(product.id);
+        triggerHaptic?.();
+        if (!remoteActionsAvailable) {
+            showToast?.('La caja está desconectada; no se puede cambiar el stock', 'warning');
+            return;
+        }
+        if (isStockAdjustBlocked(stockOpStatus, productId)) {
+            showToast?.('Espera la confirmación de la caja antes de ajustar de nuevo', 'warning');
+            return;
+        }
+        let base;
+        if (stockEditProductId === productId && stockEditValue !== '') {
+            base = Number(stockEditValue);
+        } else {
+            base = believedStockOf(product);
+            setStockEditProductId(productId);
+        }
+        if (!Number.isFinite(base)) base = believedStockOf(product);
+        const isWeight = Boolean(product?.isWeight);
+        const next = isWeight ? Math.round((base + step) * 1000) / 1000 : Math.round(base + step);
+        setStockEditValue(String(next < 0 ? 0 : next));
+        setStockPendingConfirm(null);
+    };
 
     const movedProductIds = useMemo(() => new Set(
         sales
@@ -100,6 +329,10 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
             .map(record => String(record.productId || record.product_id || record.items?.[0]?.id || ''))
             .filter(Boolean)
     ), [sales]);
+
+    const negativeStockCount = useMemo(() => {
+        return (products || []).filter(p => (Number(p.stock) || 0) < 0).length;
+    }, [products]);
 
     const filteredProducts = useMemo(() => {
         if (!products) return [];
@@ -113,6 +346,9 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
             }
             if (filterStockInventario === 'agotado') {
                 return p.stock <= 0;
+            }
+            if (filterStockInventario === 'negativo') {
+                return (Number(p.stock) || 0) < 0;
             }
             if (filterStockInventario === 'movidos') {
                 return movedProductIds.has(String(p.id));
@@ -1531,192 +1767,56 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                             }}
                             filter={filterStockInventario}
                             onFilterChange={setFilterStockInventario}
-                            counts={{ total: inventoryMetrics.count, low: inventoryMetrics.lowStockCount, out: inventoryMetrics.outOfStockCount, moved: movedProductIds.size }}
+                            counts={{
+                                total: inventoryMetrics.count,
+                                low: inventoryMetrics.lowStockCount,
+                                out: inventoryMetrics.outOfStockCount,
+                                moved: movedProductIds.size,
+                                negative: negativeStockCount,
+                            }}
                             canMutate={remoteActionsAvailable && SUPERVISOR_REMOTE_MUTATIONS_ENABLED}
                             canCreateProduct={remoteActionsAvailable && SUPERVISOR_REMOTE_PRODUCTS_ENABLED}
                             triggerHaptic={triggerHaptic}
                         />
 
                         {/* Listado de Productos */}
-                        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm overflow-hidden">
-                            {filteredProducts.length === 0 ? (
-                                <div className="py-16 text-center text-slate-400 flex flex-col items-center justify-center space-y-3">
-                                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 text-slate-300 dark:text-slate-600 rounded-full">
-                                        <Package size={36} />
-                                    </div>
-                                    <div className="space-y-0.5">
-                                        <p className="text-xs font-black text-slate-700 dark:text-slate-200">No se encontraron productos</p>
-                                        <p className="text-[10px] text-slate-450">Intenta buscando con otro término o cambiando los filtros.</p>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                                    {paginatedProducts.map((p) => {
-                                        const stock = p.stock || 0;
-                                        const minStock = p.minStock || 5;
-                                        const isAgotado = stock <= 0;
-                                        const isBajo = !isAgotado && stock <= minStock;
-                                        const profitUsd = Math.max(0, p.priceUsd - (p.costPrice || 0));
-                                        const profitPct = p.priceUsd > 0 ? Math.round((profitUsd / p.priceUsd) * 100) : 0;
-
-                                        return (
-                                            <div key={p.id} data-testid={`supervisor-product-row-${p.id}`} className="p-3.5 sm:p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 hover:bg-slate-50/50 dark:hover:bg-slate-800/10 transition-colors">
-                                                {/* Cabecera / Info del Producto */}
-                                                <div className="flex items-start justify-between gap-3 min-w-0 flex-1">
-                                                    <div className="min-w-0 flex-1">
-                                                        <div className="flex items-center gap-2 flex-wrap">
-                                                            <h4 className="text-xs sm:text-sm font-black text-slate-800 dark:text-white uppercase leading-tight truncate">{p.name}</h4>
-                                                            <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${
-                                                                isAgotado 
-                                                                    ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/30 dark:text-rose-400' 
-                                                                    : isBajo 
-                                                                        ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400' 
-                                                                        : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400'
-                                                            }`}>
-                                                                {isAgotado ? 'Agotado' : isBajo ? 'Bajo Stock' : 'Disponible'}
-                                                            </span>
-                                                        </div>
-                                                        <div className="flex items-center gap-3 text-[10px] text-slate-400 mt-1 font-medium flex-wrap">
-                                                            {p.barcode && (
-                                                                <span className="flex items-center gap-1 font-mono">
-                                                                    <Hash size={10} /> {p.barcode}
-                                                                </span>
-                                                            )}
-                                                            <span>Categoría: {toTitleCase(p.category || 'Varios')}</span>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Stock visible en la cabecera en móviles (< md) */}
-                                                    <div className={`md:hidden shrink-0 min-w-[68px] text-center py-1.5 px-2.5 rounded-xl border ${
-                                                        isAgotado 
-                                                            ? 'bg-rose-50/50 border-rose-150/70 text-rose-700 dark:bg-rose-950/20 dark:border-rose-900/30 dark:text-rose-455' 
-                                                            : isBajo 
-                                                                ? 'bg-amber-50/50 border-amber-150/70 text-amber-700 dark:bg-amber-950/20 dark:border-amber-900/30 dark:text-amber-455' 
-                                                                : 'bg-slate-50 border-slate-150/70 text-slate-700 dark:bg-slate-850/60 dark:border-slate-800 dark:text-slate-300'
-                                                    }`}>
-                                                        <span className="text-[7px] uppercase font-black block leading-none mb-0.5 text-slate-400">Stock</span>
-                                                        <span className="font-outfit text-xs font-black tabular-nums leading-none">
-                                                            {p.isWeight ? `${stock.toFixed(3)} Kg` : `${stock} u`}
-                                                        </span>
-                                                    </div>
-                                                </div>
-
-                                                {/* Sección de Valores y Acciones */}
-                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between md:justify-end gap-3 sm:gap-4 lg:gap-6 shrink-0">
-                                                    {/* Costo, Venta, Margen */}
-                                                    <div className="grid grid-cols-3 gap-2 sm:gap-4 p-2 sm:p-0 bg-slate-50/70 dark:bg-slate-800/30 sm:bg-transparent dark:sm:bg-transparent rounded-xl border border-slate-100 sm:border-0 dark:border-slate-800/50 text-center sm:text-right">
-                                                        {/* Costo */}
-                                                        <div className="min-w-0">
-                                                            <span className="text-[8px] text-slate-400 uppercase font-black block">Costo</span>
-                                                            <span className="font-outfit text-xs font-black text-slate-500 tabular-nums truncate block">${(p.costPrice || 0).toFixed(2)}</span>
-                                                        </div>
-                                                        {/* Venta */}
-                                                        <div className="min-w-0">
-                                                            <span className="text-[8px] text-slate-400 uppercase font-black block truncate">Venta (USD/Bs)</span>
-                                                            <span className="font-outfit text-xs font-black text-slate-800 dark:text-white tabular-nums block">${p.priceUsd.toFixed(2)}</span>
-                                                            <span className="font-outfit text-[8px] text-slate-400 block tabular-nums leading-none mt-0.5 truncate">{bcvRate ? `${formatBs(p.priceUsd * bcvRate)} Bs` : 'N/D'}</span>
-                                                        </div>
-                                                        {/* Ganancia */}
-                                                        <div className="min-w-0">
-                                                            <span className="text-[8px] text-slate-400 uppercase font-black block">Ganancia</span>
-                                                            <span className="font-outfit text-xs font-black text-blue-600 dark:text-blue-400 tabular-nums block truncate">${profitUsd.toFixed(2)}</span>
-                                                            <span className="text-[8px] text-slate-400 block font-medium leading-none mt-0.5">{profitPct}%</span>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Stock en pantallas de escritorio (>= md) */}
-                                                    <div className={`hidden md:block w-20 text-center py-2 px-2.5 rounded-2xl border ${
-                                                        isAgotado 
-                                                            ? 'bg-rose-50/50 border-rose-150/70 text-rose-700 dark:bg-rose-950/20 dark:border-rose-900/30 dark:text-rose-455' 
-                                                            : isBajo 
-                                                                ? 'bg-amber-50/50 border-amber-150/70 text-amber-700 dark:bg-amber-950/20 dark:border-amber-900/30 dark:text-amber-455' 
-                                                                : 'bg-slate-50 border-slate-150/70 text-slate-700 dark:bg-slate-850/60 dark:border-slate-800 dark:text-slate-300'
-                                                    }`}>
-                                                        <span className="text-[8px] uppercase font-black block leading-none mb-0.5">Stock</span>
-                                                        <span className="font-outfit text-xs sm:text-sm font-black tabular-nums leading-none">
-                                                            {p.isWeight ? `${stock.toFixed(3)} Kg` : `${stock} u`}
-                                                        </span>
-                                                    </div>
-
-                                                    {/* Acciones Remotas */}
-                                                    <div className="flex items-center justify-end gap-1.5 sm:gap-1 pt-2 sm:pt-0 border-t sm:border-0 border-slate-100 dark:border-slate-800/60">
-                                                        {(SUPERVISOR_REMOTE_MUTATIONS_ENABLED || SUPERVISOR_REMOTE_INCOME_ENABLED) && (
-                                                            <>
-                                                                <button
-                                                                    onClick={() => {
-                                                                        if (!remoteActionsAvailable) {
-                                                                            showToast?.('La caja está desconectada; no se puede enviar la orden', 'warning');
-                                                                            return;
-                                                                        }
-                                                                        triggerHaptic?.();
-                                                                        setInventoryBatchProduct(p);
-                                                                        setInventoryBatchMode('ingreso');
-                                                                    }}
-                                                                    className="min-h-10 min-w-10 sm:min-h-9 sm:min-w-9 flex items-center justify-center rounded-xl p-2 text-emerald-500 transition-colors hover:bg-emerald-50 dark:hover:bg-emerald-950/30 active:scale-95"
-                                                                    title="Registrar ingreso de este producto"
-                                                                    aria-label="Registrar ingreso de este producto"
-                                                                >
-                                                                    <ArrowDownToLine size={16} />
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => {
-                                                                        if (!remoteActionsAvailable) {
-                                                                            showToast?.('La caja está desconectada; no se puede enviar la orden', 'warning');
-                                                                            return;
-                                                                        }
-                                                                        triggerHaptic?.();
-                                                                        setInventoryBatchProduct(p);
-                                                                        setInventoryBatchMode('egreso');
-                                                                    }}
-                                                                    className="min-h-10 min-w-10 sm:min-h-9 sm:min-w-9 flex items-center justify-center rounded-xl p-2 text-rose-500 transition-colors hover:bg-rose-50 dark:hover:bg-rose-950/30 active:scale-95"
-                                                                    title="Registrar egreso de este producto"
-                                                                    aria-label="Registrar egreso de este producto"
-                                                                >
-                                                                    <ArrowUpFromLine size={16} />
-                                                                </button>
-                                                            </>
-                                                        )}
-                                                        <button
-                                                            onClick={() => {
-                                                                if (!remoteActionsAvailable) {
-                                                                    showToast?.('La caja está desconectada; no se puede enviar la orden', 'warning');
-                                                                    return;
-                                                                }
-                                                                triggerHaptic?.();
-                                                                setProductToEditRemote(p);
-                                                                setShowProductFormModal(true);
-                                                            }}
-                                                            disabled={!SUPERVISOR_REMOTE_PRODUCTS_ENABLED || !remoteActionsAvailable}
-                                                            className="min-h-10 min-w-10 sm:min-h-9 sm:min-w-9 flex items-center justify-center p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-blue-600 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
-                                                            title="Editar Producto Remotamente"
-                                                            aria-label="Editar Producto Remotamente"
-                                                        >
-                                                            <Pencil size={16} />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => {
-                                                                if (!remoteActionsAvailable) {
-                                                                    showToast?.('La caja está desconectada; no se puede enviar la orden', 'warning');
-                                                                    return;
-                                                                }
-                                                                triggerHaptic?.();
-                                                                setProductToDeleteRemote(p);
-                                                            }}
-                                                            disabled={!SUPERVISOR_REMOTE_PRODUCTS_ENABLED || !remoteActionsAvailable}
-                                                            className="min-h-10 min-w-10 sm:min-h-9 sm:min-w-9 flex items-center justify-center p-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-400 hover:text-rose-600 rounded-xl transition-colors active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                                                            title="Eliminar Producto Remotamente"
-                                                            aria-label="Eliminar Producto Remotamente"
-                                                        >
-                                                            <Trash2 size={16} />
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </div>
+                        <SupervisorInventoryCatalog
+                            products={products}
+                            paginatedProducts={paginatedProducts}
+                            filteredProducts={filteredProducts}
+                            bcvRate={bcvRate}
+                            inventoryMetrics={inventoryMetrics}
+                            remoteActionsAvailable={remoteActionsAvailable}
+                            SUPERVISOR_REMOTE_MUTATIONS_ENABLED={SUPERVISOR_REMOTE_MUTATIONS_ENABLED}
+                            SUPERVISOR_REMOTE_PRODUCTS_ENABLED={SUPERVISOR_REMOTE_PRODUCTS_ENABLED}
+                            stockOpStatus={stockOpStatus}
+                            stockPendingConfirm={stockPendingConfirm}
+                            setStockPendingConfirm={setStockPendingConfirm}
+                            believedStockOf={believedStockOf}
+                            formatBs={formatBs}
+                            formatStockValue={formatStockValue}
+                            toTitleCase={toTitleCase}
+                            openStockEditor={openStockEditor}
+                            commitStockEdit={commitStockEdit}
+                            stepStockEdit={stepStockEdit}
+                            applyTargetStock={applyTargetStock}
+                            setProductToEditRemote={(p) => {
+                                triggerHaptic?.();
+                                setProductToEditRemote(p);
+                                setShowProductFormModal(true);
+                            }}
+                            setProductToDeleteRemote={(p) => {
+                                triggerHaptic?.();
+                                setProductToDeleteRemote(p);
+                            }}
+                            clearStockOp={clearStockOp}
+                            stockEditProductId={stockEditProductId}
+                            setStockEditProductId={setStockEditProductId}
+                            stockEditValue={stockEditValue}
+                            setStockEditValue={setStockEditValue}
+                            triggerHaptic={triggerHaptic}
+                            showToast={showToast}
+                        />
 
                         {/* Controles de Paginación */}
                         {totalPagesInventario > 1 && (
@@ -1810,7 +1910,11 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                     setInventoryBatchMode(null);
                     setInventoryBatchProduct(null);
                 }}
-                onCompleted={() => triggerRefresh?.()}
+                onSubmitting={handleInventoryBatchSubmitting}
+                onCompleted={(result, targets) => {
+                    applyInventoryBatchTargets(result, targets);
+                    triggerRefresh?.();
+                }}
             />
 
             {/* Modal Editar / Crear Producto Remoto */}
