@@ -1,6 +1,9 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Download, CheckCircle2, Link2 } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { Download, CheckCircle2, Link2, Trash2, Smartphone, Monitor, Radio, RotateCw, ChevronRight, AlertTriangle } from 'lucide-react';
 import { useAuthStore } from '../../hooks/store/useAuthStore';
+import { supabaseCloud } from '../../config/supabaseCloud';
+import { ensureSupervisorSession } from '../../services/supervisorAuth';
+import { readPairingRow, getActivePairingSlots } from '../../services/supervisorPairingState';
 import UserCard from './UserCard';
 import LoginPinModal from './LoginPinModal';
 import EmergencyPinResetModal from './EmergencyPinResetModal';
@@ -14,6 +17,44 @@ export default function LockScreen({ onOpenPairing, onOpenPairingIssuer = () => 
   const [showWelcome, setShowWelcome] = useState(() => {
     return localStorage.getItem('pda_welcome_dismissed') !== 'true';
   });
+  const [supervisors, setSupervisors] = useState([]);
+  const [confirmUnpair, setConfirmUnpair] = useState(false);
+  const [unpairing, setUnpairing] = useState(false);
+  const [unpairError, setUnpairError] = useState('');
+
+  const deviceId = localStorage.getItem('pda_device_id');
+
+  const loadSupervisors = useCallback(async () => {
+    if (!deviceId) return;
+    const { data, error } = await readPairingRow({ supabase: supabaseCloud, primaryDeviceId: deviceId });
+    if (error) return;
+    setSupervisors(getActivePairingSlots(data));
+  }, [deviceId]);
+
+  useEffect(() => {
+    void loadSupervisors();
+  }, [loadSupervisors]);
+
+  const handleUnpairConfirm = async () => {
+    setConfirmUnpair(false);
+    setUnpairing(true);
+    setUnpairError('');
+    try {
+      const { session, error: sessionError } = await ensureSupervisorSession();
+      if (sessionError || !session) throw sessionError || new Error('No hay sesión segura del dispositivo');
+
+      const { error } = await supabaseCloud.rpc('unpair_monitor', { p_device_id: deviceId });
+      if (error) throw error;
+
+      await loadSupervisors();
+    } catch (err) {
+      console.error('[LockScreen] Error al desvincular:', err);
+      setUnpairError('No se pudo desvincular el supervisor. Inténtalo de nuevo.');
+      await loadSupervisors();
+    } finally {
+      setUnpairing(false);
+    }
+  };
 
   useEffect(() => {
     if (!adminLoginRequest) return;
@@ -40,7 +81,7 @@ export default function LockScreen({ onOpenPairing, onOpenPairingIssuer = () => 
 
   const isStandalone = useMemo(() => {
     if (typeof window === 'undefined') return false;
-    return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+    return window.matchMedia?.('(display-mode: standalone)')?.matches || navigator.standalone;
   }, []);
 
   const handleUserClick = (user) => {
@@ -138,40 +179,147 @@ export default function LockScreen({ onOpenPairing, onOpenPairingIssuer = () => 
         </div>
       </div>
 
-      {/* Footer */}
-      <div className="relative z-10 shrink-0 pb-8 text-center flex flex-col items-center gap-3">
-        <p className="text-[10px] text-slate-400 font-medium tracking-wider">
-          {(usuarios || []).every(u => u?.requirePin === false)
-            ? 'Acceso directo activado para todos los usuarios'
-            : 'Haz clic en tu perfil para ingresar'}
-        </p>
-        <button
-          onClick={() => window.location.reload()}
-          className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400/70 hover:text-slate-500 transition-colors"
+      {/* Footer / Centro de Control & Supervisión */}
+      <footer className="relative z-10 shrink-0 pb-8 px-4 w-full flex flex-col items-center">
+        {/* Bento Card: Centro de Control & Supervisión */}
+        <section
+          aria-label="Centro de control de supervisión y enlaces"
+          className="max-w-md w-full bg-white/90 dark:bg-slate-900/90 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-4 sm:p-5 shadow-sm backdrop-blur-md space-y-3.5 transition-all"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/></svg>
-          Recargar
-        </button>
+          {/* Card Header: Título e indicador de estado de enlace */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800/60 shadow-xs">
+                <Radio size={14} strokeWidth={2.5} className="animate-pulse" />
+              </div>
+              <h2 className="text-xs font-black tracking-wider text-slate-800 dark:text-slate-200 uppercase">
+                Supervisión &amp; Enlace
+              </h2>
+            </div>
 
-        <button
-          onClick={onOpenPairing}
-          className="mt-3 px-5 py-2.5 bg-slate-100 hover:bg-slate-200/80 active:scale-95 text-slate-600 hover:text-slate-800 border border-slate-200/60 rounded-2xl text-[10px] font-bold uppercase tracking-wider transition-all shadow-sm flex items-center gap-2"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-          Entrar en Modo Supervisor
-        </button>
+            {/* Status Pill Badge */}
+            {supervisors.length > 0 ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200/80 dark:border-emerald-800/60">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                {supervisors.length} {supervisors.length === 1 ? 'Vinculado' : 'Vinculados'}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                Sin Enlace
+              </span>
+            )}
+          </div>
 
-        <div className="mt-2 flex flex-col items-center gap-2">
-          <span className="text-[10px] text-slate-400">¿Necesitas conectar otro dispositivo?</span>
+          {/* Telemetry Sub-grid: Esta Caja POS vs Supervisor(es) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {/* Box 1: Esta Caja (POS Local) */}
+            <div className="bg-slate-50/80 dark:bg-slate-950/50 rounded-2xl p-2.5 border border-slate-200/60 dark:border-slate-800/80 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="p-1 rounded-lg bg-slate-200/50 dark:bg-slate-800 text-slate-500 shrink-0">
+                  <Monitor size={13} strokeWidth={2.2} />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Esta Caja</span>
+                  <span className="text-[11px] font-mono font-bold text-slate-700 dark:text-slate-300 truncate" title={deviceId || undefined}>
+                    {deviceId ? shortDeviceId(deviceId) : 'Sin ID'}
+                  </span>
+                </div>
+              </div>
+              <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0 uppercase tracking-wider">
+                Local
+              </span>
+            </div>
+
+            {/* Box 2: Supervisor(es) Vinculado(s) */}
+            {supervisors.length > 0 ? (
+              <div className="bg-slate-50/80 dark:bg-slate-950/50 rounded-2xl p-2.5 border border-slate-200/60 dark:border-slate-800/80 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="p-1 rounded-lg bg-emerald-100/60 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 shrink-0">
+                    <Smartphone size={13} strokeWidth={2.2} />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">
+                      {supervisors.length === 1 ? 'Supervisor' : `Supervisores (${supervisors.length})`}
+                    </span>
+                    <span className="text-[11px] font-mono font-bold text-slate-700 dark:text-slate-300 truncate" title={supervisors.map(s => s.id).join(', ')}>
+                      {shortDeviceId(supervisors[0].id)}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setConfirmUnpair(true)}
+                  disabled={unpairing}
+                  title="Desvincular supervisor"
+                  aria-label="Desvincular supervisor"
+                  className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-xl transition-all cursor-pointer shrink-0 disabled:opacity-50"
+                >
+                  <Trash2 size={13} strokeWidth={2.5} />
+                </button>
+              </div>
+            ) : (
+              <div className="bg-slate-50/40 dark:bg-slate-950/30 rounded-2xl p-2.5 border border-dashed border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0 text-slate-400">
+                  <div className="p-1 rounded-lg bg-slate-100 dark:bg-slate-800/60 text-slate-400 shrink-0">
+                    <Smartphone size={13} strokeWidth={2} />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Supervisor</span>
+                    <span className="text-[10px] font-medium text-slate-400 truncate">Ninguno enlazado</span>
+                  </div>
+                </div>
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-400 shrink-0 uppercase tracking-wider">
+                  Libre
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Error al desvincular si ocurre */}
+          {unpairError && (
+            <div className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-[10px] text-rose-600 dark:text-rose-400 flex items-center gap-1.5 font-medium">
+              <AlertTriangle size={12} className="shrink-0" />
+              <span>{unpairError}</span>
+            </div>
+          )}
+
+          {/* Action Buttons: Entrar en Modo Supervisor & Vincular Supervisor (QR) */}
+          <div className="space-y-2 pt-0.5">
+            <button
+              onClick={onOpenPairing}
+              className="w-full min-h-11 py-2.5 px-4 bg-slate-900 hover:bg-slate-800 active:scale-[0.98] dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 rounded-2xl text-xs font-black tracking-wider uppercase transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer group"
+            >
+              <Smartphone size={15} strokeWidth={2.2} className="text-emerald-400 dark:text-emerald-600" />
+              <span>Entrar en Modo Supervisor</span>
+              <ChevronRight size={14} strokeWidth={2.5} className="opacity-60 group-hover:translate-x-0.5 transition-transform" />
+            </button>
+
+            <button
+              onClick={onOpenPairingIssuer}
+              className="w-full min-h-10 py-2 px-4 bg-emerald-50 hover:bg-emerald-100/90 active:scale-[0.98] dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/60 rounded-2xl text-[11px] font-extrabold tracking-wider uppercase transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Link2 size={13} strokeWidth={2.5} className="text-emerald-600 dark:text-emerald-400" />
+              <span>Vincular Nuevo Supervisor (QR)</span>
+            </button>
+          </div>
+        </section>
+
+        {/* Micro-enlaces secundarios debajo de la tarjeta */}
+        <div className="flex items-center justify-center gap-3 pt-3 text-[10px] text-slate-400 dark:text-slate-500 font-medium tracking-wide">
+          <span>
+            {(usuarios || []).every(u => u?.requirePin === false)
+              ? 'Acceso directo activo'
+              : 'Acceso con PIN'}
+          </span>
+          <span className="opacity-40">•</span>
           <button
-            onClick={onOpenPairingIssuer}
-            className="min-h-11 px-5 py-2.5 bg-white/80 hover:bg-emerald-50 active:scale-95 text-emerald-700 hover:text-emerald-800 border border-emerald-200/80 rounded-2xl text-[10px] font-extrabold uppercase tracking-wider transition-all shadow-sm flex items-center gap-2 cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+            onClick={() => window.location.reload()}
+            className="hover:text-slate-600 dark:hover:text-slate-300 transition-colors inline-flex items-center gap-1 font-semibold cursor-pointer"
           >
-            <Link2 size={14} strokeWidth={2.5} />
-            Vincular supervisor
+            <RotateCw size={10} strokeWidth={2.5} />
+            Recargar
           </button>
         </div>
-      </div>
+      </footer>
 
       {/* PIN Modal */}
       <LoginPinModal
@@ -196,9 +344,41 @@ export default function LockScreen({ onOpenPairing, onOpenPairingIssuer = () => 
         onClose={handleDismissWelcome}
       />
 
+      {/* Confirmación de desvinculación */}
+      {confirmUnpair && (
+        <div className="fixed inset-0 z-[300] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 max-w-sm w-full rounded-3xl p-6 shadow-2xl border border-slate-100 dark:border-slate-800 text-center animate-in fade-in zoom-in-95 duration-150">
+            <h3 className="text-lg font-black text-slate-800 dark:text-white mb-2">¿Desvincular supervisor?</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-6">
+              El supervisor dejará de ver esta caja en tiempo real. Puedes volver a vincularlo después.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmUnpair(false)}
+                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-2xl cursor-pointer transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleUnpairConfirm}
+                className="flex-1 py-3 bg-rose-500 hover:bg-rose-600 active:scale-95 text-white font-bold text-xs rounded-2xl shadow-lg shadow-rose-500/20 cursor-pointer transition-all"
+              >
+                Desvincular
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
 
     </div>
   );
+}
+
+/** Forma resumida para reconocer un ID: primeros 9 y últimos 4 caracteres. */
+function shortDeviceId(id) {
+  const value = String(id || '');
+  return value.length > 14 ? `${value.slice(0, 9)}…${value.slice(-4)}` : value;
 }
 
 function WelcomeModal({ isOpen, onClose }) {
