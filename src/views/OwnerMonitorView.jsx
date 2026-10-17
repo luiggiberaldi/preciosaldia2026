@@ -9,7 +9,7 @@ import {
     RefreshCw, Wifi, WifiOff, Clock, FileText, DollarSign,
     Wallet, CreditCard, Smartphone, Banknote, ArrowDownRight, ArrowDownToLine, ArrowUpFromLine,
     ShieldCheck, Hash, AlertTriangle, ChevronLeft, ChevronRight,
-    Plus, Minus, Check, X, Pencil, Trash2
+    Plus, Minus, Check, X, Pencil, Trash2, Activity
 } from 'lucide-react';
 import { formatBs, formatCop } from '../utils/calculatorUtils';
 import { getLocalISODate, getDateRange } from '../utils/dateHelpers';
@@ -17,6 +17,8 @@ import { toTitleCase } from '../config/paymentMethods';
 import SupervisorRateModal from '../components/Monitor/SupervisorRateModal';
 import RemoteProductFormModal from '../components/Monitor/RemoteProductFormModal';
 import SupervisorInventoryBatchPanel from '../components/Monitor/SupervisorInventoryBatchPanel';
+import SupervisorCommandDiagnosticsPanel from '../components/Monitor/SupervisorCommandDiagnosticsPanel';
+import { recordReconciliation } from '../services/supervisorCommandDiagnostics';
 import SupervisorInventoryToolbar from '../components/Monitor/SupervisorInventoryToolbar';
 import SupervisorInventoryCatalog from '../components/Monitor/SupervisorInventoryCatalog';
 import { createInventoryDraft, addInventoryDraftLine } from '../services/supervisorInventoryDraft';
@@ -109,6 +111,9 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
     const [deletingRemoteProduct, setDeletingRemoteProduct] = useState(false);
     const [inventoryBatchProduct, setInventoryBatchProduct] = useState(null);
     const [inventoryBatchMode, setInventoryBatchMode] = useState(null);
+    // Panel de diagnóstico de comandos: estado, latencia de ACK y
+    // reconciliaciones por commandId (telemetría registrada en la caja).
+    const [showCommandDiagnostics, setShowCommandDiagnostics] = useState(false);
     // Edición directa de stock en la fila: número pulsable + botones +/- que
     // cambian la cantidad al instante (sin modal), con confirmación explícita y
     // estado visible por producto: sending / applied / failed / pending.
@@ -249,7 +254,19 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                     const inspection = await inspectSupervisorCommandState(op.commandId);
                     if (cancelled) return;
                     const next = nextStockOpAfterInspection(op, inspection);
-                    if (next) setStockOp(id, next);
+                    if (next) {
+                        // Diagnóstico: la reconciliación de la fila resolvió el
+                        // commandId (aplicado o fallido) sin reenviar nada.
+                        recordReconciliation({
+                            commandId: op.commandId,
+                            source: 'fila',
+                            via: 'auto',
+                            outcome: next.state === 'applied' ? 'applied' : 'failed',
+                            status: inspection?.ack?.status || inspection?.state || null,
+                            detail: next.error || null,
+                        });
+                        setStockOp(id, next);
+                    }
                     // 'active' / 'absent': sigue pendiente; se re-consulta en el próximo tick.
                 } catch {
                     // Sin conexión en este momento: se reintenta en el próximo tick.
@@ -310,17 +327,29 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
             return;
         }
         let base;
-        if (stockEditProductId === productId && stockEditValue !== '') {
+        if (stockPendingConfirm && String(stockPendingConfirm.product?.id) === productId) {
+            base = Number(stockPendingConfirm.nextStock);
+        } else if (stockEditProductId === productId && stockEditValue !== '') {
             base = Number(stockEditValue);
         } else {
             base = believedStockOf(product);
-            setStockEditProductId(productId);
         }
         if (!Number.isFinite(base)) base = believedStockOf(product);
         const isWeight = Boolean(product?.isWeight);
         const next = isWeight ? Math.round((base + step) * 1000) / 1000 : Math.round(base + step);
-        setStockEditValue(String(next < 0 ? 0 : next));
-        setStockPendingConfirm(null);
+        const finalNext = next < 0 ? 0 : next;
+
+        if (stockEditProductId === productId) {
+            // Si el usuario tenía abierto el input de texto manual, actualizamos el valor en el input
+            setStockEditValue(String(finalNext));
+        } else {
+            // Al pulsar +/- directamente, actualizamos stockPendingConfirm para no ocultar la botonera stepper
+            if (finalNext === believedStockOf(product)) {
+                setStockPendingConfirm(null);
+            } else {
+                setStockPendingConfirm({ product, nextStock: finalNext });
+            }
+        }
     };
 
     const movedProductIds = useMemo(() => new Set(
@@ -746,6 +775,15 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                     </div>
 
                     <div className="flex items-center gap-1.5 sm:gap-2">
+                        <button
+                            onClick={() => { triggerHaptic?.(); setShowCommandDiagnostics(true); }}
+                            className="min-h-10 min-w-10 sm:min-h-11 sm:min-w-11 p-2 sm:p-2.5 rounded-2xl text-slate-400 hover:text-blue-500 hover:bg-blue-50 border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 dark:hover:text-blue-400 transition-colors flex items-center justify-center shrink-0"
+                            title="Diagnóstico de Comandos"
+                            aria-label="Diagnóstico de Comandos"
+                        >
+                            <Activity size={15} />
+                        </button>
+
                         <button 
                             onClick={async () => { 
                                 triggerHaptic?.();
@@ -1888,6 +1926,11 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
             </main>
 
             {/* Modal Ajustar Tasa Remota */}
+            <SupervisorCommandDiagnosticsPanel
+                isOpen={showCommandDiagnostics}
+                onClose={() => setShowCommandDiagnostics(false)}
+            />
+
             <SupervisorRateModal
                 isOpen={showRateModal}
                 onClose={() => setShowRateModal(false)}

@@ -66,6 +66,11 @@ export default function SupervisorInventoryCatalog({
                     stockOp && (stockOp.state === 'sending' || stockOp.state === 'pending')
                 );
                 const stock = believedStockOf(p);
+                const pending =
+                    stockPendingConfirm && String(stockPendingConfirm.product?.id) === String(p.id)
+                        ? stockPendingConfirm
+                        : null;
+                const effectiveDisplayStock = pending ? pending.nextStock : stock;
                 const minStock = p.minStock || 5;
                 const isNegative = stock < 0;
                 const isAgotado = stock === 0;
@@ -227,16 +232,20 @@ export default function SupervisorInventoryCatalog({
                                         aria-label={stockProvisional ? `Stock provisional de ${p.name}, pendiente de confirmación en la caja` : `Editar stock de ${p.name}`}
                                         title={stockProvisional ? 'Stock provisional — esperando confirmación de la caja' : 'Toca para escribir el stock exacto'}
                                         className={`w-20 text-center py-2 px-2.5 rounded-2xl border cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${
-                                            isNegative || isAgotado
+                                            pending
+                                                ? 'bg-blue-50/90 border-blue-400 text-blue-700 dark:bg-blue-950/40 dark:border-blue-600 dark:text-blue-300 ring-2 ring-blue-400/25'
+                                                : isNegative || isAgotado
                                                 ? 'bg-rose-50/50 border-rose-200/70 text-rose-700 dark:bg-rose-950/20 dark:border-rose-900/30 dark:text-rose-400'
                                                 : isBajo
                                                 ? 'bg-amber-50/50 border-amber-200/70 text-amber-700 dark:bg-amber-950/20 dark:border-amber-900/30 dark:text-amber-400'
                                                 : 'bg-slate-50 border-slate-200/70 text-slate-700 dark:bg-slate-800/60 dark:border-slate-700/80 dark:text-slate-300'
                                         }${stockProvisional ? ' border-dashed' : ''}`}
                                     >
-                                        <span className="text-[8px] uppercase font-black block leading-none mb-0.5">Stock</span>
+                                        <span className={`text-[8px] uppercase font-black block leading-none mb-0.5 ${pending ? 'text-blue-500 dark:text-blue-400' : 'text-slate-400'}`}>
+                                            {pending ? 'Ajuste' : 'Stock'}
+                                        </span>
                                         <span className={`font-outfit text-xs sm:text-sm font-black tabular-nums leading-none ${stockProvisional ? 'animate-pulse' : ''}`}>
-                                            {formatStockValue(p, stock)}
+                                            {formatStockValue(p, effectiveDisplayStock)}
                                         </span>
                                     </button>
                                 )}
@@ -413,7 +422,11 @@ export default function SupervisorInventoryCatalog({
                                             </button>
                                         </div>
                                     ) : (
-                                        <div className="flex items-center bg-slate-100 dark:bg-slate-800/80 rounded-2xl p-0.5 border border-slate-200/60 dark:border-slate-700/60 shadow-inner">
+                                        <div className={`flex items-center rounded-2xl p-0.5 border shadow-inner transition-all ${
+                                            pending
+                                                ? 'bg-blue-50/90 border-blue-300 dark:bg-blue-950/50 dark:border-blue-700 ring-2 ring-blue-400/25'
+                                                : 'bg-slate-100 dark:bg-slate-800/80 border-slate-200/60 dark:border-slate-700/60'
+                                        }`}>
                                             {SUPERVISOR_REMOTE_MUTATIONS_ENABLED && (
                                                 <button
                                                     type="button"
@@ -438,18 +451,20 @@ export default function SupervisorInventoryCatalog({
                                                 aria-label={stockProvisional ? `Stock provisional de ${p.name}, pendiente de confirmación en la caja` : `Editar stock de ${p.name}`}
                                                 title={stockProvisional ? 'Stock provisional — esperando confirmación de la caja' : 'Toca para escribir el stock exacto'}
                                                 className={`px-2 h-8 flex flex-col items-center justify-center min-w-[50px] rounded-xl transition-all ${
-                                                    isNegative || isAgotado
+                                                    pending
+                                                        ? 'text-blue-700 dark:text-blue-300 font-extrabold'
+                                                        : isNegative || isAgotado
                                                         ? 'text-rose-600 dark:text-rose-400'
                                                         : isBajo
                                                         ? 'text-amber-600 dark:text-amber-400'
                                                         : 'text-slate-700 dark:text-slate-200'
                                                 }${stockProvisional ? ' animate-pulse' : ''}`}
                                             >
-                                                <span className="text-[7px] uppercase font-black leading-none text-slate-400">
-                                                    Stock
+                                                <span className={`text-[7px] uppercase font-black leading-none ${pending ? 'text-blue-500 dark:text-blue-400' : 'text-slate-400'}`}>
+                                                    {pending ? 'Ajuste' : 'Stock'}
                                                 </span>
                                                 <span className="font-outfit text-xs font-black tabular-nums leading-none">
-                                                    {formatStockValue(p, stock)}
+                                                    {formatStockValue(p, effectiveDisplayStock)}
                                                 </span>
                                             </button>
                                             {SUPERVISOR_REMOTE_MUTATIONS_ENABLED && (
@@ -467,24 +482,58 @@ export default function SupervisorInventoryCatalog({
                                         </div>
                                     )}
 
-                                    {/* Botón Eliminar en Móvil */}
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            if (!remoteActionsAvailable) {
-                                                showToast?.('La caja está desconectada; no se puede enviar la orden', 'warning');
-                                                return;
-                                            }
-                                            triggerHaptic?.();
-                                            setProductToDeleteRemote(p);
-                                        }}
-                                        disabled={!SUPERVISOR_REMOTE_PRODUCTS_ENABLED || !remoteActionsAvailable}
-                                        className="w-[34px] h-[34px] flex items-center justify-center rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-400 hover:text-rose-600 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                                        title="Eliminar Producto Remotamente"
-                                        aria-label="Eliminar Producto Remotamente"
-                                    >
-                                        <Trash2 size={15} />
-                                    </button>
+                                    {/* Si hay cambio pendiente en móvil, mostramos botones de confirmación/descarte rápido inline */}
+                                    {pending && stockEditProductId !== String(p.id) && (
+                                        <div className="flex items-center gap-1 animate-in fade-in zoom-in-95 duration-150">
+                                            <button
+                                                type="button"
+                                                onClick={async () => {
+                                                    triggerHaptic?.();
+                                                    const { product, nextStock } = pending;
+                                                    setStockPendingConfirm(null);
+                                                    await applyTargetStock(product, nextStock);
+                                                }}
+                                                title="Confirmar cambio de stock en la caja"
+                                                aria-label="Confirmar cambio de stock en la caja"
+                                                className="w-8 h-8 flex items-center justify-center rounded-xl bg-emerald-600 text-white shadow-md shadow-emerald-600/20 active:scale-90 transition-all hover:bg-emerald-700"
+                                            >
+                                                <Check size={14} />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    triggerHaptic?.();
+                                                    setStockPendingConfirm(null);
+                                                }}
+                                                title="Descartar cambio"
+                                                aria-label="Descartar cambio"
+                                                className="w-8 h-8 flex items-center justify-center rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 active:scale-90 transition-all"
+                                            >
+                                                <X size={14} />
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {/* Botón Eliminar en Móvil (visible cuando no está en ajuste pendiente) */}
+                                    {!pending && stockEditProductId !== String(p.id) && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (!remoteActionsAvailable) {
+                                                    showToast?.('La caja está desconectada; no se puede enviar la orden', 'warning');
+                                                    return;
+                                                }
+                                                triggerHaptic?.();
+                                                setProductToDeleteRemote(p);
+                                            }}
+                                            disabled={!SUPERVISOR_REMOTE_PRODUCTS_ENABLED || !remoteActionsAvailable}
+                                            className="w-[34px] h-[34px] flex items-center justify-center rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-400 hover:text-rose-600 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                                            title="Eliminar Producto Remotamente"
+                                            aria-label="Eliminar Producto Remotamente"
+                                        >
+                                            <Trash2 size={15} />
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         </div>

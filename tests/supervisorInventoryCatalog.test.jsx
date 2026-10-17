@@ -214,7 +214,7 @@ describe('SupervisorInventoryCatalog Visual Component', () => {
         const row1 = screen.getByTestId('supervisor-product-row-prod-1');
         // Delta visible
         expect(within(row1).getByText(/12 u →/)).toBeDefined();
-        expect(within(row1).getByText('20 u')).toBeDefined();
+        expect(within(row1).getAllByText('20 u').length).toBeGreaterThanOrEqual(1);
 
         // Botón descartar
         const descartarBtn = within(row1).getByText('Descartar');
@@ -228,6 +228,37 @@ describe('SupervisorInventoryCatalog Visual Component', () => {
             expect.objectContaining({ id: 'prod-1' }),
             20
         );
+    });
+
+    it('mantiene los botones stepper + y - visibles y funcionales cuando hay stockPendingConfirm sin ocultar los controles', () => {
+        const stepStockEditSpy = vi.fn();
+        const applyTargetStockSpy = vi.fn();
+
+        render(
+            <SupervisorInventoryCatalog
+                {...defaultProps}
+                stockPendingConfirm={{ product: mockProducts[0], nextStock: 13 }}
+                stepStockEdit={stepStockEditSpy}
+                applyTargetStock={applyTargetStockSpy}
+            />
+        );
+
+        const row1 = screen.getByTestId('supervisor-product-row-prod-1');
+        // Los botones stepper siguen presentes (no desaparecen)
+        const plusButtons = within(row1).getAllByTitle('Subir stock en 1');
+        const minusButtons = within(row1).getAllByTitle('Bajar stock en 1');
+        expect(plusButtons.length).toBeGreaterThanOrEqual(1);
+        expect(minusButtons.length).toBeGreaterThanOrEqual(1);
+
+        // Permite seguir subiendo o bajando
+        fireEvent.click(plusButtons[0]);
+        expect(stepStockEditSpy).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 'prod-1' }),
+            1
+        );
+
+        // Muestra el valor actualizado
+        expect(within(row1).getAllByText('13 u').length).toBeGreaterThanOrEqual(1);
     });
 
     it('muestra estados de stockOpStatus (sending, applied, pending, failed)', () => {
