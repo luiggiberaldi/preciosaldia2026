@@ -193,4 +193,46 @@ describe('QuickSupervisorPairingModal', () => {
     expect(container.textContent).toContain('El código venció');
     expect(container.textContent).toContain('Generar otro código');
   });
+
+  it('supports tactile numpad typing and auto-submits on 6th digit', async () => {
+    pairingMocks.createPairingToken.mockResolvedValue({ token: 'NUMPAD-999', expiresAt: futureExpiry() });
+    await render();
+
+    // Verify numpad buttons exist
+    const numButtons = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
+    for (const num of numButtons) {
+      expect(button(num)).toBeTruthy();
+    }
+    const clearBtn = button('C');
+    const deleteBtn = container.querySelector('button[title="Borrar dígito"]');
+    expect(clearBtn).toBeTruthy();
+    expect(deleteBtn).toBeTruthy();
+
+    // Type 1, 2, then delete, then clear
+    await act(async () => button('1').click());
+    expect(container.textContent).toContain('1/6');
+    await act(async () => button('2').click());
+    expect(container.textContent).toContain('2/6');
+    await act(async () => deleteBtn.click());
+    expect(container.textContent).toContain('1/6');
+    await act(async () => clearBtn.click());
+    expect(container.textContent).toContain('0/6');
+
+    // Type full 6 digits: 1 2 3 4 5 6 -> auto-triggers generate
+    await act(async () => {
+      button('1').click();
+      button('2').click();
+      button('3').click();
+      button('4').click();
+      button('5').click();
+      button('6').click();
+    });
+
+    expect(pairingMocks.verifyAdminPin).toHaveBeenCalledWith('123456');
+    expect(pairingMocks.createPairingToken).toHaveBeenCalledWith({
+      deviceId: 'BOX-001',
+      onProgress: expect.any(Function),
+    });
+    expect(container.textContent).toContain('NUMPAD-999');
+  });
 });

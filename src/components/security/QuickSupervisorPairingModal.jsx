@@ -7,6 +7,7 @@ import {
   Clipboard,
   Clock3,
   Copy,
+  Delete,
   ExternalLink,
   KeyRound,
   Loader2,
@@ -82,6 +83,7 @@ export default function QuickSupervisorPairingModal({
   const generationRef = useRef(0);
   const previousFocusRef = useRef(null);
   const copyTimeoutRef = useRef(null);
+  const pinRef = useRef('');
 
   const clearWatcher = useCallback(() => {
     cleanupWatchRef.current?.();
@@ -90,6 +92,7 @@ export default function QuickSupervisorPairingModal({
 
   const clearSecretState = useCallback(() => {
     clearWatcher();
+    pinRef.current = '';
     setPin('');
     setToken('');
     setExpiresAt(null);
@@ -177,8 +180,8 @@ export default function QuickSupervisorPairingModal({
       canvasRef.current,
       token,
       {
-        width: 224,
-        margin: 2,
+        width: 160,
+        margin: 1,
         errorCorrectionLevel: 'M',
         color: { dark: '#01696f', light: '#ffffff' },
       },
@@ -223,9 +226,10 @@ export default function QuickSupervisorPairingModal({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [closeModal, isOpen, status]);
 
-  const handleGenerate = async (event) => {
-    event.preventDefault();
-    if (!PIN_PATTERN.test(pin)) {
+  const handleGenerate = async (event, pinOverride) => {
+    event?.preventDefault?.();
+    const pinToVerify = pinOverride ?? pin;
+    if (!PIN_PATTERN.test(pinToVerify)) {
       setPinError(`Ingresa los ${PIN_LENGTH} dígitos del PIN de administrador.`);
       setPin('');
       pinInputRef.current?.focus();
@@ -246,7 +250,7 @@ export default function QuickSupervisorPairingModal({
     let timeoutId = null;
 
     try {
-      const authorization = await verifyAdminPin(pin);
+      const authorization = await verifyAdminPin(pinToVerify);
       if (!authorization?.success) {
         setPin('');
         setPinError(authorization?.error || 'PIN de administrador incorrecto.');
@@ -284,6 +288,37 @@ export default function QuickSupervisorPairingModal({
     } finally {
       if (timeoutId) window.clearTimeout(timeoutId);
     }
+  };
+
+  const handlePadPress = (digit) => {
+    if (status !== 'pin') return;
+    const currentPin = pinRef.current;
+    if (currentPin.length >= PIN_LENGTH) return;
+    triggerHaptic?.();
+    const nextPin = currentPin + digit;
+    pinRef.current = nextPin;
+    setPin(nextPin);
+    setPinError('');
+    if (nextPin.length === PIN_LENGTH) {
+      void handleGenerate(null, nextPin);
+    }
+  };
+
+  const handleDelete = () => {
+    if (status !== 'pin') return;
+    triggerHaptic?.();
+    const nextPin = pinRef.current.slice(0, -1);
+    pinRef.current = nextPin;
+    setPin(nextPin);
+    setPinError('');
+  };
+
+  const handleClear = () => {
+    if (status !== 'pin') return;
+    triggerHaptic?.();
+    pinRef.current = '';
+    setPin('');
+    setPinError('');
   };
 
   const handleStartWaiting = useCallback(() => {
@@ -353,177 +388,267 @@ export default function QuickSupervisorPairingModal({
 
   return (
     <div
-      className="fixed inset-0 z-[360] flex items-end justify-center bg-slate-950/50 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-[360] flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-md sm:items-center sm:p-4 animate-in fade-in duration-200"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) closeModal();
       }}
     >
-        <section
+      <section
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="quick-pairing-title"
         aria-describedby="quick-pairing-description"
-        className="flex max-h-[94vh] w-full max-w-[560px] flex-col overflow-y-auto rounded-t-[2rem] border border-white/70 bg-[var(--bg)] text-slate-900 shadow-[0_-18px_70px_rgba(15,23,42,0.24)] sm:max-h-[90vh] sm:rounded-[2rem] sm:shadow-[0_28px_90px_rgba(15,23,42,0.28)] dark:text-slate-100"
+        className="flex max-h-[96vh] w-full max-w-[420px] flex-col overflow-y-auto rounded-t-[2.5rem] border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-2xl sm:max-h-[92vh] sm:rounded-3xl transition-all"
       >
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-5 sm:px-7 sm:py-6">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
-              <ShieldCheck size={23} strokeWidth={2.4} aria-hidden="true" />
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 px-5 py-4 sm:px-6">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800/50 shadow-xs">
+              <ShieldCheck size={20} strokeWidth={2.4} aria-hidden="true" />
             </div>
-            <div>
-              <p className="mb-1 text-[10px] font-black uppercase tracking-[0.16em] text-emerald-700">Acceso temporal</p>
-              <h2 ref={titleRef} tabIndex={-1} id="quick-pairing-title" className="text-xl font-black tracking-tight text-slate-900 outline-none sm:text-2xl" aria-live="polite">
+            <div className="min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-emerald-600 dark:text-emerald-400">
+                Acceso temporal
+              </p>
+              <h2
+                ref={titleRef}
+                tabIndex={-1}
+                id="quick-pairing-title"
+                className="text-base sm:text-lg font-black tracking-tight text-slate-900 dark:text-white outline-none truncate"
+                aria-live="polite"
+              >
                 Vincular supervisor
               </h2>
-              <p id="quick-pairing-description" className="mt-1 max-w-[38ch] text-sm leading-5 text-slate-500">
-                Conecta otro dispositivo a esta caja sin salir de la pantalla inicial.
-              </p>
             </div>
           </div>
           <button
             type="button"
             onClick={closeModal}
-            className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-4 focus:ring-emerald-500/20"
+            className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
             aria-label="Cerrar vinculación de supervisor"
           >
-            <X size={21} aria-hidden="true" />
+            <X size={18} aria-hidden="true" />
           </button>
         </div>
 
-        <div className="flex-1 px-5 py-5 sm:px-7 sm:py-6">
-          {status === 'pin' && (
-            <form onSubmit={handleGenerate} noValidate className="space-y-5">
-              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
-                <div className="flex gap-3">
-                  <KeyRound className="mt-0.5 shrink-0 text-emerald-700" size={19} aria-hidden="true" />
-                  <div>
-                    <h3 className="text-sm font-extrabold text-emerald-950">Se requiere autorización</h3>
-                    <p className="mt-1 text-sm leading-5 text-emerald-900/70">
-                      Ingresa el PIN de un administrador para generar un código de un solo uso.
-                    </p>
-                  </div>
-                </div>
-              </div>
+        <p id="quick-pairing-description" className="sr-only">
+          Conecta otro dispositivo a esta caja sin salir de la pantalla inicial.
+        </p>
 
-              <div>
-                <label htmlFor="supervisor-admin-pin" className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-slate-600">
+        <div className="flex-1 px-5 py-4 sm:px-6">
+          {status === 'pin' && (
+            <form onSubmit={handleGenerate} noValidate className="space-y-4">
+              {/* Header de Autorización sutil */}
+              <div className="text-center pt-0.5">
+                <label
+                  htmlFor="supervisor-admin-pin"
+                  className="block text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300"
+                >
                   PIN de administrador · 6 dígitos
                 </label>
-                <div className="relative" onClick={() => pinInputRef.current?.focus()}>
-                  <div
-                    className={`grid grid-cols-6 gap-2 rounded-2xl border bg-white p-2 transition-shadow sm:gap-3 sm:p-3 ${pinError ? 'border-rose-300 ring-4 ring-rose-500/10' : 'border-slate-200 focus-within:border-emerald-500 focus-within:ring-4 focus-within:ring-emerald-500/15'}`}
-                    aria-hidden="true"
+                <p id="supervisor-pin-help" className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">
+                  Ingresa tu clave para autorizar el enlace
+                </p>
+              </div>
+
+              {/* Contenedor de Celdas PIN de Alta Fidelidad */}
+              <div className="relative cursor-pointer" onClick={() => pinInputRef.current?.focus()}>
+                <div
+                  className={`grid grid-cols-6 gap-2 sm:gap-2.5 p-1 transition-all ${
+                    pinError ? 'animate-shake' : ''
+                  }`}
+                  aria-hidden="true"
+                >
+                  {Array.from({ length: PIN_LENGTH }, (_, index) => {
+                    const digit = pin[index];
+                    const isNextActive = index === pin.length && !pinError;
+                    const isFilled = Boolean(digit);
+
+                    return (
+                      <div
+                        key={index}
+                        className={`flex h-12 sm:h-13 items-center justify-center rounded-2xl border-2 transition-all duration-150 select-none ${
+                          pinError
+                            ? 'border-rose-400 bg-rose-50/50 dark:bg-rose-950/30 text-rose-600'
+                            : isFilled
+                              ? 'border-emerald-500 dark:border-emerald-400 bg-emerald-50/80 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 shadow-sm scale-100'
+                              : isNextActive
+                                ? 'border-emerald-500 dark:border-emerald-400 bg-white dark:bg-slate-900 shadow-sm ring-4 ring-emerald-500/15 scale-105'
+                                : 'border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 text-slate-300 dark:text-slate-700'
+                        }`}
+                      >
+                        {isFilled ? (
+                          <span className="w-3.5 h-3.5 rounded-full bg-emerald-600 dark:bg-emerald-400 transform transition-transform scale-100" />
+                        ) : isNextActive ? (
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Hidden Input for Keyboard, Barcode & Paste Accessibility */}
+                <input
+                  ref={pinInputRef}
+                  id="supervisor-admin-pin"
+                  name="supervisor-admin-pin"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  pattern="[0-9]{6}"
+                  maxLength={PIN_LENGTH}
+                  value={pin}
+                  onChange={(event) => {
+                    const clean = event.target.value.replace(/\D/g, '').slice(0, PIN_LENGTH);
+                    pinRef.current = clean;
+                    setPin(clean);
+                    setPinError('');
+                  }}
+                  aria-label="PIN de administrador de 6 dígitos"
+                  aria-invalid={Boolean(pinError)}
+                  aria-describedby={pinError ? 'supervisor-pin-error' : 'supervisor-pin-help'}
+                  className="absolute inset-0 h-full w-full cursor-text opacity-0"
+                />
+              </div>
+
+              {/* Mensaje de Error o Contador */}
+              <div className="flex items-center justify-between px-1 text-xs min-h-[20px]">
+                {pinError ? (
+                  <p id="supervisor-pin-error" role="alert" className="font-bold text-rose-600 dark:text-rose-400">
+                    {pinError}
+                  </p>
+                ) : (
+                  <span className="text-slate-400 dark:text-slate-500 text-[11px]">
+                    Usa el teclado táctil o físico
+                  </span>
+                )}
+                <span className="font-mono font-bold tabular-nums text-slate-400 dark:text-slate-500 text-[11px] ml-auto" aria-hidden="true">
+                  {pin.length}/{PIN_LENGTH}
+                </span>
+              </div>
+
+              {/* Teclado Numérico Táctil Integrado (Numpad) */}
+              <div className="grid grid-cols-3 gap-2 sm:gap-2.5 pt-1">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
+                  <button
+                    key={digit}
+                    type="button"
+                    onClick={() => handlePadPress(String(digit))}
+                    className="min-h-[50px] sm:min-h-[54px] rounded-2xl bg-slate-100/90 dark:bg-slate-800/80 hover:bg-slate-200/90 dark:hover:bg-slate-700/80 active:scale-95 text-lg font-black text-slate-800 dark:text-slate-100 transition-all flex items-center justify-center cursor-pointer shadow-xs select-none focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                   >
-                    {Array.from({ length: PIN_LENGTH }, (_, index) => {
-                      const digit = pin[index];
-                      const isActive = index === Math.min(pin.length, PIN_LENGTH - 1);
-                      return (
-                        <span
-                          key={index}
-                          className={`flex h-12 items-center justify-center rounded-xl border text-xl font-black transition-colors sm:h-14 ${digit ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : isActive ? 'border-emerald-400 bg-emerald-50/40 text-emerald-700' : 'border-slate-100 bg-slate-50 text-slate-300'}`}
-                        >
-                          {digit ? '•' : ''}
-                        </span>
-                      );
-                    })}
-                  </div>
-                  <input
-                    ref={pinInputRef}
-                    id="supervisor-admin-pin"
-                    name="supervisor-admin-pin"
-                    type="text"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    pattern="[0-9]{6}"
-                    maxLength={PIN_LENGTH}
-                    value={pin}
-                    onChange={(event) => {
-                      setPin(event.target.value.replace(/\D/g, '').slice(0, PIN_LENGTH));
-                      setPinError('');
-                    }}
-                    aria-label="PIN de administrador de 6 dígitos"
-                    aria-invalid={Boolean(pinError)}
-                    aria-describedby={pinError ? 'supervisor-pin-error' : 'supervisor-pin-help'}
-                    className="absolute inset-0 h-full w-full cursor-text rounded-2xl opacity-0 outline-none"
-                  />
-                </div>
-                <div className="mt-2 flex items-center justify-between gap-3">
-                  {pinError ? (
-                    <p id="supervisor-pin-error" role="alert" className="text-xs font-bold text-rose-600">{pinError}</p>
-                  ) : (
-                    <p id="supervisor-pin-help" className="text-xs leading-5 text-slate-500">Escribe o pega los 6 dígitos del PIN.</p>
-                  )}
-                  <span className="shrink-0 text-xs font-bold tabular-nums text-slate-400" aria-hidden="true">{pin.length}/{PIN_LENGTH}</span>
-                </div>
+                    {digit}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  className="min-h-[50px] sm:min-h-[54px] rounded-2xl bg-slate-100/50 dark:bg-slate-800/40 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 active:scale-95 text-xs font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 transition-all flex items-center justify-center cursor-pointer select-none focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  title="Borrar todo"
+                >
+                  C
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePadPress('0')}
+                  className="min-h-[50px] sm:min-h-[54px] rounded-2xl bg-slate-100/90 dark:bg-slate-800/80 hover:bg-slate-200/90 dark:hover:bg-slate-700/80 active:scale-95 text-lg font-black text-slate-800 dark:text-slate-100 transition-all flex items-center justify-center cursor-pointer shadow-xs select-none focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                >
+                  0
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  className="min-h-[50px] sm:min-h-[54px] rounded-2xl bg-slate-100/50 dark:bg-slate-800/40 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40 dark:hover:text-rose-400 active:scale-95 text-slate-600 dark:text-slate-300 transition-all flex items-center justify-center cursor-pointer select-none focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                  title="Borrar dígito"
+                  aria-label="Borrar dígito"
+                >
+                  <Delete size={19} strokeWidth={2.2} />
+                </button>
               </div>
 
-              <div className="flex items-start gap-2 rounded-xl bg-slate-100/80 px-3 py-3 text-xs leading-5 text-slate-600">
-                <Clock3 className="mt-0.5 shrink-0 text-slate-500" size={15} aria-hidden="true" />
-                <span>El código caduca automáticamente y no reemplaza la contraseña de ningún usuario.</span>
-              </div>
-
+              {/* Botón de Envío / Generación */}
               <button
                 type="submit"
-                className="flex min-h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-2xl bg-brand px-5 text-sm font-black text-white shadow-primary/20 transition-all hover:bg-brand-dark focus:outline-none focus:ring-4 focus:ring-brand/25 active:translate-y-px"
+                className={`flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-2xl px-4 text-xs font-black uppercase tracking-wider transition-all select-none shadow-sm ${
+                  pin.length === PIN_LENGTH
+                    ? 'bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white shadow-emerald-600/25 ring-2 ring-emerald-500/20'
+                    : 'bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-500 dark:text-slate-400 border border-slate-200/60 dark:border-slate-700/60'
+                }`}
               >
-                <ShieldCheck size={18} aria-hidden="true" />
-                Generar código temporal
+                <ShieldCheck size={16} strokeWidth={2.4} aria-hidden="true" />
+                <span>Generar código temporal</span>
               </button>
             </form>
           )}
 
           {status === 'generating' && (
-            <div className="flex min-h-[300px] flex-col items-center justify-center text-center">
-              <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-emerald-100 text-emerald-700">
-                <Loader2 className="animate-spin" size={29} aria-hidden="true" />
+            <div className="flex min-h-[260px] flex-col items-center justify-center text-center p-6">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800/60 shadow-sm">
+                <Loader2 className="animate-spin" size={28} aria-hidden="true" />
               </div>
-              <h3 className="mt-5 text-lg font-black text-slate-900">Preparando vinculación</h3>
-              <p className="mt-2 max-w-[34ch] text-sm leading-5 text-slate-500" role="status">{progressMessage}</p>
+              <h3 className="mt-4 text-base font-black text-slate-900 dark:text-white">Preparando vinculación</h3>
+              <p className="mt-1.5 max-w-[34ch] text-xs leading-normal text-slate-500 dark:text-slate-400" role="status">
+                {progressMessage}
+              </p>
             </div>
           )}
 
           {isCodeVisible && (
-            <div className="space-y-5">
-              <div className="flex flex-col items-center rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-                <div className="mb-3 flex w-full items-center justify-between text-xs font-bold text-slate-500">
-                  <span className="flex items-center gap-2"><QrCode size={16} className="text-emerald-700" aria-hidden="true" />Código listo</span>
-                  <span className="rounded-full bg-amber-50 px-2.5 py-1 font-black text-amber-700">{timeLeft}</span>
+            <div className="space-y-3.5">
+              <div className="flex flex-col items-center rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50 p-4 shadow-sm">
+                <div className="mb-3 flex w-full items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400">
+                  <span className="flex items-center gap-1.5 font-black uppercase tracking-wider text-[11px] text-emerald-600 dark:text-emerald-400">
+                    <QrCode size={15} aria-hidden="true" />
+                    Código listo
+                  </span>
+                  <span className="rounded-full bg-amber-50 dark:bg-amber-950/50 px-2.5 py-0.5 text-[11px] font-black text-amber-700 dark:text-amber-400 border border-amber-200/80 dark:border-amber-800/60">
+                    {timeLeft}
+                  </span>
                 </div>
-                <div className="rounded-2xl border border-slate-100 bg-white p-3 shadow-inner">
-                  <canvas ref={canvasRef} width="224" height="224" aria-label="Código QR para vincular el supervisor" />
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white p-3 shadow-inner">
+                  <canvas ref={canvasRef} width="160" height="160" aria-label="Código QR para vincular el supervisor" />
                 </div>
-                <p className="mt-3 text-center text-xs leading-5 text-slate-500">Escanéalo desde el celular del supervisor.</p>
+                <p className="mt-2 text-center text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                  Escanéalo desde el celular del supervisor.
+                </p>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex items-center justify-between gap-3">
+              <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/60 p-3 sm:p-3.5">
+                <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Código de respaldo</p>
-                    <p className="mt-2 break-all font-mono text-lg font-black tracking-[0.16em] text-slate-900">{token}</p>
+                    <p className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">Código de respaldo</p>
+                    <p className="mt-0.5 break-all font-mono text-sm font-black tracking-wider text-slate-800 dark:text-slate-200 sm:text-base">
+                      {token}
+                    </p>
                   </div>
                   <button
                     type="button"
                     onClick={handleCopy}
-                    className="flex min-h-11 shrink-0 cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 transition-colors hover:border-emerald-300 hover:text-emerald-700 focus:outline-none focus:ring-4 focus:ring-emerald-500/20"
+                    className="flex min-h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl border border-slate-200/80 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-black text-slate-700 dark:text-slate-200 transition-colors hover:border-emerald-300 hover:text-emerald-700 focus:outline-none focus:ring-4 focus:ring-emerald-500/20"
                     aria-label="Copiar código de vinculación"
                   >
-                    {copyState === 'copied' ? <Check size={16} className="text-emerald-600" aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
+                    {copyState === 'copied' ? <Check size={14} className="text-emerald-600 dark:text-emerald-400" aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
                     <span>{copyState === 'copied' ? 'Copiado' : 'Copiar'}</span>
                   </button>
                 </div>
-                {copyState === 'error' && <p role="alert" className="mt-2 text-xs font-bold text-rose-600">No se pudo copiar. Selecciona el código manualmente.</p>}
+                {copyState === 'error' && (
+                  <p role="alert" className="mt-1.5 text-xs font-bold text-rose-600 dark:text-rose-400">
+                    No se pudo copiar. Selecciona el código manualmente.
+                  </p>
+                )}
               </div>
 
-              <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-3">
+              <div className="grid gap-1.5 text-xs text-slate-600 dark:text-slate-400 sm:grid-cols-3">
                 {[
                   ['1', 'Abre la app en el celular'],
                   ['2', 'Pulsa modo supervisor'],
-                  ['3', 'Escanea o escribe el código'],
+                  ['3', 'Escanea o escribe código'],
                 ].map(([number, text]) => (
-                  <div key={number} className="flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-3 leading-5">
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-black text-emerald-800">{number}</span>
-                    <span>{text}</span>
+                  <div key={number} className="flex items-center gap-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2 text-[10px] leading-tight font-medium border border-slate-100 dark:border-slate-800">
+                    <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-[9px] font-black text-emerald-800 dark:text-emerald-300">
+                      {number}
+                    </span>
+                    <span className="leading-tight">{text}</span>
                   </div>
                 ))}
               </div>
@@ -532,32 +657,38 @@ export default function QuickSupervisorPairingModal({
                 <button
                   type="button"
                   onClick={handleStartWaiting}
-                  className="flex min-h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-2xl bg-brand px-5 text-sm font-black text-white shadow-primary/20 transition-all hover:bg-brand-dark focus:outline-none focus:ring-4 focus:ring-brand/25 active:translate-y-px"
+                  className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] px-4 text-xs font-black uppercase tracking-wider text-white shadow-lg shadow-emerald-600/25 transition-all focus:outline-none focus:ring-4 focus:ring-emerald-500/25"
                 >
-                  <Smartphone size={18} aria-hidden="true" />
-                  Esperar conexión del supervisor
+                  <Smartphone size={16} aria-hidden="true" />
+                  <span>Esperar conexión del supervisor</span>
                 </button>
               ) : (
-                <div className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-extrabold text-emerald-800" role="status">
-                  <Loader2 size={17} className="animate-spin" aria-hidden="true" />
-                  Esperando conexión del supervisor…
+                <div className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-200/80 dark:border-emerald-800/80 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-2.5 text-xs font-extrabold text-emerald-800 dark:text-emerald-300" role="status">
+                  <Loader2 size={15} className="animate-spin text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+                  <span>Esperando conexión del supervisor…</span>
                 </div>
               )}
             </div>
           )}
 
           {status === 'success' && (
-            <div className="flex min-h-[300px] flex-col items-center justify-center text-center" role="status" aria-live="polite">
-              <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-emerald-100 text-emerald-700">
-                <CheckCircle2 size={32} aria-hidden="true" />
+            <div className="flex min-h-[260px] flex-col items-center justify-center text-center p-6" role="status" aria-live="polite">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800/60 shadow-sm">
+                <CheckCircle2 size={30} aria-hidden="true" />
               </div>
-              <h3 className="mt-5 text-xl font-black text-slate-900">Supervisor vinculado</h3>
-              <p className="mt-2 max-w-[34ch] text-sm leading-5 text-slate-500">El dispositivo ya puede consultar el inventario y las métricas de esta caja.</p>
-              {pairedDeviceId && <p className="mt-4 rounded-xl bg-slate-100 px-3 py-2 font-mono text-xs font-bold text-slate-600">{pairedDeviceId.slice(0, 18)}{pairedDeviceId.length > 18 ? '…' : ''}</p>}
+              <h3 className="mt-4 text-lg font-black text-slate-900 dark:text-white">Supervisor vinculado</h3>
+              <p className="mt-1.5 max-w-[34ch] text-xs leading-normal text-slate-500 dark:text-slate-400">
+                El dispositivo ya puede consultar el inventario y las métricas de esta caja.
+              </p>
+              {pairedDeviceId && (
+                <p className="mt-3 rounded-xl bg-slate-100 dark:bg-slate-800 px-3 py-1.5 font-mono text-xs font-bold text-slate-600 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700">
+                  {pairedDeviceId.slice(0, 18)}{pairedDeviceId.length > 18 ? '…' : ''}
+                </p>
+              )}
               <button
                 type="button"
                 onClick={closeModal}
-                className="mt-6 flex min-h-12 w-full cursor-pointer items-center justify-center rounded-2xl bg-brand px-5 text-sm font-black text-white transition-colors hover:bg-brand-dark focus:outline-none focus:ring-4 focus:ring-brand/25"
+                className="mt-5 flex min-h-11 w-full cursor-pointer items-center justify-center rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] px-4 text-xs font-black uppercase tracking-wider text-white shadow-lg shadow-emerald-600/25 transition-all focus:outline-none focus:ring-4 focus:ring-emerald-500/25"
               >
                 Listo
               </button>
@@ -566,7 +697,7 @@ export default function QuickSupervisorPairingModal({
 
           {status === 'expired' && (
             <StateMessage
-              icon={<Clock3 size={31} aria-hidden="true" />}
+              icon={<Clock3 size={24} aria-hidden="true" />}
               tone="amber"
               title="El código venció"
               description="Por seguridad, este código ya no puede utilizarse. Genera uno nuevo para continuar."
@@ -576,9 +707,9 @@ export default function QuickSupervisorPairingModal({
           )}
 
           {status === 'error' && (
-            <div className="space-y-5" role="alert" aria-live="assertive">
+            <div className="space-y-3" role="alert" aria-live="assertive">
               <StateMessage
-                icon={<AlertCircle size={31} aria-hidden="true" />}
+                icon={<AlertCircle size={24} aria-hidden="true" />}
                 tone="rose"
                 title="No pudimos completar la vinculación"
                 description={errorMessage}
@@ -589,9 +720,10 @@ export default function QuickSupervisorPairingModal({
                 <button
                   type="button"
                   onClick={() => { triggerHaptic?.(); onOpenSettings(); }}
-                  className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 text-sm font-black text-slate-700 transition-colors hover:border-emerald-300 hover:text-emerald-700 focus:outline-none focus:ring-4 focus:ring-emerald-500/20"
+                  className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-1.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 text-xs font-black text-slate-700 dark:text-slate-200 transition-colors hover:border-emerald-300 hover:text-emerald-700 focus:outline-none focus:ring-4 focus:ring-emerald-500/20"
                 >
-                  Abrir Ajustes <ExternalLink size={16} aria-hidden="true" />
+                  <span>Abrir Ajustes</span>
+                  <ExternalLink size={15} aria-hidden="true" />
                 </button>
               )}
             </div>
@@ -599,15 +731,15 @@ export default function QuickSupervisorPairingModal({
         </div>
 
         {status !== 'success' && status !== 'generating' && (
-          <div className="flex items-center justify-between gap-3 border-t border-slate-200/80 px-5 py-4 sm:px-7">
-            <p className="flex items-center gap-2 text-xs text-slate-500">
-              <Clipboard size={14} aria-hidden="true" />
-              Código temporal y de un solo uso
+          <div className="flex items-center justify-between gap-3 border-t border-slate-100 dark:border-slate-800/80 px-5 py-3 sm:px-6">
+            <p className="flex items-center gap-1.5 text-[11px] text-slate-400 dark:text-slate-500 font-medium">
+              <Clipboard size={12} strokeWidth={2.2} aria-hidden="true" />
+              <span>Código temporal y de un solo uso</span>
             </p>
             <button
               type="button"
               onClick={closeModal}
-              className="min-h-10 cursor-pointer rounded-xl px-3 text-xs font-black text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-4 focus:ring-emerald-500/20"
+              className="min-h-8 cursor-pointer rounded-xl px-3 py-1 text-xs font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
             >
               Cancelar
             </button>
@@ -620,22 +752,30 @@ export default function QuickSupervisorPairingModal({
 
 function StateMessage({ icon, tone, title, description, actionLabel, onAction }) {
   const tones = {
-    amber: { box: 'bg-amber-50 border-amber-200', icon: 'bg-amber-100 text-amber-700', title: 'text-amber-950' },
-    rose: { box: 'bg-rose-50 border-rose-200', icon: 'bg-rose-100 text-rose-700', title: 'text-rose-950' },
+    amber: {
+      box: 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300',
+      icon: 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300',
+      title: 'text-amber-950 dark:text-amber-200',
+    },
+    rose: {
+      box: 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300',
+      icon: 'bg-rose-100 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300',
+      title: 'text-rose-950 dark:text-rose-200',
+    },
   };
   const palette = tones[tone] || tones.rose;
 
   return (
-    <div className="flex min-h-[300px] flex-col items-center justify-center text-center" role="status" aria-live="polite">
-      <div className={`flex h-16 w-16 items-center justify-center rounded-3xl ${palette.icon}`}>{icon}</div>
-      <h3 className={`mt-5 text-xl font-black ${palette.title}`}>{title}</h3>
-      <p className="mt-2 max-w-[36ch] text-sm leading-5 text-slate-600">{description}</p>
+    <div className="flex min-h-[240px] flex-col items-center justify-center text-center p-4" role="status" aria-live="polite">
+      <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${palette.icon}`}>{icon}</div>
+      <h3 className={`mt-3 text-base font-black ${palette.title}`}>{title}</h3>
+      <p className="mt-1.5 max-w-[36ch] text-xs leading-normal text-slate-600 dark:text-slate-400">{description}</p>
       <button
         type="button"
         onClick={onAction}
-        className={`mt-6 flex min-h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border px-5 text-sm font-black transition-colors focus:outline-none focus:ring-4 focus:ring-emerald-500/20 ${palette.box} text-slate-800 hover:border-emerald-300 hover:text-emerald-800`}
+        className={`mt-4 flex min-h-10 w-full cursor-pointer items-center justify-center gap-1.5 rounded-2xl border px-4 text-xs font-black transition-colors focus:outline-none focus:ring-4 focus:ring-emerald-500/20 ${palette.box} hover:brightness-95`}
       >
-        <RefreshCw size={17} aria-hidden="true" />
+        <RefreshCw size={15} aria-hidden="true" />
         {actionLabel}
       </button>
     </div>
