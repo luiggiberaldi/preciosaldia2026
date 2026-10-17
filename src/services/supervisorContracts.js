@@ -1,6 +1,21 @@
 // Contratos puros del Modo Supervisor.
 // Este módulo no conoce React, Supabase ni localStorage: sirve como frontera
 // común para validar datos antes de conectarlos a persistencia o Realtime.
+import {
+    buildProductRevision,
+    EDITABLE_PRODUCT_FIELDS,
+    extractEditableProductPatch,
+    normalizeProductFieldValue,
+    resolveEffectivePriceUsd,
+} from './supervisorProductCommand';
+
+export {
+    buildProductRevision,
+    EDITABLE_PRODUCT_FIELDS,
+    extractEditableProductPatch,
+    normalizeProductFieldValue,
+    resolveEffectivePriceUsd,
+};
 
 export const PAIRING_STATES = Object.freeze({
     PENDING: 'pending',
@@ -86,6 +101,90 @@ export const SUPERVISOR_COMMAND_TYPES = Object.freeze([
 const COMMAND_TTL_MS = 60_000;
 const MAX_COMMAND_ID_LENGTH = 128;
 
+// ── Contrato inventario batch v2 ──────────────────────────────────────────
+// v1 (sin batchVersion) = una línea plana; v2 = cabecera + `lines`.
+// El factor/delta enviado NO es autoritativo: la caja recalcula con su catálogo.
+export const INVENTORY_BATCH_VERSION = 2;
+// 50 líneas: cubre con holgura una recepción típica de bodega y acota el
+// payload (~15 KB) y el trabajo de la caja dentro de una sola transacción.
+export const INVENTORY_BATCH_MAX_LINES = 50;
+export const INVENTORY_REASON_MAX_LENGTH = 240;
+export const INVENTORY_LOT_REFERENCE_MAX_LENGTH = 128;
+export const INVENTORY_ID_MAX_LENGTH = 128;
+export const INVENTORY_REVISION_MAX_LENGTH = 2048;
+export const INVENTORY_MAX_EXPECTED_STOCK = 10_000_000;
+export const INVENTORY_MAX_UNITS_PER_PACKAGE = 10_000;
+// Máximo por unidad capturada; kg/lt/g/ml equivalen a MAX_GRANEL_KG (5000).
+export const INVENTORY_MAX_QUANTITY_BY_UNIT = Object.freeze({
+    unidades: 100_000,
+    cajas: 10_000,
+    bultos: 10_000,
+    kg: 5_000,
+    lt: 5_000,
+    g: 5_000_000,
+    ml: 5_000_000,
+});
+export const INVENTORY_EGRESS_CATEGORIES = Object.freeze(['merma', 'danio', 'vencimiento', 'autoconsumo', 'devolucion', 'ajuste']);
+
+const isBoundedString = (value, max, { required = true } = {}) => {
+    if (value === undefined || value === null) return !required;
+    return typeof value === 'string' && value.trim().length > 0 && value.length <= max;
+};
+
+function isValidInventoryBatchLineV2(line) {
+    if (!isPlainObject(line)) return false;
+    const maxQuantity = INVENTORY_MAX_QUANTITY_BY_UNIT[line.inputUnit];
+    return isBoundedString(line.productId, INVENTORY_ID_MAX_LENGTH)
+        && isBoundedString(line.lineId, INVENTORY_ID_MAX_LENGTH, { required: false })
+        && maxQuantity !== undefined
+        && isFiniteNumber(line.quantityInput)
+        && line.quantityInput > 0
+        && line.quantityInput <= maxQuantity
+        && isFiniteNumber(line.expectedStock)
+        && line.expectedStock >= 0
+        && line.expectedStock <= INVENTORY_MAX_EXPECTED_STOCK
+        && isBoundedString(line.baseRevision, INVENTORY_REVISION_MAX_LENGTH, { required: false })
+        && (line.unitsPerPackage === undefined
+            || (Number.isInteger(line.unitsPerPackage)
+                && line.unitsPerPackage > 0
+                && line.unitsPerPackage <= INVENTORY_MAX_UNITS_PER_PACKAGE));
+}
+
+/**
+ * Política de duplicados: no puede haber dos líneas con el mismo producto y la
+ * misma unidad. Distintas unidades del mismo producto se permiten, pero deben
+ * compartir expectedStock y baseRevision (describen el mismo estado base).
+ */
+function hasConsistentInventoryLines(lines) {
+    const seenUnits = new Set();
+    const baseByProduct = new Map();
+    for (const line of lines) {
+        const unitKey = `${line.productId}\u0000${line.inputUnit}`;
+        if (seenUnits.has(unitKey)) return false;
+        seenUnits.add(unitKey);
+        const base = baseByProduct.get(line.productId);
+        if (base && (base.expectedStock !== line.expectedStock || base.baseRevision !== line.baseRevision)) return false;
+        if (!base) baseByProduct.set(line.productId, line);
+    }
+    return true;
+}
+
+export function validateInventoryBatchV2Payload(payload) {
+    return isPlainObject(payload)
+        && payload.batchVersion === INVENTORY_BATCH_VERSION
+        && ['ingreso', 'egreso'].includes(payload.direction)
+        && isBoundedString(payload.reason, INVENTORY_REASON_MAX_LENGTH)
+        && (payload.direction === 'egreso'
+            ? INVENTORY_EGRESS_CATEGORIES.includes(payload.reasonCategory)
+            : (payload.reasonCategory === undefined || INVENTORY_EGRESS_CATEGORIES.includes(payload.reasonCategory)))
+        && isBoundedString(payload.lotReference, INVENTORY_LOT_REFERENCE_MAX_LENGTH, { required: false })
+        && Array.isArray(payload.lines)
+        && payload.lines.length > 0
+        && payload.lines.length <= INVENTORY_BATCH_MAX_LINES
+        && payload.lines.every(isValidInventoryBatchLineV2)
+        && hasConsistentInventoryLines(payload.lines);
+}
+
 function validateCommandPayload(type, payload) {
     if (!isPlainObject(payload)) return false;
 
@@ -99,6 +198,11 @@ function validateCommandPayload(type, payload) {
         case 'supervisor.product.update':
             return typeof payload.productId === 'string'
                 && isPlainObject(payload.patch)
+                && typeof payload.baseRevision === 'string'
+                && payload.baseRevision.trim().length > 0
+                && typeof payload.patch.baseRevision === 'string'
+                && payload.patch.baseRevision.trim().length > 0
+                && payload.baseRevision === payload.patch.baseRevision
                 && (payload.baseUpdatedAt == null
                     || (typeof payload.baseUpdatedAt === 'string' && !Number.isNaN(Date.parse(payload.baseUpdatedAt))));
         case 'supervisor.product.delete':
@@ -123,13 +227,16 @@ function validateCommandPayload(type, payload) {
                 && typeof payload.cierreId === 'string'
                 && payload.cierreId.length > 0;
         case 'supervisor.inventory.batch.adjust':
+            // Cualquier batchVersion presente se valida como v2; versiones
+            // desconocidas se rechazan. Sin batchVersion = v1 (sin cambios).
+            if (payload.batchVersion !== undefined) return validateInventoryBatchV2Payload(payload);
             return ['ingreso', 'egreso'].includes(payload.direction)
                 && (payload.direction !== 'egreso' || ['merma', 'danio', 'vencimiento', 'autoconsumo', 'devolucion', 'ajuste'].includes(payload.reasonCategory))
                 && typeof payload.productId === 'string'
                 && payload.productId.length > 0
                 && Number.isFinite(Number(payload.quantityInput))
                 && Number(payload.quantityInput) > 0
-                && ['unidades', 'cajas', 'bultos'].includes(payload.inputUnit)
+                && ['unidades', 'cajas', 'bultos', 'kg', 'g', 'lt', 'ml'].includes(payload.inputUnit)
                 && Number.isFinite(Number(payload.unitsPerPackage))
                 && Number(payload.unitsPerPackage) > 0
                 && Number.isFinite(Number(payload.expectedStock))
@@ -140,6 +247,59 @@ function validateCommandPayload(type, payload) {
         default:
             return false;
     }
+}
+
+/**
+ * Construye un payload v2 consolidando líneas repetidas (mismo producto + unidad)
+ * antes del envío. Solo copia campos del contrato: deltas/factores derivados no
+ * viajan como autoritativos (unitsPerPackage se envía solo para cajas/bultos).
+ */
+export function buildInventoryBatchV2Payload({ direction, reason, reasonCategory, lotReference } = {}, lines = []) {
+    const merged = new Map();
+    for (const line of Array.isArray(lines) ? lines : []) {
+        const productId = String(line?.productId ?? '');
+        const key = `${productId}\u0000${line?.inputUnit}`;
+        const quantityInput = Number(line?.quantityInput);
+        const existing = merged.get(key);
+        const sameFactor = !existing || !['cajas', 'bultos'].includes(line?.inputUnit)
+            || existing.unitsPerPackage === Number(line?.unitsPerPackage);
+        if (existing && !sameFactor) {
+            // Factores distintos no se suman: se conserva la línea y el validador
+            // rechaza el duplicado de forma explícita en vez de mezclar unidades.
+            merged.set(`${key}\u0000${merged.size}`, {
+                productId,
+                inputUnit: line?.inputUnit,
+                quantityInput,
+                expectedStock: Number(line?.expectedStock),
+                unitsPerPackage: Number(line?.unitsPerPackage),
+            });
+            continue;
+        }
+        if (existing) {
+            existing.quantityInput = Math.round((existing.quantityInput + quantityInput) * 1000) / 1000;
+            continue;
+        }
+        const next = {
+            productId,
+            inputUnit: line?.inputUnit,
+            quantityInput,
+            expectedStock: Number(line?.expectedStock),
+        };
+        if (line?.lineId) next.lineId = String(line.lineId);
+        if (line?.baseRevision) next.baseRevision = String(line.baseRevision);
+        if (['cajas', 'bultos'].includes(line?.inputUnit)) next.unitsPerPackage = Number(line?.unitsPerPackage);
+        merged.set(key, next);
+    }
+    const payload = {
+        batchVersion: INVENTORY_BATCH_VERSION,
+        direction,
+        reason: typeof reason === 'string' ? reason.trim() : reason,
+        lines: [...merged.values()],
+    };
+    if (direction === 'egreso') payload.reasonCategory = reasonCategory;
+    const lot = typeof lotReference === 'string' ? lotReference.trim() : '';
+    if (lot) payload.lotReference = lot;
+    return payload;
 }
 
 /**
@@ -211,5 +371,12 @@ export default {
     isSupervisorSyncKey,
     validateSupervisorSyncDocument,
     validateSupervisorCommand,
+    validateInventoryBatchV2Payload,
+    buildInventoryBatchV2Payload,
     AppliedCommandGuard,
+    buildProductRevision,
+    extractEditableProductPatch,
+    resolveEffectivePriceUsd,
+    EDITABLE_PRODUCT_FIELDS,
+    normalizeProductFieldValue,
 };

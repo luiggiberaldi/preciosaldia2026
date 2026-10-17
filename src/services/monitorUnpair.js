@@ -56,6 +56,19 @@ export async function clearMonitorCache({ idbStore, localStorage }) {
     localStorage.removeItem(MONITOR_CLEANUP_PENDING_KEY);
 }
 
+/**
+ * Fase F2: fija un NUEVO vínculo de monitor garantizando que no sobreviva nada de
+ * vidas anteriores (rol POS previo u otro vínculo). El orden importa: purgar
+ * primero (clearMonitorCache también borra las claves de vínculo) y fijar después,
+ * de modo que una purga fallida NUNCA deje un vínculo nuevo sobre datos viejos.
+ */
+export async function commitMonitorPairing({ idbStore, localStorage, primaryDeviceId }) {
+    if (!primaryDeviceId) throw new Error('Falta el dispositivo principal para vincular');
+    await clearMonitorCache({ idbStore, localStorage });
+    localStorage.setItem('pda_paired_device_id', primaryDeviceId);
+    localStorage.setItem('pda_pairing_mode', 'monitor');
+}
+
 export async function revokeAndClearMonitor({
     deviceId,
     ensureSession,

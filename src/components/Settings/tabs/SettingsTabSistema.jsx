@@ -7,7 +7,10 @@ import { SectionCard } from '../../SettingsShared';
 import { showToast } from '../../Toast';
 import AuditLogViewer from '../AuditLogViewer';
 import PairingManager from '../PairingManager';
+import ConfirmModal from '../../ConfirmModal';
 import QRCode from 'qrcode';
+import { resetPOSDataToEmpty } from '../../../hooks/useCloudSync';
+import { useSecurity } from '../../../hooks/useSecurity';
 
 export default function SettingsTabSistema({
     theme, toggleTheme,
@@ -27,8 +30,28 @@ export default function SettingsTabSistema({
         const saved = parseInt(localStorage.getItem('ui_scale'));
         return saved >= 60 && saved <= 140 ? saved : 100;
     });
+    const [fixingId, setFixingId] = useState(false);
+    const [showIdFixConfirm, setShowIdFixConfirm] = useState(false);
+    const { fixDuplicateDeviceId } = useSecurity();
     
     const qrCanvasRef = useRef(null);
+
+    // Corrige dos equipos que comparten el mismo ID: esta estación obtiene uno
+    // propio y único, conserva sus datos y registra la licencia desde el ID nuevo.
+    const handleFixDuplicateId = async () => {
+        if (fixingId) return;
+        triggerHaptic?.();
+        setFixingId(true);
+        try {
+            const newId = await fixDuplicateDeviceId();
+            showToast(`ID único generado para esta estación: ${newId}`, 'success');
+        } catch (err) {
+            console.warn('[SettingsTabSistema] No se pudo generar ID único:', err);
+            showToast('No se pudo generar un ID único para esta estación', 'error');
+        } finally {
+            setFixingId(false);
+        }
+    };
 
     useEffect(() => {
         if (deviceId && qrCanvasRef.current) {
@@ -125,6 +148,32 @@ export default function SettingsTabSistema({
                         <ChevronRight size={16} className="text-slate-300" />
                     </button>
                 </div>
+
+                    <button
+                        onClick={async () => {
+                            const ok = window.confirm('Se descartarán productos, ventas y clientes de ESTE equipo y se publicará un respaldo vacío en la nube. ¿Continuar?');
+                            if (!ok) return;
+                            try {
+                                const result = await resetPOSDataToEmpty();
+                                showToast(
+                                    result.ok
+                                        ? 'Equipo reiniciado: la nube quedó con estado vacío'
+                                        : `No se pudo publicar el estado vacío: ${result.result?.error || 'error desconocido'}`,
+                                    result.ok ? 'success' : 'error',
+                                );
+                            } catch (error) {
+                                showToast(error?.message || 'No se pudieron reiniciar los datos', 'error');
+                            }
+                        }}
+                        className="w-full flex items-center gap-3 p-3 bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800/40 rounded-xl hover:bg-rose-100 dark:hover:bg-rose-900/30 transition-colors group active:scale-[0.98]"
+                    >
+                        <div className="p-2 bg-rose-100 dark:bg-rose-900/40 rounded-lg"><AlertTriangle size={18} className="text-rose-500" /></div>
+                        <div className="text-left flex-1">
+                            <p className="text-sm font-bold text-rose-700 dark:text-rose-300">Empezar desde cero</p>
+                            <p className="text-xs text-rose-500 dark:text-rose-400">Vacía este equipo y publica el vacío en la nube</p>
+                        </div>
+                        <ChevronRight size={16} className="text-slate-300" />
+                    </button>
 
                 {lastError && (
                     <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 rounded-xl space-y-1.5" role="alert">
@@ -263,7 +312,37 @@ export default function SettingsTabSistema({
                     </button>
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">Comparte este ID o escanea su código QR si necesitas soporte técnico o activación de licencia.</p>
+
+                {/* Dos equipos con el mismo ID: separar esta estación */}
+                <div className="mt-4 p-3 rounded-2xl border border-amber-200/70 dark:border-amber-800/40 bg-amber-50/50 dark:bg-amber-950/20">
+                    <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                        ¿Dos equipos muestran el mismo ID? Genera uno propio y único para esta estación.
+                    </p>
+                    <button
+                        onClick={() => { triggerHaptic?.(); setShowIdFixConfirm(true); }}
+                        disabled={fixingId}
+                        className="mt-2 w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white text-[11px] font-black uppercase tracking-wider transition-all"
+                    >
+                        <Fingerprint size={13} />
+                        {fixingId ? 'Generando ID único…' : 'Generar ID único para esta estación'}
+                    </button>
+                    <p className="mt-1.5 text-[10px] text-amber-700/80 dark:text-amber-300/80">
+                        No borra ventas, inventario ni la licencia actual; solo cambia el ID de esta estación.
+                    </p>
+                </div>
             </SectionCard>
+
+            {/* Confirmación antes de cambiar el ID de la estación */}
+            <ConfirmModal
+                isOpen={showIdFixConfirm}
+                onClose={() => setShowIdFixConfirm(false)}
+                onConfirm={handleFixDuplicateId}
+                variant="warning"
+                title="¿Generar un ID nuevo para esta estación?"
+                message={'Esta estación dejará de usar el ID actual y obtendrá uno propio y único.\n\nTus ventas, inventario y licencia no se borran: solo cambia el ID de esta estación.\n\nSi otra estación muestra el mismo ID, esa conserva el ID actual.'}
+                confirmText="Sí, generar ID único"
+                cancelText="Cancelar"
+            />
 
             {/* Celular del Supervisor (QR Monitoreo) */}
             {isAdmin && (

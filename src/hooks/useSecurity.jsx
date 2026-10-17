@@ -2,11 +2,15 @@ import { useState, useEffect, useCallback, useRef, createContext, useContext } f
 import { storageService } from '../utils/storageService';
 import { supabase } from '../core/supabaseClient';
 import { verifyLicenseToken } from '../security/tokenCrypto';
-import { generateFingerprint, verifyStoredFingerprint, seedFingerprintAnchor } from '../security/deviceFingerprint';
+import { verifyInstallOwnership, ensureInstallIdentity, migrateDeviceIdentity, DEVICE_ID_MIGRATED_EVENT } from '../security/installIdentity';
 import { useLicenseMonitoring } from './useLicenseMonitoring';
 import { useDemoCountdown } from './useDemoCountdown';
 import { LICENSE_POLICY } from '../utils/securityConstants';
 import { sendDeviceHeartbeat } from '../services/deviceHeartbeat';
+
+// SEC-008 (temporal): false relaja la revocación por cambio de fingerprint.
+// El ID de la caja se conserva y no se bloquea la sesión. Ver docs/plans/2026-10-17-plan-reclamo-identidad-caja.md
+const SEC008_MISMATCH_ENFORCED = false;
 
 const APP_VERSION = '1.0.0';
 const PRODUCT_ID = 'bodega';
@@ -55,6 +59,8 @@ function useSecurityState() {
     // FIX 3: demoUsed como estado, leido desde IndexedDB
     const [demoUsed, setDemoUsed] = useState(false);
     const [integrityWarning, setIntegrityWarning] = useState(false);
+    // Mismatch de fingerprint: la caja conserva su ID y exige re-vinculación explícita.
+    const [revinculacionRequerida, setRevinculacionRequerida] = useState(false);
     const lastIntegrityCheckRef = useRef(0);
 
     // Nuevos estados para control de gracia de licencia mensual
@@ -339,28 +345,28 @@ function useSecurityState() {
                         : 'e2e-primary-device');
                 localStorage.setItem('pda_device_id', storedId);
             } else {
-                // SEC-008: Re-verificar fingerprint. Si el dispositivo cambió (o si alguien
+                // Identidad única por instalación: si la instalación no tiene ID,
+                // se genera uno aleatorio (ya NO se deriva del navegador: dos
+                // equipos generaban el mismo PDA-V2-… y compartían licencia/datos).
+                // Si ya hay un ID guardado, se conserva tal cual.
+                const { deviceId: ensuredId } = ensureInstallIdentity();
+                storedId = ensuredId;
+
+                // SEC-008: Re-verificar identidad. Si el dispositivo cambió (o si alguien
                 // inyectó un pda_device_id arbitrario), invalidamos la sesión premium.
-                storedId = localStorage.getItem('pda_device_id');
-                const currentFp = await generateFingerprint();
-                if (storedId) {
-                    const matches = await verifyStoredFingerprint(storedId, currentFp);
-                    if (!matches) {
-                        // Fingerprint manipulado o cambiado → revocar premium y re-fijar deviceId.
-                        if (import.meta.env?.DEV) {
-                            console.warn('[Security] Fingerprint mismatch detectado (SEC-008). Revocando sesión.');
-                        }
+                const owned = await verifyInstallOwnership(storedId);
+                if (!owned) {
+                    // NO se regenera pda_device_id: la nube asocia la caja a su ID original.
+                    if (import.meta.env?.DEV) {
+                        console.warn('[Security] Identidad no verificada (SEC-008). ID original conservado.');
+                    }
+                    if (SEC008_MISMATCH_ENFORCED) {
+                        // Identidad distinta → revocar premium y exigir re-vinculación explícita.
                         localStorage.removeItem('pda_premium_token');
                         setIntegrityWarning(true);
-                        storedId = currentFp;
-                        localStorage.setItem('pda_device_id', storedId);
+                        setRevinculacionRequerida(true);
                     }
-                } else {
-                    storedId = currentFp;
-                    localStorage.setItem('pda_device_id', storedId);
                 }
-                // SEC-008-r2: mantener el ancla de identidad fresca en instalaciones reales.
-                seedFingerprintAnchor(storedId, currentFp);
             }
 
             // Auto-registro idempotente de filas al iniciar; los heartbeats posteriores
@@ -397,6 +403,51 @@ function useSecurityState() {
         });
     }, [checkLicense]);
 
+    // Tras cambiar el ID de la estación, la licencia y la presencia se
+    // registran desde el ID nuevo (la licencia del ID anterior no se toca).
+    const reRegisterFromNewIdentity = useCallback(async (newDeviceId) => {
+        try {
+            if (import.meta.env.VITE_SUPABASE_URL) {
+                const bName = localStorage.getItem('business_name') || localStorage.getItem('restaurant_name') || '';
+                const mEmail = localStorage.getItem('marketing_email') || '';
+                const clientName = mEmail ? `${bName} | ${mEmail}` : bName;
+                const { error } = await supabase.rpc('auto_register_device', {
+                    p_device_id: newDeviceId,
+                    p_product_id: PRODUCT_ID,
+                    p_client_name: clientName,
+                });
+                if (error) throw error;
+            }
+        } catch (error) {
+            if (import.meta.env?.DEV) {
+                console.warn('[Security] auto_register_device tras migración falló:', error?.message ?? error);
+            }
+        }
+        checkLicense(newDeviceId);
+    }, [checkLicense]);
+
+    // Identidad de la estación: si dos equipos comparten el mismo ID, la
+    // corrección migra esta estación a un ID propio y único, conservando datos.
+    const fixDuplicateDeviceId = useCallback(async () => {
+        const { deviceId: newId } = migrateDeviceIdentity();
+        setDeviceId(newId);
+        await reRegisterFromNewIdentity(newId);
+        return newId;
+    }, [reRegisterFromNewIdentity]);
+
+    // Tras un cambio de ID (manual o por evento), la licencia se registra desde
+    // el ID nuevo: auto-registro + verificación, igual que en el arranque.
+    useEffect(() => {
+        const onIdentityMigrated = (event) => {
+            const newId = event?.detail?.deviceId;
+            if (!newId) return;
+            setDeviceId(newId);
+            reRegisterFromNewIdentity(newId);
+        };
+        window.addEventListener(DEVICE_ID_MIGRATED_EVENT, onIdentityMigrated);
+        return () => window.removeEventListener(DEVICE_ID_MIGRATED_EVENT, onIdentityMigrated);
+    }, [reRegisterFromNewIdentity]);
+
     // FIX 4: Integrity check periodico cada 30 minutos
     useEffect(() => {
         if (!deviceId) return;
@@ -407,17 +458,18 @@ function useSecurityState() {
             if (now - lastIntegrityCheckRef.current < COOLDOWN_MS) return;
             lastIntegrityCheckRef.current = now;
 
-            // SEC-008: Re-verificar fingerprint periódicamente.
+            // SEC-008: Re-verificar identidad periódicamente.
             try {
-                const currentFp = await generateFingerprint();
-                const matches = await verifyStoredFingerprint(deviceId, currentFp);
-                if (!matches) {
-                    console.warn('[Security] Fingerprint cambió durante integrity check (SEC-008).');
-                    setIntegrityWarning(true);
-                    setIsPremium(false);
-                    setIsDemo(false);
-                    localStorage.removeItem('pda_premium_token');
-                    return;
+                const owned = await verifyInstallOwnership(deviceId);
+                if (!owned) {
+                    console.warn('[Security] Identidad cambió durante integrity check (SEC-008).');
+                    if (SEC008_MISMATCH_ENFORCED) {
+                        setIntegrityWarning(true);
+                        setIsPremium(false);
+                        setIsDemo(false);
+                        localStorage.removeItem('pda_premium_token');
+                        return;
+                    }
                 }
             } catch (e) {
                 if (import.meta.env?.DEV) {
@@ -787,8 +839,10 @@ function useSecurityState() {
         dismissExpiredMsg: () => setDemoExpiredMsg(''),
         demoUsed,
         forceHeartbeat,
+        fixDuplicateDeviceId,
         integrityWarning,
         dismissIntegrityWarning: () => setIntegrityWarning(false),
+        revinculacionRequerida,
         isMonthlyGracePeriod,
         monthlyGraceDaysLeft,
     };

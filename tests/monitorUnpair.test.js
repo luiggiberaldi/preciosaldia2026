@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
     clearMonitorCache,
+    commitMonitorPairing,
     MONITOR_CLEANUP_PENDING_KEY,
     isPairingRevocationConfirmed,
     revokeAndClearMonitor,
@@ -188,3 +189,41 @@ describe('revokeAndClearMonitor', () => {
         expect(deps.revokePairing).not.toHaveBeenCalled();
     });
 });
+
+describe('commitMonitorPairing (F2: purga al re-vincular)', () => {
+    it('purga la caché heredada ANTES de fijar el nuevo vínculo', async () => {
+        const syncKey = SUPERVISOR_SYNC_KEYS[0];
+        const idbStore = createStore([[syncKey, [{ id: 'heredado' }]]]);
+        const localStorage = createLocalStorage([
+            ['pda_paired_device_id', 'primary-viejo'],
+            ['pda_pairing_mode', 'monitor'],
+            [getSyncMetadataKey(syncKey), '2026-08-01T00:00:00Z'],
+        ]);
+
+        await commitMonitorPairing({ idbStore, localStorage, primaryDeviceId: 'primary-nuevo' });
+
+        expect(idbStore.entries.has(syncKey)).toBe(false);
+        expect(localStorage.getItem('pda_paired_device_id')).toBe('primary-nuevo');
+        expect(localStorage.getItem('pda_pairing_mode')).toBe('monitor');
+        expect(localStorage.getItem(getSyncMetadataKey(syncKey))).toBeNull();
+    });
+
+    it('si la purga falla, NO se fija el vínculo nuevo (rollback de identidad)', async () => {
+        const idbStore = createStore([['bodega_products_v1', [{ id: 'x' }]]], { failRemove: 'bodega_products_v1' });
+        const localStorage = createLocalStorage();
+
+        await expect(commitMonitorPairing({ idbStore, localStorage, primaryDeviceId: 'primary-nuevo' }))
+            .rejects.toThrow();
+
+        expect(localStorage.getItem('pda_paired_device_id')).toBeNull();
+        expect(localStorage.getItem('pda_pairing_mode')).toBeNull();
+    });
+
+    it('rechaza fijar un vínculo sin dispositivo principal', async () => {
+        const localStorage = createLocalStorage();
+        await expect(commitMonitorPairing({ idbStore: createStore(), localStorage, primaryDeviceId: '' }))
+            .rejects.toThrow(/dispositivo principal/i);
+        expect(localStorage.getItem('pda_paired_device_id')).toBeNull();
+    });
+});
+

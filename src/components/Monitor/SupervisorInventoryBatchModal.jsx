@@ -12,6 +12,7 @@ import {
 import SupervisorSelect from './SupervisorSelect';
 import { sendSupervisorCommand } from '../../services/supervisorCommandService';
 import { SUPERVISOR_REMOTE_EGRESS_ENABLED } from '../../config/supervisorPolicy';
+import { readConfiguredPresentationFactor } from '../../services/supervisorInventoryDraft';
 import { showToast } from '../Toast';
 
 const EGRESS_REASONS = [
@@ -25,9 +26,18 @@ const EGRESS_REASONS = [
 
 const UNIT_LABELS = {
     unidades: 'unidades',
-    cajas: 'cajas / bultos',
-    bultos: 'cajas / bultos',
+    bultos: 'bultos',
+    cajas: 'bultos',
 };
+
+// Preselección del factor de empaque: el configurado en el producto o vacío
+// ("sin configurar"). Nunca un 1 silencioso: un bulto sin factor declarado
+// contaría como 1 unidad y perdería inventario.
+function presetPresentationFactor(product, inputUnit) {
+    if (inputUnit === 'unidades') return '1';
+    const factor = readConfiguredPresentationFactor(product);
+    return factor == null ? '' : String(factor);
+}
 
 function formatNumber(value) {
     return Number(value || 0).toLocaleString('es-VE', {
@@ -54,13 +64,14 @@ export default function SupervisorInventoryBatchModal({
     const [isSubmitting, setIsSubmitting] = useState(false);
     const productId = product?.id;
     const productPackageUnits = product?.unitsPerPackage;
+    const configuredFactor = readConfiguredPresentationFactor(product);
 
     useEffect(() => {
         if (!isOpen || !productId) return;
         setDirection('ingreso');
         setQuantityInput('1');
         setInputUnit('unidades');
-        setUnitsPerPackage(String(Math.max(1, Number(productPackageUnits) || 1)));
+        setUnitsPerPackage('1');
         setReason('');
         setReasonCategory('merma');
         setLotReference('');
@@ -79,7 +90,7 @@ export default function SupervisorInventoryBatchModal({
     const projectedStock = stock + (isEgress ? -unitsDelta : unitsDelta);
     const stockWillBeNegative = isEgress && hasValidNumbers && projectedStock < 0;
     const unitLabel = UNIT_LABELS[inputUnit] || 'unidades';
-    const packageLabel = 'Unidades por caja / bulto';
+    const packageLabel = 'Unidades por bulto';
 
     const directionContent = useMemo(() => ({
         ingreso: {
@@ -109,7 +120,7 @@ export default function SupervisorInventoryBatchModal({
 
     const handleUnitChange = (nextUnit) => {
         setInputUnit(nextUnit);
-        if (nextUnit === 'unidades') setUnitsPerPackage('1');
+        setUnitsPerPackage(presetPresentationFactor(product, nextUnit));
         clearFormError();
     };
 
@@ -125,6 +136,13 @@ export default function SupervisorInventoryBatchModal({
         if (!remoteAvailable) {
             setFormError('La caja está desconectada. Espera a que vuelva a estar en línea.');
             return;
+        }
+        if (inputUnit !== 'unidades') {
+            const factor = Number(unitsPerPackage);
+            if (!Number.isInteger(factor) || factor < 1) {
+                setFormError('Indica cuántas unidades trae el bulto para continuar.');
+                return;
+            }
         }
         if (!hasValidNumbers) {
             setFormError('Indica una cantidad mayor que cero.');
@@ -265,11 +283,11 @@ export default function SupervisorInventoryBatchModal({
                         <SupervisorSelect
                             label="Presentación"
                             ariaLabel="Seleccionar presentación del movimiento"
-                            value={inputUnit === 'bultos' ? 'cajas' : inputUnit}
+                            value={inputUnit}
                             onChange={handleUnitChange}
                             options={[
                                 { value: 'unidades', label: 'Unidades' },
-                                { value: 'cajas', label: 'Cajas / Bultos' },
+                                { value: 'bultos', label: 'Bultos' },
                             ]}
                         />
                         <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
@@ -301,6 +319,7 @@ export default function SupervisorInventoryBatchModal({
                                 className="mt-1.5 min-h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
                             />
                             <span className="mt-1 block text-[10px] font-semibold normal-case tracking-normal text-slate-400">Se usa para calcular cuántas unidades reales entran o salen.</span>
+                            {configuredFactor == null && <span className="mt-1 block text-[10px] font-bold normal-case tracking-normal text-amber-600">Este producto no tiene el bulto configurado: indícalo aquí.</span>}
                         </label>
                     ) : (
                         <div className="-mt-2 rounded-xl bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-500 dark:bg-slate-950 dark:text-slate-400">

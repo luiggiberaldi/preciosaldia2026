@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { supabaseCloud } from '../config/supabaseCloud';
+import localforage from 'localforage';
 import { showToast } from './Toast';
 import { ensureSupervisorSession } from '../services/supervisorAuth';
+import { commitMonitorPairing } from '../services/monitorUnpair';
 import { ArrowLeft, Camera, ShieldAlert, KeyRound, Loader2, ArrowRight, SwitchCamera } from 'lucide-react';
 
 const PAIRING_TOKEN_LENGTH = 24;
@@ -249,8 +251,13 @@ export default function PairingScanScreen({ onCancel, triggerHaptic }) {
 
             if (data && data.success) {
                 // Éxito: Guardar credenciales de emparejamiento
-                localStorage.setItem('pda_paired_device_id', data.primary_device_id);
-                localStorage.setItem('pda_pairing_mode', 'monitor');
+                // Fase F2: purgar cualquier estado heredado ANTES de fijar el nuevo
+                // vínculo. Si la purga falla, no se fija nada y el usuario puede reintentar.
+                await commitMonitorPairing({
+                    idbStore: localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' }),
+                    localStorage,
+                    primaryDeviceId: data.primary_device_id,
+                });
                 showToast('¡Vinculado con éxito! Cargando monitor...', 'success');
                 
                 // Forzar reinicio de la app para cargar la nueva vista limpia

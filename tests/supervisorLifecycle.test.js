@@ -43,6 +43,12 @@ describe('Supervisor lifecycle guardrails', () => {
         expect(cloudSync).not.toContain('forceSyncAllPOSData(deviceId, true)');
     });
 
+    it('estampa en el push el deviceId registrado (evita RLS por identidad distinta)', () => {
+        expect(cloudSync).toContain('pushCloudSync(key, val, forceUnconditional, allowBeforePairing, activeDeviceId)');
+        expect(cloudSync).toContain('const stampDeviceId = deviceIdOverride || _currentDeviceId;');
+        expect(cloudSync).toContain('device_id: stampDeviceId');
+    });
+
     it('usa la sesión Auth del dueño o del monitor para el pairing', () => {
         expect(pairingManager).toContain("ensureSupervisorSession()");
         expect(pairingManager).toContain("rpc('unpair_monitor'");

@@ -4,6 +4,8 @@ import { supabaseCloud } from '../config/supabaseCloud';
 import { useAuthStore } from './store/useAuthStore';
 import { SUPERVISOR_SYNC_KEYS, validateSupervisorSyncDocument } from '../services/supervisorContracts';
 import { ensureSupervisorSession } from '../services/supervisorAuth';
+import { ensureDeviceSessionRegistered } from '../utils/deviceIdentity';
+import { showToast } from '../components/Toast';
 import { isPrimaryPairingActive, readPairingRow } from '../services/supervisorPairingState';
 import { mergeLedgerEntries, rebuildCustomersFromLedger } from '../utils/customerLedger';
 import {
@@ -48,6 +50,30 @@ function quickHash(value) {
 
 const LAST_PUSH_HASH_PREFIX = 'bodega_last_periodic_push_hash_';
 
+/**
+ * Evidencia de que este equipo ya sincronizó antes (hashes de push confirmados
+ * o metadotos de documentos aplicados). Un equipo verdaderamente nuevo no tiene
+ * ninguna de las dos. Sirve para distinguir "aún no se vincula" de "la fila del
+ * vínculo existe pero esta caja ya no puede verla" (identidad desfasada, ver
+ * migración 20261017_supervisor_pairing_identity_selfheal.sql).
+ */
+function hasPriorSyncEvidence() {
+    try {
+        for (let i = 0; i < localStorage.length; i += 1) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith(LAST_PUSH_HASH_PREFIX)) return true;
+        }
+        return SYNC_KEYS.some((docId) => localStorage.getItem(getSyncMetadataKey(docId)) != null);
+    } catch {
+        return false;
+    }
+}
+
+// Fase F3: claves del snapshot crítico. `[]` es un estado PUBLICABLE (vacío
+// confirmado); `null` (clave ausente) NO se publica. Esa distinción es la que
+// permite purgar el estado fantasma desde un POS vacío.
+export const EMPTY_SNAPSHOT_KEYS = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_customer_ledger_v1', 'bodega_accounts_v2'];
+
 // ─── Estado Global del Motor ───────────────────────────────────────────────
 let globalSubscription = null;
 let isSyncingFromCloud = false; // true mientras aplicamos cambios de la nube → evita eco
@@ -85,7 +111,7 @@ function _debouncePush(key, value) {
     }, delay);
 }
 
-export const pushCloudSync = async (key, value, forceUnconditional = false, allowBeforePairing = false) => {
+export const pushCloudSync = async (key, value, forceUnconditional = false, allowBeforePairing = false, deviceIdOverride = null) => {
     if (!supabaseCloud) return { ok: false, skipped: true, error: 'Supabase no disponible' };
     if (isSyncingFromCloud) return { ok: false, skipped: true, error: 'Cambio remoto en aplicación' };
     // El primer pairing necesita publicar el snapshot antes de que exista
@@ -93,7 +119,11 @@ export const pushCloudSync = async (key, value, forceUnconditional = false, allo
     // puede abrir esta excepción; los pushes normales siguen bloqueados.
     if (!isCloudSyncActive && !allowBeforePairing) return { ok: false, skipped: true, error: 'Sync no activo' };
     if (!SYNC_KEYS.includes(key)) return { ok: false, skipped: true, error: 'Clave no allowlisted' };
-    if (!_currentDeviceId) return { ok: false, skipped: true, error: 'Dispositivo no definido' };
+    // El documento se estampa con el deviceId REGISTRADO cuando el caller lo conoce
+    // (forceSyncAllPOSData): is_own_device_row(device_id) debe coincidir con la fila
+    // de device_sessions o el upsert muere con RLS "new row violates…".
+    const stampDeviceId = deviceIdOverride || _currentDeviceId;
+    if (!stampDeviceId) return { ok: false, skipped: true, error: 'Dispositivo no definido' };
 
     // SEC-002: jamás empujar `abasto-auth-storage` aunque accidentalmente lo pidan.
     if (key === 'abasto-auth-storage') return { ok: false, skipped: true, error: 'Documento de autenticación bloqueado' };
@@ -107,7 +137,7 @@ export const pushCloudSync = async (key, value, forceUnconditional = false, allo
     const collectionType = LOCAL_KEYS.includes(key) ? 'local' : 'store';
     const updatedAt = new Date().toISOString();
     const document = {
-        device_id: _currentDeviceId,
+        device_id: stampDeviceId,
         collection: collectionType,
         doc_id: key,
         data: buildSyncEnvelope(value, updatedAt),
@@ -187,7 +217,7 @@ export const forceSyncAllPOSData = async (overrideDeviceId, forceUnconditional =
         for (const key of criticalKeys) {
             const val = await lf.getItem(key);
             if (val !== null) {
-                const result = await pushCloudSync(key, val, forceUnconditional, allowBeforePairing);
+                const result = await pushCloudSync(key, val, forceUnconditional, allowBeforePairing, activeDeviceId);
                 if (!result.ok && !result.skipped) {
                     return { ok: false, error: result.error || `No se pudo sincronizar ${key}`, pushed };
                 }
@@ -200,6 +230,22 @@ export const forceSyncAllPOSData = async (overrideDeviceId, forceUnconditional =
         return { ok: false, error: e?.message || 'Error de sincronización', pushed: 0 };
     }
 };
+
+/**
+ * Fase F3: "Empezar desde cero". Escribe `[]` (vacío CONFIRMADO, publicable) en las
+ * claves del snapshot crítico y publica el estado vacío a la nube, para que el
+ * monitor deje de ver productos/ventas fantasma. `null` (clave ausente) NO se
+ * publica; `[]` sí — esa es la semántica de tombstone. Nota: el ledger es
+ * append-only en el receptor, así que en el monitor se fusiona en vez de vaciarse.
+ */
+export async function resetPOSDataToEmpty({ idbStore, publish } = {}) {
+    const lf = idbStore || localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
+    for (const key of EMPTY_SNAPSHOT_KEYS) {
+        await lf.setItem(key, []);
+    }
+    const result = await (publish ? publish() : forceSyncAllPOSData());
+    return { ok: result?.ok !== false, keys: EMPTY_SNAPSHOT_KEYS, result: result || null };
+}
 
 // ─── Validación de Esquema para Sincronización Remota (DATA-001) ─────────────
 const STORE_SCHEMAS = {
@@ -238,6 +284,12 @@ async function _applyFromCloud(docId, collection, data) {
         const metadataKey = getSyncMetadataKey(docId);
         const previousUpdatedAt = localStorage.getItem(metadataKey);
         if (!isNewerSyncDocument(envelope.updatedAt, previousUpdatedAt)) {
+            // Fase D1 (H3): dejar evidencia cuando un doc se descarta por watermark.
+            console.info('[CloudSync] Doc omitido por watermark', {
+                docId,
+                remoto: envelope.updatedAt,
+                local: previousUpdatedAt,
+            });
             return false;
         }
 
@@ -357,6 +409,15 @@ export function useCloudSync(deviceId) {
                     authUserId: shortCloudSyncId(session.user?.id),
                 });
 
+                // RLS-IDENTITY: las políticas own-row de sync_documents exigen que
+                // device_sessions vincule este deviceId con la sesión actual. Las
+                // sesiones anónimas se regeneran, así que reconciliar en cada arranque
+                // (fail-soft: el error de RLS posterior se reporta igualmente).
+                const registration = await ensureDeviceSessionRegistered(deviceId);
+                if (!registration.ok) {
+                    console.warn('[CloudSync] device_sessions no disponible:', registration.error);
+                }
+
                 const { data: pairing, error: pairingError } = await readPairingRow({
                     supabase: supabaseCloud,
                     primaryDeviceId: deviceId,
@@ -411,10 +472,21 @@ export function useCloudSync(deviceId) {
 
                 if (pairingError || !isPrimaryPairingActive(pairing)) {
                     isCloudSyncActive = false;
+                    // "data null sin error" = la fila del pairing no es legible para
+                    // esta caja. Con evidencia de sync previo, es un desfase de
+                    // identidad: sin aviso, el POS se quedaría pausado en silencio y
+                    // ningún cambio local llegaría al Supervisor.
+                    const pairingRowHidden = !pairingError && !pairing;
+                    const hadPriorSync = hasPriorSyncEvidence();
                     console.warn('[CloudSync] Sincronización pausada hasta completar el pairing', {
-                        reason: pairingError?.message || 'pairing_sin_monitor',
+                        reason: pairingError?.message || (pairingRowHidden ? 'pairing_no_legible' : 'pairing_sin_monitor'),
+                        pairingRowHidden,
+                        hadPriorSync,
                         deviceId: shortCloudSyncId(deviceId),
                     });
+                    if (pairingRowHidden && hadPriorSync) {
+                        showToast('No se pudo comprobar el vínculo con el Supervisor. Genera un nuevo código QR desde Ajustes para restaurar la sincronización.', 'error');
+                    }
                     subscribeToPairingChanges();
                     return;
                 }
@@ -463,21 +535,61 @@ export function useCloudSync(deviceId) {
                         .eq('device_id', deviceId)
                         .in('collection', ['store', 'local']);
 
-                    if (docsError) throw docsError;
+                    if (docsError) {
+                        // Fase D1 (H2): el fallo del pull inicial debe dejar código y motivo.
+                        console.error('[CloudSync] Pull inicial falló', {
+                            code: docsError.code,
+                            message: docsError.message,
+                        });
+                        throw docsError;
+                    }
                     docs = initialDocs || [];
 
+                    // Fase D1/F4: ¿el almacén local está vacío? (escenario de estado fantasma)
+                    const lfCheck = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
+                    let localWasEmpty = true;
+                    for (const key of EMPTY_SNAPSHOT_KEYS) {
+                        const localValue = await lfCheck.getItem(key);
+                        if (Array.isArray(localValue) && localValue.length > 0) { localWasEmpty = false; break; }
+                    }
+
                     if (docs.length > 0) {
+                        let aplicados = 0;
+                        let omitidos = 0;
                         for (const doc of docs) {
                             // SEC-002: nunca aplicar `abasto-auth-storage` desde la nube.
                             if (doc.doc_id === 'abasto-auth-storage') continue;
                             try {
-                                await _applyFromCloud(doc.doc_id, doc.collection, doc.data);
+                                const applied = await _applyFromCloud(doc.doc_id, doc.collection, doc.data);
+                                if (applied) { aplicados += 1; } else { omitidos += 1; }
                             } catch (e) {
                                 // HOOK-023: try/catch por documento para no abortar el pull completo.
+                                omitidos += 1;
                                 console.warn(`[CloudSync] Error aplicando doc ${doc.doc_id}:`, e);
                             }
                         }
-                        console.log(`[CloudSync] Pull inicial: ${docs.length} documentos aplicados.`);
+                        // Fase D1: diagnóstico estructurado para distinguir H1/H2/H3 en producción.
+                        console.info('[CloudSync] Pull inicial diagnóstico', {
+                            deviceId: shortCloudSyncId(deviceId),
+                            leidos: docs.length,
+                            aplicados,
+                            omitidos,
+                            localWasEmpty,
+                            sesionRegistrada: registration.ok,
+                        });
+                        if (localWasEmpty && aplicados > 0) {
+                            showToast('Se restauró un respaldo previo de este equipo en la nube', 'info');
+                            window.dispatchEvent(new CustomEvent('cloud_restore_applied', { detail: { aplicados, omitidos } }));
+                        }
+                    } else {
+                        console.info('[CloudSync] Pull inicial diagnóstico', {
+                            deviceId: shortCloudSyncId(deviceId),
+                            leidos: 0,
+                            aplicados: 0,
+                            omitidos: 0,
+                            localWasEmpty,
+                            sesionRegistrada: registration.ok,
+                        });
                     }
                 }
 
@@ -516,6 +628,20 @@ export function useCloudSync(deviceId) {
             } catch (err) {
                 console.error('[CloudSync] Fallo en inicialización:', err);
                 isInitialized.current = false;
+                // Fase F1: el fallo solo es visible para el usuario cuando importa
+                // (local vacío = posible estado fantasma). Sin datos locales y sin
+                // red no se avisa, para no enojar al POS offline-first en cada arranque.
+                try {
+                    const lfCheck = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
+                    let localEmpty = true;
+                    for (const key of EMPTY_SNAPSHOT_KEYS) {
+                        const localValue = await lfCheck.getItem(key);
+                        if (Array.isArray(localValue) && localValue.length > 0) { localEmpty = false; break; }
+                    }
+                    if (localEmpty) {
+                        showToast('No se pudo restaurar el respaldo de este equipo en la nube. Revisa la conexión o vuelve a iniciar sesión.', 'error');
+                    }
+                } catch { /* sin storage no hay nada que restaurar ni que avisar */ }
             }
         };
 

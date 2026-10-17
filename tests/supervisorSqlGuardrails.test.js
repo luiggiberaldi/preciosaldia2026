@@ -8,6 +8,8 @@ const productionEgressSql = readFileSync('supabase_supervisor_inventory_egress_p
 const productCommandsSql = readFileSync('supabase/migrations/20261015_supervisor_product_commands_production.sql', 'utf8');
 const unpairCompatibilitySql = readFileSync('supabase/migrations/20261015_supervisor_unpair_owner_compatibility.sql', 'utf8');
 const backupLicenseSql = readFileSync('supabase/migrations/20261015_backup_permanent_license_rls.sql', 'utf8');
+const inventoryBatchV2Migration = readFileSync('supabase/migrations/20261016_supervisor_inventory_batch_v2.sql', 'utf8');
+const commandStateMachineMigration = readFileSync('supabase/migrations/20261016110000_supervisor_command_state_machine.sql', 'utf8');
 const commandReceiver = readFileSync('src/hooks/useRemoteCommands.js', 'utf8');
 
 describe('Supervisor SQL guardrails', () => {
@@ -98,6 +100,61 @@ describe('Supervisor SQL guardrails', () => {
         expect(productCommandsSql).not.toMatch(/DROP\s+TABLE/i);
     });
 
+    it('habilita validación batch v2 sin romper v1 ni las dos vinculaciones de Supervisor', () => {
+        expect(inventoryBatchV2Migration).toContain('CREATE OR REPLACE FUNCTION public.is_valid_supervisor_inventory_batch_payload(p_payload jsonb)');
+        expect(inventoryBatchV2Migration).toContain("IF NOT (p_payload ? 'batchVersion') THEN");
+        expect(inventoryBatchV2Migration).toContain("p_payload->'batchVersion' IS DISTINCT FROM '2'::jsonb");
+        expect(inventoryBatchV2Migration).toContain("jsonb_array_length(p_payload->'lines') > 50");
+        expect(inventoryBatchV2Migration).toContain("p_expires_at - p_issued_at > interval '60 seconds'");
+        expect(inventoryBatchV2Migration).toContain('p_expires_at <= now()');
+        expect(inventoryBatchV2Migration).not.toContain("p_expires_at > now() + interval '90 seconds'");
+        expect(inventoryBatchV2Migration).toContain("'supervisor.inventory.batch.adjust'\n    ) THEN\n        RAISE EXCEPTION 'Tipo de comando no permitido'");
+        expect(inventoryBatchV2Migration).toContain('5000000');
+        expect(inventoryBatchV2Migration).toContain('10000000');
+        expect(inventoryBatchV2Migration).toContain("prior.value->>'productId' = v_line->>'productId'");
+        expect(inventoryBatchV2Migration).toContain('dp.monitor_auth_id = v_actor');
+        expect(inventoryBatchV2Migration).toContain('dp.monitor_auth_id_2 = v_actor');
+        expect(inventoryBatchV2Migration).toContain('dp.monitor_auth_id = NEW.actor_auth_id');
+        expect(inventoryBatchV2Migration).toContain('dp.monitor_auth_id_2 = NEW.actor_auth_id');
+        expect(inventoryBatchV2Migration).toContain('ELSIF p_command_type = \'supervisor.inventory.batch.adjust\' THEN');
+        expect(inventoryBatchV2Migration).toContain("ELSIF p_command_type LIKE 'supervisor.user.%' THEN");
+        const triggerBody = inventoryBatchV2Migration
+            .split('CREATE OR REPLACE FUNCTION public.enforce_supervisor_income_command()')[1]
+            .split('CREATE TRIGGER supervisor_income_pairing_guard')[0];
+        expect(triggerBody).toContain('ELSIF NEW.command_type = \'supervisor.inventory.batch.adjust\' THEN');
+        expect(triggerBody).not.toContain('NEW.command_type LIKE \'supervisor.user.%\'');
+        expect(triggerBody).not.toContain('NEW.command_type = \'supervisor.product.delete\'');
+        expect(triggerBody).not.toContain('NEW.command_type IN (\'supervisor.shift.close\', \'supervisor.shift.reopen\')');
+        expect(inventoryBatchV2Migration.match(/SET search_path = public, extensions/g)).toHaveLength(3);
+        expect(inventoryBatchV2Migration).toContain('REVOKE ALL ON FUNCTION public.create_supervisor_command');
+        expect(inventoryBatchV2Migration).toContain('REVOKE ALL ON FUNCTION public.enforce_supervisor_income_command() FROM PUBLIC, anon, authenticated');
+        expect(inventoryBatchV2Migration).toContain('TO authenticated;');
+        expect(inventoryBatchV2Migration).not.toMatch(/GRANT\s+[^;]*\bTO\s+anon\b/i);
+        expect(inventoryBatchV2Migration).not.toMatch(/UPDATE\s+public\.supervisor_commands|status\s*=|ack_supervisor_command/i);
+        expect(inventoryBatchV2Migration).toContain('COMMIT;');
+    });
+
+    it('autoriza lectura de órdenes al dueño y a ambos supervisores activos', () => {
+        const readPolicy = commandStateMachineMigration
+            .split('CREATE POLICY "supervisor_commands_authorized_read"')[1]
+            .split(';')[0];
+        expect(readPolicy).toContain('FOR SELECT');
+        expect(readPolicy).toContain('TO authenticated');
+        expect(readPolicy).toContain('dp.owner_auth_id = auth.uid()');
+        expect(readPolicy).toContain('dp.monitor_auth_id = auth.uid()');
+        expect(readPolicy).toContain('dp.monitor_auth_id_2 = auth.uid()');
+        const pairingReadPolicy = commandStateMachineMigration
+            .split('CREATE POLICY "device_pairings_authenticated_read"')[1]
+            .split(';')[0];
+        expect(pairingReadPolicy).toContain('auth.uid() = owner_auth_id');
+        expect(pairingReadPolicy).toContain('auth.uid() = monitor_auth_id');
+        expect(pairingReadPolicy).toContain('auth.uid() = monitor_auth_id_2');
+        expect(readPolicy).toContain('dp.revoked_at IS NULL');
+        expect(readPolicy).toContain('dp.monitor_device_id_2 <> dp.primary_device_id');
+        expect(commandStateMachineMigration).toContain('DROP POLICY IF EXISTS "device_pairings_authenticated_read"');
+        expect(commandStateMachineMigration).toContain('DROP POLICY IF EXISTS "supervisor_commands_authorized_read"');
+    });
+
     it('limita cloud_backups a licencias permanentes activas', () => {
         expect(backupLicenseSql).toContain('has_permanent_backup_license');
         expect(backupLicenseSql).toContain("lower(trim(l.type)) = 'permanent'");
@@ -106,5 +163,54 @@ describe('Supervisor SQL guardrails', () => {
         expect(backupLicenseSql).toContain('public.has_permanent_backup_license(device_id)');
         expect(backupLicenseSql).toContain('COMMIT;');
         expect(backupLicenseSql).not.toMatch(/DROP\s+TABLE/i);
+    });
+});
+
+describe('Identidad de dispositivo auto-reparable (20261017)', () => {
+    const identitySql = readFileSync('supabase/migrations/20261017_supervisor_pairing_identity_selfheal.sql', 'utf8');
+
+    it('autoriza a la caja por is_own_device_row además de por sesión guardada', () => {
+        const pairingReadPolicy = identitySql
+            .split('CREATE POLICY "device_pairings_authenticated_read"')[1]
+            .split(';')[0];
+        expect(pairingReadPolicy).toContain('public.is_own_device_row(primary_device_id)');
+        expect(pairingReadPolicy).toContain('auth.uid() = monitor_auth_id_2');
+
+        const commandsReadPolicy = identitySql
+            .split('CREATE POLICY "supervisor_commands_authorized_read"')[1]
+            .split(';')[0];
+        expect(commandsReadPolicy).toContain('public.is_own_device_row(supervisor_commands.target_device_id)');
+        expect(commandsReadPolicy).toContain('dp.revoked_at IS NULL');
+    });
+
+    it('claim y ack autorizan por identidad de dispositivo, no por owner congelado', () => {
+        const claimFn = identitySql.split('FUNCTION public.claim_supervisor_command')[1].split('$$;')[0];
+        expect(claimFn).toContain('public.is_own_device_row(sc.target_device_id)');
+        expect(claimFn).not.toContain('dp.owner_auth_id = v_actor');
+        expect(claimFn).toContain("'expired', true");
+        expect(claimFn).toContain('FOR UPDATE OF sc');
+
+        const ackFn = identitySql.split('FUNCTION public.ack_supervisor_command')[1].split('$$;')[0];
+        expect(ackFn).toContain('public.is_own_device_row(sc.target_device_id)');
+        expect(ackFn).not.toContain('dp.owner_auth_id = v_actor');
+        expect(ackFn).toContain("status = 'received'");
+    });
+
+    it('re-liga owner_auth_id y permite desvincular a la caja poseedora', () => {
+        expect(identitySql).toContain('WHEN public.is_own_device_row(v_device_id) THEN v_owner');
+        expect(identitySql).toContain('ELSE coalesce(owner_auth_id, v_owner)');
+
+        const unpairFn = identitySql.split('FUNCTION public.unpair_monitor')[1].split('$$;')[0];
+        expect(unpairFn).toContain('public.is_own_device_row(v_pairing.primary_device_id)');
+        expect(unpairFn).toContain('monitor_auth_id_2 = NULL');
+        expect(unpairFn).toContain('RAISE EXCEPTION \'No autorizado o vínculo inexistente\'');
+    });
+
+    it('no abre acceso a anon ni toca datos de negocio', () => {
+        expect(identitySql).not.toMatch(/GRANT\s+[^;]*\bTO\s+anon\b/i);
+        expect(identitySql).not.toMatch(/DROP\s+TABLE/i);
+        expect(identitySql).not.toMatch(/UPDATE\s+public\.(sync_documents|cloud_backups)/i);
+        expect(identitySql).toContain('BEGIN;');
+        expect(identitySql).toContain('COMMIT;');
     });
 });

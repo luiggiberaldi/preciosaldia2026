@@ -12,6 +12,10 @@ vi.mock('../src/components/SettingsShared', () => ({
 }));
 vi.mock('../src/components/Settings/AuditLogViewer', () => ({ default: () => null }));
 vi.mock('../src/components/Settings/PairingManager', () => ({ default: () => null }));
+// SettingsTabSistema usa useSecurity para corregir IDs duplicados entre estaciones.
+vi.mock('../src/hooks/useSecurity', () => ({
+    useSecurity: () => ({ fixDuplicateDeviceId: vi.fn() }),
+}));
 
 import { showToast } from '../src/components/Toast';
 

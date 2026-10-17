@@ -13,6 +13,46 @@ import { SUPERVISOR_COMMAND_TYPES, validateSupervisorCommand } from './superviso
 export const SUPERVISOR_COMMAND_TTL_MS = 60_000;
 export const SUPERVISOR_ACK_TIMEOUT_MS = 10_000;
 export const SUPERVISOR_PENDING_COMMAND_COLUMNS = 'command_id,target_device_id,actor_auth_id,command_type,status,issued_at,expires_at,payload,schema_version';
+export const SUPERVISOR_TERMINAL_COMMAND_STATUSES = Object.freeze([
+    'applied',
+    'applied_with_warnings',
+    'rejected',
+    'failed',
+    'cancelled',
+]);
+
+const commandLockQueues = new Map();
+
+export function withSupervisorCommandLock(commandId, operation, lockManager = globalThis.navigator?.locks) {
+    if (typeof commandId !== 'string' || !commandId.trim()) throw new TypeError('commandId inválido para el lock');
+    if (typeof operation !== 'function') throw new TypeError('La operación del comando debe ser una función');
+    const lockName = `supervisor-command:${commandId}`;
+    if (lockManager && typeof lockManager.request === 'function') {
+        return lockManager.request(lockName, { mode: 'exclusive' }, operation);
+    }
+
+    const previous = commandLockQueues.get(commandId) || Promise.resolve();
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    const queued = previous.catch(() => {}).then(() => gate);
+    commandLockQueues.set(commandId, queued);
+
+    return previous.catch(() => {}).then(operation).finally(() => {
+        release();
+        if (commandLockQueues.get(commandId) === queued) commandLockQueues.delete(commandId);
+    });
+}
+
+export function fetchSupervisorCommandsForRecovery(client, targetDeviceId, now = Date.now()) {
+    const nowIso = new Date(now).toISOString();
+    return client
+        .from('supervisor_commands')
+        .select(SUPERVISOR_PENDING_COMMAND_COLUMNS)
+        .eq('target_device_id', targetDeviceId)
+        .or(`status.eq.received,and(status.eq.pending,expires_at.gt.${nowIso})`)
+        .order('issued_at', { ascending: true })
+        .limit(25);
+}
 
 export function fetchPendingSupervisorCommands(client, targetDeviceId) {
     return client
@@ -22,6 +62,73 @@ export function fetchPendingSupervisorCommands(client, targetDeviceId) {
         .eq('status', 'pending')
         .order('issued_at', { ascending: true })
         .limit(25);
+}
+
+export async function claimSupervisorCommand({ client = supabaseCloud, commandId, targetDeviceId } = {}) {
+    if (!client || typeof commandId !== 'string' || !commandId.trim() || typeof targetDeviceId !== 'string' || !targetDeviceId.trim()) {
+        return { ok: false, status: 'invalid', error: 'Comando o caja inválidos' };
+    }
+    const { data, error } = await client.rpc('claim_supervisor_command', {
+        p_command_id: commandId,
+        p_target_device_id: targetDeviceId,
+    });
+    if (error) return { ok: false, status: 'failed', error: error.message || 'No se pudo reclamar la orden' };
+
+    const result = Array.isArray(data) ? data[0] : data;
+    const allowedStates = ['received', 'pending', ...SUPERVISOR_TERMINAL_COMMAND_STATUSES];
+    if (!result || result.command_id !== commandId || !allowedStates.includes(result.status)) {
+        return { ok: false, status: 'failed', error: 'Respuesta inválida al reclamar la orden' };
+    }
+
+    return {
+        ok: true,
+        status: result.status,
+        claimed: result.claimed === true,
+        expired: result.expired === true,
+        data: result,
+    };
+}
+
+export async function readSupervisorCommandAck(client, commandId) {
+    if (!client || typeof commandId !== 'string' || !commandId.trim()) return null;
+    const { data, error } = await client
+        .from('supervisor_commands')
+        .select('command_id, status, ack_payload, error_message')
+        .eq('command_id', commandId)
+        .maybeSingle();
+    if (error) throw error;
+    if (!data || !SUPERVISOR_TERMINAL_COMMAND_STATUSES.includes(data.status)) return null;
+    return normalizeTerminalAck(data);
+}
+
+/**
+ * Fase 10: inspecciona el estado de un comando SIN crear otro. Es la primera
+ * acción de toda reconciliación ante timeout:
+ *  - 'absent'   : no existe fila (nunca llegó a crearse) → se puede crear con el
+ *                 mismo commandId.
+ *  - 'terminal' : aplicado / aplicado con advertencias / rechazado / fallido /
+ *                 cancelado → conclusión cierta, trae el ACK global.
+ *  - 'active'   : pending vigente o received (Fase 7: received nunca expira) →
+ *                 la caja puede seguir aplicándolo; NO crear otro.
+ *  - 'expired'  : pending con expires_at vencido → derivado, jamás se aplicará.
+ */
+export async function inspectSupervisorCommandState(commandId, { client = supabaseCloud, now = Date.now() } = {}) {
+    if (!client || typeof commandId !== 'string' || !commandId.trim()) {
+        return { state: 'absent', commandId: commandId || null, ack: null, row: null };
+    }
+    const { data, error } = await client
+        .from('supervisor_commands')
+        .select('command_id, status, ack_payload, error_message, issued_at, expires_at')
+        .eq('command_id', commandId)
+        .maybeSingle();
+    if (error) throw error;
+    if (!data) return { state: 'absent', commandId, ack: null, row: null };
+    if (SUPERVISOR_TERMINAL_COMMAND_STATUSES.includes(data.status)) {
+        return { state: 'terminal', commandId, ack: normalizeTerminalAck(data), row: data };
+    }
+    const expiresAt = Date.parse(data.expires_at);
+    const expired = data.status === 'pending' && Number.isFinite(expiresAt) && expiresAt <= now;
+    return { state: expired ? 'expired' : 'active', commandId, ack: null, row: data };
 }
 
 // Las tasas se envían como una notificación automática: la caja procesa el
@@ -45,12 +152,12 @@ export function isSupervisorCommandEnabled(type, payload = {}) {
         || (isRateChange && SUPERVISOR_REMOTE_RATE_ENABLED);
 }
 
-function generateCommandId() {
+export function generateSupervisorCommandId() {
     if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
     return `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
 }
 
-export function buildSupervisorCommand({ type, targetDeviceId, monitorDeviceId, payload, now = Date.now(), commandId = generateCommandId() }) {
+export function buildSupervisorCommand({ type, targetDeviceId, monitorDeviceId, payload, now = Date.now(), commandId = generateSupervisorCommandId() }) {
     return {
         commandId,
         type,
@@ -68,6 +175,18 @@ function normalizeAck(data) {
     return Array.isArray(data) ? data[0] : data;
 }
 
+function normalizeTerminalAck(row) {
+    return {
+        ok: row.status === 'applied' || row.status === 'applied_with_warnings',
+        status: row.status,
+        commandId: row.command_id,
+        ack: row.ack_payload || null,
+        error: row.status === 'cancelled'
+            ? 'La orden fue cancelada antes de que la caja la reclamara'
+            : row.error_message || null,
+    };
+}
+
 async function waitForCommandAck(commandId, timeoutMs = SUPERVISOR_ACK_TIMEOUT_MS) {
     return new Promise((resolve) => {
         let settled = false;
@@ -79,11 +198,19 @@ async function waitForCommandAck(commandId, timeoutMs = SUPERVISOR_ACK_TIMEOUT_M
             resolve(result);
         };
 
-        const timeout = setTimeout(() => finish({
-            ok: false,
-            status: 'timeout',
-            error: 'La caja no confirmó la orden a tiempo',
-        }), timeoutMs);
+        const timeout = setTimeout(() => {
+            readSupervisorCommandAck(supabaseCloud, commandId)
+                .then((ack) => finish(ack || {
+                    ok: false,
+                    status: 'timeout',
+                    error: 'La caja no confirmó la orden a tiempo',
+                }))
+                .catch(() => finish({
+                    ok: false,
+                    status: 'timeout',
+                    error: 'La caja no confirmó la orden a tiempo',
+                }));
+        }, timeoutMs);
 
         channel = supabaseCloud
             .channel(`supervisor-ack:${commandId}`)
@@ -94,15 +221,9 @@ async function waitForCommandAck(commandId, timeoutMs = SUPERVISOR_ACK_TIMEOUT_M
                 filter: `command_id=eq.${commandId}`,
             }, (payload) => {
                 const row = payload.new;
-                if (!row || !['applied', 'rejected', 'failed'].includes(row.status)) return;
+                if (!row || !SUPERVISOR_TERMINAL_COMMAND_STATUSES.includes(row.status)) return;
                 clearTimeout(timeout);
-                finish({
-                    ok: row.status === 'applied',
-                    status: row.status,
-                    commandId: row.command_id,
-                    ack: row.ack_payload || null,
-                    error: row.error_message || null,
-                });
+                finish(normalizeTerminalAck(row));
             })
             .subscribe((status) => {
                 if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
@@ -112,27 +233,22 @@ async function waitForCommandAck(commandId, timeoutMs = SUPERVISOR_ACK_TIMEOUT_M
             });
 
         // Evita perder un ACK que llegue entre el INSERT RPC y la suscripción.
-        supabaseCloud
-            .from('supervisor_commands')
-            .select('command_id, status, ack_payload, error_message')
-            .eq('command_id', commandId)
-            .maybeSingle()
-            .then(({ data, error }) => {
-                if (error || !data || !['applied', 'rejected', 'failed'].includes(data.status)) return;
+        readSupervisorCommandAck(supabaseCloud, commandId)
+            .then((ack) => {
+                if (!ack) return;
                 clearTimeout(timeout);
-                finish({
-                    ok: data.status === 'applied',
-                    status: data.status,
-                    commandId: data.command_id,
-                    ack: data.ack_payload || null,
-                    error: data.error_message || null,
-                });
+                finish(ack);
             })
             .catch(() => {});
     });
 }
 
-export async function sendSupervisorCommand({ type, targetDeviceId, payload }) {
+/** Fase 10: espera el ACK global de un comando YA creado (reconciliación). */
+export function awaitSupervisorCommandAck(commandId, timeoutMs = SUPERVISOR_ACK_TIMEOUT_MS) {
+    return waitForCommandAck(commandId, timeoutMs);
+}
+
+export async function sendSupervisorCommand({ type, targetDeviceId, payload, commandId }) {
     if (!isSupervisorCommandEnabled(type, payload)) {
         return { ok: false, status: 'disabled', error: 'Las mutaciones remotas están temporalmente deshabilitadas por seguridad' };
     }
@@ -165,6 +281,9 @@ export async function sendSupervisorCommand({ type, targetDeviceId, payload }) {
         targetDeviceId,
         monitorDeviceId: authorizedMonitor.deviceId,
         payload,
+        // Fase 10: el sender puede reutilizar un commandId persistido (reintento
+        // tras timeout jamás debe crear un segundo comando).
+        ...(commandId ? { commandId } : {}),
     });
     const validation = validateSupervisorCommand(command, {
         targetDeviceId,
@@ -207,4 +326,12 @@ export default {
     sendSupervisorCommand,
     shouldAwaitSupervisorAck,
     isSupervisorCommandEnabled,
+    fetchPendingSupervisorCommands,
+    fetchSupervisorCommandsForRecovery,
+    claimSupervisorCommand,
+    readSupervisorCommandAck,
+    inspectSupervisorCommandState,
+    awaitSupervisorCommandAck,
+    generateSupervisorCommandId,
+    withSupervisorCommandLock,
 };

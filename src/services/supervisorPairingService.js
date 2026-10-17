@@ -1,5 +1,6 @@
 import { supabaseCloud as defaultSupabase } from '../config/supabaseCloud';
 import { forceSyncAllPOSData } from '../hooks/useCloudSync';
+import { ensureDeviceSessionRegistered } from '../utils/deviceIdentity';
 import { ensureSupervisorSession } from './supervisorAuth';
 import { getActivePairingSlots, readPairingRow } from './supervisorPairingState';
 
@@ -33,6 +34,12 @@ export function getPairingErrorMessage(error) {
     if (/máximo de 2|2 supervisores|límite.*supervisor|limite.*supervisor/i.test(message)) {
         return 'Esta caja ya tiene 2 supervisores vinculados. Desvincula uno desde Ajustes para agregar otro.';
     }
+    if (/vinculada a otra sesi[oó]n|DEVICE_SESSION_CONFLICT/i.test(message)) {
+        return 'Esta caja ya está registrada con otra sesión segura. Desvincula la identidad del dispositivo antes de generar otro código.';
+    }
+    if (/DEVICE_SESSION_NOT_BOUND|no quedó ligada|no quedo ligada/i.test(message)) {
+        return 'La identidad de esta caja no quedó ligada a la sesión de la nube. Cierra y vuelve a abrir la app, o usa el mismo origen donde la caja fue registrada, y vuelve a intentarlo.';
+    }
     if (/sesión|sesion|auth/i.test(message)) {
         return 'No se pudo abrir la sesión segura del dispositivo. Revisa la conexión e inténtalo de nuevo.';
     }
@@ -58,6 +65,7 @@ export async function createPairingToken({
     deviceId,
     supabase = defaultSupabase,
     ensureSession = ensureSupervisorSession,
+    registerDeviceSession = ensureDeviceSessionRegistered,
     syncBeforeIssue = forceSyncAllPOSData,
     onProgress,
 } = {}) {
@@ -70,13 +78,29 @@ export async function createPairingToken({
         throw sessionError || new Error('No hay sesión segura del dispositivo');
     }
 
+    onProgress?.('Registrando la identidad de esta caja…');
+    // RLS own-row (001_device_own_row_rls.sql): sync_documents solo acepta
+    // escrituras si device_sessions vincula este deviceId con la sesión actual.
+    // Sin este registro el push del snapshot se rechaza con 403 y la vinculación
+    // se aborta aunque el token sea válido.
+    const registration = await registerDeviceSession(normalizedDeviceId);
+    if (!registration?.ok) {
+        const reason = registration?.error?.message || registration?.error;
+        throw new Error(reason || 'No se pudo registrar la identidad de esta caja');
+    }
+
     onProgress?.('Preparando los datos para el supervisor…');
     // Bootstrap del primer pairing: publica el snapshot aunque todavía no
     // exista un monitor vinculado, pero respeta hashes para evitar egress
     // innecesario en reintentos o aperturas posteriores.
     const syncResult = await syncBeforeIssue(normalizedDeviceId, false, true);
     if (syncResult && syncResult.ok === false) {
-        throw new Error(syncResult.error || 'No se pudieron preparar los datos para el supervisor');
+        const detail = syncResult.error || 'No se pudieron preparar los datos para el supervisor';
+        // RLS own-row sobre sync_documents = la identidad de la caja no quedó ligada
+        // a la sesión actual. Mensaje accionable en vez del error crudo de PostgREST.
+        throw new Error(/row-level security|42501/i.test(detail)
+            ? `La identidad de esta caja no coincide con la sesión de la nube. Cierra y vuelve a abrir la app e inténtalo de nuevo. (${detail})`
+            : detail);
     }
 
     onProgress?.('Generando el código temporal…');

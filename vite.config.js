@@ -13,6 +13,11 @@ const APP_VERSION = pkg.version || '1.0.0';
 export default defineConfig(({ mode }) => {
   // Cargar TODAS las variables del .env (incluyendo las sin prefijo VITE_)
   const env = loadEnv(mode, process.cwd(), '');
+  // Guard: el modo staging E2E anula credenciales de producción en el bundle.
+  // Un build de producción con esta variable saldría sin backend; se bloquea.
+  if (mode === 'production' && env.VITE_SUPERVISOR_E2E_STAGING === 'true') {
+    throw new Error('VITE_SUPERVISOR_E2E_STAGING=true no se permite en un build de producción.');
+  }
   return {
     base: process.env.ELECTRON_BUILD === 'true' ? './' : '/',
     plugins: [

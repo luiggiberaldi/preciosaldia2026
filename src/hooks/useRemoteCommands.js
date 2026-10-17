@@ -7,8 +7,15 @@ import { withLock } from '../utils/withLock';
 import { showToast } from '../components/Toast';
 import { ensureSupervisorSession } from '../services/supervisorAuth';
 import { AppliedCommandGuard, validateSupervisorCommand } from '../services/supervisorContracts';
-import { fetchPendingSupervisorCommands } from '../services/supervisorCommandService';
-import { applySupervisorInventoryBatchTransaction } from '../services/supervisorInventoryCommand';
+import {
+    claimSupervisorCommand,
+    fetchSupervisorCommandsForRecovery,
+    readSupervisorCommandAck,
+    SUPERVISOR_TERMINAL_COMMAND_STATUSES,
+    withSupervisorCommandLock,
+} from '../services/supervisorCommandService';
+import { applySupervisorInventoryBatchTransaction, retryInventoryPublish } from '../services/supervisorInventoryCommand';
+import { finishAckTelemetry, markAckTelemetry } from '../services/supervisorAckTelemetry';
 import { applySupervisorProductCommand } from '../services/supervisorProductCommand';
 import { applySupervisorUserCommand } from '../services/supervisorUserCommand';
 
@@ -35,7 +42,10 @@ function isRetryableAckError(error) {
     return !status;
 }
 
-async function ackCommand(commandId, status, ackPayload = {}, errorMessage = null) {
+export async function ackCommand(commandId, status, ackPayload = {}, errorMessage = null) {
+    // Telemetría: el momento en que el ACK sale hacia la caja de datos es la
+    // métrica que tests/supervisorAckLatency.perf.test.jsx mide en local.
+    markAckTelemetry(commandId, 'ack_sent', { status });
     let lastError = null;
     for (let attempt = 0; attempt < 3; attempt += 1) {
         try {
@@ -46,17 +56,36 @@ async function ackCommand(commandId, status, ackPayload = {}, errorMessage = nul
                 p_error_message: errorMessage,
             });
             if (error) throw error;
+            markAckTelemetry(commandId, 'ack_confirmed', { status });
             return;
         } catch (error) {
             lastError = error;
-            if (!isRetryableAckError(error) || attempt === 2) throw error;
+            if (!isRetryableAckError(error) || attempt === 2) break;
             await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
         }
     }
+    markAckTelemetry(commandId, 'ack_failed', { status, error: lastError?.message || lastError });
     throw lastError || new Error('No se pudo confirmar la orden');
 }
 
 const APPLIED_COMMANDS_KEY = 'supervisor_applied_commands_v1';
+
+// Recuperación de órdenes cuando Realtime no está SUBSCRIBED. El TTL de una
+// orden es 60 s, así que la primera consulta va pronto y el backoff queda
+// acotado para no superar el tiempo restante de una orden.
+export const RECOVERY_BASE_DELAY_MS = 5_000;
+export const RECOVERY_MAX_DELAY_MS = 20_000;
+
+/**
+ * Delay exponencial con jitter completo. `random` es inyectable para tests.
+ * attempt 0 → ~[base, 2·base); crece hasta el máximo.
+ */
+export function getRecoveryDelayMs(attempt, random = Math.random) {
+    const safeAttempt = Math.max(0, Math.floor(Number(attempt) || 0));
+    const exp = Math.min(RECOVERY_MAX_DELAY_MS, RECOVERY_BASE_DELAY_MS * (2 ** safeAttempt));
+    const jitter = Math.floor(random() * exp * 0.5);
+    return Math.min(RECOVERY_MAX_DELAY_MS, exp + jitter);
+}
 
 function shortSupervisorId(value) {
     if (!value || typeof value !== 'string') return null;
@@ -105,9 +134,38 @@ export function useRemoteCommands(deviceId, enabled = true) {
             pairingMode: localStorage.getItem('pda_pairing_mode') || 'primary',
         });
         let channel = null;
+        let recoveryTimer = null;
+        let recoveryAttempt = 0;
+        let recoveryInFlight = false;
+
+        const clearRecoveryTimer = () => {
+            if (recoveryTimer) clearTimeout(recoveryTimer);
+            recoveryTimer = null;
+        };
+
+        // Solo corre mientras el canal no está SUBSCRIBED. Una consulta a la vez.
+        const scheduleRecovery = () => {
+            if (disposed || recoveryTimer || recoveryInFlight) return;
+            const delay = getRecoveryDelayMs(recoveryAttempt);
+            recoveryTimer = setTimeout(async () => {
+                recoveryTimer = null;
+                if (disposed) return;
+                recoveryInFlight = true;
+                try {
+                    await loadPendingCommands();
+                } finally {
+                    recoveryInFlight = false;
+                }
+                recoveryAttempt += 1;
+                // Si el canal sigue degradado, se vuelve a programar con backoff.
+                if (!disposed && channelStatus !== 'SUBSCRIBED') scheduleRecovery();
+            }, delay);
+        };
+        let channelStatus = null;
 
         const handlePairingRevoked = (event) => {
             if (event.detail?.deviceId && event.detail.deviceId !== deviceId) return;
+            clearRecoveryTimer();
             if (channel) {
                 supabaseCloud.removeChannel(channel).catch(() => {});
                 channel = null;
@@ -151,7 +209,15 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 result = applySupervisorProductCommand(currentProducts, payload);
 
                 await storageService.setItem('bodega_products_v1', result.products);
-                const pushResult = await pushCloudSync('bodega_products_v1', result.products, true);
+                // Los comandos de producto aún confirman DESPUÉS de publicar:
+                // estos hitos permiten medirlo (ackLeadMs sale negativo).
+                markAckTelemetry(payload.commandId, 'local_applied');
+                let pushResult;
+                try {
+                    pushResult = await pushCloudSync('bodega_products_v1', result.products, true);
+                } finally {
+                    markAckTelemetry(payload.commandId, 'publish_end');
+                }
                 if (!pushResult.ok && !pushResult.skipped) {
                     await storageService.setItem('bodega_products_v1', currentProducts);
                     throw new Error(pushResult.error);
@@ -169,16 +235,72 @@ export function useRemoteCommands(deviceId, enabled = true) {
 
         const applyInventoryBatchCommand = async (payload, commandId) => {
             let adjustment;
+            let acknowledgedEarly = false;
             await withLock('pos_write_lock', async () => {
                 adjustment = await applySupervisorInventoryBatchTransaction({
                     storage: storageService,
-                    pushSync: pushCloudSync,
+                    // La publicación de ESTE comando marca su fin (último push en
+                    // resolver) para medir cuánto la precede el ACK.
+                    pushSync: async (key, value, ...rest) => {
+                        try {
+                            return await pushCloudSync(key, value, ...rest);
+                        } finally {
+                            markAckTelemetry(commandId, 'publish_end');
+                        }
+                    },
                     payload,
                     commandId,
+                    // Fase 11: tan pronto como el estado local es durable se
+                    // confirma la orden, ANTES de la publicación cloud. La
+                    // publicación pendiente se recupera con el journal; el
+                    // supervisor nunca espera por la nube.
+                    onLocalApplied: async (applied) => {
+                        // El estado local ya es durable: este hito marca cuánto
+                        // tarda la caja en dejar la orden aplicada localmente.
+                        markAckTelemetry(commandId, 'local_applied', { acknowledgedEarly: true });
+                        const ackPayload = {
+                            commandId,
+                            productId: payload.productId,
+                            unitsDelta: applied.unitsDelta,
+                            stockBefore: applied.stockBefore,
+                            stockAfter: applied.stockAfter,
+                            status: 'applied',
+                        };
+                        await rememberAppliedCommand(commandId, {
+                            status: 'applied',
+                            ackPayload,
+                            errorMessage: null,
+                            expiresAt: Number.MAX_SAFE_INTEGER,
+                        });
+                        appliedCommands.accept(commandId, Number.MAX_SAFE_INTEGER);
+                        acknowledgedEarly = true;
+                        try {
+                            await ackCommand(commandId, 'applied', ackPayload);
+                            supervisorLog('ACK enviado antes de la publicación cloud', {
+                                commandId: shortSupervisorId(commandId),
+                            });
+                        } catch (ackError) {
+                            supervisorLog('ACK aplicado pendiente de reintento', {
+                                commandId: shortSupervisorId(commandId),
+                                error: ackError?.message || ackError,
+                            });
+                        }
+                    },
                 });
 
                 window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_products_v1', source: 'remote' } }));
                 window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_sales_v1', source: 'remote' } }));
+
+                // Reintento de publicaciones pendientes DESPUÉS de aplicar y
+                // confirmar: nunca debe retrasar el ACK. Sus documentos son un
+                // snapshot del estado acumulado, así que un lote nuevo los subsume.
+                try {
+                    await retryInventoryPublish({ storage: storageService, pushSync: pushCloudSync });
+                } catch (publishError) {
+                    supervisorLog('Reintento de publicación pendiente falló', {
+                        error: publishError?.message || publishError,
+                    });
+                }
             });
 
             return {
@@ -187,7 +309,8 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 unitsDelta: adjustment.unitsDelta,
                 stockBefore: adjustment.stockBefore,
                 stockAfter: adjustment.stockAfter,
-                status: 'applied',
+                acknowledgedEarly,
+                status: adjustment.status === 'applied_with_warnings' ? 'applied_with_warnings' : 'applied',
             };
         };
 
@@ -274,8 +397,52 @@ export function useRemoteCommands(deviceId, enabled = true) {
             return result;
         };
 
-        const processCommand = async (row) => {
-            if (disposed || !row || row.status !== 'pending') return;
+        const processCommand = (row) => {
+            if (disposed || !row || !['pending', 'received'].includes(row.status)) return Promise.resolve();
+            // Telemetría por commandId: el inicio del procesamiento es el mismo
+            // t0 que el test de rendimiento toma al recibir la orden.
+            markAckTelemetry(row.command_id, 'processing_start', {
+                type: row.command_type,
+                deviceId: row.target_device_id,
+            });
+            return withSupervisorCommandLock(row.command_id, async () => {
+                try {
+                    if (disposed || appliedCommands.has(row.command_id)) return;
+                    await processCommandLocked(row);
+                } finally {
+                    // Cierra la entrada con las métricas y el log [AckLatency].
+                    finishAckTelemetry(row.command_id);
+                }
+            });
+        };
+
+        const processCommandLocked = async (row) => {
+            if (disposed || !row || !['pending', 'received'].includes(row.status)) return;
+
+            const claim = await claimSupervisorCommand({
+                commandId: row.command_id,
+                targetDeviceId: deviceId,
+            });
+            if (!claim.ok) {
+                supervisorLog('No se pudo reclamar la orden', {
+                    commandId: shortSupervisorId(row.command_id),
+                    error: claim.error,
+                });
+                return;
+            }
+            if (!claim.claimed || claim.status !== 'received') {
+                if (SUPERVISOR_TERMINAL_COMMAND_STATUSES.includes(claim.status)) {
+                    const terminalAck = await readSupervisorCommandAck(supabaseCloud, row.command_id);
+                    if (terminalAck) {
+                        console.info('[SupervisorReceiver] Orden terminal ya confirmada', {
+                            commandId: shortSupervisorId(row.command_id),
+                            status: terminalAck.status,
+                        });
+                    }
+                }
+                return;
+            }
+            row = { ...row, status: 'received' };
 
             supervisorLog('Orden recibida', {
                 commandId: shortSupervisorId(row.command_id),
@@ -285,24 +452,37 @@ export function useRemoteCommands(deviceId, enabled = true) {
             });
 
             const command = rowToCommand(row, deviceId);
+            const remembered = await readAppliedCommand(row.command_id);
             const validation = validateSupervisorCommand(command, {
                 targetDeviceId: deviceId,
                 monitorDeviceId: row.actor_auth_id,
+                // El claim se valida contra el TTL en servidor; received ya no expira.
+                now: remembered || row.status === 'received'
+                    ? Math.min(Date.now(), command.expiresAt)
+                    : Date.now(),
             });
+            if (remembered) {
+                await ackCommand(row.command_id, remembered.status, remembered.ackPayload, remembered.errorMessage);
+                return;
+            }
             if (!validation.valid) {
                 console.warn('[SupervisorReceiver] Orden rechazada por validación', {
                     commandId: shortSupervisorId(row.command_id),
                     reason: validation.error,
                 });
-                await ackCommand(row.command_id, 'rejected', {}, validation.error);
+                await rememberAppliedCommand(row.command_id, {
+                    status: 'rejected', ackPayload: {}, errorMessage: validation.error, expiresAt: Number.MAX_SAFE_INTEGER,
+                });
+                try {
+                    await ackCommand(row.command_id, 'rejected', {}, validation.error);
+                } catch (ackError) {
+                    supervisorLog('ACK rechazado pendiente de reintento', {
+                        commandId: shortSupervisorId(row.command_id),
+                        error: ackError?.message || ackError,
+                    });
+                }
                 return;
             }
-            const remembered = await readAppliedCommand(row.command_id);
-            if (remembered) {
-                await ackCommand(row.command_id, remembered.status, remembered.ackPayload, remembered.errorMessage);
-                return;
-            }
-            if (!appliedCommands.accept(row.command_id, command.expiresAt)) return;
 
             let appliedPayload = null;
             try {
@@ -327,7 +507,7 @@ export function useRemoteCommands(deviceId, enabled = true) {
                     });
                     showToast('📦 Producto actualizado por el Supervisor', 'success');
                 } else if (command.type === 'supervisor.product.delete') {
-                    await applyProductCommand({ action: 'delete', productId: command.payload.productId });
+                    await applyProductCommand({ action: 'delete', productId: command.payload.productId, commandId: row.command_id });
                     showToast('📦 Producto eliminado por el Supervisor', 'success');
                 } else if (command.type === 'supervisor.inventory.batch.adjust') {
                     appliedPayload = await applyInventoryBatchCommand(command.payload, row.command_id);
@@ -354,16 +534,27 @@ export function useRemoteCommands(deviceId, enabled = true) {
                     throw new Error('Tipo de comando no soportado');
                 }
 
+                if (appliedPayload?.acknowledgedEarly) {
+                    // Fase 11: el ACK ya se envió cuando el estado local quedó
+                    // durable (antes de la publicación cloud) y el registro quedó
+                    // escrito; un reenvío futuro solo re-confirma.
+                    supervisorLog('Orden aplicada; confirmada antes de la publicación cloud', {
+                        commandId: shortSupervisorId(row.command_id),
+                    });
+                    return;
+                }
                 // Guardar primero el resultado local evita repetir la operación
                 // si el ACK se pierde. El siguiente intento solo confirma.
+                const ackStatus = appliedPayload?.status === 'applied_with_warnings' ? 'applied_with_warnings' : 'applied';
                 await rememberAppliedCommand(row.command_id, {
-                    status: 'applied',
+                    status: ackStatus,
                     ackPayload: appliedPayload,
                     errorMessage: null,
-                    expiresAt: command.expiresAt,
+                    expiresAt: Number.MAX_SAFE_INTEGER,
                 });
+                appliedCommands.accept(row.command_id, Number.MAX_SAFE_INTEGER);
                 try {
-                    await ackCommand(row.command_id, 'applied', appliedPayload);
+                    await ackCommand(row.command_id, ackStatus, appliedPayload);
                 } catch (ackError) {
                     supervisorLog('ACK aplicado pendiente de reintento', {
                         commandId: shortSupervisorId(row.command_id),
@@ -373,7 +564,7 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 }
                 supervisorLog('ACK enviado', {
                     commandId: shortSupervisorId(row.command_id),
-                    status: 'applied',
+                    status: ackStatus,
                 });
             } catch (error) {
                 const errorMessage = error?.message || 'Error aplicando comando';
@@ -385,8 +576,9 @@ export function useRemoteCommands(deviceId, enabled = true) {
                     status: 'failed',
                     ackPayload: {},
                     errorMessage,
-                    expiresAt: command.expiresAt,
+                    expiresAt: Number.MAX_SAFE_INTEGER,
                 });
+                appliedCommands.accept(row.command_id, Number.MAX_SAFE_INTEGER);
                 try {
                     await ackCommand(row.command_id, 'failed', {}, errorMessage);
                 } catch (ackError) {
@@ -400,7 +592,7 @@ export function useRemoteCommands(deviceId, enabled = true) {
         };
 
         const loadPendingCommands = async () => {
-            const { data: rows, error } = await fetchPendingSupervisorCommands(supabaseCloud, deviceId);
+            const { data: rows, error } = await fetchSupervisorCommandsForRecovery(supabaseCloud, deviceId);
 
             supervisorLog('Consulta de órdenes pendientes', {
                 targetDeviceId: shortSupervisorId(deviceId),
@@ -454,11 +646,18 @@ export function useRemoteCommands(deviceId, enabled = true) {
                     });
                 })
                 .subscribe((status, error) => {
+                    channelStatus = status;
                     supervisorLog('Estado Realtime', {
                         deviceId: shortSupervisorId(deviceId),
                         status,
                         error: error?.message || null,
                     });
+                    if (status === 'SUBSCRIBED') {
+                        clearRecoveryTimer();
+                        recoveryAttempt = 0;
+                    } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+                        scheduleRecovery();
+                    }
                 });
 
             await loadPendingCommands();
@@ -468,6 +667,7 @@ export function useRemoteCommands(deviceId, enabled = true) {
 
         return () => {
             disposed = true;
+            clearRecoveryTimer();
             window.removeEventListener('supervisor_pairing_revoked', handlePairingRevoked);
             window.removeEventListener('supervisor_pairing_active', handlePairingActive);
             if (channel) supabaseCloud.removeChannel(channel).catch(() => {});

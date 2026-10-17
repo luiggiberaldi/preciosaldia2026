@@ -162,6 +162,17 @@ export async function cancelSupervisorCommand({ commandId, reason = 'Cancelado d
         p_command_id: commandId,
         p_reason: reason,
     });
-    return error ? { ok: false, error: error.message || 'No se pudo anular el comando' } : { ok: true, data };
+    if (error) return { ok: false, error: error.message || 'No se pudo anular el comando' };
+
+    const result = Array.isArray(data) ? data[0] : data;
+    if (result?.status === CONTROL_STATUS.CANCELLED) return { ok: true, status: result.status, data: result };
+    return {
+        ok: false,
+        status: result?.status || 'unknown',
+        error: result?.status
+            ? `La orden ya no está pendiente (estado: ${result.status}) y no se anuló`
+            : 'El servidor no confirmó la anulación de la orden',
+        data: result || null,
+    };
 }
 

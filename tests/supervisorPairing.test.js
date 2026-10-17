@@ -49,16 +49,19 @@ describe('supervisorPairingService', () => {
         const rpc = vi.fn().mockResolvedValue({ data: '  abc123  ', error: null });
         const supabase = { rpc };
         const ensureSession = vi.fn().mockResolvedValue({ session: { user: { id: 'device-auth' } } });
+        const registerDeviceSession = vi.fn().mockResolvedValue({ ok: true });
         const syncBeforeIssue = vi.fn().mockResolvedValue({ ok: true });
 
         const result = await createPairingToken({
             deviceId: 'device-12345678',
             supabase,
             ensureSession,
+            registerDeviceSession,
             syncBeforeIssue,
         });
 
         expect(ensureSession).toHaveBeenCalledOnce();
+        expect(registerDeviceSession).toHaveBeenCalledWith('device-12345678');
         expect(syncBeforeIssue).toHaveBeenCalledWith('device-12345678', false, true);
         expect(rpc).toHaveBeenCalledWith('generate_pairing_token', {
             p_device_id: 'device-12345678',
@@ -68,14 +71,69 @@ describe('supervisorPairingService', () => {
         expect(result.expiresAt).toBeGreaterThan(Date.now());
     });
 
+    it('registra la identidad antes de publicar el snapshot (RLS own-row)', async () => {
+        const rpc = vi.fn().mockResolvedValue({ data: '  abc123  ', error: null });
+        const registerDeviceSession = vi.fn().mockResolvedValue({ ok: true });
+        const syncBeforeIssue = vi.fn().mockResolvedValue({ ok: true });
+
+        await createPairingToken({
+            deviceId: 'device-12345678',
+            supabase: { rpc },
+            ensureSession: vi.fn().mockResolvedValue({ session: { user: { id: 'device-auth' } } }),
+            registerDeviceSession,
+            syncBeforeIssue,
+        });
+
+        expect(registerDeviceSession.mock.invocationCallOrder[0])
+            .toBeLessThan(syncBeforeIssue.mock.invocationCallOrder[0]);
+    });
+
+    it('aborta antes de publicar si la identidad no se pudo registrar', async () => {
+        const rpc = vi.fn();
+        const syncBeforeIssue = vi.fn();
+        await expect(createPairingToken({
+            deviceId: 'device-12345678',
+            supabase: { rpc },
+            ensureSession: vi.fn().mockResolvedValue({ session: { user: { id: 'device-auth' } } }),
+            registerDeviceSession: vi.fn().mockResolvedValue({
+                ok: false,
+                error: { code: 'DEVICE_SESSION_CONFLICT', message: 'Esta caja ya está vinculada a otra sesión.' },
+            }),
+            syncBeforeIssue,
+        })).rejects.toThrow('vinculada a otra sesión');
+        expect(syncBeforeIssue).not.toHaveBeenCalled();
+        expect(rpc).not.toHaveBeenCalled();
+    });
+
+    it('traduce el conflicto de identidad a un mensaje accionable', () => {
+        expect(getPairingErrorMessage(new Error('Esta caja ya está vinculada a otra sesión.')))
+            .toMatch(/otra sesión segura/i);
+    });
+
     it('rechaza una preparación de datos fallida antes de llamar al RPC', async () => {
         const rpc = vi.fn();
         await expect(createPairingToken({
             deviceId: 'device-12345678',
             supabase: { rpc },
             ensureSession: vi.fn().mockResolvedValue({ session: {} }),
+            registerDeviceSession: vi.fn().mockResolvedValue({ ok: true }),
             syncBeforeIssue: vi.fn().mockResolvedValue({ ok: false, error: 'sync caído' }),
         })).rejects.toThrow('sync caído');
+        expect(rpc).not.toHaveBeenCalled();
+    });
+
+    it('traduce el rechazo RLS de sync_documents a un mensaje accionable', async () => {
+        const rpc = vi.fn();
+        await expect(createPairingToken({
+            deviceId: 'device-12345678',
+            supabase: { rpc },
+            ensureSession: vi.fn().mockResolvedValue({ session: {} }),
+            registerDeviceSession: vi.fn().mockResolvedValue({ ok: true }),
+            syncBeforeIssue: vi.fn().mockResolvedValue({
+                ok: false,
+                error: 'new row violates row-level security policy for table "sync_documents"',
+            }),
+        })).rejects.toThrow(/Cierra y vuelve a abrir la app/i);
         expect(rpc).not.toHaveBeenCalled();
     });
 
@@ -124,6 +182,12 @@ describe('supervisorPairingService', () => {
         expect(formatPairingTime(300)).toBe('5:00');
         expect(formatPairingTime(65)).toBe('1:05');
         expect(getPairingErrorMessage(new Error('Esta caja ya tiene un supervisor conectado'))).toMatch(/ya tiene un supervisor/i);
+    });
+
+    it('muestra la causa real cuando la identidad de la caja no quedó ligada, en vez del texto genérico de sesión', () => {
+        const message = getPairingErrorMessage({ code: 'DEVICE_SESSION_NOT_BOUND', message: 'La identidad de esta caja no quedó ligada a la sesión de la nube.' });
+        expect(message).toMatch(/identidad de esta caja no quedó ligada/i);
+        expect(message).not.toMatch(/No se pudo abrir la sesión segura/);
     });
 });
 

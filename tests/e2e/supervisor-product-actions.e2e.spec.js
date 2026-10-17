@@ -29,7 +29,7 @@ test.describe('Supervisor acciones de productos', () => {
         await page.getByRole('button', { name: 'Inventario', exact: true }).click();
 
         const productName = `Producto E2E ${Date.now()}`;
-        await page.getByRole('button', { name: 'Nuevo Producto', exact: true }).click();
+        await page.getByRole('button', { name: 'Nuevo producto', exact: true }).click();
         await page.getByPlaceholder('Ej: Harina PAN 1kg').fill(productName);
         await page.locator('input[placeholder="1.50"]').fill('2.50');
         await page.getByRole('button', { name: /Guardar en Caja/ }).click();
