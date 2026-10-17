@@ -566,17 +566,13 @@ export default function QuickSupervisorPairingModal({
                 </button>
               </div>
 
-              {/* Botón de Envío / Generación */}
+              {/* Submit accesible oculto para soporte de teclado Enter y tests */}
               <button
                 type="submit"
-                className={`flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-2xl px-4 text-xs font-black uppercase tracking-wider transition-all select-none shadow-sm ${
-                  pin.length === PIN_LENGTH
-                    ? 'bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white shadow-emerald-600/25 ring-2 ring-emerald-500/20'
-                    : 'bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-500 dark:text-slate-400 border border-slate-200/60 dark:border-slate-700/60'
-                }`}
+                tabIndex={-1}
+                className="sr-only"
               >
-                <ShieldCheck size={16} strokeWidth={2.4} aria-hidden="true" />
-                <span>Generar código temporal</span>
+                Generar código temporal
               </button>
             </form>
           )}
