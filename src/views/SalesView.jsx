@@ -337,9 +337,12 @@ export default function SalesView({ triggerHaptic, isActive }) {
     // Filtro unificado grid/desplegable: mismo motor (matchesSearch) que usa
     // CategoryBar para el grid — ignora tildes/mayúsculas y busca en
     // nombre, código de barras e id.
+    const POS_SEARCH_MAX_RESULTS = 50;
     const searchResults = useMemo(() => {
         if (deferredSearchTerm.length < 1) return [];
-        return products.filter(p => productMatchesSearch(p, deferredSearchTerm)).slice(0, 6);
+        return products
+            .filter(p => productMatchesSearch(p, deferredSearchTerm))
+            .slice(0, POS_SEARCH_MAX_RESULTS);
     }, [deferredSearchTerm, products]);
 
     const filteredByCategory = useMemo(() => selectedCategory === 'todos'

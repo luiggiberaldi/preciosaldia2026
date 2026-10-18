@@ -49,6 +49,16 @@ const SearchBar = forwardRef(function SearchBar({
     posSearchViewMode = 'hybrid',
     onViewModeChange,
 }, ref) {
+    const scrollContainerRef = useRef(null);
+
+    useEffect(() => {
+        if (!scrollContainerRef.current) return;
+        const selectedEl = scrollContainerRef.current.children[selectedIndex];
+        if (selectedEl && typeof selectedEl.scrollIntoView === 'function') {
+            selectedEl.scrollIntoView({ block: 'nearest' });
+        }
+    }, [selectedIndex]);
+
     return (
         <div className="relative">
             <Search size={20} className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -137,101 +147,115 @@ const SearchBar = forwardRef(function SearchBar({
 
             {/* Search Dropdown (oculto en modo galería: el grid es el buscador) */}
             {posSearchViewMode !== 'grid' && searchResults.length > 0 && (
-                <div className="absolute top-full mt-2 left-0 right-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-20 overflow-hidden">
-                    {searchResults.map((p, index) => {
-                        const isLowStock = (p.stock ?? 0) <= (p.lowStockAlert ?? 5) && (p.stock ?? 0) >= 0;
-                        const isOutOfStock = (p.stock ?? 0) === 0;
-                        const catInfo = BODEGA_CATEGORIES.find(c => c.id === p.category);
-                        const catColor = catInfo ? CATEGORY_COLORS[catInfo.color] : null;
-                        const CatIcon = catInfo ? CATEGORY_ICONS[catInfo.id] : null;
-                        const isSelected = index === selectedIndex;
-                        return (
-                            <button
-                                key={p.id}
-                                onClick={() => addToCart(p)}
-                                onMouseEnter={() => setSelectedIndex(index)}
-                                className={`w-full flex items-center gap-3 px-3 py-2.5 border-b border-slate-50 dark:border-slate-800/50 last:border-0 transition-all active:scale-[0.98]
-                                    ${isSelected
-                                        ? 'bg-emerald-50 dark:bg-emerald-900/20 border-l-4 border-l-emerald-500'
-                                        : 'bg-transparent border-l-4 border-l-transparent hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                                    }
-                                    ${isOutOfStock ? 'opacity-50' : ''}`}
-                            >
-                                <div className="w-10 h-10 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center shrink-0 overflow-hidden">
-                                    <SmartImage
-                                        src={p.image}
-                                        product={p}
-                                        alt={p.name}
-                                        fallbackIcon={
-                                            CatIcon
-                                                ? <CatIcon size={20} className="text-slate-400" />
-                                                : <Package size={16} className="text-slate-400" />
+                <div className="absolute top-full mt-2 left-0 right-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-20 overflow-hidden flex flex-col">
+                    <div
+                        ref={scrollContainerRef}
+                        data-testid="search-results-scroll-container"
+                        className="max-h-[380px] overflow-y-auto overscroll-contain divide-y divide-slate-100 dark:divide-slate-800/50"
+                    >
+                        {searchResults.map((p, index) => {
+                            const isLowStock = (p.stock ?? 0) <= (p.lowStockAlert ?? 5) && (p.stock ?? 0) >= 0;
+                            const isOutOfStock = (p.stock ?? 0) === 0;
+                            const catInfo = BODEGA_CATEGORIES.find(c => c.id === p.category);
+                            const catColor = catInfo ? CATEGORY_COLORS[catInfo.color] : null;
+                            const CatIcon = catInfo ? CATEGORY_ICONS[catInfo.id] : null;
+                            const isSelected = index === selectedIndex;
+                            return (
+                                <button
+                                    key={p.id}
+                                    type="button"
+                                    onClick={() => addToCart(p)}
+                                    onMouseEnter={() => setSelectedIndex(index)}
+                                    className={`w-full flex items-center gap-3 px-3 py-2.5 transition-all active:scale-[0.98]
+                                        ${isSelected
+                                            ? 'bg-emerald-50 dark:bg-emerald-900/20 border-l-4 border-l-emerald-500'
+                                            : 'bg-transparent border-l-4 border-l-transparent hover:bg-slate-50 dark:hover:bg-slate-800/50'
                                         }
-                                    />
-                                </div>
-                                <div className="flex-1 min-w-0 text-left">
-                                    <p className={`text-sm font-bold truncate leading-tight ${isSelected ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-800 dark:text-slate-100'}`}>
-                                        {p.name}
-                                    </p>
-                                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                        {catInfo && catInfo.id !== 'otros' && catInfo.id !== 'todos' && catColor && (
-                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${catColor}`}>
-                                                {catInfo.label}
-                                            </span>
-                                        )}
-                                        {p.pricingMode === 'dual_usd' && p.priceBsUsdRef > 0 && (
-                                            <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-300/60 dark:border-emerald-800/60">
-                                                Doble $: ${p.priceUsdt || p.priceUsd} / ${p.priceBsUsdRef} Ref
-                                            </span>
-                                        )}
-                                        <span className={`text-[10px] font-medium flex items-center gap-1
-                                            ${isOutOfStock ? 'text-red-500' : isLowStock ? 'text-amber-500' : 'text-slate-400'}`}>
-                                            {isLowStock && !isOutOfStock && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />}
-                                            {isOutOfStock ? 'Sin stock' : `Stock: ${p.stock ?? 0}`}
-                                        </span>
+                                        ${isOutOfStock ? 'opacity-50' : ''}`}
+                                >
+                                    <div className="w-10 h-10 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center shrink-0 overflow-hidden">
+                                        <SmartImage
+                                            src={p.image}
+                                            product={p}
+                                            alt={p.name}
+                                            fallbackIcon={
+                                                CatIcon
+                                                    ? <CatIcon size={20} className="text-slate-400" />
+                                                    : <Package size={16} className="text-slate-400" />
+                                            }
+                                        />
                                     </div>
-                                </div>
-                                <div className="text-right shrink-0">
-                                    {copEnabled && copPrimary && tasaCop > 0 ? (
-                                        <>
-                                            <p className="text-sm font-black text-amber-600 dark:text-amber-400">
-                                                {formatCop(getCop(p, tasaCop))} COP
-                                            </p>
-                                            <p className="text-[10px] font-medium text-slate-400">
-                                                ${getUsd(p, tasaCop).toFixed(2)}
-                                            </p>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <div className="flex items-center justify-end gap-1">
-                                                <p className="text-sm font-black text-emerald-600 dark:text-emerald-400">
+                                    <div className="flex-1 min-w-0 text-left">
+                                        <p className={`text-sm font-bold truncate leading-tight ${isSelected ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-800 dark:text-slate-100'}`}>
+                                            {p.name}
+                                        </p>
+                                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                            {catInfo && catInfo.id !== 'otros' && catInfo.id !== 'todos' && catColor && (
+                                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${catColor}`}>
+                                                    {catInfo.label}
+                                                </span>
+                                            )}
+                                            {p.pricingMode === 'dual_usd' && p.priceBsUsdRef > 0 && (
+                                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-300/60 dark:border-emerald-800/60">
+                                                    Doble $: ${p.priceUsdt || p.priceUsd} / ${p.priceBsUsdRef} Ref
+                                                </span>
+                                            )}
+                                            <span className={`text-[10px] font-medium flex items-center gap-1
+                                                ${isOutOfStock ? 'text-red-500' : isLowStock ? 'text-amber-500' : 'text-slate-400'}`}>
+                                                {isLowStock && !isOutOfStock && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />}
+                                                {isOutOfStock ? 'Sin stock' : `Stock: ${p.stock ?? 0}`}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                        {copEnabled && copPrimary && tasaCop > 0 ? (
+                                            <>
+                                                <p className="text-sm font-black text-amber-600 dark:text-amber-400">
+                                                    {formatCop(getCop(p, tasaCop))} COP
+                                                </p>
+                                                <p className="text-[10px] font-medium text-slate-400">
                                                     ${getUsd(p, tasaCop).toFixed(2)}
                                                 </p>
-                                                {p.pricingMode === 'dual_usd' && parseFloat(p.priceBsUsdRef) > 0 && (
-                                                    <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 px-1 py-0.5 rounded border border-emerald-200/60 leading-none">
-                                                        ${formatUsd(p.priceBsUsdRef)} Ref
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <p className="text-[10px] font-medium text-slate-400">
-                                                {copEnabled && tasaCop > 0
-                                                    ? `${formatCop(getCop(p, tasaCop))} COP`
-                                                    : `${formatBs(
-                                                        p.pricingMode === 'dual_usd' && parseFloat(p.priceBsUsdRef) > 0
-                                                            ? parseFloat(p.priceBsUsdRef) * effectiveRate
-                                                            : (p.priceUsdt || p.priceUsd || 0) * effectiveRate
-                                                    )} Bs ${p.pricingMode === 'dual_usd' && parseFloat(p.priceBsUsdRef) > 0 ? '(en Bs)' : ''}`
-                                                }
-                                            </p>
-                                        </>
-                                    )}
-                                </div>
-                            </button>
-                        );
-                    })}
-                    <div className="bg-slate-50 dark:bg-slate-950 p-2 text-center border-t border-slate-100 dark:border-slate-800">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center justify-center gap-2">
-                            Navega con flechas <span className="px-1 bg-slate-200 dark:bg-slate-800 rounded">↓</span><span className="px-1 bg-slate-200 dark:bg-slate-800 rounded">↑</span> y presiona <span className="px-1 bg-slate-200 dark:bg-slate-800 rounded">ENTER ↵</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div className="flex items-center justify-end gap-1">
+                                                    <p className="text-sm font-black text-emerald-600 dark:text-emerald-400">
+                                                        ${getUsd(p, tasaCop).toFixed(2)}
+                                                    </p>
+                                                    {p.pricingMode === 'dual_usd' && parseFloat(p.priceBsUsdRef) > 0 && (
+                                                        <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 px-1 py-0.5 rounded border border-emerald-200/60 leading-none">
+                                                            ${formatUsd(p.priceBsUsdRef)} Ref
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="text-[10px] font-medium text-slate-400">
+                                                    {copEnabled && tasaCop > 0
+                                                        ? `${formatCop(getCop(p, tasaCop))} COP`
+                                                        : `${formatBs(
+                                                            p.pricingMode === 'dual_usd' && parseFloat(p.priceBsUsdRef) > 0
+                                                                ? parseFloat(p.priceBsUsdRef) * effectiveRate
+                                                                : (p.priceUsdt || p.priceUsd || 0) * effectiveRate
+                                                        )} Bs ${p.pricingMode === 'dual_usd' && parseFloat(p.priceBsUsdRef) > 0 ? '(en Bs)' : ''}`
+                                                    }
+                                                </p>
+                                            </>
+                                        )}
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+                    <div className="bg-slate-50 dark:bg-slate-950 px-3 py-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest shrink-0">
+                        <span>
+                            {searchResults.length} {searchResults.length === 1 ? 'coincidencia' : 'coincidencias'}
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                            <span>Navega</span>
+                            <span className="px-1 py-0.5 bg-slate-200 dark:bg-slate-800 rounded font-mono text-slate-600 dark:text-slate-300">↓</span>
+                            <span className="px-1 py-0.5 bg-slate-200 dark:bg-slate-800 rounded font-mono text-slate-600 dark:text-slate-300">↑</span>
+                            <span>Enter</span>
+                            <span className="px-1 py-0.5 bg-slate-200 dark:bg-slate-800 rounded font-mono text-slate-600 dark:text-slate-300">↵</span>
                         </span>
                     </div>
                 </div>
