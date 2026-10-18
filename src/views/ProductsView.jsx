@@ -196,7 +196,8 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
             prev.map(p => {
                 if (!idsToFix.has(p.id)) return p;
                 const correctedUsd = parseFloat((p.priceUsdt / tasaCop).toFixed(4));
-                const updated = { ...p, priceUsdt: correctedUsd };
+                // FIN-030: mantener el par de alias sincronizado (priceUsdt + priceUsd)
+                const updated = { ...p, priceUsdt: correctedUsd, priceUsd: correctedUsd };
                 if (p.unitPriceUsd && p.unitPriceUsd > 0) {
                     updated.unitPriceUsd = parseFloat((p.unitPriceUsd / tasaCop).toFixed(4));
                 }

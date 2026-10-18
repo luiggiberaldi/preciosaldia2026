@@ -20,3 +20,13 @@ export function matchesSearch(fields, query) {
         .join(' ');
     return tokens.every(token => haystack.includes(token));
 }
+
+// Matching de productos para la caja: UNA sola lista de campos para que el
+// desplegable del buscador y el grid siempre filtren igual. Cualquier campo
+// nuevo se agrega aquí y ambas superficies quedan sincronizadas.
+export function productMatchesSearch(product, query) {
+    return matchesSearch(
+        [product?.name, product?.barcode, product?.id != null ? String(product.id) : ''],
+        query,
+    );
+}

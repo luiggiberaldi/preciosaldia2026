@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Package, Calculator, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Clock, HelpCircle, Trash2, X, DollarSign, Grid } from 'lucide-react';
 import { BODEGA_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../config/categories';
 import { formatCop, formatBs, formatUsd, getCop, getUsd } from '../../utils/calculatorUtils';
+import { productMatchesSearch } from '../../utils/searchMatch';
 import SmartImage from '../SmartImage';
 
 const PAGE_SIZE = 30;
@@ -13,6 +14,8 @@ export default function CategoryBar({
     addToCart,
     triggerHaptic,
     searchTerm = '',
+    deferredSearchTerm = '',
+    posSearchViewMode = 'hybrid',
     onOpenCustomAmount,
     products = [],
     copEnabled,
@@ -58,10 +61,10 @@ export default function CategoryBar({
         setShowNoteInput(false);
     };
 
-    // Reset pagination when category changes
+    // Reset pagination when category, search term or view mode changes
     useEffect(() => {
         setVisibleCount(PAGE_SIZE);
-    }, [selectedCategory]);
+    }, [selectedCategory, deferredSearchTerm, posSearchViewMode]);
 
     // Wheel → scroll horizontal sin advertencia de evento pasivo + scroll checks
     useEffect(() => {
@@ -94,8 +97,23 @@ export default function CategoryBar({
         }
     };
 
-    const visibleProducts = filteredByCategory.slice(0, visibleCount);
-    const hasMore = filteredByCategory.length > visibleCount;
+    // ── Búsqueda unificada grid/desplegable ──
+    // El grid usa EXACTAMENTE el mismo motor de matching (matchesSearch) que el
+    // desplegable del SearchBar: ignora tildes/mayúsculas y cada palabra de la
+    // consulta debe aparecer en nombre, código de barras o id.
+    const activeSearchTerm = (deferredSearchTerm || searchTerm || '').trim();
+    const hasSearchTerm = activeSearchTerm.length > 0;
+    // En modo lista el grid se oculta mientras se busca (solo desplegable);
+    // en híbrido/galería el grid permanece visible y se filtra en vivo.
+    const showGrid = posSearchViewMode !== 'list' || !hasSearchTerm;
+
+    const searchFilteredProducts = useMemo(() => {
+        if (!hasSearchTerm) return filteredByCategory;
+        return filteredByCategory.filter(p => productMatchesSearch(p, activeSearchTerm));
+    }, [filteredByCategory, activeSearchTerm, hasSearchTerm]);
+
+    const visibleProducts = searchFilteredProducts.slice(0, visibleCount);
+    const hasMore = searchFilteredProducts.length > visibleCount;
     const allowNegativeStock = localStorage.getItem('allow_negative_stock') === 'true';
 
     // Fallback to static config if no categories passed from context
@@ -105,7 +123,7 @@ export default function CategoryBar({
     const activeCategories = categoryList.filter(cat => cat.id === 'todos' || products.some(p => p.category === cat.id));
 
     return (
-        <div className={`relative ${searchTerm.length === 0 ? 'lg:flex-1 lg:overflow-hidden lg:flex lg:flex-col lg:min-h-0' : ''}`}>
+        <div className={`relative ${showGrid ? 'lg:flex-1 lg:overflow-hidden lg:flex lg:flex-col lg:min-h-0' : ''}`}>
             
             {/* Category Chips Container (Optimized for PC: Smooth scroll buttons & optional multiline wrap) */}
             <div className="relative mb-1.5 shrink-0 flex items-center gap-1">
@@ -275,7 +293,7 @@ export default function CategoryBar({
             </div>
 
             {/* Product Grid */}
-            {searchTerm.length === 0 && (
+            {showGrid && (
                 <div className="flex-1 overflow-y-auto min-h-0 pb-2">
                     <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
                         {visibleProducts.map(p => {
@@ -343,22 +361,24 @@ export default function CategoryBar({
                         })}
                     </div>
                     {/* Botón "Cargar Más" */}
-                    {visibleCount < filteredByCategory.length && (
+                    {visibleCount < searchFilteredProducts.length && (
                         <div className="mt-4 flex justify-center">
                             <button
                                 onClick={() => setVisibleCount(prev => prev + 20)}
                                 className="flex items-center gap-1.5 px-5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:border-brand hover:text-brand-dark transition-all active:scale-95 shadow-sm"
                             >
                                 <ChevronDown size={14} />
-                                Cargar Mas ({filteredByCategory.length - visibleCount} restantes)
+                                Cargar Mas ({searchFilteredProducts.length - visibleCount} restantes)
                             </button>
                         </div>
                     )}
 
-                    {filteredByCategory.length === 0 && (
+                    {searchFilteredProducts.length === 0 && (
                         <div className="text-center py-10">
                             <Package size={32} className="mx-auto text-slate-300 dark:text-slate-700 mb-2" />
-                            <p className="text-xs text-slate-400 font-medium">Sin productos en esta categoria</p>
+                            <p className="text-xs text-slate-400 font-medium">
+                                {hasSearchTerm ? 'Sin coincidencias para tu búsqueda' : 'Sin productos en esta categoria'}
+                            </p>
                         </div>
                     )}
 

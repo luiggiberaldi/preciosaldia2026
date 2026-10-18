@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeSearchText, matchesSearch } from '../src/utils/searchMatch';
+import { normalizeSearchText, matchesSearch, productMatchesSearch } from '../src/utils/searchMatch';
 
 describe('searchMatch utility', () => {
     describe('normalizeSearchText', () => {
@@ -36,6 +36,35 @@ describe('searchMatch utility', () => {
 
         it('does not match when no field contains the term', () => {
             expect(matchesSearch(['Arroz'], 'harina')).toBe(false);
+        });
+    });
+
+    describe('productMatchesSearch (matching unificado caja: desplegable + grid)', () => {
+        const mayonesa = {
+            id: 'p_001',
+            name: 'Mayonesa Kraft 445GR',
+            barcode: '7591114040042',
+        };
+
+        it('coincide por nombre, código de barras e id', () => {
+            expect(productMatchesSearch(mayonesa, 'kraft')).toBe(true);
+            expect(productMatchesSearch(mayonesa, '759111')).toBe(true);
+            expect(productMatchesSearch(mayonesa, 'P_001')).toBe(true);
+        });
+
+        it('ignora tildes y mayúsculas igual que el desplegable', () => {
+            expect(productMatchesSearch({ ...mayonesa, name: 'Azúcar Refinada' }, 'AZUCAR')).toBe(true);
+        });
+
+        it('cada palabra de la consulta debe coincidir', () => {
+            expect(productMatchesSearch(mayonesa, 'kraft 445')).toBe(true);
+            expect(productMatchesSearch(mayonesa, 'kraft hellmanns')).toBe(false);
+        });
+
+        it('campos ausentes no rompen el matching', () => {
+            expect(productMatchesSearch({ id: 'x' }, '')).toBe(true);
+            expect(productMatchesSearch({ id: 'x', name: 'Arroz' }, 'arroz')).toBe(true);
+            expect(productMatchesSearch({}, 'undefined')).toBe(false);
         });
     });
 });

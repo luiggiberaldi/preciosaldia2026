@@ -20,6 +20,7 @@ import { deriveCartFields, resyncCartItems } from '../utils/cartSync'; // SYNC-C
 import SalesHeader from '../components/Sales/SalesHeader';
 import SearchBar from '../components/Sales/SearchBar';
 import CategoryBar from '../components/Sales/CategoryBar';
+import { productMatchesSearch } from '../utils/searchMatch';
 import CartPanel from '../components/Sales/CartPanel';
 import ReceiptModal from '../components/Sales/ReceiptModal';
 import CheckoutModal from '../components/Sales/CheckoutModal';
@@ -78,6 +79,26 @@ export default function SalesView({ triggerHaptic, isActive }) {
     const searchInputRef = useRef(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedIndex, setSelectedIndex] = useState(0);
+    // Modos de vista del buscador: hybrid (desplegable + grid) | list (solo
+    // desplegable) | grid (galería táctil). Persistido por caja.
+    const [posSearchViewMode, setPosSearchViewModeState] = useState(() => {
+        try {
+            const stored = localStorage.getItem('pos_search_view_mode');
+            return ['hybrid', 'list', 'grid'].includes(stored) ? stored : 'hybrid';
+        } catch {
+            return 'hybrid';
+        }
+    });
+
+    const handleSetPosSearchViewMode = (mode) => {
+        if (!['hybrid', 'list', 'grid'].includes(mode)) return;
+        setPosSearchViewModeState(mode);
+        try {
+            localStorage.setItem('pos_search_view_mode', mode);
+        } catch (e) {
+            console.error('Error al guardar pos_search_view_mode:', e);
+        }
+    };
     const [selectedCategory, setSelectedCategory] = useState('todos');
 
     // Modals
@@ -313,15 +334,12 @@ export default function SalesView({ triggerHaptic, isActive }) {
     // ── Derived (memos) ───────────────────────────
     const deferredSearchTerm = useDeferredValue(searchTerm);
 
+    // Filtro unificado grid/desplegable: mismo motor (matchesSearch) que usa
+    // CategoryBar para el grid — ignora tildes/mayúsculas y busca en
+    // nombre, código de barras e id.
     const searchResults = useMemo(() => {
         if (deferredSearchTerm.length < 1) return [];
-        const normalizedTerm = deferredSearchTerm.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-
-        return products.filter(p => {
-            if (p.barcode?.includes(deferredSearchTerm)) return true;
-            const normalizedName = p.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-            return normalizedName.includes(normalizedTerm);
-        }).slice(0, 6);
+        return products.filter(p => productMatchesSearch(p, deferredSearchTerm)).slice(0, 6);
     }, [deferredSearchTerm, products]);
 
     const filteredByCategory = useMemo(() => selectedCategory === 'todos'
@@ -672,7 +690,13 @@ export default function SalesView({ triggerHaptic, isActive }) {
             }
 
             // 4. Fallbacks de selección manual de texto
-            if (searchResults[selectedIndex]) {
+            // En modo galería no hay desplegable: Enter agrega el primer resultado.
+            if (posSearchViewMode === 'grid') {
+                if (searchResults.length > 0) {
+                    addToCart(searchResults[0]);
+                    handleSetSearchTerm('');
+                }
+            } else if (searchResults[selectedIndex]) {
                 addToCart(searchResults[selectedIndex]);
                 handleSetSearchTerm('');
             } else if (searchResults.length === 1) {
@@ -831,6 +855,8 @@ export default function SalesView({ triggerHaptic, isActive }) {
                                         onPasteBarcode={handlePasteBarcode}
                                         searchResults={searchResults}
                                         selectedIndex={selectedIndex} setSelectedIndex={setSelectedIndex}
+                                        posSearchViewMode={posSearchViewMode}
+                                        onViewModeChange={handleSetPosSearchViewMode}
                                         effectiveRate={effectiveRate}
                                         addToCart={addToCart}
                                         isRecording={isRecording} isProcessingAudio={isProcessingAudio} startRecording={startRecording} stopRecording={stopRecording}
@@ -867,6 +893,8 @@ export default function SalesView({ triggerHaptic, isActive }) {
                                     addToCart={addToCart}
                                     triggerHaptic={triggerHaptic}
                                     searchTerm={searchTerm}
+                                    deferredSearchTerm={deferredSearchTerm}
+                                    posSearchViewMode={posSearchViewMode}
                                     onOpenCustomAmount={() => setShowCustomAmountModal(true)}
                                     copEnabled={copEnabled}
                                     copPrimary={copPrimary}

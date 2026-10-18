@@ -1,5 +1,5 @@
 import { forwardRef, useState, useEffect, useRef } from 'react';
-import { Search, Mic, Package, X, Box } from 'lucide-react';
+import { Search, Mic, Package, X, Box, Layers, List, LayoutGrid } from 'lucide-react';
 import { BODEGA_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../config/categories';
 import { formatCop, formatUsd, getCop, getUsd } from '../../utils/calculatorUtils';
 import {
@@ -44,6 +44,10 @@ const SearchBar = forwardRef(function SearchBar({
     copEnabled,
     copPrimary,
     tasaCop,
+    // Modos de vista del buscador: hybrid (desplegable + grid) | list (solo
+    // desplegable) | grid (galería táctil, sin desplegable).
+    posSearchViewMode = 'hybrid',
+    onViewModeChange,
 }, ref) {
     return (
         <div className="relative">
@@ -61,9 +65,49 @@ const SearchBar = forwardRef(function SearchBar({
                     }
                 }}
                 placeholder="Buscar producto..."
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl py-3 pl-10 sm:pl-12 pr-14 sm:pr-20 text-slate-800 dark:text-white font-medium outline-none focus:ring-2 focus:ring-emerald-500/50 shadow-inner text-sm sm:text-base transition-all" />
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl py-3 pl-10 sm:pl-12 pr-32 sm:pr-40 text-slate-800 dark:text-white font-medium outline-none focus:ring-2 focus:ring-emerald-500/50 shadow-inner text-sm sm:text-base transition-all" />
 
-            <div className="absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 flex items-center pr-1 gap-0.5">
+            <div className="absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 flex items-center pr-1 gap-1">
+                {/* Conmutador de modo de vista en caja */}
+                <div className="flex items-center bg-slate-200/70 dark:bg-slate-800/80 p-0.5 rounded-lg shrink-0">
+                    <button
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => onViewModeChange?.('hybrid')}
+                        title="Modo Híbrido: Desplegable rápido + Cuadrícula táctil"
+                        className={`p-1 rounded-md transition-all ${posSearchViewMode === 'hybrid'
+                            ? 'bg-emerald-500 text-white shadow-xs font-bold'
+                            : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
+                        }`}
+                    >
+                        <Layers size={13} />
+                    </button>
+                    <button
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => onViewModeChange?.('list')}
+                        title="Modo Lista: Desplegable ultra-rápido para teclado"
+                        className={`p-1 rounded-md transition-all ${posSearchViewMode === 'list'
+                            ? 'bg-emerald-500 text-white shadow-xs font-bold'
+                            : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
+                        }`}
+                    >
+                        <List size={13} />
+                    </button>
+                    <button
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => onViewModeChange?.('grid')}
+                        title="Modo Galería: Cuadrícula visual para pantalla táctil"
+                        className={`p-1 rounded-md transition-all ${posSearchViewMode === 'grid'
+                            ? 'bg-emerald-500 text-white shadow-xs font-bold'
+                            : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
+                        }`}
+                    >
+                        <LayoutGrid size={13} />
+                    </button>
+                </div>
+
                 {searchTerm && (
                     <button onClick={() => { onSearchChange(''); ref.current?.focus(); }} className="text-slate-400 hover:text-slate-600 p-1.5 transition-colors">
                         <X size={18} />
@@ -91,8 +135,8 @@ const SearchBar = forwardRef(function SearchBar({
                 </button>
             </div>
 
-            {/* Search Dropdown */}
-            {searchResults.length > 0 && (
+            {/* Search Dropdown (oculto en modo galería: el grid es el buscador) */}
+            {posSearchViewMode !== 'grid' && searchResults.length > 0 && (
                 <div className="absolute top-full mt-2 left-0 right-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-20 overflow-hidden">
                     {searchResults.map((p, index) => {
                         const isLowStock = (p.stock ?? 0) <= (p.lowStockAlert ?? 5) && (p.stock ?? 0) >= 0;
