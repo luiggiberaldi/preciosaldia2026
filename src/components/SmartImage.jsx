@@ -11,17 +11,24 @@ async function findLoadableCandidate(candidates, startIndex = 0) {
         const candidate = candidates[index];
         if (candidate.startsWith('data:')) return { index, url: candidate };
 
+        // Si es una URL remota (http/https) o blob, los navegadores permiten que <img>
+        // la cargue de forma segura, mientras que fetch(HEAD) falla por política CORS
+        // entre dominios. La entregamos directamente a <img> y su onError manejará fallos.
+        if (!isLocalCatalogCandidate(candidate)) {
+            return { index, url: candidate };
+        }
+
         try {
-            // Validar antes de asignar `src` evita que un 404 llegue al elemento
+            // Validar antes de asignar `src` evita que un 404 local llegue al elemento
             // <img> y ensucie la consola con errores repetidos.
             const response = await fetch(candidate, {
                 method: 'HEAD',
                 cache: 'force-cache',
-                credentials: isLocalCatalogCandidate(candidate) ? 'same-origin' : 'omit',
+                credentials: 'same-origin',
             });
             if (response.ok) return { index, url: candidate };
         } catch {
-            // Imagen ausente, CORS u offline: probar el siguiente candidato.
+            // Imagen ausente o fuera de línea: probar el siguiente candidato local.
         }
     }
     return null;
