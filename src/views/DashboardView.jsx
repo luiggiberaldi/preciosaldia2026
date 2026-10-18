@@ -34,6 +34,10 @@ import MonitorView from './MonitorView';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { useGastosInternos } from '../hooks/useGastosInternos';
 import GastosInternosModal from '../components/GastosInternos/GastosInternosModal';
+import SmartImage from '../components/SmartImage';
+import { withLock } from '../utils/withLock';
+import { buildAporteCajaRecord } from '../utils/cajaAporte';
+import AporteCajaModal from '../components/Sales/AporteCajaModal';
 
 const SALES_KEY = 'bodega_sales_v1';
 
@@ -93,6 +97,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [voidSaleTarget, setVoidSaleTarget] = useState(null);
     const [isCashReconOpen, setIsCashReconOpen] = useState(false);
+    const [isAporteOpen, setIsAporteOpen] = useState(false);
     const [ticketPendingSale, setTicketPendingSale] = useState(null);
     const [ticketClientName, setTicketClientName] = useState('');
     const [ticketClientPhone, setTicketClientPhone] = useState('');
@@ -172,6 +177,38 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         sales,
         setSales
     });
+
+    const handleSaveAporteFromDashboard = async (data) => {
+        if (requireLogin && usuarioActivo?.rol !== 'ADMIN') {
+            showToast('Solo el administrador puede registrar aportes de efectivo.', 'error');
+            return false;
+        }
+
+        let record;
+        try {
+            record = buildAporteCajaRecord({ ...data, usuario: usuarioActivo });
+        } catch (err) {
+            showToast(err.message, 'error');
+            return false;
+        }
+
+        try {
+            await withLock('pos_write_lock', async () => {
+                const existingSales = await storageService.getItem(SALES_KEY, []);
+                await storageService.setItem(SALES_KEY, [...existingSales, record]);
+                setSales(prev => [record, ...prev]);
+            });
+            showToast('Aporte de efectivo registrado en caja', 'success');
+            auditLog('CAJA', 'APORTE_CAJA', `Aporte de efectivo registrado: $${record.aporteUsd || 0} / Bs ${record.aporteBs || 0}`);
+            if (triggerHaptic) triggerHaptic();
+            setIsAporteOpen(false);
+            return true;
+        } catch (error) {
+            console.error('Error al registrar aporte de caja desde inicio:', error);
+            showToast('Error al registrar el aporte', 'error');
+            return false;
+        }
+    };
 
     const recentSales = useMemo(() => getRecentSales(selectedChartDate), [getRecentSales, selectedChartDate]);
 
@@ -654,8 +691,8 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                     todayTotalCop={todayTotalCop}
                     onDailyClose={handleDailyClose}
                     onOpenGasto={() => setIsAddGastoOpen(true)}
+                    onOpenAporte={isAdmin && todayApertura ? () => setIsAporteOpen(true) : null}
                     onTasaClick={() => setShowMonitor(true)}
-                    onGoVentas={isAdmin && todayApertura ? () => onNavigate?.('ventas') : null}
                     triggerHaptic={triggerHaptic}
                 />
 
@@ -753,7 +790,13 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                         {outOfStockProducts.map(p => (
                             <div key={p.id} className="flex items-center gap-3">
                                 <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 overflow-hidden">
-                                    {p.image ? <img src={p.image} className="w-full h-full object-contain" /> : <Package size={14} className="text-slate-400" />}
+                                    <SmartImage
+                                        src={p.image}
+                                        product={p}
+                                        alt={p.name}
+                                        className="w-full h-full object-contain"
+                                        fallbackIcon={<Package size={14} className="text-slate-400" />}
+                                    />
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{p.name}</p>
@@ -777,7 +820,13 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                         {lowStockProducts.map(p => (
                             <div key={p.id} className="flex items-center gap-3">
                                 <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 overflow-hidden">
-                                    {p.image ? <img src={p.image} className="w-full h-full object-contain" /> : <Package size={14} className="text-slate-400" />}
+                                    <SmartImage
+                                        src={p.image}
+                                        product={p}
+                                        alt={p.name}
+                                        className="w-full h-full object-contain"
+                                        fallbackIcon={<Package size={14} className="text-slate-400" />}
+                                    />
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{p.name}</p>
@@ -937,6 +986,13 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 registrarAutoconsumo={registrarAutoconsumo}
                 anularGasto={anularGasto}
                 triggerHaptic={triggerHaptic}
+            />
+            <AporteCajaModal
+                isOpen={isAporteOpen}
+                onClose={() => setIsAporteOpen(false)}
+                onConfirm={handleSaveAporteFromDashboard}
+                copEnabled={copEnabled}
+                copPrimary={copPrimary}
             />
             {showMonitor && (
                 <div className="fixed inset-0 z-[150] bg-[#080E1C] flex flex-col">
