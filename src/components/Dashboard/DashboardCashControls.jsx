@@ -12,14 +12,15 @@ export default function DashboardCashControls({
     copPrimary,
     tasaCop,
     bcvRate,
-    todayCashFlow,
+    todayCashFlow = [],
     todayApertura,
-    todaySales,
-    todayTotalUsd,
-    todayTotalCop,
+    todaySales = [],
+    todayTotalUsd = 0,
+    todayTotalCop = 0,
     onDailyClose,
     onOpenGasto,
     onTasaClick,
+    onOpenAporte,
     onGoVentas,
     triggerHaptic,
 }) {
@@ -82,7 +83,7 @@ export default function DashboardCashControls({
                     </div>
                 )}
 
-                <div className={`grid grid-cols-1 ${isAdmin && todayApertura && onGoVentas ? 'sm:grid-cols-2' : ''} gap-3`}>
+                <div className={`grid grid-cols-1 ${isAdmin && todayApertura && (onOpenAporte || onGoVentas) ? 'sm:grid-cols-2' : ''} gap-3`}>
                     <button
                         type="button"
                         onClick={() => { triggerHaptic && triggerHaptic(); onOpenGasto && onOpenGasto(); }}
@@ -101,10 +102,14 @@ export default function DashboardCashControls({
                         <Plus size={18} className="text-rose-600 dark:text-rose-400" />
                     </span>
                     </button>
-                    {isAdmin && todayApertura && onGoVentas && (
+                    {isAdmin && todayApertura && (onOpenAporte || onGoVentas) && (
                         <button
                             type="button"
-                            onClick={() => { triggerHaptic && triggerHaptic(); onGoVentas(); }}
+                            onClick={() => {
+                                triggerHaptic && triggerHaptic();
+                                if (onOpenAporte) onOpenAporte();
+                                else if (onGoVentas) onGoVentas();
+                            }}
                             className="w-full min-h-[96px] bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-900/50 rounded-2xl p-4 shadow-sm active:scale-[0.98] transition-all flex items-center justify-between group"
                         >
                             <span className="flex items-center gap-3 min-w-0">
