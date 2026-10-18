@@ -9,6 +9,7 @@ import { showToast } from '../Toast';
 import { Save } from 'lucide-react';
 import { SUPERVISOR_REMOTE_PRODUCTS_ENABLED } from '../../config/supervisorPolicy';
 import { sendSupervisorCommand } from '../../services/supervisorCommandService';
+import { trackSupervisorCommand } from '../../services/supervisorCommandTracker';
 import { buildProductRevision, extractEditableProductPatch } from '../../services/supervisorContracts';
 
 export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId, productToEdit = null, remoteAvailable = true }) {
@@ -387,13 +388,18 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
                 return;
             }
 
-            const ack = await result.ackPromise;
-            if (!ack?.ok) {
-                showToast(ack?.error || 'La caja no confirmó la orden de producto', 'error');
-                return;
-            }
-
-            showToast(isEdit ? '✏️ Edición confirmada en la caja' : '➕ Producto creado en la caja', 'success');
+            // "Confirma y sigue": el modal se cierra al quedar la orden
+            // registrada; el resultado (éxito siempre, o error con motivo)
+            // llega como aviso del tracker.
+            trackSupervisorCommand({
+                commandId: result.commandId,
+                type: isEdit ? 'supervisor.product.update' : 'supervisor.product.create',
+                payload: isEdit ? undefined : { product: productPayload },
+                label: isEdit
+                    ? `la edición de "${productToEdit?.name || name || 'producto'}"`
+                    : `el alta de "${productPayload?.name || name || 'producto'}"`,
+                ackPromise: result.ackPromise,
+            });
             onClose();
         } catch (err) {
             console.error('[RemoteProductFormModal] Error enviando producto:', err);

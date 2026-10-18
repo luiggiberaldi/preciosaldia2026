@@ -3,6 +3,7 @@ import { X, Check, DollarSign, Euro, TrendingUp, Edit3 } from 'lucide-react';
 import { showToast } from '../Toast';
 import { SUPERVISOR_REMOTE_MUTATIONS_ENABLED, SUPERVISOR_REMOTE_RATE_ENABLED } from '../../config/supervisorPolicy';
 import { sendSupervisorCommand } from '../../services/supervisorCommandService';
+import { trackSupervisorCommand } from '../../services/supervisorCommandTracker';
 
 export default function SupervisorRateModal({ isOpen, onClose, targetDeviceId, currentRateMode, currentCustomRate, rates = {}, remoteAvailable = true }) {
     const [rateMode, setRateMode] = useState(currentRateMode || 'bcv');
@@ -60,19 +61,18 @@ export default function SupervisorRateModal({ isOpen, onClose, targetDeviceId, c
                 return;
             }
 
-            if (result.status === 'sent') {
-                showToast('📣 Notificación de tasa enviada a la caja', 'success');
-                onClose();
-                return;
-            }
-
-            const ack = await result.ackPromise;
-            if (!ack?.ok) {
-                showToast(ack?.error || 'La caja no confirmó el cambio de tasa', 'error');
-                return;
-            }
-
-            showToast('💱 Tasa de cambio confirmada en la caja', 'success');
+            // "Confirma y sigue": el modal se cierra al quedar la orden
+            // registrada. El resultado real (éxito o error con motivo) llega
+            // como aviso del tracker, también para la notificación de tasa.
+            trackSupervisorCommand({
+                commandId: result.commandId,
+                type: 'supervisor.rate.set',
+                payload: {
+                    rateMode,
+                    customRate: rateMode === 'manual' ? parseFloat(customRate) : null,
+                },
+                ackPromise: result.ackPromise,
+            });
             onClose();
         } catch (e) {
             console.error('[SupervisorRateModal] Error enviando orden de tasa:', e);

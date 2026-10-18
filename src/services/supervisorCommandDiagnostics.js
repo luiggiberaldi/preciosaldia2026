@@ -65,6 +65,65 @@ export function getReconciliations() {
     return reconciliations.map(entry => ({ ...entry }));
 }
 
+// ── Sellos de verificación (propuesta 7) ────────────────────────────────────
+// Análogo a las reconciliaciones: una entrada por commandId (la última gana)
+// con el nivel del evaluador ('received' | 'verified' | 'mismatch'). Es el
+// estado que el panel Control muestra como sello; se deriva del eco y puede
+// perderse sin drama (se re-calcula), igual que las reconciliaciones.
+
+export const SUPERVISOR_VERIFICATIONS_KEY = 'supervisor_verifications_v1';
+export const VERIFICATIONS_MAX_ENTRIES = 200;
+
+const VERIFICATION_LEVELS = ['received', 'verified', 'mismatch'];
+
+let verifications = [];
+let pendingVerificationWrite = Promise.resolve();
+
+/** Registro del sello de verificación de un comando (la última entrada gana). */
+export function recordVerification({
+    commandId,
+    level,
+    detail = null,
+    checkedAt = null,
+    at = new Date().toISOString(),
+} = {}) {
+    try {
+        const id = String(commandId || '');
+        if (!id || !VERIFICATION_LEVELS.includes(level)) return null;
+        verifications = verifications.filter(entry => entry.commandId !== id);
+        const entry = { commandId: id, level, detail, checkedAt, at };
+        verifications.push(entry);
+        if (verifications.length > VERIFICATIONS_MAX_ENTRIES) {
+            verifications = verifications.slice(-VERIFICATIONS_MAX_ENTRIES);
+        }
+        pendingVerificationWrite = pendingVerificationWrite
+            .then(() => storageService.setItem(SUPERVISOR_VERIFICATIONS_KEY, verifications))
+            .catch(() => {
+                // Sin almacenamiento disponible el registro sigue vivo en memoria.
+            });
+        return entry;
+    } catch {
+        return null;
+    }
+}
+
+export function getVerifications() {
+    return verifications.map(entry => ({ ...entry }));
+}
+
+export async function readVerifications({ storage = storageService } = {}) {
+    try {
+        const stored = await storage.getItem(SUPERVISOR_VERIFICATIONS_KEY, []);
+        return Array.isArray(stored) && stored.length ? stored : getVerifications();
+    } catch {
+        return getVerifications();
+    }
+}
+
+export function flushVerifications() {
+    return pendingVerificationWrite;
+}
+
 export async function readReconciliations({ storage = storageService } = {}) {
     try {
         const stored = await storage.getItem(SUPERVISOR_RECONCILIATIONS_KEY, []);
@@ -222,12 +281,14 @@ export async function loadCommandDiagnostics({ storage = storageService } = {}) 
     }
 }
 
-/** Limpia ambas fuentes (memoria y persistencia). */
+/** Limpia todas las fuentes (memoria y persistencia). */
 export async function clearCommandDiagnostics({ storage = storageService } = {}) {
     reconciliations = [];
+    verifications = [];
     await Promise.all([
         clearAckTelemetry({ storage }).catch(() => {}),
         storage.setItem(SUPERVISOR_RECONCILIATIONS_KEY, []).catch(() => {}),
+        storage.setItem(SUPERVISOR_VERIFICATIONS_KEY, []).catch(() => {}),
     ]);
 }
 
@@ -238,6 +299,12 @@ export default {
     getReconciliations,
     readReconciliations,
     flushReconciliations,
+    SUPERVISOR_VERIFICATIONS_KEY,
+    VERIFICATIONS_MAX_ENTRIES,
+    recordVerification,
+    getVerifications,
+    readVerifications,
+    flushVerifications,
     percentileOf,
     shortCommandId,
     commandTypeLabel,

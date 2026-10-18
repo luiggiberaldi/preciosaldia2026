@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Users, UserPlus, KeyRound, Shield, ShoppingCart, Trash2, Edit2, Check, X } from 'lucide-react';
+import { Users, UserPlus, Shield, ShoppingCart, Trash2, X } from 'lucide-react';
 import { storageService } from '../../utils/storageService';
 import { showToast } from '../Toast';
 import { SUPERVISOR_REMOTE_MUTATIONS_ENABLED } from '../../config/supervisorPolicy';
 import { sendSupervisorCommand } from '../../services/supervisorCommandService';
+import { trackSupervisorCommand } from '../../services/supervisorCommandTracker';
 import { hashPin } from '../../utils/crypto';
 import { validatePin } from '../../utils/securityConstants';
 import SupervisorSelect from './SupervisorSelect';
@@ -12,9 +13,6 @@ export default function RemoteUsersManager({ targetDeviceId }) {
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
-    const [selectedUser, setSelectedUser] = useState(null);
-    const [showPinModal, setShowPinModal] = useState(false);
-    const [newPin, setNewPin] = useState('');
 
     const [formUser, setFormUser] = useState({
         nombre: '',
@@ -63,9 +61,10 @@ export default function RemoteUsersManager({ targetDeviceId }) {
         }
 
         try {
+            // El PIN no se cambia desde el supervisor (retirado el 2026-10-18):
+            // solo el alta de usuarios viaja con PIN inicial hasheado.
             const typeByAction = {
                 add: 'supervisor.user.create',
-                change_pin: 'supervisor.user.pin.change',
                 edit: 'supervisor.user.update',
                 delete: 'supervisor.user.delete',
             };
@@ -75,8 +74,8 @@ export default function RemoteUsersManager({ targetDeviceId }) {
                 return false;
             }
 
-            const pinInput = payload.newPin ?? payload.pin;
-            const pinError = ['add', 'change_pin'].includes(payload.action)
+            const pinInput = payload.action === 'add' ? (payload.newPin ?? payload.pin) : null;
+            const pinError = payload.action === 'add'
                 ? validatePin(String(pinInput ?? ''))
                 : null;
             if (pinError) {
@@ -90,7 +89,7 @@ export default function RemoteUsersManager({ targetDeviceId }) {
                 rol: payload.rol,
                 userId: payload.userId,
                 bypassPin: payload.bypassPin,
-                pinHash,
+                ...(pinHash ? { pinHash } : {}),
                 patch: payload.action === 'edit'
                     ? { nombre: payload.nombre, rol: payload.rol, bypassPin: payload.bypassPin }
                     : undefined,
@@ -106,13 +105,14 @@ export default function RemoteUsersManager({ targetDeviceId }) {
                 return false;
             }
 
-            const ack = await result.ackPromise;
-            if (!ack?.ok) {
-                showToast(ack?.error || 'La caja no confirmó la orden de usuario', 'error');
-                return false;
-            }
-
-            showToast('👤 Orden de usuario confirmada en la caja', 'success');
+            // "Confirma y sigue": la orden quedó registrada; el resultado
+            // (éxito siempre, o error con motivo) llega como aviso del tracker.
+            trackSupervisorCommand({
+                commandId: result.commandId,
+                type,
+                payload: { ...commandPayload, nombre: payload.nombre },
+                ackPromise: result.ackPromise,
+            });
             return true;
         } catch (e) {
             console.error('[RemoteUsersManager] Error enviando orden:', e);
@@ -128,34 +128,18 @@ export default function RemoteUsersManager({ targetDeviceId }) {
             return;
         }
 
-        await sendUserCommand({
+        const sent = await sendUserCommand({
             action: 'add',
             nombre: formUser.nombre.trim(),
             rol: formUser.rol,
             newPin: formUser.pin || '000000',
             bypassPin: formUser.bypassPin
         });
+        // Envío fallido: el modal permanece abierto con el error a la vista.
+        if (!sent) return;
 
         setShowAddModal(false);
         setFormUser({ nombre: '', rol: 'CAJERO', pin: '', bypassPin: false });
-    };
-
-    const handleResetPin = async (e) => {
-        e.preventDefault();
-        if (!newPin || newPin.length < 4) {
-            showToast('El nuevo PIN debe tener al menos 4 dígitos', 'error');
-            return;
-        }
-
-        await sendUserCommand({
-            action: 'change_pin',
-            userId: selectedUser.id,
-            newPin: newPin
-        });
-
-        setShowPinModal(false);
-        setSelectedUser(null);
-        setNewPin('');
     };
 
     const handleDeleteUser = async (user) => {
@@ -176,7 +160,7 @@ export default function RemoteUsersManager({ targetDeviceId }) {
                         <Users className="w-5 h-5 text-indigo-500" />
                         <span>Cajeros y Personal</span>
                     </h3>
-                    <p className="text-xs text-slate-500 font-medium mt-0.5">Gestión remota de usuarios y reseteo de claves de acceso</p>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">Gestión remota de usuarios de la caja</p>
                 </div>
                 <button
                     onClick={() => setShowAddModal(true)}
@@ -213,15 +197,8 @@ export default function RemoteUsersManager({ targetDeviceId }) {
                                         </div>
                                     </div>
                                     
-                                    {/* Action buttons */}
+                                    {/* Action buttons: el PIN no se cambia desde el supervisor */}
                                     <div className="flex items-center gap-1">
-                                        <button
-                                            title="Resetear PIN"
-                                            onClick={() => { setSelectedUser(u); setShowPinModal(true); }}
-                                            className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-lg transition-colors"
-                                        >
-                                            <KeyRound className="w-4 h-4" />
-                                        </button>
                                         {!isAdmin && (
                                             <button
                                                 title="Eliminar usuario"
@@ -295,41 +272,6 @@ export default function RemoteUsersManager({ targetDeviceId }) {
                 </div>
             )}
 
-            {/* Modal: Reset PIN */}
-            {showPinModal && selectedUser && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 max-w-sm w-full max-h-[92vh] overflow-y-auto custom-scrollbar shadow-2xl space-y-4">
-                        <div className="flex items-center justify-between gap-3">
-                            <h3 className="text-base font-black text-slate-800 dark:text-white truncate">Resetear PIN de {selectedUser.nombre}</h3>
-                            <button 
-                                onClick={() => setShowPinModal(false)}
-                                className="min-h-11 min-w-11 flex items-center justify-center p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                                aria-label="Cerrar modal"
-                            >
-                                <X className="w-5 h-5 text-slate-400" />
-                            </button>
-                        </div>
-                        <form onSubmit={handleResetPin} className="space-y-4">
-                            <div>
-                                <label className="text-xs font-bold text-slate-400">Nuevo PIN de Acceso</label>
-                                <input
-                                    type="password"
-                                    required
-                                    maxLength={6}
-                                    placeholder="123456"
-                                    value={newPin}
-                                    onChange={e => setNewPin(e.target.value)}
-                                    className="w-full mt-1 min-h-11 p-3 bg-slate-50 dark:bg-slate-800 border rounded-xl font-bold text-sm text-center tracking-widest"
-                                />
-                            </div>
-                            <div className="flex gap-2 pt-2">
-                                <button type="button" onClick={() => setShowPinModal(false)} className="flex-1 min-h-11 py-3 bg-slate-100 dark:bg-slate-800 font-bold text-sm rounded-xl">Cancelar</button>
-                                <button type="submit" className="flex-1 min-h-11 py-3 bg-indigo-600 text-white font-bold text-sm rounded-xl">Guardar PIN</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }

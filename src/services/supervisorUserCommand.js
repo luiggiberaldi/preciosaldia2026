@@ -58,13 +58,10 @@ export async function applySupervisorUserCommand(storage, payload = {}, { onUser
         };
         nextUsers = [...users, user];
         changedUser = user;
-    } else if (action === 'change_pin') {
-        const userId = requireUserId(payload.userId);
-        const index = users.findIndex(user => Number(user.id) === userId);
-        if (index < 0) throw new Error('Usuario no encontrado en la caja');
-        changedUser = { ...users[index], pin: requirePinHash(payload.pinHash) };
-        nextUsers = users.map((user, currentIndex) => currentIndex === index ? changedUser : user);
     } else if (action === 'edit') {
+        // El PIN no se cambia por canal remoto (retirado 2026-10-18): 'change_pin'
+        // ya no es una acción válida y las ediciones ignoran cualquier campo de
+        // PIN; solo el alta de usuarios define un PIN inicial hasheado.
         const userId = requireUserId(payload.userId);
         const index = users.findIndex(user => Number(user.id) === userId);
         if (index < 0) throw new Error('Usuario no encontrado en la caja');
@@ -73,7 +70,6 @@ export async function applySupervisorUserCommand(storage, payload = {}, { onUser
         if (patch.nombre !== undefined) next.nombre = requireUserName(patch.nombre);
         if (patch.rol !== undefined) next.rol = requireRole(patch.rol);
         if (patch.bypassPin !== undefined) next.requirePin = patch.bypassPin !== true;
-        if (patch.pinHash !== undefined) next.pin = requirePinHash(patch.pinHash);
         changedUser = next;
         nextUsers = users.map((user, currentIndex) => currentIndex === index ? next : user);
     } else if (action === 'delete') {

@@ -3,14 +3,18 @@ import { supabaseCloud } from '../config/supabaseCloud';
 import {
     CONTROL_PAGE_SIZE,
     CONTROL_POLL_INTERVAL_MS,
+    CONTROL_STATUS,
     cancelSupervisorCommand,
     fetchSupervisorControlCommands,
     fetchSupervisorControlCounts,
     fetchSupervisorControlDetail,
+    getControlStatus,
 } from '../services/supervisorControlService';
 import { sendSupervisorCommand } from '../services/supervisorCommandService';
+import { describeSupervisorCommand, trackSupervisorCommand } from '../services/supervisorCommandTracker';
+import { getVerifications, readVerifications } from '../services/supervisorCommandDiagnostics';
 
-export function useSupervisorControl({ targetDeviceId, enabled = false } = {}) {
+export function useSupervisorControl({ targetDeviceId, enabled = false, onCommandRow = null } = {}) {
     const [commands, setCommands] = useState([]);
     const [counts, setCounts] = useState({ total: 0, pending: 0, applied: 0, warnings: 0, failed: 0, cancelled: 0 });
     const [page, setPage] = useState(0);
@@ -21,7 +25,20 @@ export function useSupervisorControl({ targetDeviceId, enabled = false } = {}) {
     const [selectedCommand, setSelectedCommand] = useState(null);
     const [detailLoading, setDetailLoading] = useState(false);
     const [actionId, setActionId] = useState(null);
+    // Sellos de verificación (propuesta 7): uno por commandId, la última gana.
+    const [verifications, setVerifications] = useState([]);
     const refreshTimerRef = useRef(null);
+    // El canal de comandos vive fuera del gating de la pestaña Control (propuesta
+    // 8: avisos de equipo con Control cerrado). Estas refs evitan re-crear el
+    // canal y capturan el último callback/flag en cada render.
+    const onCommandRowRef = useRef(onCommandRow);
+    onCommandRowRef.current = onCommandRow;
+    const enabledRef = useRef(enabled);
+    enabledRef.current = enabled;
+
+    const refreshVerifications = useCallback(() => {
+        setVerifications(getVerifications());
+    }, []);
 
     const refresh = useCallback(async ({ silent = false, nextPage = page } = {}) => {
         if (!enabled || !targetDeviceId) return;
@@ -67,20 +84,21 @@ export function useSupervisorControl({ targetDeviceId, enabled = false } = {}) {
         setRefreshing(false);
     }, [enabled, page, targetDeviceId]);
 
+    // Canal ÚNICO de `supervisor_commands`: vive mientras hay caja vinculada,
+    // sin depender de la pestaña Control (propuesta 8). Cada evento se reenvía
+    // por onCommandRow (avisos de equipo) y solo pinta la lista cuando la
+    // pestaña está abierta (enabledRef). Abrir/cerrar Control no re-crea ni
+    // duplica el canal.
     useEffect(() => {
-        if (!enabled || !targetDeviceId) {
-            setCommands([]);
-            setCounts({ total: 0, pending: 0, applied: 0, warnings: 0, failed: 0, cancelled: 0 });
-            setSelectedCommand(null);
-            return undefined;
-        }
-        refresh({ nextPage: 0 });
+        if (!targetDeviceId) return undefined;
         const channel = supabaseCloud?.channel(`supervisor-control:${targetDeviceId}`)
             .on('postgres_changes', {
                 event: '*', schema: 'public', table: 'supervisor_commands',
                 filter: `target_device_id=eq.${targetDeviceId}`,
-            }, ({ new: row }) => {
-                if (!row?.command_id) return;
+            }, (payload) => {
+                const row = payload?.new;
+                onCommandRowRef.current?.(row, { eventType: payload?.eventType || null });
+                if (!row?.command_id || !enabledRef.current) return;
                 setCommands(current => {
                     const without = current.filter(command => command.command_id !== row.command_id);
                     return [row, ...without].sort((a, b) => new Date(b.created_at || b.issued_at) - new Date(a.created_at || a.issued_at)).slice(0, CONTROL_PAGE_SIZE);
@@ -98,6 +116,21 @@ export function useSupervisorControl({ targetDeviceId, enabled = false } = {}) {
         return () => {
             if (channel) supabaseCloud.removeChannel(channel).catch(() => {});
         };
+    }, [targetDeviceId]);
+
+    useEffect(() => {
+        if (!enabled || !targetDeviceId) {
+            setCommands([]);
+            setCounts({ total: 0, pending: 0, applied: 0, warnings: 0, failed: 0, cancelled: 0 });
+            setSelectedCommand(null);
+            setVerifications([]);
+            return undefined;
+        }
+        refresh({ nextPage: 0 });
+        // Los sellos persistidos se restauran al abrir; los nuevos se leen con
+        // refreshVerifications() tras cada evaluación del eco.
+        readVerifications().then(entries => setVerifications(entries)).catch(() => {});
+        return undefined;
     }, [enabled, targetDeviceId]);
 
     useEffect(() => {
@@ -123,6 +156,26 @@ export function useSupervisorControl({ targetDeviceId, enabled = false } = {}) {
         return result;
     }, [refresh]);
 
+    // Propuesta 6 ("poder arrepentirse"): anula TODOS los pendientes propios.
+    // Nunca promete más de lo que el RPC confirma: cada comando devuelve su
+    // resultado real y lo que la caja ya tomó se reporta como no anulado.
+    const cancelAll = useCallback(async () => {
+        const pending = commands.filter(command => getControlStatus(command) === CONTROL_STATUS.PENDING);
+        let cancelled = 0;
+        const notCancelled = [];
+        for (const command of pending) {
+            const result = await cancelSupervisorCommand({ commandId: command.command_id });
+            if (result.ok) cancelled += 1;
+            else notCancelled.push({
+                commandId: command.command_id,
+                status: result.status || 'unknown',
+                error: result.error,
+            });
+        }
+        if (pending.length) await refresh({ silent: true });
+        return { total: pending.length, cancelled, notCancelled };
+    }, [commands, refresh]);
+
     const retry = useCallback(async (command) => {
         if (!command?.payload || !['failed', 'rejected'].includes(command.status)) {
             return { ok: false, error: 'Solo se pueden reintentar órdenes fallidas o rechazadas' };
@@ -133,8 +186,19 @@ export function useSupervisorControl({ targetDeviceId, enabled = false } = {}) {
             targetDeviceId: command.target_device_id,
             payload: command.payload,
         });
-        if (!result.ok) setError(result.error);
-        else await refresh({ silent: true });
+        if (!result.ok) {
+            setError(result.error);
+        } else {
+            // "Confirma y sigue": el reintento también termina en aviso final.
+            trackSupervisorCommand({
+                commandId: result.commandId,
+                type: command.command_type,
+                payload: command.payload,
+                label: `el reintento de ${describeSupervisorCommand(command.command_type, command.payload)}`,
+                ackPromise: result.ackPromise,
+            });
+            await refresh({ silent: true });
+        }
         setActionId(null);
         return result;
     }, [refresh]);
@@ -151,10 +215,13 @@ export function useSupervisorControl({ targetDeviceId, enabled = false } = {}) {
         selectedCommand,
         detailLoading,
         actionId,
+        verifications,
         refresh,
+        refreshVerifications,
         openDetail,
         closeDetail: () => setSelectedCommand(null),
         cancel,
+        cancelAll,
         retry,
         setPage: nextPage => refresh({ nextPage }),
     };

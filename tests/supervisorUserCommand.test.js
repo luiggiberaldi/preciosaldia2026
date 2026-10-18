@@ -35,14 +35,32 @@ describe('Supervisor user commands', () => {
         expect(storage.values['bodega_users_catalog_v1'][1]).not.toHaveProperty('pin');
     });
 
-    it('updates a PIN and rejects deletion of the last administrator', async () => {
+    // Comportamiento nuevo (2026-10-18): el PIN ya NO se cambia por el canal
+    // del supervisor. 'change_pin' dejó de existir y las ediciones jamás tocan
+    // el PIN, aunque el patch intente pasarlo. Por eso el test cambia de
+    // "cambia el PIN" a "rechaza el cambio de PIN".
+    it('ya no permite cambiar PINs por canal remoto y protege al último administrador', async () => {
         const storage = makeStorage([{ id: 1, nombre: 'Admin', rol: 'ADMIN', pin: pinHash }]);
 
         await expect(applySupervisorUserCommand(storage, {
             action: 'change_pin',
             userId: 1,
             pinHash: '123456',
-        })).rejects.toThrow('PIN remoto');
+        })).rejects.toThrow('Acción de usuario inválida');
+
+        await expect(applySupervisorUserCommand(storage, {
+            action: 'change_pin',
+            userId: 1,
+            pinHash: 'pbkdf2$250000$c2FsdA==$bmV3',
+        })).rejects.toThrow('Acción de usuario inválida');
+
+        const result = await applySupervisorUserCommand(storage, {
+            action: 'edit',
+            userId: 1,
+            patch: { nombre: 'Admin Principal', pinHash: 'pbkdf2$250000$c2FsdA==$bmV3' },
+        });
+        expect(result.user.nombre).toBe('Admin Principal');
+        expect(storage.values['abasto-auth-storage'].state.usuarios[0].pin).toBe(pinHash);
 
         await expect(applySupervisorUserCommand(storage, {
             action: 'delete',

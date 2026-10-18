@@ -73,8 +73,14 @@ describe('Supervisor lifecycle guardrails', () => {
         expect(pairingState).toContain('monitor_device_id_2');
     });
 
-    it('bloquea acciones remotas cuando el monitor está desconectado', () => {
+    // Comportamiento nuevo (propuesta 5, 2026-10-18): el test cambia de
+    // "bloquea cuando está desconectado" a "guarda en la cola local", que es lo
+    // que pide el plan de propuestas aprobado: los cambios esperan guardados y
+    // se suben solos cuando vuelve la conexión.
+    it('sin conexión los cambios esperan en la cola local en vez de bloquearse', () => {
         expect(ownerMonitor).toContain('remoteActionsAvailable');
-        expect(ownerMonitor).toContain('La caja está desconectada');
+        expect(ownerMonitor).toContain('enqueueSupervisorCommand');
+        expect(ownerMonitor).toContain('LocalQueueBanner');
+        expect(ownerMonitor).toContain('Cambio guardado en la cola');
     });
 });

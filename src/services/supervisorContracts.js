@@ -84,19 +84,31 @@ export function validateSupervisorSyncDocument(docId, payload) {
         : { valid: false, error: `Schema inválido: ${docId}` };
 }
 
+// El PIN NO se cambia por el canal del supervisor: 'supervisor.user.pin.change'
+// se retiró de la lista (2026-10-18). validateSupervisorCommand rechaza el tipo
+// tanto al emitir como al aplicar, y las ediciones de usuario no pueden llevar
+// campos de PIN. Queda en COMMAND_EXTENDED_TTL_TYPES solo por compatibilidad
+// histórica; volver a habilitarlo exige reañadir validación de payload.
 export const SUPERVISOR_COMMAND_TYPES = Object.freeze([
     'supervisor.rate.set',
     'supervisor.product.create',
     'supervisor.product.update',
     'supervisor.product.delete',
     'supervisor.user.create',
-    'supervisor.user.pin.change',
     'supervisor.user.update',
     'supervisor.user.delete',
     'supervisor.shift.close',
     'supervisor.shift.reopen',
     'supervisor.inventory.batch.adjust',
 ]);
+
+// Campos de PIN que jamás deben viajar en una edición de usuario remota.
+const USER_PIN_FIELDS = Object.freeze(['pin', 'pinHash', 'newPin', 'plainPin']);
+
+function carriesPinChange(value) {
+    return isPlainObject(value)
+        && USER_PIN_FIELDS.some(key => value[key] !== undefined && value[key] !== null);
+}
 
 // Fase 5 — TTL por tipo. Los comandos sensibles al tiempo conservan 60 s; los
 // de catálogo/inventario/usuarios admiten 5 min para sobrevivir cortes de red.
@@ -235,12 +247,13 @@ function validateCommandPayload(type, payload) {
                 && ['CAJERO', 'ADMIN'].includes(payload.rol)
                 && typeof payload.pinHash === 'string'
                 && /^pbkdf2\$\d+\$[^$]+\$[^$]+$/.test(payload.pinHash);
-        case 'supervisor.user.pin.change':
-            return Number.isFinite(payload.userId)
-                && typeof payload.pinHash === 'string'
-                && /^pbkdf2\$\d+\$[^$]+\$[^$]+$/.test(payload.pinHash);
         case 'supervisor.user.update':
-            return Number.isFinite(payload.userId) && isPlainObject(payload.patch);
+            // La edición remota jamás cambia PINs (ni en el payload ni en el
+            // patch); si llega uno, el comando entero se rechaza.
+            return Number.isFinite(payload.userId)
+                && isPlainObject(payload.patch)
+                && !carriesPinChange(payload)
+                && !carriesPinChange(payload.patch);
         case 'supervisor.user.delete':
             return Number.isFinite(payload.userId);
         case 'supervisor.shift.close':

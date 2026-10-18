@@ -19,7 +19,13 @@ import {
 } from '../services/supervisorCommandService';
 import { applySupervisorInventoryBatchTransaction, retryInventoryPublish } from '../services/supervisorInventoryCommand';
 import { finishAckTelemetry, markAckTelemetry } from '../services/supervisorAckTelemetry';
-import { applySupervisorProductCommand } from '../services/supervisorProductCommand';
+import {
+    applySupervisorProductCommand,
+    classifyProductPublishResult,
+    clearProductPublishPending,
+    markProductPublishPending,
+    readProductPublishPending,
+} from '../services/supervisorProductCommand';
 import { applySupervisorUserCommand } from '../services/supervisorUserCommand';
 
 function rowToCommand(row, deviceId) {
@@ -216,6 +222,7 @@ export function useRemoteCommands(deviceId, enabled = true) {
 
         const applyProductCommand = async (payload) => {
             let result;
+            let publish = null;
             await withLock('pos_write_lock', async () => {
                 const currentProducts = await storageService.getItem('bodega_products_v1', []) || [];
                 result = applySupervisorProductCommand(currentProducts, payload);
@@ -230,9 +237,19 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 } finally {
                     markAckTelemetry(payload.commandId, 'publish_end');
                 }
-                if (!pushResult.ok && !pushResult.skipped) {
+                // `skipped` NO es publicado: si el push se salta, el cambio queda
+                // aplicado solo en la caja y el ACK no puede decir "applied" liso.
+                publish = classifyProductPublishResult(pushResult);
+                if (publish.rollback) {
                     await storageService.setItem('bodega_products_v1', currentProducts);
-                    throw new Error(pushResult.error);
+                    throw new Error(pushResult?.error || 'No se pudo publicar el producto');
+                }
+                if (publish.published) {
+                    clearProductPublishPending();
+                } else {
+                    // Aplicado localmente pero sin publicación confirmada: queda
+                    // marcado y el barrido periódico re-publica hasta confirmar.
+                    markProductPublishPending(payload.commandId);
                 }
                 window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_products_v1', source: 'remote' } }));
             });
@@ -241,7 +258,7 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 commandId: payload.commandId,
                 action: result.action,
                 productId: result.productId,
-                status: 'applied',
+                status: publish?.status || 'applied',
             };
         };
 
@@ -514,12 +531,16 @@ export function useRemoteCommands(deviceId, enabled = true) {
                     appliedPayload = await applyProductCommand({
                         action: 'edit',
                         product: { id: command.payload.productId, ...command.payload.patch },
+                        // El contrato admite baseRevision arriba y dentro del patch:
+                        // se reenvía la de arriba para que cualquiera de las dos
+                        // formas funcione (antes solo vivía dentro del patch).
+                        baseRevision: command.payload.baseRevision,
                         baseUpdatedAt: command.payload.baseUpdatedAt,
                         commandId: row.command_id,
                     });
                     showToast('📦 Producto actualizado por el Supervisor', 'success');
                 } else if (command.type === 'supervisor.product.delete') {
-                    await applyProductCommand({ action: 'delete', productId: command.payload.productId, commandId: row.command_id });
+                    appliedPayload = await applyProductCommand({ action: 'delete', productId: command.payload.productId, commandId: row.command_id });
                     showToast('📦 Producto eliminado por el Supervisor', 'success');
                 } else if (command.type === 'supervisor.inventory.batch.adjust') {
                     appliedPayload = await applyInventoryBatchCommand(command.payload, row.command_id);
@@ -677,8 +698,45 @@ export function useRemoteCommands(deviceId, enabled = true) {
 
         initialize();
 
+        // La publicación pendiente de un lote ya aplicado localmente no puede
+        // depender de que llegue otro comando exitoso: si los reintentos nuevos
+        // mueren en el guard de concurrencia (stock creído ≠ stock sincronizado),
+        // nada volvería a publicar y el monitor quedaría desactualizado para
+        // siempre. Se reintenta al arrancar y periódicamente (sin trabajo cuando
+        // no hay journal pendiente).
+        const retryPendingPublish = async () => {
+            try {
+                await retryInventoryPublish({ storage: storageService, pushSync: pushCloudSync });
+            } catch (publishError) {
+                supervisorLog('Reintento de publicación pendiente falló', {
+                    error: publishError?.message || publishError,
+                });
+            }
+            // Productos: un comando puede quedar aplicado localmente sin
+            // publicación confirmada (pushCloudSync "skipped"); se re-publica el
+            // catálogo actual hasta que la nube confirme. Siempre empuja el
+            // snapshot acumulado, así que un lote de cambios se subsume.
+            try {
+                if (readProductPublishPending()) {
+                    const currentProducts = (await storageService.getItem('bodega_products_v1', [])) || [];
+                    const pushResult = await pushCloudSync('bodega_products_v1', currentProducts, true);
+                    if (pushResult?.ok) {
+                        clearProductPublishPending();
+                        supervisorLog('Catálogo de productos re-publicado (publicación pendiente resuelta)', {});
+                    }
+                }
+            } catch (publishError) {
+                supervisorLog('Reintento de publicación de productos falló', {
+                    error: publishError?.message || publishError,
+                });
+            }
+        };
+        void retryPendingPublish();
+        const pendingPublishTimer = setInterval(() => { void retryPendingPublish(); }, 30000);
+
         return () => {
             disposed = true;
+            clearInterval(pendingPublishTimer);
             clearRecoveryTimer();
             window.removeEventListener('supervisor_pairing_revoked', handlePairingRevoked);
             window.removeEventListener('supervisor_pairing_active', handlePairingActive);

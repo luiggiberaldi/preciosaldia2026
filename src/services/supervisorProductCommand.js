@@ -1,5 +1,53 @@
 const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
+// ── Publicación del catálogo tras un comando de producto ────────────────────
+// Un comando puede dejar el estado local aplicado y durable SIN confirmación de
+// publicación (pushCloudSync devuelve skipped cuando hay un cambio remoto en
+// aplicación o el sync no está activo). Tratar eso como éxito era el mismo
+// riesgo de "aplicado sin sincronizar" del flujo de inventario: el ACK decía
+// aplicado y el monitor nunca veía el cambio. La marca pendiente activa el
+// re-intento periódico hasta que la nube confirme.
+export const PRODUCT_PUBLISH_PENDING_KEY = 'pda_product_publish_pending_v1';
+
+export function markProductPublishPending(commandId = null, storage = globalThis.localStorage) {
+    try {
+        storage?.setItem(PRODUCT_PUBLISH_PENDING_KEY, JSON.stringify({ commandId, at: new Date().toISOString() }));
+    } catch { /* best effort: el barrido es una red de seguridad, no el camino principal */ }
+}
+
+export function clearProductPublishPending(storage = globalThis.localStorage) {
+    try {
+        storage?.removeItem(PRODUCT_PUBLISH_PENDING_KEY);
+    } catch { /* best effort */ }
+}
+
+export function readProductPublishPending(storage = globalThis.localStorage) {
+    try {
+        const raw = storage?.getItem(PRODUCT_PUBLISH_PENDING_KEY);
+        return raw ? JSON.parse(raw) : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Clasifica el resultado de publicar el catálogo tras un comando de producto:
+ *  - ok (incluye 'Sin cambios') → publicado: el doc remoto refleja el cambio.
+ *  - skipped sin ok → NO publicado pero aplicado localmente: confirmación con
+ *    advertencia + re-publicación pendiente (sin revertir el cambio local).
+ *  - fallo real → nada confirma el cambio hacia el monitor: se revierte y el
+ *    comando falla (reintentable por el supervisor).
+ */
+export function classifyProductPublishResult(pushResult) {
+    if (pushResult?.ok) {
+        return { status: 'applied', published: true, pending: false, rollback: false };
+    }
+    if (pushResult?.skipped) {
+        return { status: 'applied_with_warnings', published: false, pending: true, rollback: false };
+    }
+    return { status: 'failed', published: false, pending: false, rollback: true };
+}
+
 function requireProductId(value) {
     if (typeof value !== 'string' || value.trim() === '') {
         throw new Error('Producto inválido');
@@ -248,4 +296,9 @@ export default {
     resolveEffectivePriceUsd,
     EDITABLE_PRODUCT_FIELDS,
     normalizeProductFieldValue,
+    PRODUCT_PUBLISH_PENDING_KEY,
+    markProductPublishPending,
+    clearProductPublishPending,
+    readProductPublishPending,
+    classifyProductPublishResult,
 };
