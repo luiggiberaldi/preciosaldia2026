@@ -1,0 +1,45 @@
+# CI — gates de calidad en cada push (mismos comandos que los hooks locales).
+#
+#   lint       → eslint (falla con errores; warnings no bloquean)
+#   typecheck  → tsc --noEmit (cubre .ts y configs; ESLint cubre los .jsx)
+#   test       → vitest run (suite completa, excluye tests/e2e)
+#   build      → vite build
+#
+# Los e2e de Playwright (tests/e2e) viven en el gate pre-push local (githooks/pre-push)
+# porque levantan dev server; si se quiere mover a CI, añadir un job con
+# `bunx playwright install --with-deps` y `bun run test:e2e`.
+
+name: CI
+
+on:
+  push:
+    branches: [preview/all-changes-oct14, main]
+  workflow_dispatch:
+
+jobs:
+  gates:
+    name: Lint · Typecheck · Test · Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # Misma versión de bun que el equipo (bun.lock es formato texto: Bun >= 1.2).
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Instalar dependencias
+        run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Tests
+        run: bun run test
+
+      - name: Build
+        run: bun run build
