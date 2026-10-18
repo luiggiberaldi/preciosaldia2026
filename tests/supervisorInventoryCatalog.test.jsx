@@ -140,6 +140,40 @@ describe('SupervisorInventoryCatalog Visual Component', () => {
         expect(within(row1).getAllByText('25%').length).toBeGreaterThanOrEqual(1);
     });
 
+    it('usa los campos canónicos priceUsdt/costUsd cuando el alias legacy diverge (regresión mayonesa)', () => {
+        // FIN-030: priceUsd/costPrice son alias legacy. Si una escritura parcial deja
+        // el alias desactualizado, el monitor debe mostrar el canónico — igual que la
+        // caja (getUsd: priceUsdt ?? priceUsd). Antes del fix este caso mostraba $4.25.
+        const divergent = [{
+            id: 'prod-div',
+            name: 'Mayonesa Kraft 445GR',
+            category: 'General',
+            stock: 7,
+            minStock: 5,
+            priceUsdt: 5.00,   // canónico — actualizado
+            priceUsd: 4.25,    // alias legacy — sin actualizar
+            costUsd: 2.00,     // canónico
+            costPrice: 1.00,   // alias legacy
+        }];
+        render(<SupervisorInventoryCatalog {...defaultProps} products={divergent} paginatedProducts={divergent} filteredProducts={divergent} />);
+
+        const row = screen.getByTestId('supervisor-product-row-prod-div');
+
+        // Venta USD: el canónico $5.00, jamás el alias $4.25
+        expect(within(row).getAllByText('$5.00').length).toBeGreaterThanOrEqual(1);
+        expect(within(row).queryAllByText('$4.25').length).toBe(0);
+        // Equivalencia Bs con el canónico: 5.00 * 50 = 250.00 Bs (nunca 212.50 del alias)
+        expect(within(row).getAllByText('250.00 Bs').length).toBeGreaterThanOrEqual(1);
+        expect(within(row).queryAllByText('212.50 Bs').length).toBe(0);
+        // Costo canónico $2.00 (no el alias $1.00) y ganancia $3.00 / 60%
+        expect(within(row).getAllByText('$2.00').length).toBeGreaterThanOrEqual(1);
+        expect(within(row).queryAllByText('$1.00').length).toBe(0);
+        expect(within(row).getAllByText('$3.00').length).toBeGreaterThanOrEqual(1);
+        expect(within(row).getAllByText('60%').length).toBeGreaterThanOrEqual(1);
+        // El nombre viaja en un solo campo (p.name) — sin alias posible
+        expect(within(row).getAllByText('Mayonesa Kraft 445GR').length).toBeGreaterThanOrEqual(1);
+    });
+
     it('los botones stepper llaman a stepStockEdit con +1 y -1', () => {
         const stepStockEditSpy = vi.fn();
         render(<SupervisorInventoryCatalog {...defaultProps} stepStockEdit={stepStockEditSpy} />);

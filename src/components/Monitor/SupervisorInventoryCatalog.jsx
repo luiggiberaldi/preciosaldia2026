@@ -76,8 +76,13 @@ export default function SupervisorInventoryCatalog({
                 const isNegative = stock < 0;
                 const isAgotado = stock === 0;
                 const isBajo = !isNegative && !isAgotado && stock <= minStock;
-                const profitUsd = Math.max(0, (p.priceUsd || 0) - (p.costPrice || 0));
-                const profitPct = (p.priceUsd || 0) > 0 ? Math.round((profitUsd / p.priceUsd) * 100) : 0;
+                // FIN-030: el precio/costo canónicos son priceUsdt/costUsd (misma
+                // precedencia que getUsd en la caja). priceUsd/costPrice son alias
+                // legacy que pueden quedar desactualizados tras escrituras parciales.
+                const salePriceUsd = p.priceUsdt ?? p.priceUsd ?? 0;
+                const costUsdCanonical = p.costUsd ?? p.costPrice ?? 0;
+                const profitUsd = Math.max(0, salePriceUsd - costUsdCanonical);
+                const profitPct = salePriceUsd > 0 ? Math.round((profitUsd / salePriceUsd) * 100) : 0;
 
                 // Color del borde lateral cromático según stock
                 const chromaticBorderColor = isNegative
@@ -151,7 +156,7 @@ export default function SupervisorInventoryCatalog({
                                             Costo
                                         </span>
                                         <span className="font-outfit text-xs font-black text-slate-500 tabular-nums truncate block">
-                                            ${(p.costPrice || 0).toFixed(2)}
+                                            ${costUsdCanonical.toFixed(2)}
                                         </span>
                                     </div>
                                     {/* Venta */}
@@ -160,10 +165,10 @@ export default function SupervisorInventoryCatalog({
                                             Venta (USD/Bs)
                                         </span>
                                         <span className="font-outfit text-xs font-black text-slate-800 dark:text-white tabular-nums block">
-                                            ${(p.priceUsd || 0).toFixed(2)}
+                                            ${salePriceUsd.toFixed(2)}
                                         </span>
                                         <span className="font-outfit text-[8px] sm:text-[9px] text-slate-400 block tabular-nums leading-none mt-0.5 truncate">
-                                            {bcvRate ? `${formatBs((p.priceUsd || 0) * bcvRate)} Bs` : 'N/D'}
+                                            {bcvRate ? `${formatBs(salePriceUsd * bcvRate)} Bs` : 'N/D'}
                                         </span>
                                     </div>
                                     {/* Ganancia */}
@@ -370,14 +375,14 @@ export default function SupervisorInventoryCatalog({
                                 <div className="min-w-0">
                                     <div className="flex items-baseline gap-1.5">
                                         <span className="font-outfit text-sm font-black text-emerald-600 dark:text-emerald-400 tabular-nums">
-                                            ${(p.priceUsd || 0).toFixed(2)}
+                                            ${salePriceUsd.toFixed(2)}
                                         </span>
                                         <span className="text-[10px] font-black text-emerald-600/80 dark:text-emerald-400/80 tabular-nums">
                                             +{profitPct}%
                                         </span>
                                     </div>
                                     <span className="font-outfit text-[10px] text-slate-400 font-medium block tabular-nums leading-none truncate mt-0.5">
-                                        {bcvRate ? `${formatBs((p.priceUsd || 0) * bcvRate)} Bs` : 'N/D'}
+                                        {bcvRate ? `${formatBs(salePriceUsd * bcvRate)} Bs` : 'N/D'}
                                     </span>
                                 </div>
 

@@ -147,7 +147,7 @@ export function applySupervisorProductCommand(currentProducts, payload = {}, opt
         };
     }
 
-    const requestedId = action === 'edit' ? product?.id : product?.id;
+    const requestedId = product?.id;
     const existingIndex = products.findIndex(item => item.id === requestedId);
 
     if (action === 'edit' && existingIndex === -1) {
@@ -207,6 +207,17 @@ export function applySupervisorProductCommand(currentProducts, payload = {}, opt
             // Generar timestamp local y nunca aceptar timestamps adversariales del payload
             updatedAt: new Date().toISOString(),
         };
+        // FIN-030: el par de alias de precio (priceUsdt/priceUsd) se mueve junto.
+        // Un patch parcial (cliente legacy que solo envía priceUsdt) no debe dejar
+        // el alias priceUsd con el precio anterior — el monitor lo leería y mostraría
+        // un precio viejo mientras la caja muestra el canónico.
+        if ('priceUsd' in patch || 'priceUsdt' in patch) {
+            const resolvedPrice = resolveEffectivePriceUsd(patch);
+            if (resolvedPrice !== null) {
+                candidate.priceUsd = resolvedPrice;
+                candidate.priceUsdt = resolvedPrice;
+            }
+        }
         nextProduct = requireProduct(candidate);
     } else {
         // En creación se conserva el producto entrante incluyendo stock inicial
