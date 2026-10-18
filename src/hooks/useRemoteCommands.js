@@ -10,7 +10,10 @@ import { AppliedCommandGuard, validateSupervisorCommand } from '../services/supe
 import {
     claimSupervisorCommand,
     fetchSupervisorCommandsForRecovery,
+    getRecoveryDelayMs,
     readSupervisorCommandAck,
+    RECOVERY_BASE_DELAY_MS,
+    RECOVERY_MAX_DELAY_MS,
     SUPERVISOR_TERMINAL_COMMAND_STATUSES,
     withSupervisorCommandLock,
 } from '../services/supervisorCommandService';
@@ -70,22 +73,10 @@ export async function ackCommand(commandId, status, ackPayload = {}, errorMessag
 
 const APPLIED_COMMANDS_KEY = 'supervisor_applied_commands_v1';
 
-// Recuperación de órdenes cuando Realtime no está SUBSCRIBED. El TTL de una
-// orden es 60 s, así que la primera consulta va pronto y el backoff queda
-// acotado para no superar el tiempo restante de una orden.
-export const RECOVERY_BASE_DELAY_MS = 5_000;
-export const RECOVERY_MAX_DELAY_MS = 20_000;
-
-/**
- * Delay exponencial con jitter completo. `random` es inyectable para tests.
- * attempt 0 → ~[base, 2·base); crece hasta el máximo.
- */
-export function getRecoveryDelayMs(attempt, random = Math.random) {
-    const safeAttempt = Math.max(0, Math.floor(Number(attempt) || 0));
-    const exp = Math.min(RECOVERY_MAX_DELAY_MS, RECOVERY_BASE_DELAY_MS * (2 ** safeAttempt));
-    const jitter = Math.floor(random() * exp * 0.5);
-    return Math.min(RECOVERY_MAX_DELAY_MS, exp + jitter);
-}
+// Backoff de recuperación compartido con la degradación de la espera de ACK
+// (Fase 3): vive en supervisorCommandService para no crear un ciclo de imports
+// y se re-exporta aquí para conservar la API pública de este hook.
+export { getRecoveryDelayMs, RECOVERY_BASE_DELAY_MS, RECOVERY_MAX_DELAY_MS };
 
 function shortSupervisorId(value) {
     if (!value || typeof value !== 'string') return null;
@@ -176,8 +167,29 @@ export function useRemoteCommands(deviceId, enabled = true) {
             if (event.detail?.deviceId && event.detail.deviceId !== deviceId) return;
             if (!channel && !disposed) initialize();
         };
+        // Fase 4: al recuperar red (online) o visibilidad, el barrido pendiente
+        // se ADELANTA en vez de esperar el backoff (hasta 20 s). No agrega
+        // consultas nuevas: reemplaza el timer de backoff por la consulta
+        // inmediata y respeta el semáforo de una sola recuperación en vuelo.
+        const handleConnectionReady = () => {
+            if (disposed || channelStatus === 'SUBSCRIBED' || recoveryInFlight) return;
+            clearRecoveryTimer();
+            recoveryAttempt = 0;
+            recoveryInFlight = true;
+            loadPendingCommands()
+                .catch(() => {})
+                .finally(() => {
+                    recoveryInFlight = false;
+                    if (!disposed && channelStatus !== 'SUBSCRIBED') scheduleRecovery();
+                });
+        };
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') handleConnectionReady();
+        };
         window.addEventListener('supervisor_pairing_revoked', handlePairingRevoked);
         window.addEventListener('supervisor_pairing_active', handlePairingActive);
+        window.addEventListener('online', handleConnectionReady);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
 
         const applyRateCommand = async (payload) => {
             const { rateMode, customRate } = payload || {};
@@ -670,6 +682,8 @@ export function useRemoteCommands(deviceId, enabled = true) {
             clearRecoveryTimer();
             window.removeEventListener('supervisor_pairing_revoked', handlePairingRevoked);
             window.removeEventListener('supervisor_pairing_active', handlePairingActive);
+            window.removeEventListener('online', handleConnectionReady);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
             if (channel) supabaseCloud.removeChannel(channel).catch(() => {});
         };
     }, [deviceId, enabled]);

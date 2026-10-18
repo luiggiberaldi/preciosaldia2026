@@ -98,7 +98,30 @@ export const SUPERVISOR_COMMAND_TYPES = Object.freeze([
     'supervisor.inventory.batch.adjust',
 ]);
 
+// Fase 5 — TTL por tipo. Los comandos sensibles al tiempo conservan 60 s; los
+// de catálogo/inventario/usuarios admiten 5 min para sobrevivir cortes de red.
+// El emisor solo usa la ventana extendida con SUPERVISOR_EXTENDED_TTL_ENABLED
+// (rollout: migración aplicada + receivers actualizados primero).
 const COMMAND_TTL_MS = 60_000;
+export const COMMAND_EXTENDED_TTL_MS = 5 * 60_000;
+// Cota de seguridad global: jamás se acepta una duración mayor, por tipo que
+// sea. La RPC impone la misma cota en servidor.
+export const COMMAND_ABSOLUTE_MAX_TTL_MS = 10 * 60_000;
+export const COMMAND_EXTENDED_TTL_TYPES = Object.freeze([
+    'supervisor.inventory.batch.adjust',
+    'supervisor.product.create',
+    'supervisor.product.update',
+    'supervisor.product.delete',
+    'supervisor.user.create',
+    'supervisor.user.pin.change',
+    'supervisor.user.update',
+    'supervisor.user.delete',
+]);
+
+export function getCommandMaxTtlMs(type) {
+    return COMMAND_EXTENDED_TTL_TYPES.includes(type) ? COMMAND_EXTENDED_TTL_MS : COMMAND_TTL_MS;
+}
+
 const MAX_COMMAND_ID_LENGTH = 128;
 
 // ── Contrato inventario batch v2 ──────────────────────────────────────────
@@ -322,7 +345,9 @@ export function validateSupervisorCommand(command, { targetDeviceId, monitorDevi
     if (!Number.isFinite(command.issuedAt) || !Number.isFinite(command.expiresAt)) {
         return { valid: false, error: 'Ventana temporal inválida' };
     }
-    if (command.expiresAt <= command.issuedAt || command.expiresAt - command.issuedAt > COMMAND_TTL_MS || now > command.expiresAt) {
+    const durationMs = command.expiresAt - command.issuedAt;
+    const maxTtlMs = Math.min(getCommandMaxTtlMs(command.type), COMMAND_ABSOLUTE_MAX_TTL_MS);
+    if (command.expiresAt <= command.issuedAt || durationMs > maxTtlMs || now > command.expiresAt) {
         return { valid: false, error: 'Comando expirado o TTL inválido' };
     }
     if (!validateCommandPayload(command.type, command.payload)) {

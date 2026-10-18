@@ -40,7 +40,11 @@ vi.mock('../src/components/Toast', () => ({ showToast: vi.fn() }));
 vi.mock('../src/services/supervisorAuth', () => ({
     ensureSupervisorSession: vi.fn(async () => ({ session: { user: { id: 'auth-1' } }, error: null })),
 }));
-vi.mock('../src/services/supervisorCommandService', () => ({
+vi.mock('../src/services/supervisorCommandService', async (importOriginal) => ({
+    // Fase 3: getRecoveryDelayMs y sus constantes se movieron a este servicio
+    // (el hook los re-exporta). El módulo real se trae de fondo para no perder
+    // esas exportaciones; los overrides del test conservan su comportamiento.
+    ...(await importOriginal()),
     claimSupervisorCommand: vi.fn(),
     fetchSupervisorCommandsForRecovery: h.fetchRecovery,
     readSupervisorCommandAck: vi.fn(),
@@ -89,6 +93,7 @@ describe('useRemoteCommands: recuperacion con Realtime degradado', () => {
     afterEach(async () => {
         await act(async () => root?.unmount());
         container?.remove();
+        delete document.visibilityState;
         vi.useRealTimers();
     });
 
@@ -161,5 +166,68 @@ describe('useRemoteCommands: recuperacion con Realtime degradado', () => {
         await flush();
         expect(h.state.fetchCalls).toBe(before);
         expect(h.client.removeChannel).toHaveBeenCalled();
+    });
+
+    it('online adelanta la consulta de recuperacion con canal degradado', async () => {
+        await mount();
+        const baseline = h.state.fetchCalls;
+        await setStatus('CHANNEL_ERROR');
+        // El backoff todavía no consultó: el evento debe adelantar el barrido.
+        expect(h.state.fetchCalls).toBe(baseline);
+        await act(async () => { window.dispatchEvent(new Event('online')); });
+        await flush();
+        expect(h.state.fetchCalls).toBe(baseline + 1);
+    });
+
+    it('online con canal SUBSCRIBED no consulta', async () => {
+        await mount();
+        await setStatus('SUBSCRIBED');
+        const before = h.state.fetchCalls;
+        await act(async () => { window.dispatchEvent(new Event('online')); });
+        await flush();
+        expect(h.state.fetchCalls).toBe(before);
+    });
+
+    it('una rafaga de eventos de reconexion no duplica consultas', async () => {
+        await mount();
+        const baseline = h.state.fetchCalls;
+        await setStatus('CHANNEL_ERROR');
+        await act(async () => {
+            window.dispatchEvent(new Event('online'));
+            window.dispatchEvent(new Event('online'));
+            document.dispatchEvent(new Event('visibilitychange'));
+        });
+        await flush();
+        // Una sola consulta a la vez: el semáforo absorbe la ráfaga.
+        expect(h.state.fetchCalls).toBe(baseline + 1);
+    });
+
+    it('visibilitychange visible adelanta la consulta; oculto no consulta', async () => {
+        await mount();
+        const baseline = h.state.fetchCalls;
+        await setStatus('CHANNEL_ERROR');
+
+        Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+        await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+        await flush();
+        expect(h.state.fetchCalls).toBe(baseline);
+
+        Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+        await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+        await flush();
+        expect(h.state.fetchCalls).toBe(baseline + 1);
+    });
+
+    it('tras desmontar, los eventos de reconexion no consultan', async () => {
+        await mount();
+        await setStatus('CHANNEL_ERROR');
+        await act(async () => root.unmount());
+        const before = h.state.fetchCalls;
+        await act(async () => {
+            window.dispatchEvent(new Event('online'));
+            document.dispatchEvent(new Event('visibilitychange'));
+        });
+        await flush();
+        expect(h.state.fetchCalls).toBe(before);
     });
 });

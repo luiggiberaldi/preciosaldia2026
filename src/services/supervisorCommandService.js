@@ -5,10 +5,15 @@ import {
     SUPERVISOR_REMOTE_INCOME_ENABLED,
     SUPERVISOR_REMOTE_RATE_ENABLED,
     SUPERVISOR_REMOTE_EGRESS_ENABLED,
+    SUPERVISOR_EXTENDED_TTL_ENABLED,
 } from '../config/supervisorPolicy';
 import { ensureSupervisorSession } from './supervisorAuth';
 import { readPairingRow } from './supervisorPairingState';
-import { SUPERVISOR_COMMAND_TYPES, validateSupervisorCommand } from './supervisorContracts';
+import {
+    getCommandMaxTtlMs,
+    SUPERVISOR_COMMAND_TYPES,
+    validateSupervisorCommand,
+} from './supervisorContracts';
 
 export const SUPERVISOR_COMMAND_TTL_MS = 60_000;
 export const SUPERVISOR_ACK_TIMEOUT_MS = 10_000;
@@ -157,14 +162,25 @@ export function generateSupervisorCommandId() {
     return `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
 }
 
-export function buildSupervisorCommand({ type, targetDeviceId, monitorDeviceId, payload, now = Date.now(), commandId = generateSupervisorCommandId() }) {
+/**
+ * Fase 5: TTL de emisión por tipo. Con el flag apagado se emiten 60 s para
+ * todo (comportamiento legacy). Con el flag activo, los tipos no sensibles al
+ * tiempo se emiten con su tope extendido. El receptor acepta ambas duraciones
+ * desde antes del rollout; la RPC solo acepta la ventana extendida tras
+ * aplicar la migración de Fase 5.
+ */
+export function getCommandTtlMs(type, extendedTtl = SUPERVISOR_EXTENDED_TTL_ENABLED) {
+    return extendedTtl ? getCommandMaxTtlMs(type) : SUPERVISOR_COMMAND_TTL_MS;
+}
+
+export function buildSupervisorCommand({ type, targetDeviceId, monitorDeviceId, payload, now = Date.now(), commandId = generateSupervisorCommandId(), extendedTtl }) {
     return {
         commandId,
         type,
         monitorDeviceId,
         targetDeviceId,
         issuedAt: now,
-        expiresAt: now + SUPERVISOR_COMMAND_TTL_MS,
+        expiresAt: now + getCommandTtlMs(type, extendedTtl),
         payload,
         schemaVersion: 1,
     };
@@ -187,19 +203,30 @@ function normalizeTerminalAck(row) {
     };
 }
 
-async function waitForCommandAck(commandId, timeoutMs = SUPERVISOR_ACK_TIMEOUT_MS) {
+async function waitForCommandAck(commandId, timeoutMs = SUPERVISOR_ACK_TIMEOUT_MS, deps = {}) {
+    const {
+        client = supabaseCloud,
+        getPollDelayMs = getRecoveryDelayMs,
+    } = deps;
+
     return new Promise((resolve) => {
         let settled = false;
         let channel = null;
+        let pollTimer = null;
+        let pollAttempt = 0;
+
         const finish = (result) => {
             if (settled) return;
             settled = true;
-            if (channel) supabaseCloud.removeChannel(channel).catch(() => {});
+            clearTimeout(timeout);
+            if (pollTimer) clearTimeout(pollTimer);
+            if (channel) client.removeChannel(channel).catch(() => {});
             resolve(result);
         };
 
         const timeout = setTimeout(() => {
-            readSupervisorCommandAck(supabaseCloud, commandId)
+            // Lectura final: conclusión cierta si el ACK ya está publicado.
+            readSupervisorCommandAck(client, commandId)
                 .then((ack) => finish(ack || {
                     ok: false,
                     status: 'timeout',
@@ -212,7 +239,30 @@ async function waitForCommandAck(commandId, timeoutMs = SUPERVISOR_ACK_TIMEOUT_M
                 }));
         }, timeoutMs);
 
-        channel = supabaseCloud
+        // Fase 3: si el canal ACK cae, eso NO es un fallo de la orden. Se
+        // degrada a lecturas periódicas con el backoff del receptor hasta el
+        // límite de la espera; jamás se resuelve 'failed' por un corte de red.
+        const schedulePoll = () => {
+            if (settled || pollTimer) return;
+            const delay = getPollDelayMs(pollAttempt);
+            pollAttempt += 1;
+            pollTimer = setTimeout(async () => {
+                pollTimer = null;
+                if (settled) return;
+                try {
+                    const ack = await readSupervisorCommandAck(client, commandId);
+                    if (ack && !settled) {
+                        finish(ack);
+                        return;
+                    }
+                } catch {
+                    // Sin lectura posible ahora: reintentar en el próximo ciclo.
+                }
+                if (!settled) schedulePoll();
+            }, delay);
+        };
+
+        channel = client
             .channel(`supervisor-ack:${commandId}`)
             .on('postgres_changes', {
                 event: 'UPDATE',
@@ -222,49 +272,117 @@ async function waitForCommandAck(commandId, timeoutMs = SUPERVISOR_ACK_TIMEOUT_M
             }, (payload) => {
                 const row = payload.new;
                 if (!row || !SUPERVISOR_TERMINAL_COMMAND_STATUSES.includes(row.status)) return;
-                clearTimeout(timeout);
                 finish(normalizeTerminalAck(row));
             })
             .subscribe((status) => {
                 if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-                    clearTimeout(timeout);
-                    finish({ ok: false, status: 'failed', error: `Canal ACK: ${status}` });
+                    schedulePoll();
                 }
             });
 
         // Evita perder un ACK que llegue entre el INSERT RPC y la suscripción.
-        readSupervisorCommandAck(supabaseCloud, commandId)
+        readSupervisorCommandAck(client, commandId)
             .then((ack) => {
-                if (!ack) return;
-                clearTimeout(timeout);
-                finish(ack);
+                if (ack) finish(ack);
             })
             .catch(() => {});
     });
 }
 
 /** Fase 10: espera el ACK global de un comando YA creado (reconciliación). */
-export function awaitSupervisorCommandAck(commandId, timeoutMs = SUPERVISOR_ACK_TIMEOUT_MS) {
-    return waitForCommandAck(commandId, timeoutMs);
+export function awaitSupervisorCommandAck(commandId, timeoutMs = SUPERVISOR_ACK_TIMEOUT_MS, deps = {}) {
+    return waitForCommandAck(commandId, timeoutMs, deps);
 }
 
-export async function sendSupervisorCommand({ type, targetDeviceId, payload, commandId }) {
+// Fase 1 — reintentos de transporte del create. Un fallo de red no debe perder
+// la orden: se reintenta con el MISMO commandId, payload y ventana temporal
+// (la RPC es idempotente por payload idéntico y jamás crea dos comandos). El
+// presupuesto de backoff total (≤ 4.5 s) queda con holgura dentro del TTL de
+// 60 s de la orden.
+export const CREATE_RETRY_MAX_ATTEMPTS = 3;
+export const CREATE_RETRY_BASE_DELAY_MS = 1_000;
+export const CREATE_RETRY_MAX_DELAY_MS = 2_000;
+
+const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Delay exponencial con jitter completo para los reintentos del create. */
+export function getCreateRetryDelayMs(attempt, random = Math.random) {
+    const safeAttempt = Math.max(0, Math.floor(Number(attempt) || 0));
+    const exp = Math.min(CREATE_RETRY_MAX_DELAY_MS, CREATE_RETRY_BASE_DELAY_MS * (2 ** safeAttempt));
+    const jitter = Math.floor(random() * exp * 0.5);
+    return Math.min(CREATE_RETRY_MAX_DELAY_MS, exp + jitter);
+}
+
+/**
+ * Solo se reintentan fallos de transporte. Un status HTTP < 500 o un code de
+ * PostgREST/Postgres (p. ej. 'Ventana temporal inválida') es una respuesta
+ * definitiva del servidor y jamás se repite.
+ */
+export function isRetryableCreateError(error) {
+    if (!error) return false;
+    const status = Number(error.status ?? error.statusCode);
+    if (Number.isFinite(status) && status !== 0) return status >= 500;
+    if (error.code) return false;
+    return true;
+}
+
+// Backoff compartido entre la recuperación del receptor (useRemoteCommands) y
+// la degradación de la espera de ACK (waitForCommandAck). Vive aquí para no
+// crear un ciclo de imports; el hook lo re-exporta para conservar su API.
+export const RECOVERY_BASE_DELAY_MS = 5_000;
+export const RECOVERY_MAX_DELAY_MS = 20_000;
+
+/**
+ * Delay exponencial con jitter completo. `random` es inyectable para tests.
+ * attempt 0 → ~[base, 2·base); crece hasta el máximo.
+ */
+export function getRecoveryDelayMs(attempt, random = Math.random) {
+    const safeAttempt = Math.max(0, Math.floor(Number(attempt) || 0));
+    const exp = Math.min(RECOVERY_MAX_DELAY_MS, RECOVERY_BASE_DELAY_MS * (2 ** safeAttempt));
+    const jitter = Math.floor(random() * exp * 0.5);
+    return Math.min(RECOVERY_MAX_DELAY_MS, exp + jitter);
+}
+
+export async function sendSupervisorCommand({
+    type,
+    targetDeviceId,
+    payload,
+    commandId,
+    extendedTtl,
+    client = supabaseCloud,
+    ensureSession = ensureSupervisorSession,
+    readPairing = readPairingRow,
+    sleep = defaultSleep,
+    random = Math.random,
+}) {
     if (!isSupervisorCommandEnabled(type, payload)) {
         return { ok: false, status: 'disabled', error: 'Las mutaciones remotas están temporalmente deshabilitadas por seguridad' };
     }
-    if (!supabaseCloud || !targetDeviceId) {
+    if (!client || !targetDeviceId) {
         return { ok: false, status: 'invalid', error: 'No hay caja objetivo' };
     }
 
-    const { session, error: sessionError } = await ensureSupervisorSession();
+    // Fase 2: sesión y pairing en paralelo (−1 round-trip por envío). La
+    // lectura del pairing puede salir vacía o fallar si el token de sesión
+    // estaba vencido al emitirse; en ese caso se reintenta UNA vez ya con la
+    // sesión asegurada antes de declarar unauthorized. La autoridad real sigue
+    // siendo el trigger/RLS del servidor en el INSERT.
+    const [sessionResult, pairingResult] = await Promise.all([
+        ensureSession(),
+        readPairing({ supabase: client, primaryDeviceId: targetDeviceId }),
+    ]);
+    const { session, error: sessionError } = sessionResult;
     if (sessionError || !session) {
         return { ok: false, status: 'unauthenticated', error: sessionError?.message || 'No hay sesión segura' };
     }
 
-    const { data: pairing, error: pairingError } = await readPairingRow({
-        supabase: supabaseCloud,
-        primaryDeviceId: targetDeviceId,
-    });
+    let { data: pairing, error: pairingError } = pairingResult;
+    if (!pairing || pairingError) {
+        ({ data: pairing, error: pairingError } = await readPairing({
+            supabase: client,
+            primaryDeviceId: targetDeviceId,
+        }));
+    }
 
     const actorId = session.user?.id;
     const authorizedMonitor = [
@@ -281,6 +399,7 @@ export async function sendSupervisorCommand({ type, targetDeviceId, payload, com
         targetDeviceId,
         monitorDeviceId: authorizedMonitor.deviceId,
         payload,
+        extendedTtl,
         // Fase 10: el sender puede reutilizar un commandId persistido (reintento
         // tras timeout jamás debe crear un segundo comando).
         ...(commandId ? { commandId } : {}),
@@ -293,20 +412,41 @@ export async function sendSupervisorCommand({ type, targetDeviceId, payload, com
         return { ok: false, status: 'invalid', error: validation.error };
     }
 
-    const { data, error } = await supabaseCloud.rpc('create_supervisor_command', {
-        p_command_id: command.commandId,
-        p_target_device_id: command.targetDeviceId,
-        p_command_type: command.type,
-        p_payload: command.payload,
-        p_issued_at: new Date(command.issuedAt).toISOString(),
-        p_expires_at: new Date(command.expiresAt).toISOString(),
-    });
+    // Reintentos acotados ante fallos de transporte, siempre con el mismo
+    // commandId: una respuesta perdida tras crear se resuelve con la fila
+    // idempotente que devuelve la propia RPC, nunca con un segundo comando.
+    let created = null;
+    let createError = null;
+    for (let attempt = 0; attempt < CREATE_RETRY_MAX_ATTEMPTS; attempt += 1) {
+        if (attempt > 0) await sleep(getCreateRetryDelayMs(attempt - 1, random));
 
-    if (error) {
-        return { ok: false, status: 'failed', error: error.message || 'No se pudo crear la orden' };
+        let response;
+        try {
+            response = await client.rpc('create_supervisor_command', {
+                p_command_id: command.commandId,
+                p_target_device_id: command.targetDeviceId,
+                p_command_type: command.type,
+                p_payload: command.payload,
+                p_issued_at: new Date(command.issuedAt).toISOString(),
+                p_expires_at: new Date(command.expiresAt).toISOString(),
+            });
+        } catch (thrown) {
+            response = { data: null, error: thrown };
+        }
+
+        if (!response.error) {
+            created = normalizeAck(response.data);
+            createError = null;
+            break;
+        }
+        createError = response.error;
+        if (!isRetryableCreateError(response.error)) break;
     }
 
-    const created = normalizeAck(data);
+    if (createError) {
+        return { ok: false, status: 'failed', error: createError.message || 'No se pudo crear la orden' };
+    }
+
     if (!created?.command_id) {
         return { ok: false, status: 'failed', error: 'El servidor no devolvió command_id' };
     }
@@ -316,7 +456,7 @@ export async function sendSupervisorCommand({ type, targetDeviceId, payload, com
         status: shouldAwaitSupervisorAck(type) ? (created.status || 'pending') : 'sent',
         commandId: created.command_id,
         ackPromise: shouldAwaitSupervisorAck(type)
-            ? waitForCommandAck(created.command_id)
+            ? waitForCommandAck(created.command_id, SUPERVISOR_ACK_TIMEOUT_MS, { client })
             : null,
     };
 }

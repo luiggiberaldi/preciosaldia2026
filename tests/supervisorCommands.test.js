@@ -8,9 +8,11 @@ import {
   validateSupervisorCommand,
 } from '../src/services/supervisorContracts';
 import {
+  awaitSupervisorCommandAck,
   buildSupervisorCommand,
   claimSupervisorCommand,
   fetchSupervisorCommandsForRecovery,
+  getCommandTtlMs,
   sendSupervisorCommand,
   shouldAwaitSupervisorAck,
   SUPERVISOR_COMMAND_TTL_MS,
@@ -18,6 +20,7 @@ import {
   isSupervisorCommandEnabled,
   withSupervisorCommandLock,
 } from '../src/services/supervisorCommandService';
+import { SUPERVISOR_EXTENDED_TTL_ENABLED } from '../src/config/supervisorPolicy';
 const baseCommand = (overrides = {}) => ({
   commandId: "command-1234",
   type: "supervisor.product.delete",
@@ -54,12 +57,28 @@ describe("Supervisor command contract", () => {
     ).toBe(false);
   });
   it("rechaza comandos vencidos, TTL largo o sin commandId", () => {
+    // Fase 5: los tipos de catálogo admiten hasta 5 min, así que "TTL largo" se
+    // prueba por encima de ese tope; los sensibles al tiempo conservan 60 s.
     expect(
-      validateSupervisorCommand(baseCommand({ expiresAt: 100_000 }), {
+      validateSupervisorCommand(baseCommand({ expiresAt: 400_000 }), {
         targetDeviceId: "primary-1",
         monitorDeviceId: "monitor-1",
         now: 2_000,
       }).valid,
+    ).toBe(false);
+    expect(
+      validateSupervisorCommand(
+        baseCommand({
+          type: "supervisor.shift.close",
+          payload: { shiftId: "shift-1", cierreId: "cierre-1" },
+          expiresAt: 100_000,
+        }),
+        {
+          targetDeviceId: "primary-1",
+          monitorDeviceId: "monitor-1",
+          now: 2_000,
+        },
+      ).valid,
     ).toBe(false);
     expect(
       validateSupervisorCommand(baseCommand({ expiresAt: 1_001 }), {
@@ -768,5 +787,583 @@ describe("Supervisor command contract", () => {
       ["supervisor-command:command-1234", { mode: "exclusive" }],
     ]);
     expect(maxActive).toBe(1);
+  });
+});
+
+describe("sendSupervisorCommand — reintentos de transporte del create (Fase 1)", () => {
+  const sessionOk = async () => ({
+    session: { user: { id: "auth-1" } },
+    error: null,
+  });
+  const pairingOk = async () => ({
+    data: {
+      monitor_device_id: "monitor-1",
+      monitor_auth_id: "auth-1",
+      monitor_device_id_2: null,
+      monitor_auth_id_2: null,
+    },
+    error: null,
+    supportsSecondary: true,
+  });
+  const transportError = () => ({
+    data: null,
+    error: new TypeError("Failed to fetch"),
+  });
+  const createdRow = (commandId, status = "pending") => ({
+    data: {
+      command_id: commandId,
+      status,
+      created_at: "2026-10-17T12:00:00.000Z",
+    },
+    error: null,
+  });
+
+  const send = (client, overrides = {}) =>
+    sendSupervisorCommand({
+      type: "supervisor.rate.set",
+      targetDeviceId: "primary-1",
+      payload: { rateMode: "bcv" },
+      commandId: "command-retry-1",
+      ensureSession: sessionOk,
+      readPairing: pairingOk,
+      sleep: async () => {},
+      random: () => 0,
+      client,
+      ...overrides,
+    });
+
+  it("reintenta el create tras un fallo de transporte con el MISMO commandId y ventana", async () => {
+    const calls = [];
+    const delays = [];
+    let attempt = 0;
+    const client = {
+      rpc(name, args) {
+        calls.push([name, args]);
+        attempt += 1;
+        return Promise.resolve(
+          attempt === 1 ? transportError() : createdRow("command-retry-1"),
+        );
+      },
+    };
+
+    const result = await send(client, {
+      sleep: async (ms) => {
+        delays.push(ms);
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "sent",
+      commandId: "command-retry-1",
+    });
+    expect(calls).toHaveLength(2);
+    expect(calls[0][0]).toBe("create_supervisor_command");
+    expect(calls[1][0]).toBe("create_supervisor_command");
+    // Idempotencia: el reintento lleva exactamente el mismo commandId, payload
+    // y ventana temporal, de modo que el servidor jamás crea dos comandos.
+    expect(calls[1][1]).toEqual(calls[0][1]);
+    expect(calls[0][1].p_command_id).toBe("command-retry-1");
+    expect(delays).toEqual([1000]);
+  });
+
+  it("reintenta también ante un error 5xx del servidor", async () => {
+    const calls = [];
+    let attempt = 0;
+    const client = {
+      rpc(name, args) {
+        calls.push([name, args]);
+        attempt += 1;
+        return Promise.resolve(
+          attempt === 1
+            ? { data: null, error: { message: "Bad Gateway", status: 502 } }
+            : createdRow("command-retry-1"),
+        );
+      },
+    };
+
+    const result = await send(client);
+
+    expect(result).toMatchObject({ ok: true, status: "sent" });
+    expect(calls).toHaveLength(2);
+  });
+
+  it("no reintenta errores definitivos del servidor y propaga el mensaje", async () => {
+    const definitiveErrors = [
+      { message: "Ventana temporal inválida", code: "P0001", status: 400 },
+      { message: "Monitor no autorizado para esa caja", code: "P0001" },
+      { message: "command_id ya utilizado con otro payload", code: "P0001" },
+    ];
+
+    for (const error of definitiveErrors) {
+      const calls = [];
+      const client = {
+        rpc(name, args) {
+          calls.push([name, args]);
+          return Promise.resolve({ data: null, error });
+        },
+      };
+
+      const result = await send(client);
+
+      expect(result).toMatchObject({ ok: false, status: "failed" });
+      expect(result.error).toBe(error.message);
+      expect(calls).toHaveLength(1);
+    }
+  });
+
+  it("reintenta una respuesta perdida tras crear sin duplicar el comando", async () => {
+    const calls = [];
+    let attempt = 0;
+    const client = {
+      rpc(name, args) {
+        calls.push([name, args]);
+        attempt += 1;
+        // 1.º: la respuesta se pierde en la red aunque el servidor ya creó la
+        // fila. 2.º: la RPC idempotente devuelve la fila existente.
+        return Promise.resolve(
+          attempt === 1
+            ? transportError()
+            : createdRow("command-retry-1", "received"),
+        );
+      },
+    };
+
+    const result = await send(client);
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "sent",
+      commandId: "command-retry-1",
+    });
+    expect(calls).toHaveLength(2);
+    expect(calls[1][1]).toEqual(calls[0][1]);
+  });
+
+  it("agota los reintentos y reporta 'failed' sin afirmar un rechazo", async () => {
+    const calls = [];
+    const delays = [];
+    const client = {
+      rpc(name, args) {
+        calls.push([name, args]);
+        return transportError();
+      },
+    };
+
+    const result = await send(client, {
+      sleep: async (ms) => {
+        delays.push(ms);
+      },
+    });
+
+    expect(result).toMatchObject({ ok: false, status: "failed" });
+    // 'rejected' jamás puede venir de un fallo de transporte: el batch lo trata
+    // como estado incierto y reconcilia el mismo commandId.
+    expect(result.status).not.toBe("rejected");
+    expect(result.error).toBe("Failed to fetch");
+    expect(calls).toHaveLength(3);
+    expect(delays).toEqual([1000, 2000]);
+  });
+});
+
+describe("sendSupervisorCommand — sesión y pairing en paralelo (Fase 2)", () => {
+  const sessionOk = async () => ({
+    session: { user: { id: "auth-1" } },
+    error: null,
+  });
+  const pairingRow = (authId) => ({
+    monitor_device_id: "monitor-1",
+    monitor_auth_id: authId,
+    monitor_device_id_2: null,
+    monitor_auth_id_2: null,
+  });
+  const createdRow = (commandId) => ({
+    data: {
+      command_id: commandId,
+      status: "pending",
+      created_at: "2026-10-17T12:00:00.000Z",
+    },
+    error: null,
+  });
+  const successClient = (commandId = "command-retry-1") => ({
+    rpc(name) {
+      if (name !== "create_supervisor_command") {
+        throw new Error(`RPC inesperada: ${name}`);
+      }
+      return Promise.resolve(createdRow(commandId));
+    },
+  });
+
+  const send = (client, overrides = {}) =>
+    sendSupervisorCommand({
+      type: "supervisor.rate.set",
+      targetDeviceId: "primary-1",
+      payload: { rateMode: "bcv" },
+      commandId: "command-retry-1",
+      ensureSession: sessionOk,
+      readPairing: async () => ({ data: pairingRow("auth-1"), error: null }),
+      sleep: async () => {},
+      random: () => 0,
+      client,
+      ...overrides,
+    });
+
+  it("emite la sesión y la lectura de pairing solapadas, en paralelo", async () => {
+    let sessionCalls = 0;
+    let pairingCalls = 0;
+    let resolveSession;
+    let resolvePairing;
+    const sessionGate = new Promise((resolve) => {
+      resolveSession = resolve;
+    });
+    const pairingGate = new Promise((resolve) => {
+      resolvePairing = resolve;
+    });
+
+    const pending = send(successClient(), {
+      ensureSession: () => {
+        sessionCalls += 1;
+        return sessionGate;
+      },
+      readPairing: () => {
+        pairingCalls += 1;
+        return pairingGate;
+      },
+    });
+
+    // Ambas consultas deben estar en vuelo a la vez. Si la sesión se esperara
+    // primero, el pairing seguiría en 0 llamadas en este punto.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sessionCalls).toBe(1);
+    expect(pairingCalls).toBe(1);
+
+    resolveSession({ session: { user: { id: "auth-1" } }, error: null });
+    resolvePairing({ data: pairingRow("auth-1"), error: null });
+
+    const result = await pending;
+    expect(result).toMatchObject({ ok: true, status: "sent" });
+  });
+
+  it("si el pairing sale vacío con el token viejo, lo reintenta una vez con la sesión ya segura y el envío procede", async () => {
+    const reads = [];
+    let attempt = 0;
+    const result = await send(successClient(), {
+      readPairing: async () => {
+        attempt += 1;
+        reads.push(attempt);
+        return attempt === 1
+          ? { data: null, error: null }
+          : { data: pairingRow("auth-1"), error: null };
+      },
+    });
+
+    expect(result).toMatchObject({ ok: true, status: "sent" });
+    expect(reads).toHaveLength(2);
+  });
+
+  it("reintenta también cuando la lectura del pairing falla con el token viejo", async () => {
+    const reads = [];
+    let attempt = 0;
+    const result = await send(successClient(), {
+      readPairing: async () => {
+        attempt += 1;
+        reads.push(attempt);
+        return attempt === 1
+          ? { data: null, error: new Error("JWT expired") }
+          : { data: pairingRow("auth-1"), error: null };
+      },
+    });
+
+    expect(result).toMatchObject({ ok: true, status: "sent" });
+    expect(reads).toHaveLength(2);
+  });
+
+  it("declara unauthorized sin reintento infinito cuando no hay vínculo", async () => {
+    const noCreateClient = {
+      rpc() {
+        throw new Error("no debe intentar crear el comando");
+      },
+    };
+
+    // a) La fila existe pero el actor no está en ningún slot: conclusión
+    //    definitiva, sin reintento.
+    let reads = 0;
+    const resultA = await send(noCreateClient, {
+      readPairing: async () => {
+        reads += 1;
+        return { data: pairingRow("otro-auth"), error: null };
+      },
+    });
+    expect(resultA).toMatchObject({ ok: false, status: "unauthorized" });
+    expect(reads).toBe(1);
+
+    // b) Sin fila: el reintento con la sesión segura tampoco la encuentra y se
+    //    rinde tras exactamente dos lecturas.
+    reads = 0;
+    const resultB = await send(noCreateClient, {
+      readPairing: async () => {
+        reads += 1;
+        return { data: null, error: null };
+      },
+    });
+    expect(resultB).toMatchObject({ ok: false, status: "unauthorized" });
+    expect(reads).toBe(2);
+  });
+});
+
+describe("awaitSupervisorCommandAck — degradación del canal a polling (Fase 3)", () => {
+  const terminalRow = (status = "applied") => ({
+    command_id: "command-1234",
+    status,
+    ack_payload: { stockAfter: 5 },
+    error_message: null,
+  });
+
+  // Cliente falso con canal Realtime controlable y lecturas de ACK scriptadas.
+  const fakeClient = (readImpl) => {
+    const state = {
+      channels: 0,
+      removed: 0,
+      reads: 0,
+      subscribeCb: null,
+      handler: null,
+    };
+    const client = {
+      from() {
+        return {
+          select() {
+            return this;
+          },
+          eq() {
+            return this;
+          },
+          async maybeSingle() {
+            state.reads += 1;
+            return readImpl(state.reads);
+          },
+        };
+      },
+      channel() {
+        state.channels += 1;
+        const ch = {
+          on(event, filter, cb) {
+            state.handler = cb;
+            return ch;
+          },
+          subscribe(cb) {
+            state.subscribeCb = cb;
+            return ch;
+          },
+        };
+        return ch;
+      },
+      removeChannel() {
+        state.removed += 1;
+        return Promise.resolve();
+      },
+    };
+    return { client, state };
+  };
+
+  it("ante CHANNEL_ERROR degrada a lecturas y resuelve con el ACK del servidor, no 'failed'", async () => {
+    const { client, state } = fakeClient((read) =>
+      read === 1
+        ? { data: null, error: null }
+        : { data: terminalRow("applied"), error: null },
+    );
+
+    const pending = awaitSupervisorCommandAck("command-1234", 300, {
+      client,
+      getPollDelayMs: () => 5,
+    });
+    state.subscribeCb("CHANNEL_ERROR");
+
+    const result = await pending;
+    expect(result).toMatchObject({
+      ok: true,
+      status: "applied",
+      commandId: "command-1234",
+    });
+    // La lectura de degradación encontró el ACK que el canal no pudo entregar.
+    expect(state.reads).toBeGreaterThanOrEqual(2);
+    expect(state.removed).toBe(1);
+  });
+
+  it("canal caído y sin ACK termina en timeout, jamás rejected/failed", async () => {
+    const { client, state } = fakeClient(() => ({ data: null, error: null }));
+
+    const pending = awaitSupervisorCommandAck("command-1234", 60, {
+      client,
+      getPollDelayMs: () => 5,
+    });
+    state.subscribeCb("CHANNEL_ERROR");
+
+    const result = await pending;
+    expect(result).toMatchObject({ ok: false, status: "timeout" });
+    // Un fallo de transporte jamás es una conclusión cierta sobre la orden.
+    expect(["failed", "rejected"]).not.toContain(result.status);
+    expect(state.removed).toBe(1);
+  });
+
+  it("un ACK por Realtime con canal sano resuelve igual que antes, sin lecturas de degradación", async () => {
+    const { client, state } = fakeClient(() => ({ data: null, error: null }));
+
+    const pending = awaitSupervisorCommandAck("command-1234", 300, {
+      client,
+      getPollDelayMs: () => 5,
+    });
+    state.subscribeCb("SUBSCRIBED");
+    state.handler({ new: terminalRow("applied_with_warnings") });
+
+    const result = await pending;
+    expect(result).toMatchObject({ ok: true, status: "applied_with_warnings" });
+    // Solo la lectura anti-carrera: no hubo degradación que sondear.
+    expect(state.reads).toBe(1);
+    expect(state.removed).toBe(1);
+  });
+
+  it("la lectura inmediata anti-carrera conserva un ACK ya publicado", async () => {
+    const { client, state } = fakeClient(() => ({
+      data: terminalRow("applied"),
+      error: null,
+    }));
+
+    const result = await awaitSupervisorCommandAck("command-1234", 300, {
+      client,
+      getPollDelayMs: () => 5,
+    });
+    expect(result).toMatchObject({ ok: true, status: "applied" });
+    expect(state.removed).toBe(1);
+  });
+
+  it("tras resolver no quedan timers de polling vivos", async () => {
+    const { client, state } = fakeClient(() => ({ data: null, error: null }));
+
+    const pending = awaitSupervisorCommandAck("command-1234", 40, {
+      client,
+      getPollDelayMs: () => 25,
+    });
+    state.subscribeCb("CHANNEL_ERROR");
+    const result = await pending;
+    expect(result.status).toBe("timeout");
+
+    const readsAtFinish = state.reads;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(state.reads).toBe(readsAtFinish);
+    expect(state.removed).toBe(1);
+  });
+});
+
+describe("TTL por tipo y flag de emisión extendida (Fase 5)", () => {
+  const EXTENDED_TYPES = [
+    "supervisor.inventory.batch.adjust",
+    "supervisor.product.create",
+    "supervisor.product.update",
+    "supervisor.product.delete",
+    "supervisor.user.create",
+    "supervisor.user.pin.change",
+    "supervisor.user.update",
+    "supervisor.user.delete",
+  ];
+  const SHORT_TYPES = [
+    "supervisor.rate.set",
+    "supervisor.shift.close",
+    "supervisor.shift.reopen",
+  ];
+
+  it("sin flag, todos los tipos emiten el TTL legado de 60 s", () => {
+    // El flag permanece apagado hasta el rollout (migración aplicada + receivers
+    // actualizados). Si esto falla, alguien lo encendió antes de tiempo.
+    expect(SUPERVISOR_EXTENDED_TTL_ENABLED).toBe(false);
+    for (const type of [...EXTENDED_TYPES, ...SHORT_TYPES]) {
+      expect(getCommandTtlMs(type)).toBe(SUPERVISOR_COMMAND_TTL_MS);
+      const command = buildSupervisorCommand({
+        type,
+        targetDeviceId: "primary-1",
+        monitorDeviceId: "monitor-1",
+        payload: {},
+        commandId: "command-ttl-1",
+        now: 10_000,
+      });
+      expect(command.expiresAt - command.issuedAt).toBe(
+        SUPERVISOR_COMMAND_TTL_MS,
+      );
+    }
+  });
+
+  it("con flag, batch/producto/usuario duran 5 min y cierre/tasa siguen en 60 s", () => {
+    for (const type of EXTENDED_TYPES) {
+      expect(getCommandTtlMs(type, true)).toBe(5 * 60_000);
+    }
+    for (const type of SHORT_TYPES) {
+      expect(getCommandTtlMs(type, true)).toBe(SUPERVISOR_COMMAND_TTL_MS);
+    }
+    const batch = buildSupervisorCommand({
+      type: "supervisor.inventory.batch.adjust",
+      targetDeviceId: "primary-1",
+      monitorDeviceId: "monitor-1",
+      payload: {},
+      commandId: "command-ttl-2",
+      now: 10_000,
+      extendedTtl: true,
+    });
+    expect(batch.expiresAt - batch.issuedAt).toBe(5 * 60_000);
+    const shift = buildSupervisorCommand({
+      type: "supervisor.shift.close",
+      targetDeviceId: "primary-1",
+      monitorDeviceId: "monitor-1",
+      payload: {},
+      commandId: "command-ttl-3",
+      now: 10_000,
+      extendedTtl: true,
+    });
+    expect(shift.expiresAt - shift.issuedAt).toBe(SUPERVISOR_COMMAND_TTL_MS);
+  });
+
+  it("el validador acepta la duración extendida y sigue rechazando excesos y vencidos", () => {
+    const ctx = { targetDeviceId: "primary-1", monitorDeviceId: "monitor-1", now: 2_000 };
+    // Duración extendida (5 min) en un tipo de catálogo: válido para el receiver.
+    expect(
+      validateSupervisorCommand(baseCommand({ expiresAt: 1_000 + 5 * 60_000 }), ctx).valid,
+    ).toBe(true);
+    // Por encima de la cota de seguridad de 10 min: jamás válido.
+    expect(
+      validateSupervisorCommand(baseCommand({ expiresAt: 1_000 + 11 * 60_000 }), ctx).valid,
+    ).toBe(false);
+    // Sensible al tiempo: 99 s sigue excediendo su tope de 60 s.
+    expect(
+      validateSupervisorCommand(
+        baseCommand({
+          type: "supervisor.shift.close",
+          payload: { shiftId: "s1", cierreId: "c1" },
+          expiresAt: 100_000,
+        }),
+        ctx,
+      ).valid,
+    ).toBe(false);
+    // Vencidos siguen rechazándose igual.
+    expect(
+      validateSupervisorCommand(baseCommand({ expiresAt: 50_000 }), {
+        ...ctx,
+        now: 60_000,
+      }).valid,
+    ).toBe(false);
+  });
+
+  it("los datos legacy con duración de 60 s siguen aceptándose", () => {
+    const ctx = { targetDeviceId: "primary-1", monitorDeviceId: "monitor-1", now: 2_000 };
+    expect(
+      validateSupervisorCommand(baseCommand({ expiresAt: 61_000 }), ctx).valid,
+    ).toBe(true);
+    expect(
+      validateSupervisorCommand(
+        baseCommand({
+          type: "supervisor.shift.close",
+          payload: { shiftId: "s1", cierreId: "c1" },
+          expiresAt: 61_000,
+        }),
+        ctx,
+      ).valid,
+    ).toBe(true);
   });
 });
