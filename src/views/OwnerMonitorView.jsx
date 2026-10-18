@@ -4,6 +4,7 @@ import { useMonitorSync } from '../hooks/useMonitorSync';
 import { storageService } from '../utils/storageService';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { showToast } from '../components/Toast';
+import { notifyStockToast, stockMessage } from '../services/supervisorStockMessages';
 import { 
     TrendingUp, Package, Coins, Users, LogOut,
     RefreshCw, Wifi, WifiOff, Clock, FileText, DollarSign,
@@ -142,7 +143,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
 
     const notifyStockOpRevert = () => {
         // Reversión del valor provisional: la fila vuelve al stock real.
-        showToast?.('No se aplicó el cambio de stock; se revirtió el valor provisional', 'error');
+        notifyStockToast(showToast, 'STOCK_REVERT');
     };
 
     const setStockOp = (productId, op) => {
@@ -181,11 +182,11 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
         const productId = String(product.id);
         if (!Number.isFinite(delta) || Math.abs(delta) < 1e-9) return;
         if (delta < 0 && !SUPERVISOR_REMOTE_MUTATIONS_ENABLED) {
-            showToast?.('Los egresos remotos están deshabilitados', 'warning');
+            notifyStockToast(showToast, 'EGRESS_DISABLED');
             return;
         }
         if (!remoteActionsAvailable) {
-            showToast?.('La caja está desconectada; no se puede enviar la orden', 'warning');
+            notifyStockToast(showToast, 'BOX_OFFLINE_SEND');
             return;
         }
 
@@ -225,7 +226,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
             applyStockOpOutcome({ productId, targetStock }, {
                 ok: false,
                 uncertain: false,
-                error: error?.message || 'No se pudo actualizar el stock',
+                error: error?.message || stockMessage('STOCK_UPDATE_FAILED'),
             });
         }
     };
@@ -284,7 +285,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
 
     const openStockEditor = (product) => {
         if (isStockAdjustBlocked(stockOpStatus, product.id)) {
-            showToast?.('Espera la confirmación de la caja antes de ajustar de nuevo', 'warning');
+            notifyStockToast(showToast, 'ADJUST_IN_FLIGHT');
             return;
         }
         triggerHaptic?.();
@@ -300,9 +301,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
             ? (Number.isFinite(parsed) && parsed >= 0)
             : (Number.isInteger(parsed) && parsed >= 0);
         if (!valid) {
-            showToast?.(product?.isWeight
-                ? 'Escribe una cantidad válida (0 o más, admite decimales)'
-                : 'Escribe un número entero mayor o igual a 0', 'error');
+            notifyStockToast(showToast, product?.isWeight ? 'INVALID_STOCK_WEIGHT' : 'INVALID_STOCK_UNITS');
             return;
         }
         setStockEditProductId(null);
@@ -319,11 +318,11 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
         const productId = String(product.id);
         triggerHaptic?.();
         if (!remoteActionsAvailable) {
-            showToast?.('La caja está desconectada; no se puede cambiar el stock', 'warning');
+            notifyStockToast(showToast, 'BOX_OFFLINE_STOCK');
             return;
         }
         if (isStockAdjustBlocked(stockOpStatus, productId)) {
-            showToast?.('Espera la confirmación de la caja antes de ajustar de nuevo', 'warning');
+            notifyStockToast(showToast, 'ADJUST_IN_FLIGHT');
             return;
         }
         let base;
@@ -1792,7 +1791,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                             onSearchChange={setSearchTermInventario}
                             onOpenBatch={(mode) => {
                                 if (!remoteActionsAvailable) {
-                                    showToast?.('La caja está desconectada; no se puede enviar la orden', 'warning');
+                                    notifyStockToast(showToast, 'BOX_OFFLINE_SEND');
                                     return;
                                 }
                                 setInventoryBatchProduct(null);

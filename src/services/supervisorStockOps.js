@@ -1,6 +1,10 @@
 // ── Operaciones de stock por producto (optimistic update, unificado) ─────────
 // Servicio compartido por los dos flujos de ajuste de stock del Supervisor:
 // el ajuste de fila (+/− / edición directa) y el panel de lote de inventario.
+// Los mensajes de error se leen del catálogo compartido
+// (supervisorStockMessages) para que fila y lote usen el mismo texto.
+
+import { stockMessage } from './supervisorStockMessages';
 //
 // Estado por producto (op):
 //   { state: 'sending'|'pending'|'applied'|'failed', targetStock, commandId?, silent?, error? }
@@ -95,7 +99,7 @@ export function applyStockOpResult(ops, { productId, targetStock, commandId = nu
                 state: 'failed',
                 targetStock,
                 commandId,
-                error: result?.error || 'No se pudo actualizar el stock',
+                error: result?.error || stockMessage('STOCK_UPDATE_FAILED'),
             });
         }
         // Conclusión cierta de fallo (o nada enviado): reversión pura al stock
@@ -166,10 +170,10 @@ export function nextStockOpAfterInspection(op, inspection) {
             || inspection?.ack?.status === 'applied_with_warnings';
         return ok
             ? { ...op, state: 'applied' }
-            : { ...op, state: 'failed', error: inspection?.ack?.error || 'La caja rechazó el cambio de stock' };
+            : { ...op, state: 'failed', error: inspection?.ack?.error || stockMessage('BOX_REJECTED_STOCK') };
     }
     if (inspection?.state === 'expired') {
-        return { ...op, state: 'failed', error: 'La orden expiró en la caja sin aplicarse' };
+        return { ...op, state: 'failed', error: stockMessage('ORDER_EXPIRED') };
     }
     return null;
 }

@@ -11,6 +11,7 @@ import {
     RefreshCw,
     AlertTriangle,
 } from 'lucide-react';
+import { notifyStockToast, stockMessage } from '../../services/supervisorStockMessages';
 
 export default function SupervisorInventoryCatalog({
     products = [],
@@ -224,7 +225,7 @@ export default function SupervisorInventoryCatalog({
                                         type="button"
                                         onClick={() => {
                                             if (!remoteActionsAvailable) {
-                                                showToast?.('La caja está desconectada; no se puede cambiar el stock', 'warning');
+                                                notifyStockToast(showToast, 'BOX_OFFLINE_STOCK');
                                                 return;
                                             }
                                             openStockEditor(p);
@@ -443,7 +444,7 @@ export default function SupervisorInventoryCatalog({
                                                 type="button"
                                                 onClick={() => {
                                                     if (!remoteActionsAvailable) {
-                                                        showToast?.('La caja está desconectada; no se puede cambiar el stock', 'warning');
+                                                        notifyStockToast(showToast, 'BOX_OFFLINE_STOCK');
                                                         return;
                                                     }
                                                     openStockEditor(p);
@@ -617,7 +618,7 @@ export default function SupervisorInventoryCatalog({
                                     {!pending && op?.state === 'failed' && (
                                         <>
                                             <span className="flex items-center gap-1.5 text-[11px] font-black text-rose-600 dark:text-rose-400">
-                                                <AlertTriangle size={12} /> {op.error || 'No se pudo actualizar el stock'}
+                                                <AlertTriangle size={12} /> {op.error || stockMessage('STOCK_UPDATE_FAILED')}
                                             </span>
                                             <button
                                                 type="button"

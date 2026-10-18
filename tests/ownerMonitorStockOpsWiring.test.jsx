@@ -144,6 +144,9 @@ describe('OwnerMonitorView · ajuste de fila unificado con supervisorStockOps', 
     }
 
     async function stepUpAndConfirm() {
+        // Flujo real del UX actual: abrir el editor inline, ajustar con +/−,
+        // confirmar el nuevo stock y luego confirmar el cambio en la franja.
+        await act(async () => { button('Editar stock de Detodito Grande').click(); });
         await act(async () => { button('Subir stock de Detodito Grande').click(); });
         await act(async () => { button('Confirmar nuevo stock').click(); });
         await act(async () => { button('Confirmar cambio').click(); });
@@ -264,6 +267,7 @@ describe('OwnerMonitorView · diagnóstico de comandos y reconciliación de fila
         h.inspectImpl = async () => ({ state: 'terminal', ack: { status: 'applied' } });
 
         await mountAndOpenInventory();
+        await act(async () => { button('Editar stock de Detodito Grande').click(); });
         await act(async () => { button('Subir stock de Detodito Grande').click(); });
         await act(async () => { button('Confirmar nuevo stock').click(); });
         await act(async () => { button('Confirmar cambio').click(); });

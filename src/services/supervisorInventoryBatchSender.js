@@ -52,6 +52,8 @@ export function createBatchCommandStore(storage = globalThis.localStorage, scope
     };
 }
 
+import { stockMessage } from './supervisorStockMessages';
+
 function payloadKeyOf(payload) {
     return JSON.stringify({
         direction: payload.direction,
@@ -78,8 +80,8 @@ function finishBatch(summary, { status, error = null, commandId = null, ack = nu
             error: lineStatus === 'applied'
                 ? undefined
                 : (line.valid
-                    ? (error || 'La caja no confirmó el movimiento')
-                    : (line.error || 'La línea tiene datos inválidos o stock insuficiente')),
+                    ? (error || stockMessage('BOX_NO_CONFIRM_MOVE'))
+                    : (line.error || stockMessage('LINE_INVALID_OR_INSUFFICIENT'))),
             commandId,
             stockAfter: getAckStock(ack, line.projectedStock),
             ack,
@@ -147,8 +149,8 @@ export async function sendSupervisorInventoryBatch({
         return finishBatch(summary, {
             status: 'invalid',
             error: hasInvalidLines
-                ? 'Revisa las líneas marcadas antes de enviar'
-                : 'El lote no cumple el contrato batch v2',
+                ? stockMessage('REVIEW_LINES')
+                : stockMessage('BATCH_CONTRACT_INVALID'),
         });
     }
 
@@ -167,7 +169,7 @@ export async function sendSupervisorInventoryBatch({
         } catch {
             return finishBatch(summary, {
                 status: 'timeout',
-                error: 'No se pudo verificar el estado del lote anterior. No lo reenvíes todavía.',
+                error: stockMessage('PREVIOUS_BATCH_UNCHECKED'),
                 commandId: entry.commandId,
                 uncertain: true,
             });
@@ -192,7 +194,7 @@ export async function sendSupervisorInventoryBatch({
             if (entry.payloadKey === payloadKey) {
                 return finishBatch(summary, {
                     status: 'expired',
-                    error: 'La orden expiró en la caja sin aplicarse',
+                    error: stockMessage('ORDER_EXPIRED'),
                     commandId: entry.commandId,
                 });
             }
@@ -202,7 +204,7 @@ export async function sendSupervisorInventoryBatch({
                 // Hay otro lote sin confirmar: bloquear sin crear otro comando.
                 return finishBatch(summary, {
                     status: 'timeout',
-                    error: 'Hay un lote anterior sin confirmar en la caja. No se envió este nuevo lote.',
+                    error: stockMessage('PREVIOUS_BATCH_ACTIVE'),
                     commandId: entry.commandId,
                     uncertain: true,
                 });
@@ -213,7 +215,7 @@ export async function sendSupervisorInventoryBatch({
             } catch (error) {
                 return finishBatch(summary, {
                     status: 'timeout',
-                    error: error?.message || 'No se pudo consultar el ACK del lote anterior',
+                    error: error?.message || stockMessage('PREVIOUS_ACK_FAILED'),
                     commandId: entry.commandId,
                     uncertain: true,
                 });
@@ -240,7 +242,7 @@ export async function sendSupervisorInventoryBatch({
             const creationUncertain = response?.status === 'failed';
             return finishBatch(summary, {
                 status: creationUncertain ? 'timeout' : 'failed',
-                error: response?.error || 'No se pudo enviar la orden',
+                error: response?.error || stockMessage('SEND_FAILED'),
                 commandId,
                 uncertain: creationUncertain,
             });
@@ -271,7 +273,7 @@ export async function sendSupervisorInventoryBatch({
 
     return finishBatch(summary, {
         status: 'timeout',
-        error: ack?.error || 'La caja no confirmó la orden a tiempo',
+        error: ack?.error || stockMessage('ACK_TIMEOUT'),
         commandId,
         ack: ack || null,
         uncertain: true,

@@ -13,6 +13,7 @@ import SupervisorSelect from './SupervisorSelect';
 import { sendSupervisorCommand } from '../../services/supervisorCommandService';
 import { SUPERVISOR_REMOTE_EGRESS_ENABLED } from '../../config/supervisorPolicy';
 import { readConfiguredPresentationFactor } from '../../services/supervisorInventoryDraft';
+import { notifyStockToast, stockMessage } from '../../services/supervisorStockMessages';
 import { showToast } from '../Toast';
 
 const EGRESS_REASONS = [
@@ -134,32 +135,30 @@ export default function SupervisorInventoryBatchModal({
         setFormError('');
 
         if (!remoteAvailable) {
-            setFormError('La caja está desconectada. Espera a que vuelva a estar en línea.');
+            setFormError(stockMessage('BOX_OFFLINE_SEND'));
             return;
         }
         if (inputUnit !== 'unidades') {
             const factor = Number(unitsPerPackage);
             if (!Number.isInteger(factor) || factor < 1) {
-                setFormError('Indica cuántas unidades trae el bulto para continuar.');
+                setFormError(stockMessage(configuredFactor == null ? 'PACKAGE_FACTOR_MISSING' : 'PACKAGE_FACTOR_INVALID'));
                 return;
             }
         }
         if (!hasValidNumbers) {
-            setFormError('Indica una cantidad mayor que cero.');
+            setFormError(stockMessage('QUANTITY_REQUIRED'));
             return;
         }
         if (isEgress && !allowEgress) {
-            setFormError('Los egresos remotos aún están bloqueados por seguridad.');
+            setFormError(stockMessage('EGRESS_DISABLED'));
             return;
         }
         if (stockWillBeNegative) {
-            setFormError(`No puedes retirar ${formatNumber(unitsDelta)} unidades: el stock disponible es ${formatNumber(stock)}.`);
+            setFormError(stockMessage('STOCK_INSUFFICIENT', { units: unitsDelta, stock }));
             return;
         }
         if (!reason.trim()) {
-            setFormError(isEgress
-                ? 'Escribe el motivo del egreso para continuar.'
-                : 'Escribe el motivo del ingreso para continuar.');
+            setFormError(stockMessage('REASON_REQUIRED'));
             return;
         }
 
@@ -181,20 +180,20 @@ export default function SupervisorInventoryBatchModal({
                 },
             });
             if (!result.ok) {
-                setFormError(result.error || 'No se pudo enviar el movimiento.');
+                setFormError(result.error || stockMessage('SEND_FAILED'));
                 return;
             }
 
             const ack = await result.ackPromise;
             if (!ack?.ok) {
-                setFormError(ack?.error || 'La caja no confirmó el movimiento.');
+                setFormError(ack?.error || stockMessage('BOX_NO_CONFIRM_MOVE'));
                 return;
             }
 
-            showToast(isEgress ? 'Egreso confirmado en la caja' : 'Ingreso confirmado en la caja', 'success');
+            notifyStockToast(showToast, isEgress ? 'EGRESS_CONFIRMED' : 'INGRESS_CONFIRMED');
             onClose?.();
         } catch (error) {
-            setFormError(error?.message || 'No se pudo enviar el movimiento.');
+            setFormError(error?.message || stockMessage('SEND_FAILED'));
         } finally {
             setIsSubmitting(false);
         }
@@ -239,7 +238,7 @@ export default function SupervisorInventoryBatchModal({
 
                     <div className={`flex items-start gap-2 rounded-2xl border p-3 text-xs font-semibold ${remoteAvailable ? 'border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900/40 dark:bg-sky-950/20 dark:text-sky-300' : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300'}`}>
                         {remoteAvailable ? <Info size={16} className="mt-0.5 shrink-0" /> : <AlertTriangle size={16} className="mt-0.5 shrink-0" />}
-                        <span>{remoteAvailable ? 'Se enviará a la caja y solo se aplicará cuando la caja lo confirme.' : 'La caja está desconectada. El movimiento estará disponible cuando vuelva a estar en línea.'}</span>
+                        <span>{remoteAvailable ? 'Se enviará a la caja y solo se aplicará cuando la caja lo confirme.' : stockMessage('BOX_OFFLINE_INFO')}</span>
                     </div>
                 </div>
 
@@ -372,7 +371,7 @@ export default function SupervisorInventoryBatchModal({
                         <p className="mt-1 text-[11px] font-semibold text-slate-400">
                             Actual: {formatNumber(stock)} · {isEgress ? 'Sale' : 'Entra'}: {hasValidNumbers ? formatNumber(unitsDelta) : '—'} unidades
                         </p>
-                        {stockWillBeNegative && <p className="mt-1 text-[11px] font-bold text-rose-600">No hay stock suficiente para este egreso.</p>}
+                        {stockWillBeNegative && <p className="mt-1 text-[11px] font-bold text-rose-600">{stockMessage('STOCK_INSUFFICIENT_HINT')}</p>}
                     </div>
 
                     {formError && (

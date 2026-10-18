@@ -16,6 +16,7 @@ import {
 import { sendSupervisorInventoryBatch } from '../../services/supervisorInventoryBatchSender';
 import { buildInventoryBatchTargets, nextStockOpAfterInspection } from '../../services/supervisorStockOps';
 import { recordReconciliation } from '../../services/supervisorCommandDiagnostics';
+import { notifyStockToast, stockMessage } from '../../services/supervisorStockMessages';
 import { inspectSupervisorCommandState, sendSupervisorCommand } from '../../services/supervisorCommandService';
 import { buildProductRevision } from '../../services/supervisorContracts';
 
@@ -72,11 +73,6 @@ const UNIT_LABELS = {
 
 function isConnectionFailure(message = '') {
     return /conexi[oó]n|conect|desconect|offline|network|fetch|timeout|tiempo de espera/i.test(String(message));
-}
-
-function pendingLinesMessage(count) {
-    const label = count === 1 ? '1 línea queda pendiente' : `${count} líneas quedan pendientes`;
-    return `${label} para reintentar.`;
 }
 
 function getInventoryPresentationLabel(line) {
@@ -203,7 +199,7 @@ export default function SupervisorInventoryBatchPanel({
         if (!remoteAvailable) {
             setProgress(null);
             if (isSubmitting) {
-                setFormError(`Se perdió la conexión con la caja. ${pendingLinesMessage(draft.lines.length)}`);
+                setFormError(stockMessage('CONNECTION_LOST', { count: draft.lines.length }));
             }
         }
     }, [remoteAvailable, isSubmitting, draft.lines.length]);
@@ -231,10 +227,14 @@ export default function SupervisorInventoryBatchPanel({
                 const status = applied
                     ? (ack?.status || 'applied')
                     : (inspection?.state === 'expired' ? 'expired' : 'rejected');
-                const suffix = totalLines === 1 ? '' : 's';
-                const message = applied
-                    ? `Lote reconciliado en segundo plano: ${totalLines} movimiento${suffix} confirmado${suffix} en caja`
-                    : `Lote reconciliado en segundo plano: ${status === 'expired' ? 'La orden expiró en la caja sin aplicarse' : (ack?.error || 'La caja rechazó el lote')}. ${pendingLinesMessage(totalLines)}`;
+                const messageKey = applied ? 'RECONCILED_APPLIED' : 'RECONCILED_FAILED';
+                const messageParams = applied
+                    ? { count: totalLines }
+                    : {
+                        reason: status === 'expired' ? stockMessage('ORDER_EXPIRED') : (ack?.error || stockMessage('BATCH_REJECTED')),
+                        count: totalLines,
+                    };
+                const message = stockMessage(messageKey, messageParams);
                 setIsUncertain(false);
                 setFormError('');
                 setReconciled({ ok: applied, status, message });
@@ -247,7 +247,7 @@ export default function SupervisorInventoryBatchPanel({
                     status,
                     detail: message,
                 });
-                showToast?.(message, applied ? 'success' : 'warning');
+                notifyStockToast(showToast, messageKey, messageParams);
                 // La vista confirma (o revierte) el mismo objetivo provisional.
                 onCompleted?.(
                     applied
@@ -321,7 +321,7 @@ export default function SupervisorInventoryBatchPanel({
         const factor = Number(unitsPerPackage);
         if (!selectedProduct || !Number.isInteger(factor) || factor < 1) return;
         if (!SUPERVISOR_REMOTE_PRODUCTS_ENABLED) {
-            setFormError('La edición remota de productos está deshabilitada');
+            setFormError(stockMessage('PRODUCTS_EDIT_DISABLED'));
             return;
         }
         setIsSavingFactor(true);
@@ -339,17 +339,17 @@ export default function SupervisorInventoryBatchPanel({
                 },
             });
             if (!result?.ok) {
-                setFormError(result?.error || 'No se pudo guardar el empaque en el producto');
+                setFormError(result?.error || stockMessage('PACKAGE_SAVE_FAILED'));
                 return;
             }
             const ack = await result.ackPromise;
             if (!ack?.ok) {
-                setFormError(ack?.error || 'La caja no confirmó el cambio de empaque');
+                setFormError(ack?.error || stockMessage('PACKAGE_SAVE_UNCONFIRMED'));
                 return;
             }
-            showToast('Empaque guardado en el producto', 'success');
+            notifyStockToast(showToast, 'PACKAGE_SAVED');
         } catch (error) {
-            setFormError(error?.message || 'No se pudo guardar el empaque en el producto');
+            setFormError(error?.message || stockMessage('PACKAGE_SAVE_FAILED'));
         } finally {
             setIsSavingFactor(false);
         }
@@ -359,15 +359,15 @@ export default function SupervisorInventoryBatchPanel({
 
     const addLine = () => {
         if (!selectedProduct || !selectedProductId || productSearch.trim().toLowerCase() !== selectedProduct.name.trim().toLowerCase()) {
-            setFormError('Busca y selecciona un producto');
+            setFormError(stockMessage('PRODUCT_REQUIRED'));
             return;
         }
         if (PRESENTATION_UNITS.includes(inputUnit)) {
             const factor = Number(unitsPerPackage);
             if (!Number.isInteger(factor) || factor < 1) {
-                setFormError(readConfiguredPresentationFactor(selectedProduct) == null
-                    ? 'Este producto no tiene el bulto configurado. Indica cuántas unidades trae el bulto.'
-                    : 'Las unidades por bulto deben ser un número entero mayor que cero.');
+                setFormError(stockMessage(readConfiguredPresentationFactor(selectedProduct) == null
+                    ? 'PACKAGE_FACTOR_MISSING'
+                    : 'PACKAGE_FACTOR_INVALID'));
                 return;
             }
         }
@@ -395,19 +395,19 @@ export default function SupervisorInventoryBatchPanel({
     const validateBeforeSend = () => {
         if (!remoteAvailable) {
             setProgress(null);
-            setFormError('Conecta la caja antes de enviar la recepción');
+            setFormError(stockMessage('BOX_OFFLINE_SEND'));
             return false;
         }
         if (isEgress && !SUPERVISOR_REMOTE_EGRESS_ENABLED) {
-            setFormError('Los egresos remotos están deshabilitados');
+            setFormError(stockMessage('EGRESS_DISABLED'));
             return false;
         }
         if (!draft.reason.trim()) {
-            setFormError('Indica el motivo del movimiento');
+            setFormError(stockMessage('REASON_REQUIRED'));
             return false;
         }
         if (!summary.canSubmit) {
-            setFormError(summary.invalidLines.length ? 'Revisa las líneas marcadas antes de enviar' : 'Agrega al menos un producto');
+            setFormError(stockMessage(summary.invalidLines.length ? 'REVIEW_LINES' : 'ADD_PRODUCT_FIRST'));
             return false;
         }
         return true;
@@ -457,13 +457,7 @@ export default function SupervisorInventoryBatchPanel({
 
             if (status === 'applied' || status === 'applied_with_warnings') {
                 setIsUncertain(false);
-                const suffix = summary.totalLines === 1 ? '' : 's';
-                showToast?.(
-                    status === 'applied_with_warnings'
-                        ? `${summary.totalLines} movimiento${suffix} aplicado${suffix} con advertencias en caja`
-                        : `${summary.totalLines} movimiento${suffix} confirmado${suffix} en caja`,
-                    status === 'applied_with_warnings' ? 'warning' : 'success',
-                );
+                notifyStockToast(showToast, status === 'applied_with_warnings' ? 'BATCH_APPLIED_WITH_WARNINGS' : 'BATCH_CONFIRMED', { count: summary.totalLines });
                 onCompleted?.(result, targets);
                 onClose?.();
                 return;
@@ -481,8 +475,8 @@ export default function SupervisorInventoryBatchPanel({
                     ? { commandId: result.commandId, targets, totalLines: summary.totalLines }
                     : null);
                 setProgress(null);
-                setFormError('La caja aún no confirma el lote; puede seguir aplicándolo. No lo reenvíes: pulsa "Revisar estado del lote" para consultar sin crear otro comando.');
-                showToast?.('Lote sin confirmar todavía', 'warning');
+                setFormError(stockMessage('BATCH_UNCONFIRMED'));
+                notifyStockToast(showToast, 'BATCH_UNCONFIRMED_TOAST');
                 onCompleted?.(result, targets);
                 return;
             }
@@ -492,13 +486,13 @@ export default function SupervisorInventoryBatchPanel({
                 // pendientes y el reintento es seguro (se usará un comando nuevo).
                 setIsUncertain(false);
                 setProgress(null);
-                const reason = status === 'expired'
-                    ? 'La orden expiró en la caja sin aplicarse.'
+                const reason = stockMessage(status === 'expired'
+                    ? 'ORDER_EXPIRED'
                     : status === 'cancelled'
-                        ? 'La orden fue cancelada antes de aplicarse.'
-                        : 'La caja rechazó el lote.';
-                setFormError(`${reason} ${pendingLinesMessage(summary.totalLines)}`);
-                showToast?.(`0 aplicados; quedan ${summary.totalLines} pendientes de revisión`, 'warning');
+                        ? 'BATCH_CANCELLED'
+                        : 'BATCH_REJECTED');
+                setFormError(`${reason}. ${stockMessage('PENDING_LINES', { count: summary.totalLines })}`);
+                notifyStockToast(showToast, 'BATCH_PARTIAL', { applied: 0, pending: summary.totalLines });
                 onCompleted?.(result, targets);
                 return;
             }
@@ -506,7 +500,7 @@ export default function SupervisorInventoryBatchPanel({
             if (status === 'invalid') {
                 setIsUncertain(false);
                 setProgress(null);
-                setFormError(result.error || 'Revisa las líneas marcadas antes de enviar');
+                setFormError(result.error || stockMessage('REVIEW_LINES'));
                 // Nada se envió: la vista revierte cualquier display provisional.
                 onCompleted?.(result, targets);
                 return;
@@ -514,7 +508,7 @@ export default function SupervisorInventoryBatchPanel({
 
             if (result.ok) {
                 setIsUncertain(false);
-                showToast?.(`${summary.totalLines} movimiento${summary.totalLines === 1 ? '' : 's'} confirmado${summary.totalLines === 1 ? '' : 's'} en caja`, 'success');
+                notifyStockToast(showToast, 'BATCH_CONFIRMED', { count: summary.totalLines });
                 onCompleted?.(result, targets);
                 onClose?.();
                 return;
@@ -534,12 +528,12 @@ export default function SupervisorInventoryBatchPanel({
             }));
             if (connectionLost || appliedCount === 0) {
                 setProgress(null);
-                setFormError(`${connectionLost ? 'La conexión con la caja se perdió.' : 'La caja no confirmó ningún movimiento.'} ${pendingLinesMessage(pendingCount)}`);
+                setFormError(stockMessage(connectionLost ? 'CONNECTION_LOST' : 'NONE_CONFIRMED', { count: pendingCount }));
             } else {
                 setProgress({ completed: appliedCount, total: summary.totalLines, partial: true });
                 setFormError('');
             }
-            showToast?.(`${appliedCount} aplicados; quedan ${pendingCount} pendientes de revisión`, 'warning');
+            notifyStockToast(showToast, 'BATCH_PARTIAL', { applied: appliedCount, pending: pendingCount });
             onCompleted?.(result, targets);
         } catch (error) {
             // Excepción no clasificada = estado incierto: tampoco se recomienda
@@ -548,7 +542,7 @@ export default function SupervisorInventoryBatchPanel({
             setUncertainBatch(null);
             setReconciled(null);
             setProgress(null);
-            setFormError(`No se pudo confirmar el lote: ${error?.message || 'error desconocido'}. No lo reenvíes: pulsa "Revisar estado del lote" para consultar sin crear otro comando.`);
+            setFormError(stockMessage('BATCH_CONFIRM_ERROR', { error: error?.message }));
             // Estado desconocido: la vista deja el stock objetivo como provisional
             // y lo reconcilia sola (o lo revierte si el lote terminó fallando).
             onCompleted?.({ ok: false, status: 'timeout', uncertain: true, error: error?.message || 'error desconocido' }, targets);
@@ -676,7 +670,7 @@ export default function SupervisorInventoryBatchPanel({
                         </>
                     )}
 
-                    {(formError || !remoteAvailable) && <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-200"><AlertTriangle size={16} className="mt-0.5 shrink-0" />{formError || 'La caja está desconectada. Conecta la caja para confirmar; las líneas quedarán pendientes.'}</div>}
+                    {(formError || !remoteAvailable) && <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-200"><AlertTriangle size={16} className="mt-0.5 shrink-0" />{formError || stockMessage('BOX_OFFLINE_PENDING')}</div>}
                     {reconciled && <div data-testid="batch-reconciled-result" className={`flex items-start gap-2 rounded-2xl border p-3 text-xs font-bold ${reconciled.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-200' : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-200'}`}>{reconciled.ok ? <CheckCircle2 size={16} className="mt-0.5 shrink-0" /> : <AlertTriangle size={16} className="mt-0.5 shrink-0" />}{reconciled.message}</div>}
                     {progress && remoteAvailable && <div className="flex items-center gap-2 rounded-2xl bg-slate-100 p-3 text-xs font-bold text-slate-600 dark:bg-slate-950 dark:text-slate-300">{progress.awaitingAck ? <><Loader2 size={16} className="animate-spin text-emerald-500" /> Lote enviado: esperando confirmación global de la caja ({progress.total} líneas{progress.phase === 'reconciling' ? ', revisando orden anterior' : ''})</> : <>{progress.partial ? <AlertTriangle size={16} className="text-amber-500" /> : progress.completed === progress.total ? <CheckCircle2 size={16} className="text-emerald-500" /> : <Loader2 size={16} className="animate-spin text-emerald-500" />} Procesados {progress.completed} de {progress.total}{progress.partial ? '. Revisa las líneas pendientes.' : ''}</>}</div>}
                 </div>

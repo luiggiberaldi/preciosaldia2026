@@ -1,4 +1,5 @@
 import { round0, round3 } from '../utils/dinero';
+import { stockMessage } from './supervisorStockMessages';
 import {
     MAX_GRANEL_KG,
     granelUnitLabel,
@@ -34,43 +35,43 @@ export function resolveGranelKind(product) {
  */
 export function resolveInventoryUnitConversion(product, { inputUnit, quantityInput, unitsPerPackage } = {}) {
     const quantity = Number(quantityInput);
-    if (!INPUT_UNITS.has(inputUnit)) return { ok: false, error: 'Unidad de inventario inválida' };
-    if (!Number.isFinite(quantity) || quantity <= 0) return { ok: false, error: 'La cantidad debe ser mayor que cero' };
-    if (!product) return { ok: false, error: 'Producto no encontrado' };
+    if (!INPUT_UNITS.has(inputUnit)) return { ok: false, error: stockMessage('UNIT_INVALID') };
+    if (!Number.isFinite(quantity) || quantity <= 0) return { ok: false, error: stockMessage('QUANTITY_REQUIRED') };
+    if (!product) return { ok: false, error: stockMessage('PRODUCT_NOT_FOUND') };
 
     const isGranel = isGranelProduct(product);
     const toCanonical = MEASURE_TO_CANONICAL[inputUnit];
     if (toCanonical) {
-        if (!isGranel) return { ok: false, error: 'Las unidades de peso o volumen solo aplican a productos a granel' };
+        if (!isGranel) return { ok: false, error: stockMessage('MEASURE_ON_NON_GRANEL') };
         const kind = resolveGranelKind(product);
-        if (!kind) return { ok: false, error: 'No se puede determinar si el producto a granel es sólido o líquido' };
+        if (!kind) return { ok: false, error: stockMessage('GRANEL_KIND_UNKNOWN') };
         const allowed = kind === 'liquid' ? LIQUID_MEASURE_UNITS : SOLID_MEASURE_UNITS;
         if (!allowed.includes(inputUnit)) {
-            return { ok: false, error: kind === 'liquid' ? 'Producto líquido: usa lt o ml' : 'Producto sólido: usa kg o g' };
+            return { ok: false, error: stockMessage(kind === 'liquid' ? 'GRANEL_LIQUID_UNITS' : 'GRANEL_SOLID_UNITS') };
         }
         const unitsDelta = toCanonical(quantity);
-        if (!(unitsDelta > 0) || unitsDelta > MAX_GRANEL_KG) return { ok: false, error: 'Cantidad de granel fuera de rango' };
+        if (!(unitsDelta > 0) || unitsDelta > MAX_GRANEL_KG) return { ok: false, error: stockMessage('GRANEL_RANGE') };
         return { ok: true, unitsDelta, unitsPerPackage: 1 };
     }
 
     if (inputUnit === 'unidades') {
         if (isGranel) {
             const unitsDelta = round3(quantity);
-            if (!(unitsDelta > 0) || unitsDelta > MAX_GRANEL_KG) return { ok: false, error: 'Cantidad de granel fuera de rango' };
+            if (!(unitsDelta > 0) || unitsDelta > MAX_GRANEL_KG) return { ok: false, error: stockMessage('GRANEL_RANGE') };
             return { ok: true, unitsDelta, unitsPerPackage: 1 };
         }
-        if (!Number.isInteger(quantity)) return { ok: false, error: 'Las unidades contables deben ser enteras' };
+        if (!Number.isInteger(quantity)) return { ok: false, error: stockMessage('UNITS_MUST_BE_INTEGER') };
         return { ok: true, unitsDelta: quantity, unitsPerPackage: 1 };
     }
 
     // cajas / bultos: solo productos contables con factor entero positivo.
-    if (isGranel) return { ok: false, error: 'Cajas y bultos no aplican a productos a granel' };
+    if (isGranel) return { ok: false, error: stockMessage('PRESENTATION_ON_GRANEL') };
     const factor = Number(unitsPerPackage);
-    if (!Number.isInteger(factor) || factor <= 0) return { ok: false, error: 'Las unidades por presentación deben ser un entero positivo' };
+    if (!Number.isInteger(factor) || factor <= 0) return { ok: false, error: stockMessage('PACKAGE_FACTOR_INVALID') };
     const raw = quantity * factor;
     const unitsDelta = round0(raw);
     if (Math.abs(raw - unitsDelta) > 1e-9 || unitsDelta <= 0) {
-        return { ok: false, error: 'La conversión debe dar unidades contables enteras' };
+        return { ok: false, error: stockMessage('CONVERSION_NOT_INTEGER') };
     }
     return { ok: true, unitsDelta, unitsPerPackage: factor };
 }
@@ -121,14 +122,14 @@ function canMergeLines(left, right) {
 }
 
 export function addInventoryDraftLine(draft, line = {}) {
-    if (!draft?.direction || !line.productId) return { draft, error: 'Selecciona un producto' };
-    if (!INPUT_UNITS.has(line.inputUnit)) return { draft, error: 'Unidad de ingreso inválida' };
+    if (!draft?.direction || !line.productId) return { draft, error: stockMessage('PRODUCT_REQUIRED') };
+    if (!INPUT_UNITS.has(line.inputUnit)) return { draft, error: stockMessage('UNIT_INVALID') };
 
     const quantityInput = toPositiveNumber(line.quantityInput);
     const unitsPerPackage = ['cajas', 'bultos'].includes(line.inputUnit)
         ? toPositiveNumber(line.unitsPerPackage, 1)
         : 1;
-    if (!quantityInput) return { draft, error: 'La cantidad debe ser mayor que cero' };
+    if (!quantityInput) return { draft, error: stockMessage('QUANTITY_REQUIRED') };
 
     const normalized = {
         id: line.id || createId('line'),
@@ -203,7 +204,9 @@ export function getInventoryDraftSummary(draft, products = []) {
             stock,
             unitsDelta,
             projectedStock,
-            error: conversion.ok ? (insufficient ? 'Stock insuficiente para el egreso' : null) : conversion.error,
+            error: conversion.ok
+                ? (insufficient ? stockMessage('STOCK_INSUFFICIENT', { units: unitsDelta, stock }) : null)
+                : conversion.error,
             valid: conversion.ok && !insufficient,
         };
     });
