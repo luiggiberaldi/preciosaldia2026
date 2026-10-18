@@ -2,6 +2,10 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 // v1.2.0: useReveal hook para animaciones reveal-on-scroll (design system "Precios al Día")
 import { useReveal } from '../hooks/useReveal';
 import { storageService } from '../utils/storageService';
+// Cierre FIX-VENTAS-STOCK-SUPERVISOR §4: todo escritor del catálogo pasa por
+// pos_write_lock (merge 3-way) para no pisar ventas u órdenes del supervisor.
+import { persistCatalogLocked } from '../utils/catalogLock';
+import { withLock } from '../utils/withLock';
 import { showToast } from '../components/Toast';
 import { Package, Plus, Trash2, X, Store, Tag, Pencil, Banknote, Search, ChevronLeft, ChevronRight, AlertTriangle, Box, LayoutGrid, List, Minus, ArrowUpDown, Clock, Percent, Printer, CheckSquare } from 'lucide-react';
 import { Modal } from '../components/Modal';
@@ -150,8 +154,10 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 }
 
                 const res = await migrateProductImagesToStorage(current, async (out) => {
-                    await storageService.setItem('bodega_products_v1', out);
-                    if (!cancelled) setProducts(out);
+                    // Cierre §4: la migración no pisa cambios concurrentes (ventas,
+                    // órdenes del supervisor): merge 3-way bajo pos_write_lock.
+                    const merged = await persistCatalogLocked({ local: out, base: current, storage: storageService });
+                    if (!cancelled) setProducts(merged);
                 });
 
                 if (res.failed === 0) {
@@ -499,9 +505,18 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         // El debounce del useEffect en ProductContext puede ser cancelado por el
         // clearTimeout cuando handleClose() dispara un re-render antes de que el
         // timer de 1s se ejecute, haciendo que el guardado se pierda silenciosamente.
-        storageService.setItem('bodega_products_v1', updatedProducts);
+        // Cierre §4: bajo pos_write_lock + merge 3-way — lo que el formulario NO
+        // tocó se toma del catálogo fresco (una venta u orden concurrente sobrevive).
+        const persistedProducts = await persistCatalogLocked({
+            local: updatedProducts,
+            base: products,
+            storage: storageService,
+        }).catch(err => {
+            console.error('[ProductsView] No se pudo guardar el catálogo:', err);
+            return updatedProducts;
+        });
 
-        setProducts(updatedProducts);
+        setProducts(persistedProducts);
         handleClose();
     };
 
@@ -576,13 +591,22 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
     };
 
     const handleDelete = (id) => { triggerHaptic && triggerHaptic(); setDeleteId(id); };
-    const confirmDelete = () => {
+    const confirmDelete = async () => {
         if (deleteId) {
             const p = products.find(x => x.id === deleteId);
             auditLog('INVENTARIO', 'PRODUCTO_ELIMINADO', `Producto "${p?.name || '?'}" eliminado`);
             const updatedProducts = products.filter(prod => prod.id !== deleteId);
-            storageService.setItem('bodega_products_v1', updatedProducts);
-            setProducts(updatedProducts);
+            // Cierre §4: merge 3-way bajo pos_write_lock — el borrado se aplica sin
+            // pisar cambios concurrentes en los demás productos.
+            const persistedProducts = await persistCatalogLocked({
+                local: updatedProducts,
+                base: products,
+                storage: storageService,
+            }).catch(err => {
+                console.error('[ProductsView] No se pudo guardar el catálogo:', err);
+                return updatedProducts;
+            });
+            setProducts(persistedProducts);
             setDeleteId(null);
             triggerHaptic && triggerHaptic();
         }
@@ -1115,7 +1139,9 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                             if (deleteAllConfirmText.trim().toUpperCase() === 'BORRAR') {
                                 localStorage.setItem('confirm_bulk_delete_catalog_flag', 'true');
                                 setProducts([]);
-                                storageService.removeItem('bodega_products_v1');
+                                // Cierre §4: el borrado masivo también se turna por el candado.
+                                withLock('pos_write_lock', () => storageService.removeItem('bodega_products_v1'))
+                                    .catch(err => console.error('[ProductsView] No se pudo vaciar el catálogo:', err));
                                 setIsDeleteAllModalOpen(false);
                                 setDeleteAllConfirmText('');
                             }

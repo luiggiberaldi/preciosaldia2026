@@ -3,6 +3,8 @@ import { X, TrendingUp, TrendingDown, Percent, Check, AlertTriangle, RotateCcw, 
 import { logEvent } from '../../services/auditService';
 import { useAuthStore } from '../../hooks/store/useAuthStore';
 import { storageService } from '../../utils/storageService';
+// Cierre FIX-VENTAS-STOCK-SUPERVISOR §4: escritos del catálogo bajo pos_write_lock.
+import { mutateCatalogLocked } from '../../utils/catalogLock';
 import { round2 } from '../../utils/dinero';
 import { formatUsd, formatBs, formatCop } from '../../utils/calculatorUtils';
 import CustomSelect from '../CustomSelect';
@@ -209,9 +211,7 @@ export default function BulkPriceAdjustModal({
 
             // 2. Mapear nuevos precios sincronizando TODAS las monedas
             const targetIds = new Set(affectedProducts.map(p => p.id));
-            const updatedProducts = (products || []).map(p => {
-                if (!targetIds.has(p.id)) return p;
-
+            const scaleProduct = (p) => {
                 const oldPriceUsd = p.priceUsdt ?? p.priceUsd ?? 0;
                 // Si el precio base era 0, respetarlo para no inflar artículos en $0
                 const newPriceUsd = oldPriceUsd > 0 ? Math.max(0.01, round2(oldPriceUsd * multiplier)) : 0;
@@ -243,11 +243,17 @@ export default function BulkPriceAdjustModal({
                 }
 
                 return updated;
-            });
+            };
 
-            // 3. Persistencia Inmediata en storageService
-            await storageService.setItem('bodega_products_v1', updatedProducts);
-            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_products_v1' } }));
+            // 3. Persistencia inmediata: Cierre §4 — RMW bajo pos_write_lock sobre el
+            // catálogo FRESCO. El multiplicador se aplica a los precios vigentes y lo
+            // que el ajuste no toca (stock, lotes…) sobrevive de escritores
+            // concurrentes (ventas, órdenes del supervisor). storageService.setItem
+            // ya emite app_storage_update: no hace falta re-dispararlo.
+            const updatedProducts = await mutateCatalogLocked(
+                fresh => fresh.map(p => (targetIds.has(p.id) ? scaleProduct(p) : p)),
+                { storage: storageService }
+            );
             setProducts(updatedProducts);
 
             // 4. Limpiar selección si se aplicó a seleccionados
@@ -288,7 +294,7 @@ export default function BulkPriceAdjustModal({
 
         try {
             const snapshotMap = new Map(undoSnapshot.products.map(p => [p.id, p]));
-            const restoredProducts = (products || []).map(p => {
+            const restoreSnapshotFields = (p) => {
                 const snap = snapshotMap.get(p.id);
                 if (!snap) return p;
                 return {
@@ -300,11 +306,15 @@ export default function BulkPriceAdjustModal({
                     unitPriceUsd: snap.unitPriceUsd,
                     unitPriceCop: snap.unitPriceCop,
                 };
-            });
+            };
 
-            await storageService.setItem('bodega_products_v1', restoredProducts);
+            // Cierre §4: la reversión también es RMW bajo pos_write_lock — restaura
+            // los precios del snapshot sin pisar cambios concurrentes en otros campos.
+            const restoredProducts = await mutateCatalogLocked(
+                fresh => fresh.map(restoreSnapshotFields),
+                { storage: storageService }
+            );
             await storageService.removeItem('last_bulk_price_snapshot');
-            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_products_v1' } }));
             setProducts(restoredProducts);
             setUndoSnapshot(null);
 

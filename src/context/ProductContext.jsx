@@ -8,6 +8,10 @@ import { showToast } from '../components/Toast';
 import { Modal } from '../components/Modal';
 import { AlertTriangle, ShieldAlert, RotateCcw } from 'lucide-react';
 import { isGranelProduct, adjustStockValue, normalizeStockValue, useGranelUnitMode } from '../utils/granel.js'; // GRANEL-001
+import { withLock } from '../utils/withLock';
+// Cierre FIX-VENTAS-STOCK-SUPERVISOR §4: escrituras del catálogo serializadas
+// bajo `pos_write_lock` y merge 3-way con lo que otros escritores hayan aplicado.
+import { mergeCatalog3Way, persistCatalogLocked, mutateCatalogLocked } from '../utils/catalogLock';
 
 // Mantener una única instancia durante HMR y cargas lazy. Si Vite recarga este
 // módulo mientras una vista lazy conserva la versión anterior, un Context nuevo
@@ -65,6 +69,27 @@ export function ProductProvider({ children }) {
         productsRef.current = products;
     }, [products]);
 
+    // Último snapshot de storage con el que el estado local está sincronizado.
+    // Es el "base" del merge 3-way al persistir (ver utils/catalogLock).
+    const persistedRef = useRef([]);
+
+    // Sincroniza el estado con storage preservando los cambios locales aún no
+    // persistidos (merge 3-way). Una orden del supervisor que acaba de aplicarse
+    // NO debe barrer una edición del cajero que está en vuelo, ni viceversa.
+    const syncFromStorage = useCallback(async (remoteArg) => {
+        const remote = Array.isArray(remoteArg)
+            ? remoteArg
+            : (await storageService.getItem('bodega_products_v1', [])) || [];
+        // El base se lee DENTRO del updater: así `prev` y `base` son consistentes
+        // aunque varios refrescos lleguen en el mismo tick (dos listeners).
+        setProducts(prev => {
+            const base = persistedRef.current;
+            persistedRef.current = remote;
+            const merged = mergeCatalog3Way({ local: prev, base, remote });
+            return JSON.stringify(merged) === JSON.stringify(prev) ? prev : merged;
+        });
+    }, []);
+
     // CHECKOUT MODE — 'auto' (Detección inteligente) | 'basic' (Móvil) | 'pos' (PC)
     const [checkoutMode, setCheckoutModeState] = useState(() => {
         return localStorage.getItem('checkout_mode') || 'auto';
@@ -99,6 +124,8 @@ export function ProductProvider({ children }) {
             const savedProducts = await storageService.getItem('bodega_products_v1', []);
             const savedCategories = await storageService.getItem('my_categories_v1', BODEGA_CATEGORIES);
             if (isMounted) {
+                // El estado nace sincronizado con storage: ese es el base del merge.
+                persistedRef.current = Array.isArray(savedProducts) ? savedProducts : [];
                 setProducts(savedProducts);
                 setCategories(savedCategories);
                 setIsLoadingProducts(false);
@@ -114,8 +141,7 @@ export function ProductProvider({ children }) {
             if (savingRef.current && e?.detail?.source !== 'remote') return;
             const updatedKey = e?.detail?.key || e?.key;
             if (!updatedKey || updatedKey === 'bodega_products_v1') {
-                const refreshedProducts = await storageService.getItem('bodega_products_v1', []);
-                setProducts(refreshedProducts);
+                await syncFromStorage();
             }
         };
 
@@ -125,7 +151,7 @@ export function ProductProvider({ children }) {
             window.removeEventListener('app_storage_update', handleStorageUpdate);
             window.removeEventListener('storage', handleStorageUpdate);
         };
-    }, []);
+    }, [syncFromStorage]);
 
     // One-time migration: assign priceCop to existing products that don't have it
     useEffect(() => {
@@ -174,13 +200,35 @@ export function ProductProvider({ children }) {
 
         const timer = setTimeout(() => {
             const savePromises = [];
-            if (products.length > 0) {
-                savePromises.push(storageService.setItem('bodega_products_v1', products));
+            const localProducts = productsRef.current;
+            if (localProducts.length > 0) {
+                // Cierre FIX-VENTAS-STOCK-SUPERVISOR §4: el auto-save ya no pinta el
+                // estado por encima de storage. Persiste bajo pos_write_lock y mergea
+                // 3-way: los campos que el cajero tocó ganan; el resto se toma fresco
+                // (una venta u orden del supervisor aplicada en el intervalo sobrevive).
+                savePromises.push(
+                    persistCatalogLocked({
+                        local: localProducts,
+                        base: persistedRef.current,
+                        storage: storageService,
+                    }).then(merged => {
+                        setProducts(prev => {
+                            const base = persistedRef.current;
+                            persistedRef.current = merged;
+                            // Ediciones hechas durante la escritura se mergean encima.
+                            const result = mergeCatalog3Way({ local: prev, base, remote: merged });
+                            return JSON.stringify(result) === JSON.stringify(prev) ? prev : result;
+                        });
+                    })
+                );
             } else {
                 // VUL-003 Guard: Solo borrar si hay confirmación explícita de admin
                 const isConfirmed = localStorage.getItem('confirm_bulk_delete_catalog_flag') === 'true';
                 if (isConfirmed) {
-                    savePromises.push(storageService.removeItem('bodega_products_v1'));
+                    savePromises.push(
+                        withLock('pos_write_lock', () => storageService.removeItem('bodega_products_v1'))
+                            .then(() => { persistedRef.current = []; })
+                    );
                 }
             }
             savePromises.push(storageService.setItem('my_categories_v1', categories));
@@ -204,9 +252,7 @@ export function ProductProvider({ children }) {
         const handleStorageChange = (e) => {
             if (e.key === 'bodega_products_v1') {
                 storageService.getItem('bodega_products_v1', []).then(updatedProducts => {
-                    if (JSON.stringify(updatedProducts) !== JSON.stringify(productsRef.current)) {
-                        setProducts(updatedProducts);
-                    }
+                    syncFromStorage(updatedProducts);
                 });
             }
             if (e.key === 'my_categories_v1') {
@@ -220,10 +266,7 @@ export function ProductProvider({ children }) {
             if (!key) return;
 
             if (key === 'bodega_products_v1') {
-                const updatedProducts = await storageService.getItem('bodega_products_v1', []);
-                if (JSON.stringify(updatedProducts) !== JSON.stringify(productsRef.current)) {
-                    setProducts(updatedProducts);
-                }
+                await syncFromStorage();
             }
             if (key === 'my_categories_v1') {
                 const updatedCategories = await storageService.getItem('my_categories_v1', BODEGA_CATEGORIES);
@@ -239,7 +282,7 @@ export function ProductProvider({ children }) {
             window.removeEventListener('storage', handleStorageChange);
             window.removeEventListener('app_storage_update', handleAppStorageUpdate);
         };
-    }, []);
+    }, [syncFromStorage]);
 
     // Restauración de Copia de Sombra (Shadow Snapshot Restore)
     const restoreShadowBackup = useCallback(async () => {
@@ -257,41 +300,50 @@ export function ProductProvider({ children }) {
         return false;
     }, []);
 
+    // Cierre FIX-VENTAS-STOCK-SUPERVISOR §4: ajuste y fijado de stock pasan por
+    // un RMW bajo pos_write_lock sobre el catálogo FRESCO de storage (antes
+    // escribían el array de estado, revirtiendo ventas u órdenes del supervisor
+    // aplicadas en el intervalo). El resultado de la operación manda sobre el
+    // stock de ese producto; el resto del catálogo se mergea 3-way.
+    const applyStockWrite = useCallback((productId, mutator) => {
+        // Devuelve la promesa para que los callers en lote (StockBatchModal) puedan
+        // serializar de verdad varios ajustes consecutivos.
+        return mutateCatalogLocked(fresh => fresh.map(p => {
+            if (p.id !== productId) return p;
+            const allowNeg = localStorage.getItem('allow_negative_stock') === 'true';
+            const isGranel = isGranelProduct(p);
+            const newStock = mutator(p, isGranel, allowNeg);
+            return { ...p, stock: allowNeg ? newStock : Math.max(0, newStock) };
+        }), { storage: storageService })
+            .then(written => {
+                setProducts(prev => {
+                    const base = persistedRef.current;
+                    persistedRef.current = written;
+                    const merged = mergeCatalog3Way({ local: prev, base, remote: written });
+                    // El stock escrito por la operación es la verdad para ese producto.
+                    const writtenTarget = written.find(p => String(p.id) === String(productId));
+                    return writtenTarget
+                        ? merged.map(p => (String(p.id) === String(productId) ? { ...p, stock: writtenTarget.stock } : p))
+                        : merged;
+                });
+            })
+            .catch(err => {
+                console.error('[ProductContext] No se pudo actualizar el stock:', err);
+                showToast('No se pudo actualizar el stock', 'error');
+            });
+    }, []);
+
     // GRANEL-001: ajuste con aritmética canónica — sin drift IEEE-754.
     // Granel → hasta 3 decimales; resto → entero estricto.
     const adjustStock = useCallback((productId, delta) => {
-        setProducts(prevProducts => {
-            const updated = prevProducts.map(p => {
-                if (p.id === productId) {
-                    const allowNeg = localStorage.getItem('allow_negative_stock') === 'true';
-                    const isGranel = isGranelProduct(p);
-                    const newStock = adjustStockValue(p.stock ?? 0, delta, isGranel);
-                    return { ...p, stock: allowNeg ? newStock : Math.max(0, newStock) };
-                }
-                return p;
-            });
-            storageService.setItem('bodega_products_v1', updated);
-            return updated;
-        });
-    }, []);
+        return applyStockWrite(productId, (p, isGranel) => adjustStockValue(p.stock ?? 0, delta, isGranel));
+    }, [applyStockWrite]);
 
     // GRANEL-001: fijar el stock directamente (edición inline en tarjeta/lista).
     // Aplica el mismo guardarraíl de tipado y respeta allow_negative_stock.
     const setDirectStock = useCallback((productId, newStockRaw) => {
-        setProducts(prevProducts => {
-            const updated = prevProducts.map(p => {
-                if (p.id === productId) {
-                    const allowNeg = localStorage.getItem('allow_negative_stock') === 'true';
-                    const isGranel = isGranelProduct(p);
-                    const newStock = normalizeStockValue(newStockRaw, isGranel);
-                    return { ...p, stock: allowNeg ? newStock : Math.max(0, newStock) };
-                }
-                return p;
-            });
-            storageService.setItem('bodega_products_v1', updated);
-            return updated;
-        });
-    }, []);
+        return applyStockWrite(productId, (p, isGranel) => normalizeStockValue(newStockRaw, isGranel));
+    }, [applyStockWrite]);
 
     // Métricas Financieras del Inventario (Valor Total Venta $, Costo de Inversión $, Ganancia $, Margen %)
     const inventoryFinancials = useMemo(() => {

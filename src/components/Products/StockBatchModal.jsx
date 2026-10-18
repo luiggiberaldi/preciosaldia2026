@@ -4,6 +4,8 @@ import { Search, TrendingUp, TrendingDown, Check, Package, X, AlertTriangle, Min
 import { showToast } from '../Toast';
 import { CATEGORY_COLORS } from '../../config/categories';
 import { storageService } from '../../utils/storageService';
+// Cierre FIX-VENTAS-STOCK-SUPERVISOR §4: escritos del catálogo bajo pos_write_lock.
+import { mutateCatalogLocked } from '../../utils/catalogLock';
 import { isGranelProduct, isLowStockProduct, granelUnitLabel, parseStockInput, adjustStockValue, formatStockDisplay, formatLowStockAlert } from '../../utils/granel'; // GRANEL-001
 
 // ─── FILA DEL CATÁLOGO (PICKER LIMPIO CON CHECKMARK) ───
@@ -463,19 +465,22 @@ export default function StockBatchModal({
             // Guardarraíl 2: Persistir permanentemente los tamaños de empaque editados inline
             const pkgEntries = Object.entries(tempPackageSizes).filter(([, size]) => size > 1);
             if (pkgEntries.length > 0 && setProducts) {
-                setProducts(prev => {
-                    const updated = prev.map(p => {
-                        const newSize = tempPackageSizes[p.id];
-                        if (newSize && newSize > 1) return { ...p, unitsPerPackage: newSize };
-                        return p;
-                    });
-                    try {
-                        storageService.setItem('bodega_products_v1', updated);
-                    } catch (err) {
-                        console.error('Error al persistir unidades por bulto en storageService:', err);
-                    }
-                    return updated;
+                const sizes = { ...tempPackageSizes };
+                const applyPackageSizes = (list) => list.map(p => {
+                    const newSize = sizes[p.id];
+                    return (newSize && newSize > 1) ? { ...p, unitsPerPackage: newSize } : p;
                 });
+                // Cierre §4: RMW bajo pos_write_lock sobre el catálogo FRESCO — el
+                // patch de empaque no arrastra un snapshot viejo por encima de ventas
+                // u órdenes del supervisor aplicadas en el intervalo.
+                const written = await mutateCatalogLocked(
+                    fresh => applyPackageSizes(fresh),
+                    { storage: storageService }
+                ).catch(err => {
+                    console.error('Error al persistir unidades por bulto en storageService:', err);
+                    return null;
+                });
+                if (written) setProducts(prev => applyPackageSizes(prev));
             }
 
             showToast(
