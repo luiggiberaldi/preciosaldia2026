@@ -48,7 +48,7 @@ vi.mock('../src/services/supervisorCommandService', () => ({
 }));
 vi.mock('../src/hooks/useMonitorSync', () => ({
     useMonitorSync: () => ({
-        isConnected: true,
+        isConnected: h.state.isConnected !== false,
         lastSync: null,
         loading: false,
         syncState: 'synced',
@@ -84,6 +84,8 @@ vi.mock('../src/services/supervisorStockOps', async (importOriginal) => {
 
 import OwnerMonitorView from '../src/views/OwnerMonitorView';
 import { clearCommandDiagnostics, getReconciliations } from '../src/services/supervisorCommandDiagnostics';
+import { getQueuedSupervisorCommands, resetSupervisorCommandQueue } from '../src/services/supervisorCommandQueue';
+import { sendSupervisorCommand } from '../src/services/supervisorCommandService';
 
 const PRODUCT = {
     id: 'p1',
@@ -113,12 +115,14 @@ describe('OwnerMonitorView · ajuste de fila unificado con supervisorStockOps', 
     beforeEach(async () => {
         globalThis.IS_REACT_ACT_ENVIRONMENT = true;
         h.state.products = [{ ...PRODUCT }];
+        h.state.isConnected = true;
         h.sendBatch.mockReset();
         h.planSpy.mockClear();
         h.toast.mockClear();
         h.triggerRefresh.mockClear();
         h.inspectImpl = async () => ({ state: 'absent' });
         await clearCommandDiagnostics();
+        resetSupervisorCommandQueue();
         localStorage.clear();
         localStorage.setItem('pda_paired_device_id', 'device-12345678');
         container = document.createElement('div');
@@ -184,6 +188,70 @@ describe('OwnerMonitorView · ajuste de fila unificado con supervisorStockOps', 
         await flush();
         const plans = h.planSpy.mock.calls.map(([plan]) => plan);
         expect(plans.some(plan => plan.retire.some(entry => entry.id === 'p1' && entry.targetStock === 11))).toBe(true);
+    });
+
+    it('una venta posterior en la caja se descuenta en la fila (el objetivo creído se retira)', async () => {
+        // El eco de productos vigente al iniciar el ajuste tiene la marca W0.
+        localStorage.setItem('supervisor_sync_updated_at_bodega_products_v1', '2026-10-18T10:00:00.000Z');
+        h.sendBatch.mockResolvedValue({ ok: true, status: 'applied', commandId: 'cmd-1' });
+        await mountAndOpenInventory();
+
+        await stepUpAndConfirm();
+
+        // Aplicado en la caja y sin eco aún: la fila conserva el objetivo creído.
+        expect(row().textContent).toContain('Stock actualizado en la caja');
+        expect(row().textContent).toContain('11 u');
+
+        // Luego la caja publica un eco MÁS NUEVO (W1) con una venta ya descontada.
+        localStorage.setItem('supervisor_sync_updated_at_bodega_products_v1', '2026-10-18T10:05:00.000Z');
+        h.planSpy.mockClear();
+        h.state.products = [{ ...PRODUCT, stock: 8 }];
+        await act(async () => root.render(<OwnerMonitorView theme="light" toggleTheme={() => {}} triggerHaptic={() => {}} rates={{}} />));
+        await flush();
+
+        // El objetivo quedó viejo y el servicio lo retiró al instante: el
+        // descuento de la venta se ve ya en la fila (manda el sincronizado).
+        const plans = h.planSpy.mock.calls.map(([plan]) => plan);
+        expect(plans.some(plan => plan.superseded.some(entry => entry.id === 'p1' && entry.targetStock === 11))).toBe(true);
+        expect(row().textContent).toContain('8 u');
+        expect(row().textContent).not.toContain('Stock actualizado en la caja');
+        expect(row().querySelector('button[aria-label^="Stock provisional"]')).toBe(null);
+    });
+
+    it('sin conexión el ajuste se guarda en la cola local (EN COLA) y se sube solo al reconectar', async () => {
+        h.state.isConnected = false;
+        await mountAndOpenInventory();
+
+        await stepUpAndConfirm();
+
+        // No se envió nada: el cambio quedó guardado en la cola local.
+        expect(h.sendBatch).not.toHaveBeenCalled();
+        expect(getQueuedSupervisorCommands()).toHaveLength(1);
+        expect(getQueuedSupervisorCommands()[0]).toMatchObject({ kind: 'stock', type: 'supervisor.inventory.batch.adjust' });
+        // La fila muestra el objetivo creído con la etiqueta honesta "EN COLA".
+        expect(row().textContent).toContain('EN COLA');
+        expect(row().textContent).toContain('11 u');
+        expect(h.toast).toHaveBeenCalledWith('Cambio guardado en la cola — se subirá cuando vuelva la conexión', 'info');
+
+        // Al volver la conexión, el barrido automático lo sube y pasa a
+        // "esperando a la caja" con su commandId (la reconciliación sigue).
+        sendSupervisorCommand.mockResolvedValueOnce({
+            ok: true,
+            commandId: 'cmd-queued-1',
+            ackPromise: Promise.resolve({ ok: true, status: 'applied', commandId: 'cmd-queued-1', ack: null, error: null }),
+        });
+        h.state.isConnected = true;
+        await act(async () => root.render(<OwnerMonitorView theme="light" toggleTheme={() => {}} triggerHaptic={() => {}} rates={{}} />));
+        await flush();
+        await flush();
+
+        expect(getQueuedSupervisorCommands()).toHaveLength(0);
+        expect(sendSupervisorCommand).toHaveBeenCalledWith(expect.objectContaining({
+            type: 'supervisor.inventory.batch.adjust',
+            targetDeviceId: 'device-12345678',
+        }));
+        expect(row().querySelector('button[aria-label^="Stock provisional"]')).toBeTruthy();
+        expect(row().textContent).not.toContain('EN COLA');
     });
 
     it('si la caja concluye fallo, el servicio revierte el stock y se anuncia la reversión', async () => {

@@ -22,6 +22,21 @@ function getAckStock(ack, fallback) {
     return Number.isFinite(value) ? value : fallback;
 }
 
+function isAppliedAck(ack) {
+    return ack?.status === 'applied' || ack?.status === 'applied_with_warnings';
+}
+
+// Un ACK aplicado se conserva como terminal (por payloadKey) para deduplicar
+// reintentos ciegos del mismo movimiento: reenviarlo duplicaría el ajuste. Un
+// resultado no aplicado no se conserva: reintentarlo es seguro y deseable.
+function saveTerminalEntry(store, commandId, payloadKey, ack) {
+    if (isAppliedAck(ack)) {
+        store.save({ commandId, payloadKey, ack, terminal: true });
+    } else {
+        store.clear();
+    }
+}
+
 /**
  * Persistencia del comando en vuelo por alcance (caja + dirección). Guarda
  * { commandId, payloadKey } para poder reconciliar el mismo comando aunque se
@@ -70,10 +85,12 @@ function payloadKeyOf(payload) {
     });
 }
 
-function finishBatch(summary, { status, error = null, commandId = null, ack = null, uncertain = false }) {
+function finishBatch(summary, { status, error = null, commandId = null, ack = null, uncertain = false, alreadyApplied = false }) {
     const applied = status === 'applied' || status === 'applied_with_warnings';
     const results = summary.lines.map(line => {
-        const lineStatus = applied ? 'applied' : (line.valid ? 'pending' : 'failed');
+        // Una línea ya en su objetivo no depende del resultado del comando:
+        // su estado es "applied" aunque el resto del lote falle.
+        const lineStatus = applied || line.satisfied ? 'applied' : (line.valid ? 'pending' : 'failed');
         return {
             line,
             status: lineStatus,
@@ -92,6 +109,7 @@ function finishBatch(summary, { status, error = null, commandId = null, ack = nu
         status,
         commandId,
         uncertain,
+        alreadyApplied,
         ack,
         error,
         results,
@@ -126,8 +144,16 @@ export async function sendSupervisorInventoryBatch({
     const store = commandStore
         || createBatchCommandStore(globalThis.localStorage, `${targetDeviceId || 'sin-caja'}:${draft.direction}`);
 
-    // 1. Payload v2 único y validación completa (todo-o-nada): si una línea no
-    //    vale, no se crea ningún comando.
+    // 1. Semántica de objetivo: las líneas ya en su objetivo no generan
+    //    movimiento. Si TODO el lote ya está donde se quería, no se crea ningún
+    //    comando: reintentar un lote aplicado es un no-op aplicado (idempotencia
+    //    de raíz), nunca una duplicación del movimiento.
+    if (summary.lines.length > 0 && summary.invalidLines.length === 0 && summary.pendingLines.length === 0) {
+        return finishBatch(summary, { status: 'applied', alreadyApplied: true });
+    }
+
+    // 2. Payload v2 único y validación completa (todo-o-nada): si una línea no
+    //    vale, no se crea ningún comando. Solo viajan las líneas con movimiento.
     const payload = buildInventoryBatchV2Payload(
         {
             direction: draft.direction,
@@ -135,7 +161,7 @@ export async function sendSupervisorInventoryBatch({
             reasonCategory: draft.direction === 'egreso' ? draft.reasonCategory : undefined,
             lotReference: draft.lotReference,
         },
-        summary.lines.map(line => ({
+        summary.pendingLines.map(line => ({
             lineId: line.id,
             productId: line.productId,
             inputUnit: line.inputUnit,
@@ -156,12 +182,26 @@ export async function sendSupervisorInventoryBatch({
 
     const payloadKey = payloadKeyOf(payload);
 
-    // 2. Reconciliación: si hay un comando persistido, primero se consulta su
+    // 3. Reconciliación: si hay un comando persistido, primero se consulta su
     //    estado. Jamás se crea otro mientras siga vivo o sea incierto.
     let commandId = null;
     let ack = null;
     const entry = store.load();
-    if (entry?.commandId) {
+
+    // Reintento ciego del mismo movimiento (mismo payloadKey) que YA se aplicó:
+    // se devuelve el ACK guardado sin crear otro comando. Sin esto, un reintento
+    // del comando ya aplicado duplicaría el ajuste en la caja.
+    if (entry?.terminal && entry.commandId && entry.payloadKey === payloadKey && isAppliedAck(entry.ack)) {
+        return finishBatch(summary, {
+            status: entry.ack.status,
+            error: entry.ack.error,
+            commandId: entry.commandId,
+            ack: entry.ack,
+            alreadyApplied: true,
+        });
+    }
+
+    if (entry?.commandId && !entry.terminal) {
         commandId = entry.commandId;
         let inspection;
         try {
@@ -176,18 +216,21 @@ export async function sendSupervisorInventoryBatch({
         }
 
         if (inspection.state === 'terminal') {
-            store.clear();
-            if (entry.payloadKey === payloadKey) {
-                // El reintento ya estaba resuelto: se reporta el ACK global real.
+            saveTerminalEntry(store, entry.commandId, entry.payloadKey, inspection.ack);
+            if (entry.payloadKey === payloadKey && isAppliedAck(inspection.ack)) {
+                // El reintento ya estaba aplicado: se reporta el ACK global real
+                // sin crear otro comando (y queda deduplicado para los próximos).
                 return finishBatch(summary, {
                     status: inspection.ack.status,
                     error: inspection.ack.error,
                     commandId: entry.commandId,
                     ack: inspection.ack,
+                    alreadyApplied: true,
                 });
             }
-            // Lote anterior terminó (otro contenido): se permite uno nuevo,
-            // con un commandId fresco para no colisionar con el ya terminado.
+            // Lote anterior terminó sin aplicar (otro contenido o rechazado): se
+            // permite uno nuevo, con un commandId fresco para no colisionar con
+            // el ya terminado.
             commandId = null;
         } else if (inspection.state === 'expired') {
             store.clear();
@@ -229,7 +272,7 @@ export async function sendSupervisorInventoryBatch({
         store.save({ commandId, payloadKey });
     }
 
-    // 3. Un solo comando v2 para todo el lote, con el commandId estable.
+    // 4. Un solo comando v2 para todo el lote, con el commandId estable.
     if (!ack) {
         const response = await sendCommand({
             type: BATCH_COMMAND_TYPE,
@@ -252,7 +295,7 @@ export async function sendSupervisorInventoryBatch({
         ack = response.ackPromise ? await response.ackPromise : response;
     }
 
-    // 4. ACK global → respuesta por línea. Solo un ACK con commandId y estado
+    // 5. ACK global → respuesta por línea. Solo un ACK con commandId y estado
     //    terminal es conclusión cierta; cualquier otra cosa es incierta y se
     //    conserva el commandId para reconciliar sin duplicar.
     const terminalAck = ack
@@ -262,7 +305,7 @@ export async function sendSupervisorInventoryBatch({
         : null;
 
     if (terminalAck) {
-        store.clear();
+        saveTerminalEntry(store, commandId, payloadKey, terminalAck);
         return finishBatch(summary, {
             status: terminalAck.status,
             error: terminalAck.error,

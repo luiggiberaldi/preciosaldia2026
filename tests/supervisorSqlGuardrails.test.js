@@ -166,6 +166,39 @@ describe('Supervisor SQL guardrails', () => {
     });
 });
 
+describe('Baja de productos desde el Supervisor (20261018)', () => {
+    const productDeleteSql = readFileSync('supabase/migrations/20261018_supervisor_product_delete.sql', 'utf8');
+
+    it('habilita supervisor.product.delete en el trigger con la misma validación que la RPC', () => {
+        expect(productDeleteSql).toContain("ELSIF NEW.command_type = 'supervisor.product.delete' THEN");
+        expect(productDeleteSql).toContain("coalesce(NEW.payload->>'productId', '') = ''");
+        expect(productDeleteSql).toContain("RAISE EXCEPTION 'Producto inválido'");
+    });
+
+    it('mantiene el resto del trigger intacto: pairing, tipos no habilitados y cero acceso a anon', () => {
+        expect(productDeleteSql).toContain("RAISE EXCEPTION 'Tipo de orden Supervisor no permitido'");
+        expect(productDeleteSql).toContain("RAISE EXCEPTION 'Monitor no vinculado o no autorizado para esa caja'");
+        expect(productDeleteSql).toContain('dp.monitor_auth_id = NEW.actor_auth_id');
+        expect(productDeleteSql).toContain('dp.monitor_auth_id_2 = NEW.actor_auth_id');
+        // El trigger se reemplaza completo: se retira el previo y se recrea.
+        // El constraint se reafirma con la lista canónica completa (incluye la baja).
+        expect(productDeleteSql).toContain('DROP CONSTRAINT IF EXISTS supervisor_commands_command_type_check');
+        expect(productDeleteSql).toContain('ADD CONSTRAINT supervisor_commands_command_type_check');
+        expect(productDeleteSql).toContain("        'supervisor.product.delete',\n        'supervisor.user.create',");
+        expect(productDeleteSql).toContain('DROP TRIGGER IF EXISTS supervisor_income_pairing_guard');
+        expect(productDeleteSql).toContain('CREATE TRIGGER supervisor_income_pairing_guard');
+        expect(productDeleteSql).toContain('REVOKE ALL ON FUNCTION public.enforce_supervisor_income_command() FROM PUBLIC, anon, authenticated');
+        expect(productDeleteSql).toContain('BEGIN;');
+        expect(productDeleteSql).toContain('COMMIT;');
+        // Solo se habilita la baja: usuarios y turnos siguen fuera del trigger.
+        expect(productDeleteSql).not.toContain("NEW.command_type LIKE 'supervisor.user.%'");
+        expect(productDeleteSql).not.toContain("NEW.command_type IN ('supervisor.shift.close'");
+        expect(productDeleteSql).not.toMatch(/GRANT\s+[^;]*\bTO\s+anon\b/i);
+        expect(productDeleteSql).not.toMatch(/DROP\s+TABLE/i);
+        expect(productDeleteSql).not.toMatch(/UPDATE\s+public\.supervisor_commands/i);
+    });
+});
+
 describe('Identidad de dispositivo auto-reparable (20261017)', () => {
     const identitySql = readFileSync('supabase/migrations/20261017_supervisor_pairing_identity_selfheal.sql', 'utf8');
 

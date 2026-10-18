@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     Package,
     Hash,
@@ -12,6 +12,31 @@ import {
     AlertTriangle,
 } from 'lucide-react';
 import { notifyStockToast, stockMessage } from '../../services/supervisorStockMessages';
+import ProductStateBadge from './ProductStateBadge';
+import {
+    getQueuedSupervisorCommands,
+    productIdsOf,
+    productQueueState,
+    subscribeSupervisorCommandQueue,
+} from '../../services/supervisorCommandQueue';
+import { getTrackedSupervisorCommands, subscribeSupervisorCommandTracker } from '../../services/supervisorCommandTracker';
+
+// Fuentes del badge por producto (propuesta 4): qué está en vuelo según el
+// tracker de comandos. La prioridad entre estados la decide productQueueState.
+function trackedStateByProduct() {
+    const map = {};
+    getTrackedSupervisorCommands().forEach(record => {
+        productIdsOf(record.type, record.payload).forEach(id => {
+            const current = map[id] || { inFlight: false, appliedAt: null };
+            if (!record.finalNotified) current.inFlight = true;
+            else if (record.state === 'applied' || record.state === 'applied_with_warnings') {
+                current.appliedAt = new Date(record.sentAt).toISOString();
+            }
+            map[id] = current;
+        });
+    });
+    return map;
+}
 
 export default function SupervisorInventoryCatalog({
     products = [],
@@ -45,6 +70,21 @@ export default function SupervisorInventoryCatalog({
 }) {
     const displayList = paginatedProducts.length > 0 ? paginatedProducts : filteredProducts;
 
+    // Propuesta 4: la etiqueta de estado solo pinta; el estado lo derivan
+    // productQueueState + las fuentes vivas (cola local y tracker).
+    const [queueEntries, setQueueEntries] = useState(() => getQueuedSupervisorCommands());
+    const [trackedByProduct, setTrackedByProduct] = useState(() => trackedStateByProduct());
+    useEffect(() => {
+        const refresh = () => {
+            setQueueEntries(getQueuedSupervisorCommands());
+            setTrackedByProduct(trackedStateByProduct());
+        };
+        refresh();
+        const offQueue = subscribeSupervisorCommandQueue(refresh);
+        const offTracker = subscribeSupervisorCommandTracker(refresh);
+        return () => { offQueue(); offTracker(); };
+    }, []);
+
     if (!filteredProducts || filteredProducts.length === 0) {
         return (
             <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm overflow-hidden py-16 text-center text-slate-400 flex flex-col items-center justify-center space-y-3">
@@ -63,9 +103,20 @@ export default function SupervisorInventoryCatalog({
         <div className="space-y-3">
             {displayList.map((p) => {
                 const stockOp = stockOpStatus?.[String(p.id)];
+                const trackedInfo = trackedByProduct[String(p.id)] || null;
+                const productBadge = productQueueState({
+                    productId: p.id,
+                    queueEntries,
+                    stockOp,
+                    trackedInFlight: Boolean(trackedInfo?.inFlight),
+                    trackedAppliedAt: trackedInfo?.appliedAt || null,
+                });
                 const stockProvisional = Boolean(
                     stockOp && (stockOp.state === 'sending' || stockOp.state === 'pending')
                 );
+                // Aplicado en la caja pero aún sin sincronizar: el valor es real,
+                // solo falta que la escritura remota llegue al monitor.
+                const stockAppliedUnsynced = Boolean(stockOp && stockOp.state === 'applied');
                 const stock = believedStockOf(p);
                 const pending =
                     stockPendingConfirm && String(stockPendingConfirm.product?.id) === String(p.id)
@@ -117,6 +168,13 @@ export default function SupervisorInventoryCatalog({
                     >
                         {/* Borde lateral cromático absoluto de w-2 */}
                         <div className={`w-2 absolute left-0 top-0 bottom-0 ${chromaticBorderColor}`} />
+
+                        {/* Propuesta 4: estado del cambio sobre este producto */}
+                        {productBadge && (
+                            <div className="mb-2 flex">
+                                <ProductStateBadge state={productBadge} />
+                            </div>
+                        )}
 
                         {/* ============================================================== */}
                         {/* DESKTOP BENTO GRID LAYOUT (visible en md:, oculto en móvil)    */}
@@ -229,14 +287,12 @@ export default function SupervisorInventoryCatalog({
                                     <button
                                         type="button"
                                         onClick={() => {
-                                            if (!remoteActionsAvailable) {
-                                                notifyStockToast(showToast, 'BOX_OFFLINE_STOCK');
-                                                return;
-                                            }
+                                            // Sin conexión también se puede editar: el cambio se
+                                            // guarda en la cola local al confirmar (propuesta 5).
                                             openStockEditor(p);
                                         }}
-                                        aria-label={stockProvisional ? `Stock provisional de ${p.name}, pendiente de confirmación en la caja` : `Editar stock de ${p.name}`}
-                                        title={stockProvisional ? 'Stock provisional — esperando confirmación de la caja' : 'Toca para escribir el stock exacto'}
+                                        aria-label={stockProvisional ? `Stock provisional de ${p.name}, pendiente de confirmación en la caja` : stockAppliedUnsynced ? `Stock de ${p.name} confirmado en la caja, esperando sincronización` : `Editar stock de ${p.name}`}
+                                        title={stockProvisional ? 'Stock provisional — esperando confirmación de la caja' : stockAppliedUnsynced ? 'Confirmado en la caja — esperando sincronización' : 'Toca para escribir el stock exacto'}
                                         className={`w-20 text-center py-2 px-2.5 rounded-2xl border cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${
                                             pending
                                                 ? 'bg-blue-50/90 border-blue-400 text-blue-700 dark:bg-blue-950/40 dark:border-blue-600 dark:text-blue-300 ring-2 ring-blue-400/25'
@@ -245,7 +301,7 @@ export default function SupervisorInventoryCatalog({
                                                 : isBajo
                                                 ? 'bg-amber-50/50 border-amber-200/70 text-amber-700 dark:bg-amber-950/20 dark:border-amber-900/30 dark:text-amber-400'
                                                 : 'bg-slate-50 border-slate-200/70 text-slate-700 dark:bg-slate-800/60 dark:border-slate-700/80 dark:text-slate-300'
-                                        }${stockProvisional ? ' border-dashed' : ''}`}
+                                        }${stockProvisional || stockAppliedUnsynced ? ' border-dashed' : ''}`}
                                     >
                                         <span className={`text-[8px] uppercase font-black block leading-none mb-0.5 ${pending ? 'text-blue-500 dark:text-blue-400' : 'text-slate-400'}`}>
                                             {pending ? 'Ajuste' : 'Stock'}
@@ -448,10 +504,8 @@ export default function SupervisorInventoryCatalog({
                                             <button
                                                 type="button"
                                                 onClick={() => {
-                                                    if (!remoteActionsAvailable) {
-                                                        notifyStockToast(showToast, 'BOX_OFFLINE_STOCK');
-                                                        return;
-                                                    }
+                                                    // Igual que en desktop: sin conexión el cambio
+                                                    // espera guardado en la cola local.
                                                     openStockEditor(p);
                                                 }}
                                                 aria-label={stockProvisional ? `Stock provisional de ${p.name}, pendiente de confirmación en la caja` : `Editar stock de ${p.name}`}

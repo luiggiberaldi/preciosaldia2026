@@ -86,6 +86,34 @@ function toPositiveNumber(value, fallback = 0) {
     return Number.isFinite(number) && number > 0 ? number : fallback;
 }
 
+// Base estampada al componer la línea: el stock contra el que el usuario calculó
+// el movimiento. `expectedStock` debe salir de aquí (no del stock sincronizado
+// crudo) o la caja rechaza movimientos legítimos cuando el stock local aún no
+// refleja un ajuste ya confirmado. null = sin estampar (legacy: se usa el stock
+// del producto al momento del envío).
+function readStampedBase(line) {
+    const value = Number(line?.baseStock);
+    return line?.baseStock !== null && line?.baseStock !== undefined && Number.isFinite(value)
+        ? value
+        : null;
+}
+
+// Objetivo estampado al componer la línea: el stock con el que el usuario
+// quiere QUEDAR. La semántica de objetivo hace el flujo idempotente de raíz:
+// el movimiento real se deriva al enviar como (objetivo − stock actual), así
+// que reintentar un lote ya aplicado es un no-op ("ya en objetivo") en vez de
+// duplicar el movimiento. null = línea legacy de delta puro.
+function readTargetStock(line) {
+    const value = Number(line?.targetStock);
+    return line?.targetStock !== null && line?.targetStock !== undefined && Number.isFinite(value)
+        ? value
+        : null;
+}
+
+function roundTarget(value) {
+    return Math.round(Number(value) * 1000) / 1000;
+}
+
 export function resolveInventoryPresentationFactor(product, inputUnit = 'unidades') {
     if (inputUnit === 'unidades' || MEASURE_TO_CANONICAL[inputUnit]) return 1;
     const factor = Number(product?.unitsPerPackage);
@@ -138,16 +166,50 @@ export function addInventoryDraftLine(draft, line = {}) {
         inputUnit: line.inputUnit,
         quantityInput,
         unitsPerPackage,
+        baseStock: readStampedBase(line),
+        targetStock: readTargetStock(line),
     };
+    // Delta firmado de la contribución nueva (objetivo − base estampada).
+    const newBase = readStampedBase(normalized);
+    const newTarget = readTargetStock(normalized);
+    const delta = newTarget !== null && newBase !== null ? newTarget - newBase : null;
+    // Último objetivo ya estampado para este producto (aunque las contribuciones
+    // sean en otras unidades): los objetivos acumulan por producto para que las
+    // líneas encadenadas representen estados intermedios coherentes.
+    const priorTargets = draft.lines
+        .filter(existing => String(existing.productId) === normalized.productId)
+        .map(existing => readTargetStock(existing))
+        .filter(value => value !== null);
+
     const existingIndex = draft.lines.findIndex(existing => canMergeLines(existing, normalized));
     const lines = [...draft.lines];
 
     if (existingIndex >= 0) {
+        const existing = lines[existingIndex];
+        const existingTarget = readTargetStock(existing);
+        const mergedTarget = delta !== null && existingTarget !== null
+            ? roundTarget(existingTarget + delta)
+            : existingTarget;
         lines[existingIndex] = {
-            ...lines[existingIndex],
-            quantityInput: lines[existingIndex].quantityInput + normalized.quantityInput,
+            ...existing,
+            quantityInput: existing.quantityInput + normalized.quantityInput,
+            targetStock: mergedTarget,
         };
+        // La fusión mueve el objetivo de la línea: las líneas posteriores del
+        // mismo producto se desplazan igual para conservar el encadenado.
+        const shift = mergedTarget !== null && existingTarget !== null ? mergedTarget - existingTarget : 0;
+        if (shift !== 0) {
+            for (let index = existingIndex + 1; index < lines.length; index += 1) {
+                const target = readTargetStock(lines[index]);
+                if (String(lines[index].productId) === normalized.productId && target !== null) {
+                    lines[index] = { ...lines[index], targetStock: roundTarget(target + shift) };
+                }
+            }
+        }
     } else {
+        if (delta !== null && priorTargets.length) {
+            normalized.targetStock = roundTarget(priorTargets[priorTargets.length - 1] + delta);
+        }
         lines.push(normalized);
     }
 
@@ -185,29 +247,88 @@ export function removeInventoryDraftLine(draft, lineId) {
 export function getInventoryDraftSummary(draft, products = []) {
     const productById = new Map(products.map(product => [String(product.id), product]));
     const lines = draft?.lines || [];
+    // El contrato v2 exige el MISMO expectedStock para todas las líneas de un
+    // producto (la base real actual); el cursor por producto encadena las líneas
+    // para derivar cada movimiento sin mezclar bases.
+    const sendBaseByProduct = new Map();
+    const cursorByProduct = new Map();
     const enrichedLines = lines.map(line => {
         const product = productById.get(String(line.productId));
-        const stock = Number(product?.stock || 0);
+        const productId = String(line.productId);
+        const isGranel = isGranelProduct(product);
+        const roundStock = (value) => (isGranel ? round3(value) : value);
+        const target = readTargetStock(line);
+        const isTarget = target !== null;
+
+        if (!sendBaseByProduct.has(productId)) {
+            // Línea de objetivo: el movimiento se deriva del stock actual real.
+            // Línea legacy: la base estampada al componer (o el stock del producto).
+            sendBaseByProduct.set(productId, isTarget
+                ? Number(product?.stock || 0)
+                : (readStampedBase(line) ?? Number(product?.stock || 0)));
+        }
+        const stock = sendBaseByProduct.get(productId);
+        const cursor = cursorByProduct.get(productId) ?? stock;
+
         const conversion = resolveInventoryUnitConversion(product, line);
         const factor = conversion.ok
             ? conversion.unitsPerPackage
             : (['cajas', 'bultos'].includes(line.inputUnit) ? Number(line.unitsPerPackage) : 1);
-        const unitsDelta = conversion.ok ? conversion.unitsDelta : (Number(line.quantityInput) || 0) * (Number(factor) || 0);
-        const isGranel = isGranelProduct(product);
-        const rawProjected = draft.direction === 'egreso' ? stock - unitsDelta : stock + unitsDelta;
-        const projectedStock = isGranel ? round3(rawProjected) : rawProjected;
-        const insufficient = draft.direction === 'egreso' && projectedStock < 0;
+
+        let unitsDelta;
+        let projectedStock;
+        let error = null;
+        let satisfied = false;
+        let wire;
+
+        if (isTarget) {
+            // Movimiento derivado: (objetivo − estado encadenado). Si ya está en
+            // el objetivo, la línea es un no-op aplicado (idempotencia de raíz).
+            const needed = roundStock(target - cursor);
+            satisfied = Math.abs(needed) < 1e-9;
+            const magnitude = Math.abs(needed);
+            const moveUp = needed > 0;
+            const directionOk = satisfied || (draft.direction === 'egreso' ? !moveUp : moveUp);
+            if (target < 0) {
+                error = stockMessage('STOCK_INSUFFICIENT', { units: magnitude, stock: cursor });
+            } else if (!directionOk) {
+                error = stockMessage('TARGET_ALREADY_PASSED', { stock: cursor, target });
+            } else if (!satisfied && !conversion.ok) {
+                error = conversion.error;
+            }
+            unitsDelta = satisfied ? 0 : magnitude;
+            projectedStock = roundStock(target);
+            // La caja recalcula la conversión con su factor actual: se conserva la
+            // unidad compuesta ("2 cajas") solo si sigue representando exactamente
+            // el movimiento derivado; si no, se manda en unidades canónicas.
+            wire = satisfied
+                ? { inputUnit: line.inputUnit, quantityInput: line.quantityInput, unitsPerPackage: factor }
+                : (conversion.ok && Math.abs(conversion.unitsDelta - magnitude) < 1e-9)
+                    ? { inputUnit: line.inputUnit, quantityInput: line.quantityInput, unitsPerPackage: conversion.unitsPerPackage }
+                    : { inputUnit: 'unidades', quantityInput: magnitude, unitsPerPackage: 1 };
+        } else {
+            unitsDelta = conversion.ok ? conversion.unitsDelta : (Number(line.quantityInput) || 0) * (Number(factor) || 0);
+            const rawProjected = draft.direction === 'egreso' ? cursor - unitsDelta : cursor + unitsDelta;
+            projectedStock = roundStock(rawProjected);
+            const insufficient = draft.direction === 'egreso' && projectedStock < 0;
+            error = conversion.ok
+                ? (insufficient ? stockMessage('STOCK_INSUFFICIENT', { units: unitsDelta, stock: cursor }) : null)
+                : conversion.error;
+            wire = { inputUnit: line.inputUnit, quantityInput: line.quantityInput, unitsPerPackage: factor };
+        }
+
+        cursorByProduct.set(productId, projectedStock);
         return {
             ...line,
-            unitsPerPackage: factor,
+            ...wire,
             product,
             stock,
             unitsDelta,
+            signedDelta: draft.direction === 'egreso' ? -unitsDelta : unitsDelta,
             projectedStock,
-            error: conversion.ok
-                ? (insufficient ? stockMessage('STOCK_INSUFFICIENT', { units: unitsDelta, stock }) : null)
-                : conversion.error,
-            valid: conversion.ok && !insufficient,
+            satisfied,
+            error,
+            valid: !error,
         };
     });
     return {
@@ -215,6 +336,8 @@ export function getInventoryDraftSummary(draft, products = []) {
         totalLines: enrichedLines.length,
         totalUnits: enrichedLines.reduce((sum, line) => sum + line.unitsDelta, 0),
         invalidLines: enrichedLines.filter(line => !line.valid),
+        satisfiedLines: enrichedLines.filter(line => line.satisfied),
+        pendingLines: enrichedLines.filter(line => line.valid && !line.satisfied),
         canSubmit: enrichedLines.length > 0 && enrichedLines.every(line => line.valid),
     };
 }

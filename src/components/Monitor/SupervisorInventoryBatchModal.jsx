@@ -11,9 +11,10 @@ import {
 } from 'lucide-react';
 import SupervisorSelect from './SupervisorSelect';
 import { sendSupervisorCommand } from '../../services/supervisorCommandService';
+import { trackSupervisorCommand } from '../../services/supervisorCommandTracker';
 import { SUPERVISOR_REMOTE_EGRESS_ENABLED } from '../../config/supervisorPolicy';
 import { readConfiguredPresentationFactor } from '../../services/supervisorInventoryDraft';
-import { notifyStockToast, stockMessage } from '../../services/supervisorStockMessages';
+import { stockMessage } from '../../services/supervisorStockMessages';
 import { showToast } from '../Toast';
 
 const EGRESS_REASONS = [
@@ -164,33 +165,36 @@ export default function SupervisorInventoryBatchModal({
 
         setIsSubmitting(true);
         try {
+            const commandPayload = {
+                direction,
+                productId: String(product.id),
+                quantityInput: quantity,
+                inputUnit,
+                unitsPerPackage: packageUnits,
+                expectedStock: stock,
+                reason: reason.trim(),
+                reasonCategory: isEgress ? reasonCategory : undefined,
+                lotReference: lotReference.trim() || undefined,
+            };
             const result = await sendSupervisorCommand({
                 type: 'supervisor.inventory.batch.adjust',
                 targetDeviceId,
-                payload: {
-                    direction,
-                    productId: String(product.id),
-                    quantityInput: quantity,
-                    inputUnit,
-                    unitsPerPackage: packageUnits,
-                    expectedStock: stock,
-                    reason: reason.trim(),
-                    reasonCategory: isEgress ? reasonCategory : undefined,
-                    lotReference: lotReference.trim() || undefined,
-                },
+                payload: commandPayload,
             });
             if (!result.ok) {
                 setFormError(result.error || stockMessage('SEND_FAILED'));
                 return;
             }
 
-            const ack = await result.ackPromise;
-            if (!ack?.ok) {
-                setFormError(ack?.error || stockMessage('BOX_NO_CONFIRM_MOVE'));
-                return;
-            }
-
-            notifyStockToast(showToast, isEgress ? 'EGRESS_CONFIRMED' : 'INGRESS_CONFIRMED');
+            // "Confirma y sigue": se cierra al quedar la orden registrada; el
+            // resultado (éxito siempre, o error con motivo) llega por el tracker.
+            trackSupervisorCommand({
+                commandId: result.commandId,
+                type: 'supervisor.inventory.batch.adjust',
+                payload: commandPayload,
+                label: `${isEgress ? 'el egreso' : 'el ingreso'} de "${product.name}"`,
+                ackPromise: result.ackPromise,
+            });
             onClose?.();
         } catch (error) {
             setFormError(error?.message || stockMessage('SEND_FAILED'));

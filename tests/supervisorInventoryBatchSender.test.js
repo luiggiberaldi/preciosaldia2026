@@ -209,7 +209,8 @@ describe('sendSupervisorInventoryBatch (contrato batch v2: un comando + ACK glob
         expect(second.ok).toBe(true);
         expect(second.status).toBe('applied');
         expect(second.commandId).toBe(COMMAND_ID);
-        expect(store.load()).toBeNull();
+        // El ACK aplicado queda como terminal para deduplicar reintentos ciegos.
+        expect(store.load()).toEqual(expect.objectContaining({ commandId: COMMAND_ID, terminal: true }));
     });
 
     it('si el comando anterior ya terminó, reporta el ACK global real sin crear otro', async () => {
@@ -249,7 +250,8 @@ describe('sendSupervisorInventoryBatch (contrato batch v2: un comando + ACK glob
         expect(result.ok).toBe(true);
         expect(result.status).toBe('applied');
         expect(result.commandId).toBe(COMMAND_ID);
-        expect(store.load()).toBeNull();
+        // El ACK aplicado queda como terminal para deduplicar reintentos ciegos.
+        expect(store.load()).toEqual(expect.objectContaining({ commandId: COMMAND_ID, terminal: true }));
     });
 
     it('con otro lote activo distinto bloquea el envío sin crear otro comando', async () => {
@@ -347,5 +349,239 @@ describe('sendSupervisorInventoryBatch (contrato batch v2: un comando + ACK glob
         expect(result.status).toBe('invalid');
         expect(result.uncertain).toBe(false);
         expect(result.error).toBe('Revisa las líneas marcadas antes de enviar');
+    });
+});
+
+describe('reintento idempotente y base estampada (regresión: "aplicado" sin cambio / falso "stock cambió")', () => {
+    function makeStampedDraft(quantityInput = 8) {
+        let draft = createInventoryDraft('ingreso', { reason: 'Ajuste de stock' });
+        // Línea compuesta cuando el stock visible (creído) era 22: +8 → objetivo 30.
+        draft = addInventoryDraftLine(draft, {
+            productId: 'a',
+            inputUnit: 'unidades',
+            quantityInput,
+            unitsPerPackage: 1,
+            baseStock: 22,
+        }).draft;
+        return draft;
+    }
+
+    // Stock sincronizado viejo: la caja ya tiene 30 pero el documento remoto
+    // aún refleja 22 (aplicado sin sincronizar).
+    const STALE_PRODUCTS = [{ id: 'a', stock: 22 }];
+
+    function appliedSendMock() {
+        return vi.fn().mockResolvedValue({
+            ok: true,
+            status: 'pending',
+            commandId: COMMAND_ID,
+            ackPromise: Promise.resolve(terminalAck('applied', { ack: { stockAfter: 30 } })),
+        });
+    }
+
+    it('expectedStock sale de la base estampada al componer la línea, no del stock sincronizado', async () => {
+        const sendCommand = appliedSendMock();
+        await sendSupervisorInventoryBatch({
+            draft: makeStampedDraft(),
+            // El sync ya trajo 30, pero la línea se compuso contra 22.
+            products: [{ id: 'a', stock: 30 }],
+            targetDeviceId: 'device-1',
+            sendCommand,
+            commandStore: makeStore(),
+            commandIdFactory: () => COMMAND_ID,
+        });
+
+        expect(sendCommand.mock.calls[0][0].payload.lines[0].expectedStock).toBe(22);
+    });
+
+    it('un reintento ciego del mismo lote ya aplicado devuelve el ACK guardado sin crear otro comando', async () => {
+        const store = makeStore();
+        const sendCommand = appliedSendMock();
+
+        const first = await sendSupervisorInventoryBatch({
+            draft: makeStampedDraft(),
+            products: STALE_PRODUCTS,
+            targetDeviceId: 'device-1',
+            sendCommand,
+            commandStore: store,
+            commandIdFactory: () => COMMAND_ID,
+        });
+        expect(first.ok).toBe(true);
+        expect(sendCommand).toHaveBeenCalledTimes(1);
+
+        const retry = await sendSupervisorInventoryBatch({
+            draft: makeStampedDraft(),
+            products: STALE_PRODUCTS,
+            targetDeviceId: 'device-1',
+            sendCommand,
+            commandStore: store,
+            commandIdFactory: () => 'cmd-fijo-0002',
+        });
+
+        // Ni un segundo comando: el ACK aplicado se deduplica por payloadKey.
+        // Sin esto, el reintento del movimiento ya aplicado lo duplicaría.
+        expect(sendCommand).toHaveBeenCalledTimes(1);
+        expect(retry.ok).toBe(true);
+        expect(retry.status).toBe('applied');
+        expect(retry.alreadyApplied).toBe(true);
+        expect(retry.commandId).toBe(COMMAND_ID);
+    });
+
+    it('un lote distinto tras uno aplicado sí crea un comando nuevo', async () => {
+        const store = makeStore();
+        const sendCommand = appliedSendMock();
+
+        await sendSupervisorInventoryBatch({
+            draft: makeStampedDraft(8),
+            products: STALE_PRODUCTS,
+            targetDeviceId: 'device-1',
+            sendCommand,
+            commandStore: store,
+            commandIdFactory: () => COMMAND_ID,
+        });
+        const second = await sendSupervisorInventoryBatch({
+            draft: makeStampedDraft(5),
+            products: STALE_PRODUCTS,
+            targetDeviceId: 'device-1',
+            sendCommand,
+            commandStore: store,
+            commandIdFactory: () => 'cmd-fijo-0002',
+        });
+
+        expect(sendCommand).toHaveBeenCalledTimes(2);
+        expect(second.alreadyApplied).toBe(false);
+    });
+
+    it('un lote rechazado NO se deduplica: reintentarlo vuelve a enviar (era seguro: nada se aplicó)', async () => {
+        const store = makeStore();
+        const sendCommand = vi.fn()
+            .mockResolvedValueOnce({
+                ok: true,
+                status: 'pending',
+                commandId: COMMAND_ID,
+                ackPromise: Promise.resolve(terminalAck('rejected', { error: 'La caja rechazó el lote' })),
+            })
+            .mockResolvedValue({
+                ok: true,
+                status: 'pending',
+                commandId: 'cmd-fijo-0002',
+                ackPromise: Promise.resolve({
+                    ...terminalAck('applied', { ack: { stockAfter: 30 } }),
+                    commandId: 'cmd-fijo-0002',
+                }),
+            });
+
+        const first = await sendSupervisorInventoryBatch({
+            draft: makeStampedDraft(),
+            products: STALE_PRODUCTS,
+            targetDeviceId: 'device-1',
+            sendCommand,
+            commandStore: store,
+            commandIdFactory: () => COMMAND_ID,
+        });
+        expect(first.status).toBe('rejected');
+
+        const retry = await sendSupervisorInventoryBatch({
+            draft: makeStampedDraft(),
+            products: STALE_PRODUCTS,
+            targetDeviceId: 'device-1',
+            sendCommand,
+            commandStore: store,
+            commandIdFactory: () => 'cmd-fijo-0002',
+        });
+        expect(sendCommand).toHaveBeenCalledTimes(2);
+        expect(retry.status).toBe('applied');
+        expect(retry.alreadyApplied).toBe(false);
+    });
+});
+
+describe('semántica de objetivo: idempotencia de raíz en el envío', () => {
+    function makeTargetDraft(targetStock = 30, quantityInput = 8) {
+        return addInventoryDraftLine(createInventoryDraft('ingreso', { reason: 'Ajuste de stock' }), {
+            productId: 'a',
+            inputUnit: 'unidades',
+            quantityInput,
+            unitsPerPackage: 1,
+            baseStock: 22,
+            targetStock,
+        }).draft;
+    }
+
+    it('reintentar un lote de objetivo ya aplicado es un no-op aplicado: no se crea ningún comando', async () => {
+        const sendCommand = vi.fn();
+        const result = await sendSupervisorInventoryBatch({
+            draft: makeTargetDraft(30),
+            products: [{ id: 'a', stock: 30 }], // ya está en el objetivo
+            targetDeviceId: 'device-1',
+            sendCommand,
+            commandStore: makeStore(),
+            commandIdFactory: () => COMMAND_ID,
+        });
+
+        expect(sendCommand).not.toHaveBeenCalled();
+        expect(result.ok).toBe(true);
+        expect(result.status).toBe('applied');
+        expect(result.alreadyApplied).toBe(true);
+        expect(result.results[0].status).toBe('applied');
+    });
+
+    it('las líneas satisfechas no viajan en el payload y el objetivo se deriva del stock actual', async () => {
+        const sendCommand = vi.fn().mockResolvedValue({
+            ok: true,
+            status: 'pending',
+            commandId: COMMAND_ID,
+            ackPromise: Promise.resolve(terminalAck('applied', { ack: { stockAfter: 33 } })),
+        });
+        let draft = makeTargetDraft(30); // 'a' ya está en 30 → satisfecha
+        draft = addInventoryDraftLine(draft, {
+            productId: 'b', inputUnit: 'unidades', quantityInput: 5, unitsPerPackage: 1, baseStock: 5, targetStock: 10,
+        }).draft;
+
+        const result = await sendSupervisorInventoryBatch({
+            draft,
+            products: [{ id: 'a', stock: 30 }, { id: 'b', stock: 7 }],
+            targetDeviceId: 'device-1',
+            sendCommand,
+            commandStore: makeStore(),
+            commandIdFactory: () => COMMAND_ID,
+        });
+
+        expect(sendCommand).toHaveBeenCalledTimes(1);
+        const lines = sendCommand.mock.calls[0][0].payload.lines;
+        expect(lines).toHaveLength(1);
+        expect(lines[0].productId).toBe('b');
+        expect(lines[0].expectedStock).toBe(7); // stock actual, no el estampado (5)
+        expect(lines[0].quantityInput).toBe(3); // objetivo 10 − actual 7
+        expect(result.results.find(item => item.line.productId === 'a').status).toBe('applied');
+        expect(result.results.find(item => item.line.productId === 'b').status).toBe('applied');
+    });
+
+    it('varias líneas del mismo producto viajan con el MISMO expectedStock (contrato v2)', async () => {
+        const sendCommand = vi.fn().mockResolvedValue({
+            ok: true,
+            status: 'pending',
+            commandId: COMMAND_ID,
+            ackPromise: Promise.resolve(terminalAck('applied')),
+        });
+        let draft = makeTargetDraft(30, 8); // a: 22 → 30
+        draft = addInventoryDraftLine(draft, {
+            productId: 'a', inputUnit: 'cajas', quantityInput: 1, unitsPerPackage: 3, baseStock: 22, targetStock: 25,
+        }).draft; // acumula: 22 → 33
+
+        await sendSupervisorInventoryBatch({
+            draft,
+            products: [{ id: 'a', stock: 22 }],
+            targetDeviceId: 'device-1',
+            sendCommand,
+            commandStore: makeStore(),
+            commandIdFactory: () => COMMAND_ID,
+        });
+
+        const lines = sendCommand.mock.calls[0][0].payload.lines;
+        expect(lines).toHaveLength(2);
+        expect(lines[0].expectedStock).toBe(22);
+        expect(lines[1].expectedStock).toBe(22);
+        expect(lines[0].quantityInput).toBe(8);
+        expect(lines[1].quantityInput).toBe(1); // 1 caja × 3 = +3 (22→30→33)
     });
 });

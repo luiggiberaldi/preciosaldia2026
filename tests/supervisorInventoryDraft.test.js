@@ -153,3 +153,138 @@ describe('readConfiguredPresentationFactor', () => {
         expect(readConfiguredPresentationFactor({ unitsPerPackage: 1 })).toBe(1);
     });
 });
+
+describe('base estampada de la línea (expectedStock)', () => {
+    const products = [{ id: 'p1', stock: 30 }];
+
+    it('la base estampada al componer la línea manda sobre el stock del producto', () => {
+        const draft = addInventoryDraftLine(createInventoryDraft('ingreso'), {
+            productId: 'p1',
+            inputUnit: 'unidades',
+            quantityInput: 8,
+            unitsPerPackage: 1,
+            baseStock: 22,
+        }).draft;
+        const summary = getInventoryDraftSummary(draft, products);
+        expect(summary.lines[0].stock).toBe(22);
+        expect(summary.lines[0].projectedStock).toBe(30);
+    });
+
+    it('una línea sin base estampada (legacy) usa el stock del producto', () => {
+        const draft = addInventoryDraftLine(createInventoryDraft('ingreso'), {
+            productId: 'p1',
+            inputUnit: 'unidades',
+            quantityInput: 8,
+        }).draft;
+        const summary = getInventoryDraftSummary(draft, products);
+        expect(summary.lines[0].stock).toBe(30);
+    });
+
+    it('fusionar líneas del mismo producto conserva la base estampada de la primera', () => {
+        let draft = addInventoryDraftLine(createInventoryDraft('ingreso'), {
+            productId: 'p1', inputUnit: 'unidades', quantityInput: 8, baseStock: 22,
+        }).draft;
+        draft = addInventoryDraftLine(draft, {
+            productId: 'p1', inputUnit: 'unidades', quantityInput: 4, baseStock: 30,
+        }).draft;
+        const summary = getInventoryDraftSummary(draft, products);
+        expect(summary.lines).toHaveLength(1);
+        expect(summary.lines[0].stock).toBe(22);
+        expect(summary.lines[0].unitsDelta).toBe(12);
+    });
+});
+
+describe('semántica de objetivo (idempotencia de raíz del lote)', () => {
+    const products = [{ id: 'p1', stock: 22 }];
+
+    function addTargetLine(draft, { quantityInput = 8, inputUnit = 'unidades', unitsPerPackage = 1, baseStock = 22, targetStock = 30 } = {}) {
+        return addInventoryDraftLine(draft, {
+            productId: 'p1',
+            productName: 'P1',
+            inputUnit,
+            quantityInput,
+            unitsPerPackage,
+            baseStock,
+            targetStock,
+        }).draft;
+    }
+
+    it('una línea ya en su objetivo se satisface y no genera movimiento', () => {
+        const draft = addTargetLine(createInventoryDraft('ingreso'));
+        const summary = getInventoryDraftSummary(draft, [{ id: 'p1', stock: 30 }]);
+        expect(summary.lines[0].satisfied).toBe(true);
+        expect(summary.lines[0].valid).toBe(true);
+        expect(summary.lines[0].unitsDelta).toBe(0);
+        expect(summary.pendingLines).toHaveLength(0);
+    });
+
+    it('el movimiento se deriva del stock actual, no de la base estampada', () => {
+        const draft = addTargetLine(createInventoryDraft('ingreso'));
+        const summary = getInventoryDraftSummary(draft, [{ id: 'p1', stock: 19 }]);
+        expect(summary.lines[0].stock).toBe(19);
+        expect(summary.lines[0].unitsDelta).toBe(11);
+        expect(summary.lines[0].quantityInput).toBe(11);
+        expect(summary.lines[0].inputUnit).toBe('unidades');
+        expect(summary.lines[0].projectedStock).toBe(30);
+    });
+
+    it('si el stock ya pasó el objetivo, la línea queda inválida con mensaje claro', () => {
+        const draft = addTargetLine(createInventoryDraft('ingreso'));
+        const summary = getInventoryDraftSummary(draft, [{ id: 'p1', stock: 32 }]);
+        expect(summary.lines[0].valid).toBe(false);
+        expect(String(summary.lines[0].error)).toContain('ya pasó tu objetivo');
+    });
+
+    it('conserva la unidad compuesta cuando su conversión coincide con el movimiento derivado', () => {
+        const draft = addTargetLine(createInventoryDraft('ingreso'), {
+            inputUnit: 'cajas', quantityInput: 2, unitsPerPackage: 6, targetStock: 34,
+        });
+        const summary = getInventoryDraftSummary(draft, products);
+        expect(summary.lines[0].inputUnit).toBe('cajas');
+        expect(summary.lines[0].quantityInput).toBe(2);
+        expect(summary.lines[0].unitsDelta).toBe(12);
+        expect(summary.lines[0].projectedStock).toBe(34);
+    });
+
+    it('si el stock actual cambió, la unidad compuesta se reemplaza por el movimiento derivado', () => {
+        const draft = addTargetLine(createInventoryDraft('ingreso'), {
+            inputUnit: 'cajas', quantityInput: 2, unitsPerPackage: 6, targetStock: 34,
+        });
+        // La caja quedó en 25: el objetivo 34 pide 9 (no las 12 unidades de 2 cajas).
+        const summary = getInventoryDraftSummary(draft, [{ id: 'p1', stock: 25 }]);
+        expect(summary.lines[0].inputUnit).toBe('unidades');
+        expect(summary.lines[0].quantityInput).toBe(9);
+    });
+
+    it('fusionar contribuciones acumula el objetivo', () => {
+        let draft = addTargetLine(createInventoryDraft('ingreso'), { quantityInput: 8, targetStock: 30 });
+        draft = addTargetLine(draft, { quantityInput: 4, baseStock: 22, targetStock: 26 });
+        const summary = getInventoryDraftSummary(draft, products);
+        expect(summary.lines).toHaveLength(1);
+        expect(summary.lines[0].targetStock).toBe(34);
+        expect(summary.lines[0].unitsDelta).toBe(12);
+    });
+
+    it('varias líneas del mismo producto se encadenan y comparten el expectedStock del contrato', () => {
+        let draft = addTargetLine(createInventoryDraft('ingreso'), { quantityInput: 8, targetStock: 30 });
+        draft = addTargetLine(draft, { inputUnit: 'cajas', quantityInput: 1, unitsPerPackage: 3, baseStock: 22, targetStock: 25 });
+        const summary = getInventoryDraftSummary(draft, products);
+        expect(summary.lines).toHaveLength(2);
+        expect(summary.lines[0].stock).toBe(22);
+        expect(summary.lines[1].stock).toBe(22);
+        expect(summary.lines[0].unitsDelta).toBe(8);
+        expect(summary.lines[1].unitsDelta).toBe(3);
+        expect(summary.lines[1].targetStock).toBe(33);
+        expect(summary.lines[1].projectedStock).toBe(33);
+    });
+
+    it('en egreso el objetivo por debajo del actual deriva la salida', () => {
+        const draft = addTargetLine(createInventoryDraft('egreso', { reason: 'Merma del día', reasonCategory: 'merma' }), {
+            quantityInput: 5, baseStock: 22, targetStock: 17,
+        });
+        const summary = getInventoryDraftSummary(draft, products);
+        expect(summary.lines[0].unitsDelta).toBe(5);
+        expect(summary.lines[0].signedDelta).toBe(-5);
+        expect(summary.lines[0].valid).toBe(true);
+    });
+});

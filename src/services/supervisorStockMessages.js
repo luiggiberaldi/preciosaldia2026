@@ -23,6 +23,17 @@ function pendingLinesText(count) {
 }
 
 const STOCK_MESSAGES = {
+    // ── Semántica de objetivo (lote) ───────────────────────────────────────
+    TARGET_ALREADY_PASSED: {
+        text: ({ stock, target }) => `El stock actual (${formatStockQuantity(stock)}) ya pasó tu objetivo (${formatStockQuantity(target)}); revisa la línea`,
+        type: 'warning',
+    },
+    BATCH_ALREADY_AT_TARGET: {
+        text: ({ count }) => (count === 1
+            ? 'Ya en objetivo: el producto está donde querías, no hubo movimiento'
+            : `Ya en objetivo: los ${formatStockQuantity(count)} productos están donde querías, no hubo movimiento`),
+        type: 'success',
+    },
     // ── Guardas de conexión y permisos (fila y lote) ─────────────────────────
     EGRESS_DISABLED: {
         text: 'Los egresos remotos están deshabilitados',

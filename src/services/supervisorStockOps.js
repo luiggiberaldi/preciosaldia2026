@@ -5,6 +5,7 @@
 // (supervisorStockMessages) para que fila y lote usen el mismo texto.
 
 import { stockMessage } from './supervisorStockMessages';
+import { isNewerSyncDocument } from './supervisorSyncService';
 //
 // Estado por producto (op):
 //   { state: 'sending'|'pending'|'applied'|'failed', targetStock, commandId?, silent?, error? }
@@ -18,6 +19,41 @@ import { stockMessage } from './supervisorStockMessages';
 // este servicio.
 
 export const STOCK_OP_IN_FLIGHT_STATES = Object.freeze(['sending', 'pending']);
+
+// Persistencia del mapa de ops entre recargas: el valor "creído" (aplicado en
+// caja aún sin sincronizar) debe sobrevivir un reload. Si se pierde, la fila
+// muestra el stock sincronizado (que va atrás) y el usuario reintenta
+// movimientos que YA se aplicaron.
+export const STOCK_OP_STORAGE_KEY = 'pda_stock_ops_v1';
+
+export function loadStockOpMap(storage = globalThis.localStorage) {
+    try {
+        const raw = storage?.getItem(STOCK_OP_STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : null;
+        if (!parsed || typeof parsed !== 'object') return {};
+        const entries = Object.entries(parsed).filter(([, op]) => (
+            op
+            && ['sending', 'pending', 'applied', 'failed'].includes(op.state)
+            && Number.isFinite(Number(op.targetStock))
+        ));
+        return Object.fromEntries(entries);
+    } catch {
+        return {};
+    }
+}
+
+export function saveStockOpMap(ops, storage = globalThis.localStorage) {
+    try {
+        const entries = Object.entries(ops || {}).filter(([, op]) => (
+            op && Number.isFinite(Number(op.targetStock))
+        ));
+        if (!entries.length) {
+            storage?.removeItem(STOCK_OP_STORAGE_KEY);
+        } else {
+            storage?.setItem(STOCK_OP_STORAGE_KEY, JSON.stringify(Object.fromEntries(entries)));
+        }
+    } catch { /* best effort */ }
+}
 
 export function getStockOp(ops, productId) {
     return ops?.[String(productId)] || null;
@@ -60,16 +96,26 @@ export function clearStockOp(ops, productId, { onlyAppliedTarget } = {}) {
 
 // Inicio de un ajuste: 'sending' con el stock objetivo (provisional). Los lotes
 // multiartículo van en silencio (el panel avisa por su cuenta).
-export function beginStockAdjust(ops, { productId, targetStock, silent = false }) {
-    return withStockOp(ops, productId, { state: 'sending', targetStock, silent });
+export function beginStockAdjust(ops, { productId, targetStock, silent = false, sinceWatermark = null }) {
+    return withStockOp(ops, productId, {
+        state: 'sending',
+        targetStock,
+        silent,
+        // Marca del eco de productos vigente al iniciar el ajuste. Con ella la
+        // reconciliación distingue "el eco va detrás" (se conserva el objetivo
+        // creído) de "una venta en la caja ya dejó viejo el objetivo" (se retira
+        // y la fila vuelve al stock sincronizado, que trae el descuento).
+        ...(sinceWatermark ? { sinceWatermark } : {}),
+    });
 }
 
-export function beginBatchStockTargets(ops, targets = []) {
+export function beginBatchStockTargets(ops, targets = [], { sinceWatermark = null } = {}) {
     return targets.reduce((acc, target) => (
         beginStockAdjust(acc, {
             productId: target.productId,
             targetStock: target.targetStock,
             silent: true,
+            sinceWatermark,
         })
     ), ops);
 }
@@ -93,6 +139,7 @@ export function shouldAnnounceStockOpFailure(op) {
 
 export function applyStockOpResult(ops, { productId, targetStock, commandId = null }, result, { announce = true } = {}) {
     const state = classifyStockOpResult(result);
+    const prior = getStockOp(ops, productId);
     if (state === 'failed') {
         if (announce) {
             return withStockOp(ops, productId, {
@@ -111,6 +158,7 @@ export function applyStockOpResult(ops, { productId, targetStock, commandId = nu
         targetStock,
         commandId,
         ...(announce ? {} : { silent: true }),
+        ...(prior?.sinceWatermark ? { sinceWatermark: prior.sinceWatermark } : {}),
     });
 }
 
@@ -126,22 +174,30 @@ export function applyBatchStockTargets(ops, result, targets = []) {
 }
 
 // Plan de reconciliación para el efecto de la vista:
-//  - promoted: ops que el stock sincronizado ya confirma → 'applied'.
-//  - retire:   ops 'applied' ya sincronizadas → su franja puede retirarse.
-//  - inspect:  ops 'pending' con commandId → consultar el estado del comando.
+//  - promoted:   ops que el stock sincronizado ya confirma → 'applied'.
+//  - retire:     ops 'applied' ya sincronizadas → su franja puede retirarse.
+//  - superseded: ops 'applied' cuyo objetivo quedó atrás de la realidad.
+//  - inspect:    ops 'pending' con commandId → consultar el estado del comando.
 // `map` es el mapa promovido y conserva la MISMA referencia si no hay cambios,
 // para no provocar renders en bucle.
-export function planStockOpReconciliation(ops, products = []) {
+//
+// Caso `superseded`: llegó un eco de productos MÁS NUEVO que el ajuste
+// (`productsUpdatedAt` posterior al `sinceWatermark` de la op) y el stock ya no
+// es el objetivo — típicamente una venta en la caja descontó después (o su push
+// coalesció con el del ajuste). Sin este caso, el objetivo creído queda viejo
+// para siempre y la venta nunca se descontaría en la fila del supervisor.
+export function planStockOpReconciliation(ops, products = [], { productsUpdatedAt = null } = {}) {
     const entries = Object.entries(ops || {}).filter(([, op]) => (
         op && op.targetStock !== undefined
         && ['sending', 'pending', 'applied'].includes(op.state)
     ));
-    if (!entries.length) return { map: ops, promoted: [], retire: [], inspect: [] };
+    if (!entries.length) return { map: ops, promoted: [], retire: [], superseded: [], inspect: [] };
 
     const productById = new Map(products.map(product => [String(product.id), product]));
     let map = ops;
     const promoted = [];
     const retire = [];
+    const superseded = [];
     const inspect = [];
     entries.forEach(([id, op]) => {
         const product = productById.get(id);
@@ -157,9 +213,20 @@ export function planStockOpReconciliation(ops, products = []) {
             }
             return;
         }
+        // Objetivo superado por la realidad: el eco posterior muestra otra cosa,
+        // así que el creído está viejo y enmascararía el descuento de la venta.
+        if (op.state === 'applied' && hasNewerSync(op, productsUpdatedAt)) {
+            superseded.push({ id, targetStock: Number(op.targetStock) });
+            return;
+        }
         if (op.state === 'pending' && op.commandId) inspect.push({ id, op });
     });
-    return { map, promoted, retire, inspect };
+    return { map, promoted, retire, superseded, inspect };
+}
+
+function hasNewerSync(op, productsUpdatedAt) {
+    return Boolean(op.sinceWatermark && productsUpdatedAt)
+        && isNewerSyncDocument(productsUpdatedAt, op.sinceWatermark);
 }
 
 // Traduce la inspección del comando en el siguiente estado del op, o null si
@@ -186,7 +253,10 @@ export function buildInventoryBatchTargets(lines = []) {
         if (!line?.valid) return;
         const id = String(line.productId);
         const base = Number(line.stock || 0);
-        const delta = Number(line.projectedStock) - base;
+        // signedDelta es el movimiento derivado de la línea (con semántica de
+        // objetivo puede diferir de projectedStock − stock por el encadenado de
+        // varias líneas del mismo producto).
+        const delta = Number(line.signedDelta ?? (Number(line.projectedStock) - base));
         const entry = byProduct.get(id);
         if (entry) {
             entry.targetStock = Math.round((entry.targetStock + delta) * 1000) / 1000;
@@ -209,6 +279,9 @@ export function patchProductStock(products = [], productId, stock) {
 
 export default {
     STOCK_OP_IN_FLIGHT_STATES,
+    STOCK_OP_STORAGE_KEY,
+    loadStockOpMap,
+    saveStockOpMap,
     getStockOp,
     believedStockOf,
     isStockAdjustBlocked,

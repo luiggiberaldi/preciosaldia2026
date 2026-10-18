@@ -11,6 +11,7 @@ import {
     readConfiguredPresentationFactor,
     removeInventoryDraftLine,
     resolveGranelKind,
+    resolveInventoryUnitConversion,
     updateInventoryDraftLine,
 } from '../../services/supervisorInventoryDraft';
 import { sendSupervisorInventoryBatch } from '../../services/supervisorInventoryBatchSender';
@@ -18,6 +19,7 @@ import { buildInventoryBatchTargets, nextStockOpAfterInspection } from '../../se
 import { recordReconciliation } from '../../services/supervisorCommandDiagnostics';
 import { notifyStockToast, stockMessage } from '../../services/supervisorStockMessages';
 import { inspectSupervisorCommandState, sendSupervisorCommand } from '../../services/supervisorCommandService';
+import { commandOutcomeToAck, trackSupervisorCommand } from '../../services/supervisorCommandTracker';
 import { buildProductRevision } from '../../services/supervisorContracts';
 
 const EGRESS_REASONS = [
@@ -342,12 +344,15 @@ export default function SupervisorInventoryBatchPanel({
                 setFormError(result?.error || stockMessage('PACKAGE_SAVE_FAILED'));
                 return;
             }
-            const ack = await result.ackPromise;
-            if (!ack?.ok) {
-                setFormError(ack?.error || stockMessage('PACKAGE_SAVE_UNCONFIRMED'));
-                return;
-            }
-            notifyStockToast(showToast, 'PACKAGE_SAVED');
+            // "Confirma y sigue": el resultado del empaque llega como aviso del
+            // tracker (éxito siempre, o error con motivo).
+            trackSupervisorCommand({
+                commandId: result.commandId,
+                type: 'supervisor.product.update',
+                payload: { productId: selectedProduct.id },
+                label: `el empaque de "${selectedProduct.name}"`,
+                ackPromise: result.ackPromise,
+            });
         } catch (error) {
             setFormError(error?.message || stockMessage('PACKAGE_SAVE_FAILED'));
         } finally {
@@ -371,12 +376,23 @@ export default function SupervisorInventoryBatchPanel({
                 return;
             }
         }
+        // Semántica de objetivo: la línea estampa el stock con el que se quiere
+        // QUEDAR (base + delta firmado). Al enviar, el movimiento real se deriva
+        // como (objetivo − stock actual), lo que hace el flujo idempotente:
+        // reintentar un lote aplicado es un no-op, nunca una duplicación.
+        const baseStock = Number(selectedProduct.stock || 0);
+        const conversion = resolveInventoryUnitConversion(selectedProduct, { inputUnit, quantityInput, unitsPerPackage });
+        const signedDelta = conversion.ok
+            ? (draft.direction === 'egreso' ? -conversion.unitsDelta : conversion.unitsDelta)
+            : null;
         const result = addInventoryDraftLine(draft, {
             productId: selectedProduct.id,
             productName: selectedProduct.name,
             inputUnit,
             quantityInput,
             unitsPerPackage,
+            baseStock,
+            targetStock: signedDelta === null ? null : Math.round((baseStock + signedDelta) * 1000) / 1000,
         });
         if (result.error) {
             setFormError(result.error);
@@ -433,12 +449,29 @@ export default function SupervisorInventoryBatchPanel({
         // aplicada hasta que ese ACK llega.
         setProgress({ completed: 0, total: summary.totalLines, awaitingAck: true, phase: 'sending' });
         try {
-            const result = await sendSupervisorInventoryBatch({
+            // "Confirma y sigue": al quedar la orden registrada el panel se
+            // cierra y el tracker garantiza el aviso final del desenlace.
+            let trackedCommandId = null;
+            const senderPromise = sendSupervisorInventoryBatch({
                 draft,
                 products,
                 targetDeviceId,
-                onProgress: (event) => setProgress(current => (current ? { ...current, phase: event?.status || 'sending' } : current)),
+                onProgress: (event) => {
+                    setProgress(current => (current ? { ...current, phase: event?.status || 'sending' } : current));
+                    if (event?.status === 'sent' && event?.commandId && trackedCommandId !== event.commandId) {
+                        trackedCommandId = event.commandId;
+                        trackSupervisorCommand({
+                            commandId: event.commandId,
+                            type: 'supervisor.inventory.batch.adjust',
+                            payload: { direction: draft.direction, lines: summary.lines },
+                            label: `el ajuste de inventario (${summary.totalLines} movimiento${summary.totalLines === 1 ? '' : 's'}, ${draft.direction})`,
+                            ackPromise: senderPromise.then(commandOutcomeToAck),
+                        });
+                        onClose?.();
+                    }
+                },
             });
+            const result = await senderPromise;
             const { status } = result;
 
             // Diagnóstico: "Revisar estado del lote" sobre un lote incierto que
@@ -457,7 +490,11 @@ export default function SupervisorInventoryBatchPanel({
 
             if (status === 'applied' || status === 'applied_with_warnings') {
                 setIsUncertain(false);
-                notifyStockToast(showToast, status === 'applied_with_warnings' ? 'BATCH_APPLIED_WITH_WARNINGS' : 'BATCH_CONFIRMED', { count: summary.totalLines });
+                // Con comando trackeado el aviso final lo emite el tracker (una
+                // sola autoridad); sin comando nuevo se conserva el aviso local.
+                if (!trackedCommandId) notifyStockToast(showToast, result.alreadyApplied
+                    ? 'BATCH_ALREADY_AT_TARGET'
+                    : status === 'applied_with_warnings' ? 'BATCH_APPLIED_WITH_WARNINGS' : 'BATCH_CONFIRMED', { count: summary.totalLines });
                 onCompleted?.(result, targets);
                 onClose?.();
                 return;
@@ -476,7 +513,7 @@ export default function SupervisorInventoryBatchPanel({
                     : null);
                 setProgress(null);
                 setFormError(stockMessage('BATCH_UNCONFIRMED'));
-                notifyStockToast(showToast, 'BATCH_UNCONFIRMED_TOAST');
+                if (!trackedCommandId) notifyStockToast(showToast, 'BATCH_UNCONFIRMED_TOAST');
                 onCompleted?.(result, targets);
                 return;
             }
@@ -492,7 +529,7 @@ export default function SupervisorInventoryBatchPanel({
                         ? 'BATCH_CANCELLED'
                         : 'BATCH_REJECTED');
                 setFormError(`${reason}. ${stockMessage('PENDING_LINES', { count: summary.totalLines })}`);
-                notifyStockToast(showToast, 'BATCH_PARTIAL', { applied: 0, pending: summary.totalLines });
+                if (!trackedCommandId) notifyStockToast(showToast, 'BATCH_PARTIAL', { applied: 0, pending: summary.totalLines });
                 onCompleted?.(result, targets);
                 return;
             }
@@ -508,7 +545,7 @@ export default function SupervisorInventoryBatchPanel({
 
             if (result.ok) {
                 setIsUncertain(false);
-                notifyStockToast(showToast, 'BATCH_CONFIRMED', { count: summary.totalLines });
+                if (!trackedCommandId) notifyStockToast(showToast, 'BATCH_CONFIRMED', { count: summary.totalLines });
                 onCompleted?.(result, targets);
                 onClose?.();
                 return;
@@ -533,7 +570,7 @@ export default function SupervisorInventoryBatchPanel({
                 setProgress({ completed: appliedCount, total: summary.totalLines, partial: true });
                 setFormError('');
             }
-            notifyStockToast(showToast, 'BATCH_PARTIAL', { applied: appliedCount, pending: pendingCount });
+            if (!trackedCommandId) notifyStockToast(showToast, 'BATCH_PARTIAL', { applied: appliedCount, pending: pendingCount });
             onCompleted?.(result, targets);
         } catch (error) {
             // Excepción no clasificada = estado incierto: tampoco se recomienda
@@ -664,7 +701,15 @@ export default function SupervisorInventoryBatchPanel({
 
                     <div className="space-y-2">
                         <div className="flex items-center justify-between"><h3 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-300">Resumen de carga</h3><span className="text-[10px] font-black text-slate-400">{summary.totalLines} líneas · {formatInventorySummaryTotal(summary.lines, summary.totalUnits)}</span></div>
-                        {summary.lines.length === 0 ? <div className="rounded-2xl border border-dashed border-slate-300 p-7 text-center text-xs font-bold text-slate-400 dark:border-slate-700"><Package size={24} className="mx-auto mb-2 opacity-50" />Agrega productos para comenzar</div> : <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">{summary.lines.map(line => <div key={line.id} className={`flex items-center gap-3 p-3 ${line.valid ? 'bg-white dark:bg-slate-900' : 'bg-rose-50/70 dark:bg-rose-950/20'}`}><div className="min-w-0 flex-1"><p className="truncate text-xs font-black text-slate-800 dark:text-white">{line.product?.name || line.productName}</p><p className="text-[10px] text-slate-400">Stock {line.stock} → <strong className={line.valid ? 'text-emerald-600' : 'text-rose-600'}>{line.projectedStock}</strong> · {formatInventoryLineQuantity(line)}</p>{!line.valid && line.error && <p role="alert" className="text-[10px] font-bold text-rose-600">{line.error}</p>}</div><input aria-label={`Cantidad de ${line.productName}`} type="number" min="0.001" step="any" value={line.quantityInput} onChange={(event) => setDraft(current => updateInventoryDraftLine(current, line.id, { quantityInput: event.target.value }))} className="w-20 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-black dark:border-slate-700 dark:bg-slate-950 dark:text-white" /><button type="button" aria-label={`Quitar ${line.productName}`} onClick={() => setDraft(current => removeInventoryDraftLine(current, line.id))} className="rounded-xl p-2 text-rose-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 size={15} /></button></div>)}</div>}
+                        {summary.lines.length === 0 ? <div className="rounded-2xl border border-dashed border-slate-300 p-7 text-center text-xs font-bold text-slate-400 dark:border-slate-700"><Package size={24} className="mx-auto mb-2 opacity-50" />Agrega productos para comenzar</div> : <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">{summary.lines.map(line => <div key={line.id} className={`flex items-center gap-3 p-3 ${line.valid ? 'bg-white dark:bg-slate-900' : 'bg-rose-50/70 dark:bg-rose-950/20'}`}><div className="min-w-0 flex-1"><p className="truncate text-xs font-black text-slate-800 dark:text-white">{line.product?.name || line.productName}</p>{line.satisfied ? <p className="text-[10px] font-bold text-emerald-600">✓ Ya en objetivo · {formatInventoryLineQuantity(line)}</p> : <p className="text-[10px] text-slate-400">Stock {line.stock} → <strong className={line.valid ? 'text-emerald-600' : 'text-rose-600'}>{line.projectedStock}</strong> · {formatInventoryLineQuantity(line)}</p>}{!line.valid && line.error && <p role="alert" className="text-[10px] font-bold text-rose-600">{line.error}</p>}</div><input aria-label={`Cantidad de ${line.productName}`} type="number" min="0.001" step="any" value={line.quantityInput} onChange={(event) => {
+    const quantityInput = event.target.value;
+    const baseStock = Number(line.product?.stock || 0);
+    const conversion = resolveInventoryUnitConversion(line.product, { inputUnit: line.inputUnit, quantityInput, unitsPerPackage: line.unitsPerPackage });
+    const targetStock = conversion.ok
+        ? Math.round((baseStock + (draft.direction === 'egreso' ? -conversion.unitsDelta : conversion.unitsDelta)) * 1000) / 1000
+        : null;
+    setDraft(current => updateInventoryDraftLine(current, line.id, { quantityInput, baseStock, targetStock }));
+}} className="w-20 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-black dark:border-slate-700 dark:bg-slate-950 dark:text-white" /><button type="button" aria-label={`Quitar ${line.productName}`} onClick={() => setDraft(current => removeInventoryDraftLine(current, line.id))} className="rounded-xl p-2 text-rose-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 size={15} /></button></div>)}</div>}
                     </div>
 
                         </>

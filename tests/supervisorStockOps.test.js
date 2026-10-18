@@ -215,3 +215,66 @@ describe('supervisorStockOps · reconciliación', () => {
         expect(nextStockOpAfterInspection(op, { state: 'absent' })).toBe(null);
     });
 });
+
+describe('supervisorStockOps · una venta en la caja se descuenta en la fila', () => {
+    const W0 = '2026-10-18T10:00:00.000Z';
+    const W1 = '2026-10-18T10:05:00.000Z';
+
+    it('el eco MÁS NUEVO que el ajuste, con otro stock, retira el objetivo creído', () => {
+        // Ajuste aplicado con objetivo 11 cuando el eco vigente era W0.
+        let map = beginStockAdjust({}, { productId: 'p1', targetStock: 11, sinceWatermark: W0 });
+        map = applyStockOpResult(map, { productId: 'p1', targetStock: 11, commandId: 'c1' }, { ok: true });
+
+        // Llega un eco posterior (W1) con el stock ya descontado por una venta: 8.
+        const plan = planStockOpReconciliation(map, [product('p1', 8)], { productsUpdatedAt: W1 });
+
+        // El objetivo quedó viejo: se retira al instante…
+        expect(plan.superseded).toEqual([{ id: 'p1', targetStock: 11 }]);
+        expect(plan.retire).toEqual([]);
+        // …y la fila pasa a mostrar el stock sincronizado (8), no el objetivo.
+        const cleared = clearStockOp(map, 'p1', { onlyAppliedTarget: 11 });
+        expect(believedStockOf(product('p1', 8), cleared)).toBe(8);
+    });
+
+    it('mientras el eco no es más nuevo que el ajuste, el objetivo creído se conserva', () => {
+        let map = beginStockAdjust({}, { productId: 'p1', targetStock: 11, sinceWatermark: W0 });
+        map = applyStockOpResult(map, { productId: 'p1', targetStock: 11, commandId: 'c1' }, { ok: true });
+        // El eco va detrás (sigue en 10) pero no es posterior al ajuste.
+        const plan = planStockOpReconciliation(map, [product('p1', 10)], { productsUpdatedAt: W0 });
+        expect(plan.superseded).toEqual([]);
+        expect(plan.retire).toEqual([]);
+        expect(believedStockOf(product('p1', 10), map)).toBe(11);
+    });
+
+    it('sin marca de eco en la op nunca se retira por suposición (cubre ops heredadas)', () => {
+        const map = applyStockOpResult(
+            beginStockAdjust({}, { productId: 'p1', targetStock: 11 }),
+            { productId: 'p1', targetStock: 11, commandId: 'c1' },
+            { ok: true },
+        );
+        const plan = planStockOpReconciliation(map, [product('p1', 8)], { productsUpdatedAt: W1 });
+        expect(plan.superseded).toEqual([]);
+        expect(believedStockOf(product('p1', 8), map)).toBe(11);
+    });
+
+    it('el objetivo que nació de la inspección también se retira si una venta lo dejó viejo', () => {
+        const pendingMap = applyStockOpResult(
+            beginStockAdjust({}, { productId: 'p1', targetStock: 11, sinceWatermark: W0 }),
+            { productId: 'p1', targetStock: 11, commandId: 'c1' },
+            { uncertain: true },
+        );
+        // La inspección promueve la entrada de la op a applied (conserva la marca).
+        const applied = nextStockOpAfterInspection(pendingMap.p1, { state: 'terminal', ack: { status: 'applied' } });
+        const plan = planStockOpReconciliation({ p1: applied }, [product('p1', 8)], { productsUpdatedAt: W1 });
+        expect(plan.superseded).toEqual([{ id: 'p1', targetStock: 11 }]);
+    });
+
+    it('applyStockOpResult conserva la marca del eco del ajuste', () => {
+        const map = applyStockOpResult(
+            beginStockAdjust({}, { productId: 'p1', targetStock: 11, sinceWatermark: W0 }),
+            { productId: 'p1', targetStock: 11, commandId: 'c1' },
+            { ok: true },
+        );
+        expect(map.p1.sinceWatermark).toBe(W0);
+    });
+});

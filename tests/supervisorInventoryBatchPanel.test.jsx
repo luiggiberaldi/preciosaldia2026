@@ -16,6 +16,7 @@ import { sendSupervisorInventoryBatch } from '../src/services/supervisorInventor
 import { inspectSupervisorCommandState, sendSupervisorCommand } from '../src/services/supervisorCommandService';
 import { clearCommandDiagnostics, getReconciliations } from '../src/services/supervisorCommandDiagnostics';
 import { showToast } from '../src/components/Toast';
+import { resetSupervisorCommandTracker } from '../src/services/supervisorCommandTracker';
 
 vi.mock('../src/services/supervisorCommandService', () => ({
     sendSupervisorCommand: vi.fn(),
@@ -52,6 +53,7 @@ describe('SupervisorInventoryBatchPanel', () => {
 
     beforeEach(() => {
         globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+        resetSupervisorCommandTracker();
         container = document.createElement('div');
         document.body.appendChild(container);
         root = createRoot(container);
@@ -302,8 +304,12 @@ describe('SupervisorInventoryBatchPanel', () => {
         expect(container.textContent).toContain('1 líneas');
     });
 
-    it('guarda el empaque en el producto vía edición remota con un botón explícito', async () => {
-        sendSupervisorCommand.mockResolvedValue({ ok: true, ackPromise: Promise.resolve({ ok: true }) });
+    it('guarda el empaque en el producto y el resultado llega como aviso del tracker', async () => {
+        sendSupervisorCommand.mockResolvedValue({
+            ok: true,
+            commandId: 'cmd-package-1',
+            ackPromise: Promise.resolve({ ok: true, status: 'applied', commandId: 'cmd-package-1', ack: null, error: null }),
+        });
         showToast.mockReset();
         const product24 = { id: 'p-24', name: 'Atún Pack 24', stock: 50, unitsPerPackage: 24 };
         await act(async () => root.render(
@@ -345,7 +351,9 @@ describe('SupervisorInventoryBatchPanel', () => {
                 patch: { unitsPerPackage: 30, baseRevision: expect.any(String) },
             },
         });
-        expect(showToast).toHaveBeenCalledWith('Empaque guardado en el producto', 'success');
+        // Contrato "confirma y seguir": el éxito SIEMPRE se avisa, vía tracker.
+        expect(showToast).toHaveBeenCalledWith(expect.stringContaining('empaque'), 'success');
+        expect(showToast).toHaveBeenCalledWith(expect.stringContaining('✅'), 'success');
     });
 
     it('invalida inmediatamente la selección anterior al escribir en el campo de búsqueda', async () => {
@@ -450,10 +458,10 @@ describe('SupervisorInventoryBatchPanel', () => {
             expect(sendSupervisorCommand).not.toHaveBeenCalled();
         });
 
-        it.each(['unidades', 'bultos'])('envía el payload v1 correcto para %s tras alternar presentación y espera el ACK', async (inputUnit) => {
+        it.each(['unidades', 'bultos'])('envía el payload v1 correcto para %s y cierra sin esperar el ACK', async (inputUnit) => {
             let resolveAck;
             const ackPromise = new Promise(resolve => { resolveAck = resolve; });
-            sendSupervisorCommand.mockResolvedValue({ ok: true, ackPromise });
+            sendSupervisorCommand.mockResolvedValue({ ok: true, commandId: `cmd-modal-${inputUnit}`, ackPromise });
             const onClose = vi.fn();
             await act(async () => root.render(
                 <SupervisorInventoryBatchModal isOpen onClose={onClose} product={{ ...product, unitsPerPackage: 24 }} targetDeviceId="device-1" remoteAvailable />,
@@ -475,9 +483,28 @@ describe('SupervisorInventoryBatchPanel', () => {
                     expectedStock: 10, reason: 'Compra recibida', reasonCategory: undefined, lotReference: undefined,
                 },
             });
-            expect(onClose).not.toHaveBeenCalled();
-            await act(async () => resolveAck({ ok: true }));
+            // Contrato "confirma y seguir": el modal se cierra al quedar la
+            // orden registrada, SIN esperar la confirmación de la caja.
             expect(onClose).toHaveBeenCalledTimes(1);
+            await act(async () => resolveAck({ ok: true, status: 'applied', commandId: `cmd-modal-${inputUnit}`, ack: null, error: null }));
+            // El ACK tardío no vuelve a cerrar ni duplica avisos.
+            expect(onClose).toHaveBeenCalledTimes(1);
+        });
+
+        it('un envío fallido NO cierra el modal y deja el error a la vista', async () => {
+            sendSupervisorCommand.mockResolvedValue({ ok: false, status: 'invalid', error: 'Orden rechazada por la caja' });
+            const onClose = vi.fn();
+            await act(async () => root.render(
+                <SupervisorInventoryBatchModal isOpen onClose={onClose} product={{ ...product, unitsPerPackage: 24 }} targetDeviceId="device-1" remoteAvailable />,
+            ));
+            await act(async () => {
+                setInputValue(container.querySelector('input[aria-label^="Cantidad de"]'), '2');
+                setInputValue(container.querySelector('textarea'), 'Compra recibida');
+            });
+            await act(async () => container.querySelector('button[type="submit"]').click());
+
+            expect(onClose).not.toHaveBeenCalled();
+            expect(container.textContent).toContain('Orden rechazada por la caja');
         });
 
         it('usa factor 1 para unidades y restaura el factor configurado (24) al alternar a cajas', async () => {
@@ -606,6 +633,7 @@ describe('Fase 10: ACK global del lote en el panel', () => {
 
     beforeEach(() => {
         globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+        resetSupervisorCommandTracker();
         container = document.createElement('div');
         document.body.appendChild(container);
         root = createRoot(container);

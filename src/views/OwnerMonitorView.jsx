@@ -10,7 +10,7 @@ import {
     RefreshCw, Wifi, WifiOff, Clock, FileText, DollarSign,
     Wallet, CreditCard, Smartphone, Banknote, ArrowDownRight, ArrowDownToLine, ArrowUpFromLine,
     ShieldCheck, Hash, AlertTriangle, ChevronLeft, ChevronRight,
-    Plus, Minus, Check, X, Pencil, Trash2, Activity
+    Plus, Minus, Check, X, Pencil, Trash2, Activity, Radio
 } from 'lucide-react';
 import { formatBs, formatCop } from '../utils/calculatorUtils';
 import { getLocalISODate, getDateRange } from '../utils/dateHelpers';
@@ -19,7 +19,9 @@ import SupervisorRateModal from '../components/Monitor/SupervisorRateModal';
 import RemoteProductFormModal from '../components/Monitor/RemoteProductFormModal';
 import SupervisorInventoryBatchPanel from '../components/Monitor/SupervisorInventoryBatchPanel';
 import SupervisorCommandDiagnosticsPanel from '../components/Monitor/SupervisorCommandDiagnosticsPanel';
-import { recordReconciliation } from '../services/supervisorCommandDiagnostics';
+import SupervisorSyncDiagnosticsPanel from '../components/Monitor/SupervisorSyncDiagnosticsPanel';
+import { useSupervisorTeamNotices } from '../hooks/useSupervisorTeamNotices';
+import { getVerifications, recordReconciliation, recordVerification } from '../services/supervisorCommandDiagnostics';
 import SupervisorInventoryToolbar from '../components/Monitor/SupervisorInventoryToolbar';
 import SupervisorInventoryCatalog from '../components/Monitor/SupervisorInventoryCatalog';
 import { createInventoryDraft, addInventoryDraftLine } from '../services/supervisorInventoryDraft';
@@ -30,6 +32,8 @@ import {
     beginBatchStockTargets,
     beginStockAdjust,
     believedStockOf as believedStockOfService,
+    loadStockOpMap,
+    saveStockOpMap,
     classifyStockOpResult,
     clearStockOp as clearStockOpMap,
     isStockAdjustBlocked,
@@ -52,12 +56,24 @@ import {
 } from '../services/supervisorFinancials';
 import { ensureSupervisorSession } from '../services/supervisorAuth';
 import { MONITOR_CLEANUP_PENDING_KEY, isPairingRevocationConfirmed, revokeAndClearMonitor } from '../services/monitorUnpair';
-import { SUPERVISOR_SYNC_STATES } from '../services/supervisorSyncService';
+import { SUPERVISOR_SYNC_STATES, getSyncMetadataKey } from '../services/supervisorSyncService';
 import { inspectSupervisorCommandState, sendSupervisorCommand } from '../services/supervisorCommandService';
+import { commandOutcomeToAck, isCommandOutcomeOwned, setCommandVerification, trackSupervisorCommand } from '../services/supervisorCommandTracker';
+import { verifyCommandsAgainstEcho } from '../services/supervisorCommandVerification';
 import { matchesSearch as matchesSearchFields } from '../utils/searchMatch';
 import { shouldShowSupervisorCop, calculateSupervisorCashSummary } from '../services/supervisorReportData';
 import { useSupervisorControl } from '../hooks/useSupervisorControl';
 import SupervisorControlPanel from '../components/Monitor/SupervisorControlPanel';
+import LocalQueueBanner from '../components/Monitor/LocalQueueBanner';
+import {
+    discardAllQueuedSupervisorCommands,
+    enqueueSupervisorCommand,
+    flushSupervisorCommandQueue,
+    getQueuedSupervisorCommands,
+    sendOrQueueSupervisorCommand,
+    subscribeSupervisorCommandQueue,
+} from '../services/supervisorCommandQueue';
+import { buildInventoryBatchV2Payload } from '../services/supervisorContracts';
 
 // Helper: icon por método de pago
 const PAYMENT_METHOD_ICONS = {
@@ -85,6 +101,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
         syncState,
         stopMonitorSync,
         syncError,
+        syncDiagnostics,
         triggerRefresh,
     } = useMonitorSync(pairedDeviceId);
     const remoteActionsAvailable = Boolean(isConnected && pairedDeviceId);
@@ -98,9 +115,14 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
     const [disconnectServerRevoked, setDisconnectServerRevoked] = useState(false);
     const disconnectingRef = useRef(false);
     const [viewTab, setViewTab] = useState('activo'); // 'activo', 'cierres', 'inventario' o 'control'
+    // Propuesta 8: los cambios de OTROS supervisores avisan aunque la pestaña
+    // Control esté cerrada. El canal lo mantiene useSupervisorControl (canal
+    // único) y reenvía cada comando a este hook por onCommandRow.
+    const teamNotices = useSupervisorTeamNotices({ targetDeviceId: pairedDeviceId });
     const supervisorControl = useSupervisorControl({
         targetDeviceId: pairedDeviceId,
         enabled: viewTab === 'control' && Boolean(pairedDeviceId),
+        onCommandRow: teamNotices.handleCommandRow,
     });
     const [selectedCierreId, setSelectedCierreId] = useState(null);
     const [searchTermInventario, setSearchTermInventario] = useState('');
@@ -115,13 +137,22 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
     // Panel de diagnóstico de comandos: estado, latencia de ACK y
     // reconciliaciones por commandId (telemetría registrada en la caja).
     const [showCommandDiagnostics, setShowCommandDiagnostics] = useState(false);
+    const [showSyncDiagnostics, setShowSyncDiagnostics] = useState(false);
     // Edición directa de stock en la fila: número pulsable + botones +/- que
     // cambian la cantidad al instante (sin modal), con confirmación explícita y
     // estado visible por producto: sending / applied / failed / pending.
     const [stockEditProductId, setStockEditProductId] = useState(null);
     const [stockEditValue, setStockEditValue] = useState('');
     const [stockPendingConfirm, setStockPendingConfirm] = useState(null); // { product, nextStock }
-    const [stockOpStatus, setStockOpStatus] = useState({}); // productId -> { state, error, targetStock, commandId }
+    // productId -> { state, error, targetStock, commandId }. Se persiste para
+    // que el stock "creído" (aplicado en caja aún sin sincronizar) sobreviva a
+    // una recarga: si se pierde, la fila muestra el stock viejo y el usuario
+    // reintenta movimientos que ya se aplicaron.
+    const [stockOpStatus, setStockOpStatus] = useState(() => loadStockOpMap());
+
+    useEffect(() => {
+        saveStockOpMap(stockOpStatus);
+    }, [stockOpStatus]);
     const [cierresDateRange, setCierresDateRange] = useState('all'); // 'all', 'today', 'yesterday', 'week', 'month'
     const [criticalStockTab, setCriticalStockTab] = useState('bajo'); // 'bajo', 'agotado', 'todos'
 
@@ -140,6 +171,18 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
     // directa) y el panel de lote de inventario. Aquí solo se cablea a React y a
     // los efectos visibles (toasts, temporizadores, inspección de comandos).
     const believedStockOf = (product) => believedStockOfService(product, stockOpStatus);
+    // Watermark del eco de productos vigente (updatedAt del último doc aplicado).
+    // Se fija al iniciar cada ajuste para que la reconciliación sepa si un eco
+    // posterior (una venta en la caja) ya dejó viejo el objetivo creído.
+    const currentProductsWatermark = () => localStorage.getItem(getSyncMetadataKey('bodega_products_v1'));
+
+    // Productos con el stock "creído": el panel de lote compone la base del
+    // movimiento (expectedStock) desde aquí, que es el estado real de la caja
+    // (el stock sincronizado puede quedar atrás unos segundos tras un ajuste).
+    const believedProducts = useMemo(() => products.map(product => {
+        const stock = believedStockOfService(product, stockOpStatus);
+        return Number(stock) === Number(product.stock) ? product : { ...product, stock };
+    }), [products, stockOpStatus]);
 
     const notifyStockOpRevert = () => {
         // Reversión del valor provisional: la fila vuelve al stock real.
@@ -148,7 +191,9 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
 
     const setStockOp = (productId, op) => {
         setStockOpStatus(current => withStockOp(current, String(productId), op));
-        if (shouldAnnounceStockOpFailure(op)) notifyStockOpRevert();
+        // Si el tracker se ocupa del resultado de este comando, su aviso ya cubre
+        // el fallo (con motivo): la franja muestra el detalle, sin toast duplicado.
+        if (shouldAnnounceStockOpFailure(op) && !isCommandOutcomeOwned(op.commandId)) notifyStockOpRevert();
     };
 
     const clearStockOp = (productId, options = {}) => {
@@ -170,7 +215,95 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
     };
 
     const handleInventoryBatchSubmitting = (targets = []) => {
-        setStockOpStatus(current => beginBatchStockTargets(current, targets));
+        setStockOpStatus(current => beginBatchStockTargets(current, targets, {
+            sinceWatermark: currentProductsWatermark(),
+        }));
+    };
+
+    // ── Propuesta 5: cola local con mando del usuario ────────────────────
+    // Los cambios que no pudieron enviarse esperan guardados ("EN COLA") y se
+    // suben solos al volver la conexión (barrido de 30 s + evento online) o con
+    // SUBIR AL SISTEMA. Descartar es siempre una decisión del usuario.
+    const [queueEntries, setQueueEntries] = useState(() => getQueuedSupervisorCommands());
+    const [queueUploading, setQueueUploading] = useState(false);
+
+    useEffect(() => subscribeSupervisorCommandQueue(() => {
+        setQueueEntries(getQueuedSupervisorCommands());
+    }), []);
+
+    const flushLocalQueue = async ({ manual = false } = {}) => {
+        const entries = getQueuedSupervisorCommands();
+        if (!entries.length || queueUploading) return null;
+        if (!remoteActionsAvailable) {
+            if (manual) notifyStockToast(showToast, 'BOX_OFFLINE_SEND');
+            return null;
+        }
+        setQueueUploading(true);
+        const summary = await flushSupervisorCommandQueue({
+            send: async (entry) => {
+                const result = await sendSupervisorCommand({
+                    type: entry.type,
+                    payload: entry.payload,
+                    targetDeviceId: entry.targetDeviceId || pairedDeviceId,
+                });
+                if (!result?.ok) return result;
+                // Enviada de verdad: ahora sí se trackea ("un cambio = un aviso").
+                trackSupervisorCommand({
+                    commandId: result.commandId,
+                    type: entry.type,
+                    payload: entry.payload,
+                    label: entry.label,
+                    ackPromise: result.ackPromise,
+                });
+                if (entry.kind === 'stock') {
+                    // Cada línea pasa a "esperando a la caja" con su commandId:
+                    // la reconciliación existente resuelve el resultado.
+                    (entry.payload?.lines || []).forEach(line => {
+                        const sign = entry.payload?.direction === 'egreso' ? -1 : 1;
+                        const targetStock = Number(line.expectedStock) + sign * Number(line.quantityInput);
+                        setStockOpStatus(current => withStockOp(current, String(line.productId), {
+                            state: 'pending',
+                            targetStock,
+                            silent: true,
+                            commandId: result.commandId,
+                            sinceWatermark: currentProductsWatermark(),
+                        }));
+                    });
+                }
+                return result;
+            },
+        });
+        setQueueUploading(false);
+        if (summary?.sent) {
+            showToast?.(`${summary.sent} ${summary.sent === 1 ? 'cambio subido' : 'cambios subidos'} a la caja`, 'success');
+        }
+        return summary;
+    };
+
+    // Barrido de 30 s + reconexión: el modo automático de la cola.
+    useEffect(() => {
+        if (!remoteActionsAvailable || !queueEntries.length) return undefined;
+        flushLocalQueue();
+        const timer = window.setInterval(() => { flushLocalQueue(); }, 30_000);
+        const onOnline = () => { flushLocalQueue(); };
+        window.addEventListener('online', onOnline);
+        return () => {
+            window.clearInterval(timer);
+            window.removeEventListener('online', onOnline);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [remoteActionsAvailable, queueEntries.length]);
+
+    const discardLocalQueue = () => {
+        // Nunca se descarta lo que YA se envió: eso es territorio de la anulación.
+        getQueuedSupervisorCommands().forEach(entry => {
+            if (entry.kind !== 'stock') return;
+            (entry.payload?.lines || []).forEach(line => {
+                setStockOpStatus(current => clearStockOpMap(current, String(line.productId)));
+            });
+        });
+        const discarded = discardAllQueuedSupervisorCommands();
+        if (discarded) showToast?.(`Se descartaron ${discarded} ${discarded === 1 ? 'cambio' : 'cambios'} de la cola`, 'warning');
     };
 
     const applyTargetStock = async (product, targetStock) => {
@@ -186,7 +319,35 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
             return;
         }
         if (!remoteActionsAvailable) {
-            notifyStockToast(showToast, 'BOX_OFFLINE_SEND');
+            // Propuesta 5: sin conexión el cambio se guarda en la cola local y se
+            // sube solo cuando vuelva (o con SUBIR AL SISTEMA). La fila muestra
+            // el stock objetivo con la etiqueta "EN COLA".
+            const queuedDirection = delta > 0 ? 'ingreso' : 'egreso';
+            const queuedPayload = buildInventoryBatchV2Payload(
+                { direction: queuedDirection, reason: 'Ajuste de stock', reasonCategory: 'ajuste' },
+                [{
+                    productId: String(product.id),
+                    inputUnit: 'unidades',
+                    quantityInput: Math.abs(delta),
+                    expectedStock: current,
+                }],
+            );
+            setStockOpStatus(currentOps => beginStockAdjust(currentOps, {
+                productId,
+                targetStock,
+                sinceWatermark: currentProductsWatermark(),
+            }));
+            enqueueSupervisorCommand({
+                kind: 'stock',
+                type: 'supervisor.inventory.batch.adjust',
+                payload: {
+                    ...queuedPayload,
+                    lines: queuedPayload.lines.map(line => ({ ...line, productName: product.name })),
+                },
+                label: `el ajuste de stock de "${product.name}"`,
+                targetDeviceId: pairedDeviceId,
+            });
+            showToast?.('Cambio guardado en la cola — se subirá cuando vuelva la conexión', 'info');
             return;
         }
 
@@ -200,12 +361,21 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
             inputUnit: 'unidades',
             quantityInput: Math.abs(delta),
             unitsPerPackage: 1,
+            // Semántica de objetivo (igual que el lote): el movimiento se deriva
+            // al enviar como (objetivo − stock creído), así que reintentar un
+            // objetivo ya alcanzado es un no-op en vez de duplicar el ajuste.
+            baseStock: current,
+            targetStock: Number(targetStock),
         });
         if (result.error) {
             showToast?.(result.error, 'error');
             return;
         }
-        setStockOpStatus(current => beginStockAdjust(current, { productId, targetStock }));
+        setStockOpStatus(current => beginStockAdjust(current, {
+            productId,
+            targetStock,
+            sinceWatermark: currentProductsWatermark(),
+        }));
         try {
             // expectedStock debe describir la base contra la que se calculó el
             // movimiento: si el stock local aún no refleja un ajuste confirmado, se
@@ -213,11 +383,28 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
             const baseProducts = Math.abs(current - Number(product.stock || 0)) < 1e-9
                 ? products
                 : patchProductStock(products, productId, current);
-            const batchResult = await sendSupervisorInventoryBatch({
+            let trackedCommandId = null;
+            const senderPromise = sendSupervisorInventoryBatch({
                 draft: result.draft,
                 products: baseProducts,
                 targetDeviceId: pairedDeviceId,
+                onProgress: (event) => {
+                    // "Confirma y sigue": la orden quedó registrada → el tracker
+                    // garantiza el aviso final (el éxito del ajuste de fila deja
+                    // de ser silencioso y el fallo no se duplica).
+                    if (event?.status === 'sent' && event?.commandId && trackedCommandId !== event.commandId) {
+                        trackedCommandId = event.commandId;
+                        trackSupervisorCommand({
+                            commandId: event.commandId,
+                            type: 'supervisor.inventory.batch.adjust',
+                            payload: { direction },
+                            label: `el ajuste de stock de "${product.name}"`,
+                            ackPromise: senderPromise.then(commandOutcomeToAck),
+                        });
+                    }
+                },
             });
+            const batchResult = await senderPromise;
             // Un solo lugar decide el estado por producto según el resultado
             // (applied / pending incierto / failed con reversión).
             applyStockOpOutcome({ productId, targetStock, commandId: batchResult.commandId ?? null }, batchResult);
@@ -236,9 +423,15 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
     // (promociones por sincronía, retiros de franja, inspecciones por commandId);
     // aquí solo se ejecutan los temporizadores y las consultas de estado.
     useEffect(() => {
-        const plan = planStockOpReconciliation(stockOpStatus, products);
-        if (!plan.promoted.length && !plan.retire.length && !plan.inspect.length) return undefined;
+        const plan = planStockOpReconciliation(stockOpStatus, products, {
+            productsUpdatedAt: currentProductsWatermark(),
+        });
+        if (!plan.promoted.length && !plan.retire.length && !plan.inspect.length && !plan.superseded.length) return undefined;
         if (plan.promoted.length) setStockOpStatus(plan.map);
+
+        // Objetivo superado (una venta en la caja ya descontó y el eco posterior
+        // lo trae): se retira al instante y la fila vuelve al stock sincronizado.
+        plan.superseded.forEach(({ id, targetStock }) => clearStockOp(id, { onlyAppliedTarget: targetStock }));
 
         let cancelled = false;
         const timers = [];
@@ -283,6 +476,62 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
         };
     }, [products, stockOpStatus]);
 
+    // Resolutor de nombres para las fichas-recibo del panel Control: el payload
+    // puede traer solo el id (p. ej. al reintentar una orden vieja); aquí se
+    // resuelve contra el catálogo real que vino en el eco.
+    const resolveProductName = (id) => {
+        if (id == null || !Array.isArray(products)) return null;
+        const found = products.find(product => String(product?.id) === String(id));
+        return found?.name || null;
+    };
+
+    // Sellos "Aplicado y verificado" (propuesta 7): al llegar un eco (productos
+    // o comandos nuevos), se contrastan los comandos aplicados recientes contra
+    // lo que la caja publicó y se registra el sello. El sello es ESTADO, no un
+    // aviso nuevo: solo un "No coincide" dispara alerta (la lanza el tracker,
+    // una sola vez por comando). Un eco incompleto se degrada a "recibido".
+    useEffect(() => {
+        const commands = supervisorControl?.commands;
+        if (!products && !commands?.length) return undefined;
+        let cancelled = false;
+        (async () => {
+            let users = null;
+            let rateMode = null;
+            try {
+                users = await storageService.getItem('bodega_users_catalog_v1', null);
+                rateMode = localStorage.getItem('bodega_rate_mode');
+            } catch { /* sin datos locales el sello se degrada a "recibido" */ }
+            if (cancelled) return;
+            const productsUpdatedAt = localStorage.getItem(getSyncMetadataKey('bodega_products_v1'));
+            const usersUpdatedAt = localStorage.getItem(getSyncMetadataKey('bodega_users_catalog_v1'));
+            const rateModeUpdatedAt = localStorage.getItem(getSyncMetadataKey('bodega_rate_mode'));
+            verifyCommandsAgainstEcho({
+                commands: commands || [],
+                snapshot: {
+                    products: Array.isArray(products) ? products : null,
+                    users: Array.isArray(users) ? users : null,
+                    rateMode: rateMode || null,
+                    updatedAt: productsUpdatedAt || usersUpdatedAt || rateModeUpdatedAt || null,
+                    productsUpdatedAt,
+                    usersUpdatedAt,
+                    rateModeUpdatedAt,
+                },
+                recorded: getVerifications(),
+                onResult: (commandId, outcome) => {
+                    recordVerification({
+                        commandId,
+                        level: outcome.level,
+                        detail: outcome.detail,
+                        checkedAt: outcome.checkedAt,
+                    });
+                    setCommandVerification(commandId, outcome);
+                    supervisorControl?.refreshVerifications?.();
+                },
+            });
+        })();
+        return () => { cancelled = true; };
+    }, [products, supervisorControl?.commands]);
+
     const openStockEditor = (product) => {
         if (isStockAdjustBlocked(stockOpStatus, product.id)) {
             notifyStockToast(showToast, 'ADJUST_IN_FLIGHT');
@@ -317,10 +566,8 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
     const stepStockEdit = (product, step) => {
         const productId = String(product.id);
         triggerHaptic?.();
-        if (!remoteActionsAvailable) {
-            notifyStockToast(showToast, 'BOX_OFFLINE_STOCK');
-            return;
-        }
+        // Sin conexión también se puede componer: el cambio se guarda en la cola
+        // local al confirmar (propuesta 5) en vez de bloquear la edición.
         if (isStockAdjustBlocked(stockOpStatus, productId)) {
             notifyStockToast(showToast, 'ADJUST_IN_FLIGHT');
             return;
@@ -675,10 +922,6 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
     // Eliminación remota de producto con confirmación profesional
     const handleConfirmDeleteProductRemote = async () => {
         if (!productToDeleteRemote) return;
-        if (!remoteActionsAvailable) {
-            showToast?.('La caja está desconectada; no se puede enviar la orden', 'warning');
-            return;
-        }
         if (!SUPERVISOR_REMOTE_MUTATIONS_ENABLED) {
             showToast?.('Las mutaciones remotas están temporalmente deshabilitadas por seguridad', 'warning');
             return;
@@ -686,21 +929,35 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
         triggerHaptic?.();
         setDeletingRemoteProduct(true);
         try {
-            const result = await sendSupervisorCommand({
+            // Propuesta 5: sin conexión la baja se guarda en la cola local y se
+            // sube sola cuando vuelva (o con SUBIR AL SISTEMA).
+            const payload = { productId: productToDeleteRemote.id, productName: productToDeleteRemote.name };
+            const result = await sendOrQueueSupervisorCommand({
                 type: 'supervisor.product.delete',
+                payload,
                 targetDeviceId: pairedDeviceId,
-                payload: { productId: productToDeleteRemote.id },
+                label: `la baja de "${productToDeleteRemote.name}"`,
+                canSend: remoteActionsAvailable,
+                send: (args) => sendSupervisorCommand(args),
             });
             if (!result.ok) {
                 showToast?.(result.error, result.status === 'disabled' ? 'warning' : 'error');
                 return;
             }
-            const ack = await result.ackPromise;
-            if (!ack?.ok) {
-                showToast?.(ack?.error || 'La caja no confirmó la eliminación', 'error');
+            if (result.queued) {
+                showToast?.(`"${productToDeleteRemote.name}" se eliminará cuando vuelva la conexión (guardado en cola)`, 'info');
+                setProductToDeleteRemote(null);
                 return;
             }
-            showToast?.(`Producto "${productToDeleteRemote.name}" eliminado en caja`, 'success');
+            // "Confirma y sigue": se cierra al quedar la orden registrada; el
+            // resultado (éxito siempre, o error con motivo) llega por el tracker.
+            trackSupervisorCommand({
+                commandId: result.commandId,
+                type: 'supervisor.product.delete',
+                payload,
+                label: `la baja de "${productToDeleteRemote.name}"`,
+                ackPromise: result.ackPromise,
+            });
             setProductToDeleteRemote(null);
         } catch (e) {
             showToast?.('Error al eliminar producto', 'error');
@@ -781,6 +1038,15 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                             aria-label="Diagnóstico de Comandos"
                         >
                             <Activity size={15} />
+                        </button>
+
+                        <button
+                            onClick={() => { triggerHaptic?.(); setShowSyncDiagnostics(true); }}
+                            className="min-h-10 min-w-10 sm:min-h-11 sm:min-w-11 p-2 sm:p-2.5 rounded-2xl text-slate-400 hover:text-blue-500 hover:bg-blue-50 border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 dark:hover:text-blue-400 transition-colors flex items-center justify-center shrink-0"
+                            title="Diagnóstico de Sincronización"
+                            aria-label="Diagnóstico de Sincronización"
+                        >
+                            <Radio size={15} />
                         </button>
 
                         <button 
@@ -907,6 +1173,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                         control={supervisorControl}
                         isConnected={isConnected}
                         onToast={showToast}
+                        resolveName={resolveProductName}
                     />
                 )}
 
@@ -1924,10 +2191,43 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
 
             </main>
 
+            {/* Propuestas 5 y 6: cola local con mando y arrepentimiento */}
+            <LocalQueueBanner
+                queueCount={queueEntries.length}
+                pendingCount={Number(supervisorControl?.counts?.pending || 0)}
+                isOnline={remoteActionsAvailable}
+                uploading={queueUploading}
+                onUpload={() => { triggerHaptic?.(); flushLocalQueue({ manual: true }); }}
+                onDiscard={() => { triggerHaptic?.(); discardLocalQueue(); }}
+                onCancelAll={async () => {
+                    const summary = await supervisorControl?.cancelAll?.();
+                    if (!summary) return;
+                    const { total, cancelled, notCancelled } = summary;
+                    if (!total) {
+                        showToast?.('No hay cambios esperando a la caja', 'info');
+                        return;
+                    }
+                    showToast?.(
+                        notCancelled.length
+                            ? `${cancelled} anulados · ${notCancelled.length} no se pudieron anular (la caja puede haberlos tomado)`
+                            : `${cancelled} ${cancelled === 1 ? 'cambio anulado' : 'cambios anulados'}`,
+                        notCancelled.length ? 'warning' : 'success',
+                    );
+                }}
+            />
+
             {/* Modal Ajustar Tasa Remota */}
             <SupervisorCommandDiagnosticsPanel
                 isOpen={showCommandDiagnostics}
                 onClose={() => setShowCommandDiagnostics(false)}
+            />
+
+            <SupervisorSyncDiagnosticsPanel
+                isOpen={showSyncDiagnostics}
+                onClose={() => setShowSyncDiagnostics(false)}
+                diagnostics={syncDiagnostics}
+                statusLabel={connectionLabel}
+                lastSync={lastSync}
             />
 
             <SupervisorRateModal
@@ -1945,7 +2245,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                 isOpen={Boolean(inventoryBatchMode)}
                 direction={inventoryBatchMode || 'ingreso'}
                 initialProduct={inventoryBatchProduct}
-                products={products}
+                products={believedProducts}
                 targetDeviceId={pairedDeviceId}
                 remoteAvailable={remoteActionsAvailable}
                 onClose={() => {
