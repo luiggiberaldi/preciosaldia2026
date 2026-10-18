@@ -86,6 +86,66 @@ export function getChangedSyncDocumentIds(metadata = [], getPreviousUpdatedAt = 
 }
 
 /**
+ * Realtime entrega el registro VACÍO (y `payload.errors` con "Error 413: Payload
+ * Too Large") cuando `sync_documents.data` supera `max_record_bytes` (~1 MB).
+ * Con catálogos de miles de productos ese es el caso normal de
+ * `bodega_products_v1`: el evento no trae cuerpo y NUNCA puede descartarse en
+ * silencio — el caller debe responder con un pull de respaldo.
+ */
+export function isOversizeRealtimePayload(realtimePayload) {
+    if (Array.isArray(realtimePayload?.errors) && realtimePayload.errors.length > 0) return true;
+    const doc = realtimePayload?.new;
+    return !doc || !doc.doc_id || !doc.data;
+}
+
+// ── Diagnóstico de sincronización (panel del supervisor) ─────────────────────
+// Estado puro que describe la recepción de ecos: el último documento con su
+// watermark y los eventos Realtime sin cuerpo (413) con los pulls de respaldo
+// que los resolvieron. Sin React ni red: así se prueba sin montar el hook.
+
+export function createSyncDiagnosticsState() {
+    return {
+        lastEcho: null,
+        oversizeEvents: 0,
+        oversizePulls: 0,
+        lastOversizeAt: null,
+        lastOversizePullAt: null,
+    };
+}
+
+export function updateSyncDiagnostics(state, event) {
+    const current = state || createSyncDiagnosticsState();
+    switch (event?.type) {
+        case 'echo':
+            return {
+                ...current,
+                lastEcho: {
+                    docId: event.docId ?? null,
+                    updatedAt: event.updatedAt ?? null,
+                    receivedAt: event.receivedAt ?? null,
+                    source: event.source ?? 'realtime',
+                    applied: Boolean(event.applied),
+                    error: event.error ?? null,
+                },
+            };
+        case 'oversize_event':
+            return {
+                ...current,
+                oversizeEvents: current.oversizeEvents + 1,
+                lastOversizeAt: event.at ?? null,
+            };
+        case 'oversize_pull':
+            return {
+                ...current,
+                oversizePulls: current.oversizePulls + 1,
+                lastOversizePullAt: event.at ?? null,
+            };
+        default:
+            return current;
+    }
+}
+
+/**
  * Cada ciclo de vida usa un topic único para que React StrictMode, un cambio
  * de dispositivo o una reconexión no intenten añadir callbacks a un canal ya
  * suscrito.

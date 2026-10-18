@@ -79,11 +79,16 @@ async function markBackupRequestFailed(requestId, reason) {
     console.warn(`[AutoBackup] Respaldo ${requestId} marcado como fallido: ${shortReason}`);
 }
 
-/** Hash ligero para detectar cambios sin comparar objetos enteros */
+/**
+ * Hash ligero para detectar cambios sin comparar objetos enteros.
+ * Recorre el valor COMPLETO: con el corte anterior en 5000 caracteres, un cambio
+ * profundo (p. ej. stock dentro de un catálogo grande) no movía el hash y el
+ * respaldo nube se saltaba como "Sin cambios desde el último respaldo".
+ */
 function quickHash(obj) {
     const str = JSON.stringify(obj) ?? '';
     let h = 0;
-    for (let i = 0; i < Math.min(str.length, 5000); i++) {
+    for (let i = 0; i < str.length; i++) {
         h = Math.imul(31, h) + str.charCodeAt(i) | 0;
     }
     return `${str.length}_${h >>> 0}`;

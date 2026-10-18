@@ -38,11 +38,20 @@ const LOCAL_KEYS = [
     'auto_cop_enabled'
 ];
 
-/** Hash ligero para detectar cambios sin comparar objetos enteros (mismo patrón que useAutoBackup.js) */
+/**
+ * Hash ligero para detectar cambios sin comparar objetos enteros (mismo patrón
+ * que useAutoBackup.js).
+ *
+ * IMPORTANTE: debe recorrer el valor COMPLETO. Antes cortaba en 5000 caracteres,
+ * y con catálogos grandes (miles de productos) un cambio de stock queda muy lejos
+ * de ese límite y —si el JSON conserva el largo (110 → 105)— ni siquiera cambia
+ * `str.length`: el hash quedaba idéntico y `pushCloudSync` saltaba el push como
+ * "Sin cambios", así que las ventas de la caja jamás llegaban al supervisor.
+ */
 function quickHash(value) {
     const str = typeof value === 'string' ? value : (JSON.stringify(value) ?? '');
     let h = 0;
-    for (let i = 0; i < Math.min(str.length, 5000); i++) {
+    for (let i = 0; i < str.length; i++) {
         h = Math.imul(31, h) + str.charCodeAt(i) | 0;
     }
     return `${str.length}_${h >>> 0}`;
