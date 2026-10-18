@@ -294,24 +294,28 @@ export default function SettingsTabSistema({
                 <div className="flex flex-col items-center justify-center p-3 bg-white dark:bg-slate-950 rounded-2xl border border-slate-200/50 dark:border-slate-800/80 shadow-inner w-fit mx-auto mb-4">
                     <canvas ref={qrCanvasRef} className="w-[140px] h-[140px] rounded-lg" />
                 </div>
-                <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
+                <div className="flex items-start justify-between gap-2 p-2.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-xl">
+                    <div className="min-w-0 flex-1">
                         <p className="text-[11px] uppercase tracking-wider font-extrabold text-slate-500 dark:text-slate-400 mb-1">ID de Instalacion</p>
-                        <p className="font-mono text-xs font-black text-slate-600 dark:text-slate-300 select-all truncate">{deviceId || '...'}</p>
+                        <p className="font-mono text-xs font-black text-slate-700 dark:text-slate-200 select-all break-all leading-relaxed">{deviceId || '...'}</p>
                     </div>
                     <button
+                        type="button"
                         onClick={() => {
+                            if (!deviceId) return;
                             navigator.clipboard.writeText(deviceId).then(() => {
                                 setIdCopied(true);
                                 setTimeout(() => setIdCopied(false), 2000);
                             });
                         }}
-                        className="shrink-0 p-2 rounded-lg text-slate-400 hover:text-teal-500 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-all"
+                        className="shrink-0 p-2 rounded-lg text-slate-400 hover:text-teal-500 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-all mt-1"
+                        title={idCopied ? '¡Copiado!' : 'Copiar ID completo'}
+                        aria-label="Copiar ID de instalación"
                     >
                         {idCopied ? <Check size={14} className="text-emerald-500" /> : <Fingerprint size={14} />}
                     </button>
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">Comparte este ID o escanea su código QR si necesitas soporte técnico o activación de licencia.</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">Comparte este ID o escanea su código QR si necesitas soporte técnico o activación de licencia.</p>
 
                 {/* Dos equipos con el mismo ID: separar esta estación */}
                 <div className="mt-4 p-3 rounded-2xl border border-amber-200/70 dark:border-amber-800/40 bg-amber-50/50 dark:bg-amber-950/20">

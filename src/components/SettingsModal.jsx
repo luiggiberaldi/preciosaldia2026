@@ -566,16 +566,20 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
                         <p className="text-[9px] uppercase tracking-wider font-bold text-slate-400 mb-1 flex items-center gap-1">
                             <Fingerprint size={10} /> ID de Instalación
                         </p>
-                        <div className="flex items-center justify-between gap-2">
-                            <p className="font-mono text-xs font-black text-slate-600 dark:text-slate-300 select-all">{deviceId || '...'}</p>
+                        <div className="flex items-start justify-between gap-2">
+                            <p className="font-mono text-xs font-black text-slate-700 dark:text-slate-200 select-all break-all flex-1 leading-relaxed">{deviceId || '...'}</p>
                             <button
+                                type="button"
                                 onClick={() => {
+                                    if (!deviceId) return;
                                     navigator.clipboard.writeText(deviceId).then(() => {
                                         setIdCopied(true);
                                         setTimeout(() => setIdCopied(false), 2000);
                                     });
                                 }}
-                                className="text-slate-400 hover:text-teal-500 transition-colors p-1 rounded"
+                                className="text-slate-400 hover:text-teal-500 transition-colors p-1 rounded shrink-0"
+                                title="Copiar ID completo"
+                                aria-label="Copiar ID de instalación"
                             >
                                 {idCopied ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
                             </button>

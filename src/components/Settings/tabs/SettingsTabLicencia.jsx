@@ -231,15 +231,17 @@ export default function SettingsTabLicencia({ deviceId, triggerHaptic }) {
             {/* Datos Técnicos de Licencia */}
             <div className="md:col-span-2 xl:col-span-3">
                 <SectionCard icon={Hash} title="Identificación del Equipo" subtitle="ID asociado para licenciamiento" iconColor="text-slate-500">
-                    <div className="flex items-center justify-between gap-2 bg-slate-50 dark:bg-slate-800/20 border border-slate-100 dark:border-slate-800 p-3 rounded-xl">
-                        <div className="min-w-0">
+                    <div className="flex items-start justify-between gap-2 bg-slate-50 dark:bg-slate-800/20 border border-slate-100 dark:border-slate-800 p-3 rounded-xl">
+                        <div className="min-w-0 flex-1">
                             <p className="text-[11px] uppercase tracking-wider font-extrabold text-slate-500 dark:text-slate-400 mb-1">ID de Instalación</p>
-                            <p className="font-mono text-xs font-black text-slate-600 dark:text-slate-300 select-all truncate">{deviceId || '...'}</p>
+                            <p className="font-mono text-xs font-black text-slate-700 dark:text-slate-200 select-all break-all leading-relaxed">{deviceId || '...'}</p>
                         </div>
                         <button
+                            type="button"
                             onClick={() => copyToClipboard(deviceId)}
-                            className="shrink-0 p-2 rounded-lg text-slate-400 hover:text-teal-500 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-all"
-                            title="Copiar ID"
+                            className="shrink-0 p-2 rounded-lg text-slate-400 hover:text-teal-500 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-all mt-0.5"
+                            title="Copiar ID completo"
+                            aria-label="Copiar ID de instalación"
                         >
                             {idCopied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
                         </button>
