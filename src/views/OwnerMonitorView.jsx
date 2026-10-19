@@ -177,13 +177,6 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
     // posterior (una venta en la caja) ya dejó viejo el objetivo creído.
     const currentProductsWatermark = () => localStorage.getItem(getSyncMetadataKey('bodega_products_v1'));
 
-    // Productos con el stock "creído": el panel de lote compone la base del
-    // movimiento (expectedStock) desde aquí, que es el estado real de la caja
-    // (el stock sincronizado puede quedar atrás unos segundos tras un ajuste).
-    const believedProducts = useMemo(() => products.map(product => {
-        const stock = believedStockOfService(product, stockOpStatus);
-        return Number(stock) === Number(product.stock) ? product : { ...product, stock };
-    }), [products, stockOpStatus]);
 
     const notifyStockOpRevert = () => {
         // Reversión del valor provisional: la fila vuelve al stock real.
@@ -643,6 +636,18 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
             prev.length === 0 ? prev : prev.filter(entry => !isOptimisticEchoSettled(entry, products || []))
         ));
     }, [products]);
+
+    // Productos con el stock "creído" y el eco optimista encima: el panel de
+    // lote compone la base del movimiento (expectedStock) y preselecciona los
+    // factores de empaque desde aquí, que es el estado real de la caja (el
+    // stock sincronizado puede quedar atrás unos segundos tras un ajuste).
+    // Sobre productsWithEcho para que un empaque guardado, un producto creado
+    // o una baja enviada desde el monitor se vean al instante también en el
+    // panel (antes esperaban el viaje completo monitor → caja → nube → monitor).
+    const believedProducts = useMemo(() => productsWithEcho.map(product => {
+        const stock = believedStockOfService(product, stockOpStatus);
+        return Number(stock) === Number(product.stock) ? product : { ...product, stock };
+    }), [productsWithEcho, stockOpStatus]);
 
     const filteredProducts = useMemo(() => {
         if (!productsWithEcho) return [];
@@ -2307,6 +2312,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                 products={believedProducts}
                 targetDeviceId={pairedDeviceId}
                 remoteAvailable={remoteActionsAvailable}
+                onOptimisticEcho={addOptimisticProductEcho}
                 onClose={() => {
                     setInventoryBatchMode(null);
                     setInventoryBatchProduct(null);

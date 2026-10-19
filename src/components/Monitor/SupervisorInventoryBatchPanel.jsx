@@ -154,6 +154,8 @@ export default function SupervisorInventoryBatchPanel({
     targetDeviceId,
     remoteAvailable = false,
     initialProduct = null,
+    // Eco optimista del catálogo: mismo contrato que RemoteProductFormModal.
+    onOptimisticEcho = null,
     onCompleted,
     // Optimistic update: la vista recibe los stocks objetivo por producto para
     // mostrarlos como provisionales mientras la caja confirma (y revertirlos si
@@ -351,6 +353,20 @@ export default function SupervisorInventoryBatchPanel({
                 type: 'supervisor.product.update',
                 payload: { productId: selectedProduct.id },
                 label: `el empaque de "${selectedProduct.name}"`,
+                ackPromise: result.ackPromise,
+            });
+            // Eco optimista: el empaque nuevo se ve AL INSTANTE en el catálogo
+            // del supervisor (como en RemoteProductFormModal), sin esperar el
+            // viaje completo monitor → caja → nube → monitor. Solo presentación:
+            // la caja ya lo aplicó al reclamar el comando. Se revierte solo si
+            // la caja rechaza/falla; el eco real retira la entrada al llegar.
+            onOptimisticEcho?.({
+                action: 'edit',
+                productId: selectedProduct.id,
+                patch: { unitsPerPackage: factor },
+                product: null,
+                baseUpdatedAt: selectedProduct.updatedAt || selectedProduct.updated_at || null,
+                commandId: result.commandId,
                 ackPromise: result.ackPromise,
             });
         } catch (error) {

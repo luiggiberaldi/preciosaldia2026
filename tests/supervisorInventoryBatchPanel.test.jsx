@@ -311,6 +311,7 @@ describe('SupervisorInventoryBatchPanel', () => {
             ackPromise: Promise.resolve({ ok: true, status: 'applied', commandId: 'cmd-package-1', ack: null, error: null }),
         });
         showToast.mockReset();
+        const onOptimisticEcho = vi.fn();
         const product24 = { id: 'p-24', name: 'Atún Pack 24', stock: 50, unitsPerPackage: 24 };
         await act(async () => root.render(
             <SupervisorInventoryBatchPanel
@@ -319,6 +320,7 @@ describe('SupervisorInventoryBatchPanel', () => {
                 products={[product24]}
                 targetDeviceId="device-1"
                 remoteAvailable
+                onOptimisticEcho={onOptimisticEcho}
             />,
         ));
 
@@ -354,6 +356,18 @@ describe('SupervisorInventoryBatchPanel', () => {
         // Contrato "confirma y seguir": el éxito SIEMPRE se avisa, vía tracker.
         expect(showToast).toHaveBeenCalledWith(expect.stringContaining('empaque'), 'success');
         expect(showToast).toHaveBeenCalledWith(expect.stringContaining('✅'), 'success');
+        // Eco optimista: el empaque nuevo se refleja AL INSTANTE en el catálogo
+        // del supervisor (mismo contrato que RemoteProductFormModal), sin
+        // esperar el viaje monitor → caja → nube → monitor.
+        expect(onOptimisticEcho).toHaveBeenCalledExactlyOnceWith({
+            action: 'edit',
+            productId: 'p-24',
+            patch: { unitsPerPackage: 30 },
+            product: null,
+            baseUpdatedAt: null,
+            commandId: 'cmd-package-1',
+            ackPromise: expect.any(Promise),
+        });
     });
 
     it('invalida inmediatamente la selección anterior al escribir en el campo de búsqueda', async () => {
