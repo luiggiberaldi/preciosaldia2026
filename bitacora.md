@@ -120,3 +120,15 @@ todo sobre el árbol exacto del release; más el gate pre-push (e2e checkout mó
 de Actions en el push. **Pendiente post-deploy:** confirmar en el bundle servido de
 `preciosaldiaoficial.vercel.app` que el flag de mutaciones no venga apagado por una
 variable forzada a `'false'` en el proyecto Vercel.
+
+---
+
+## 2026-10-18 — release 2.0.2 a producción (eco optimista del supervisor + blindaje LF)
+
+**Contenido del release:**
+- **Eco optimista del catálogo:** crear, editar o borrar un producto desde el supervisor se ve AL INSTANTE en su lista (como el cambio de tasa), con la etiqueta "ESPERANDO A LA CAJA" del tracker encima. Si la caja rechaza el cambio, la vista se revierte sola y el aviso trae el motivo; cuando llega el eco real, la entrada optimista se retira sola. Solo presentación: no toca almacenamiento ni nube.
+- **Refresco inmediato en la caja:** al aplicar un comando de producto, la pantalla de la caja refresca ANTES de reportar a la nube (antes dependía de la velocidad del internet); el rollback de una publicación fallida también se ve al instante.
+- **Optimización de interfaz móvil del supervisor** y eliminación de botones redundantes.
+- **Blindaje de fin de línea:** `.gitattributes` fija LF para archivos de texto. Un cambio de rama en Windows reescribía los archivos con CRLF y rompía 4 tests de guardrails SQL que comparan literales multi-línea (causa raíz reparada; aserciones intactas).
+
+**QA:** lint 0 errores, `tsc` limpio, suite completa **142 archivos / 1535 tests en verde**, build OK; más el gate pre-push (e2e checkout móvil) y el CI de Actions en el push. La suite corrió completa DESPUÉS de la reparación de fin de línea.
