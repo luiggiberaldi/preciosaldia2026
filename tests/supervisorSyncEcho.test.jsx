@@ -377,6 +377,62 @@ describe('E2E caja+monitor: el eco de sincronización de un ajuste de inventario
         expect(sales[0].unitsDelta).toBe(8);
     });
 
+    it('alta y baja de producto desde el supervisor: inmediatas en la caja y eco al monitor', async () => {
+        await mountBothDevices();
+
+        // La "pantalla" de la caja se refresca por app_storage_update (sin
+        // recargar): su ausencia sería el síntoma exacto de "no es inmediata".
+        const refreshes = [];
+        const onStorage = (event) => refreshes.push({ key: event.detail?.key, source: event.detail?.source });
+        window.addEventListener('app_storage_update', onStorage);
+
+        // ── ALTA ──
+        const nuevo = {
+            id: 'p-nuevo',
+            name: 'Arroz E2E',
+            priceUsd: 1.25,
+            priceUsdt: 1.25,
+            stock: 3,
+            updatedAt: new Date().toISOString(),
+        };
+        const created = await sendSupervisorCommand({
+            type: 'supervisor.product.create',
+            targetDeviceId: CAJA_DEVICE_ID,
+            payload: { product: nuevo },
+        });
+        expect(created.ok).toBe(true);
+        // El ACK de producto sale tras publicar: al resolverse, la caja YA tiene
+        // el producto aplicado en su catálogo local (sin recarga)…
+        const createAck = await created.ackPromise;
+        expect(createAck).toMatchObject({ ok: true, status: 'applied' });
+        expect((await storageService.getItem('bodega_products_v1')).some(p => p.id === 'p-nuevo')).toBe(true);
+        // …y la UI fue notificada al instante con el marcado de origen remoto.
+        expect(refreshes.some(r => r.key === 'bodega_products_v1' && r.source === 'remote')).toBe(true);
+
+        // Eco end-to-end: el monitor ve el alta sin recargar.
+        await waitFor(async () => ((await monitorProducts()) || []).some(p => p.id === 'p-nuevo'));
+
+        // ── BAJA ──
+        refreshes.length = 0;
+        const deleted = await sendSupervisorCommand({
+            type: 'supervisor.product.delete',
+            targetDeviceId: CAJA_DEVICE_ID,
+            payload: { productId: 'p-nuevo', productName: 'Arroz E2E' },
+        });
+        expect(deleted.ok).toBe(true);
+        const deleteAck = await deleted.ackPromise;
+        expect(deleteAck).toMatchObject({ ok: true, status: 'applied' });
+        // La baja es igual de inmediata: el catálogo local ya no lo tiene…
+        expect((await storageService.getItem('bodega_products_v1')).some(p => p.id === 'p-nuevo')).toBe(false);
+        // …y la UI volvió a ser notificada sin recargar.
+        expect(refreshes.some(r => r.key === 'bodega_products_v1' && r.source === 'remote')).toBe(true);
+
+        // Eco: el monitor también pierde el producto sin recargar.
+        await waitFor(async () => !((await monitorProducts()) || []).some(p => p.id === 'p-nuevo'));
+
+        window.removeEventListener('app_storage_update', onStorage);
+    });
+
     it('reintentar el mismo lote tras el eco es un no-op aplicado: no se crea otro comando', async () => {
         await mountBothDevices();
 
