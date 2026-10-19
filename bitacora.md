@@ -94,3 +94,29 @@ soporte, novedades); opcional lo dejarían vacío y quedaría igual que hoy.
 **Flujo del teléfono:** registro local (`business_phone`) → viaja en el mensaje de
 WhatsApp de solicitud de licencia → luigi lo carga en la Estación (campo Teléfono
 en "Generar licencia") → queda en `clients.phone` y disponible en la vista Mensajes.
+
+---
+
+## 2026-10-18 — release 2.0.1 a producción (push a main → auto-deploy Vercel)
+
+**Decisión de luigi:** publicar la versión 2.0.1 con todo el acumulado de la rama
+`preview/all-changes-oct14` (29 commits desde el 2.0.0: modo supervisor con inventario
+remoto, comandos, cola/tracker/recibos y avisos de equipo; resiliencia de sync nube/caja;
+fixes de catálogo con `pos_write_lock` + merge 3-way; mejoras POS; seguridad; y el CI de
+GitHub Actions) y con las **mutaciones remotas del supervisor activas**. El código ya las
+trae activas por defecto (`supervisorPolicy.js`, `fallback=true`; la env var
+`VITE_SUPERVISOR_REMOTE_MUTATIONS_ENABLED` solo sirve para apagarlas con `'false'`).
+Con esta decisión queda sin efecto el gate "E2E funcional contra staging seguro" del
+PLAN-FIXEO-SUPERVISOR-E2E.md, por ser decisión explícita del dueño.
+
+**Cambios:**
+- Versión `2.0.1` en `package.json`, `src/views/SettingsView.jsx` y
+  `src/components/security/LockScreen.jsx` (misma convención del 2.0.0).
+- Tags `2.0.1` y `v2.0.1` sobre `main`, igual que el 2.0.0.
+- Sin migraciones SQL ni cambios de infraestructura.
+
+**QA:** lint 0 errores, `tsc` limpio, 1525 tests en verde (141 archivos) y build PWA OK,
+todo sobre el árbol exacto del release; más el gate pre-push (e2e checkout móvil) y el CI
+de Actions en el push. **Pendiente post-deploy:** confirmar en el bundle servido de
+`preciosaldiaoficial.vercel.app` que el flag de mutaciones no venga apagado por una
+variable forzada a `'false'` en el proyecto Vercel.
