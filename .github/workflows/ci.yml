@@ -21,6 +21,12 @@ jobs:
     name: Lint · Typecheck · Test · Build
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # Los tests nunca tocan la red (mockean Supabase), pero varios importan
+      # src/config/supabaseCloud.js, que llama createClient al cargar y exige una
+      # key no vacía. Placeholder explícito: NO es una credencial real. Si algún
+      # día un test necesita Supabase de verdad, usar secrets del repo.
+      VITE_SUPABASE_CLOUD_KEY: ci-placeholder-not-a-real-key
     steps:
       - uses: actions/checkout@v4
 
