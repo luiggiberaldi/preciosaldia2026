@@ -59,6 +59,7 @@ import { MONITOR_CLEANUP_PENDING_KEY, isPairingRevocationConfirmed, revokeAndCle
 import { SUPERVISOR_SYNC_STATES, getSyncMetadataKey } from '../services/supervisorSyncService';
 import { inspectSupervisorCommandState, sendSupervisorCommand } from '../services/supervisorCommandService';
 import { commandOutcomeToAck, isCommandOutcomeOwned, setCommandVerification, trackSupervisorCommand } from '../services/supervisorCommandTracker';
+import { applyOptimisticProductEcho, isOptimisticEchoSettled } from '../services/supervisorProductCommand';
 import { verifyCommandsAgainstEcho } from '../services/supervisorCommandVerification';
 import { matchesSearch as matchesSearchFields } from '../utils/searchMatch';
 import { shouldShowSupervisorCop, calculateSupervisorCashSummary } from '../services/supervisorReportData';
@@ -609,9 +610,43 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
         return (products || []).filter(p => (Number(p.stock) || 0) < 0).length;
     }, [products]);
 
+    // ── ECO OPTIMISTA DEL CATÁLOGO ──────────────────────────────────────────
+    // Un comando de producto enviado muestra su resultado en la lista AL
+    // INSTANTE (como el cambio de tasa), con la etiqueta del tracker encima.
+    // Es solo presentación: no toca almacenamiento ni la nube. La entrada se
+    // retira sola cuando el eco real llega (isOptimisticEchoSettled) o cuando
+    // la caja rechaza/falla el comando (reversión; el motivo ya lo avisó el
+    // tracker). Solo aplica a órdenes enviadas con ackPromise; las órdenes en
+    // cola (sin conexión) conservan su etiqueta "EN COLA" de siempre.
+    const [optimisticEchoEntries, setOptimisticEchoEntries] = useState([]);
+    const productsWithEcho = useMemo(
+        () => optimisticEchoEntries.reduce(applyOptimisticProductEcho, products || []),
+        [products, optimisticEchoEntries]
+    );
+    const addOptimisticProductEcho = (entry) => {
+        const key = entry.commandId || `${entry.action}:${entry.productId || entry.product?.id}:${Date.now()}`;
+        setOptimisticEchoEntries(prev => [...prev, { ...entry, key }]);
+        Promise.resolve(entry.ackPromise).then((result) => {
+            const applied = result?.status === 'applied' || result?.status === 'applied_with_warnings';
+            // Confirmado: la entrada se queda hasta que el eco real la retire
+            // (evita un parpadeo de vuelta al valor viejo). Cualquier otro
+            // desenlace (rechazo, fallo, cancelación, timeout) revierte.
+            if (!applied) {
+                setOptimisticEchoEntries(prev => prev.filter(item => item.key !== key));
+            }
+        }).catch(() => {
+            setOptimisticEchoEntries(prev => prev.filter(item => item.key !== key));
+        });
+    };
+    useEffect(() => {
+        setOptimisticEchoEntries(prev => (
+            prev.length === 0 ? prev : prev.filter(entry => !isOptimisticEchoSettled(entry, products || []))
+        ));
+    }, [products]);
+
     const filteredProducts = useMemo(() => {
-        if (!products) return [];
-        return products.filter(p => {
+        if (!productsWithEcho) return [];
+        return productsWithEcho.filter(p => {
             const matchesSearch = matchesSearchFields([p.name, p.barcode], searchTermInventario);
             
             if (!matchesSearch) return false;
@@ -630,7 +665,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
             }
             return true;
         });
-    }, [products, searchTermInventario, filterStockInventario, movedProductIds]);
+    }, [productsWithEcho, searchTermInventario, filterStockInventario, movedProductIds]);
 
     const [currentPageInventario, setCurrentPageInventario] = useState(1);
     const ITEMS_PER_PAGE_INVENTARIO = 15;
@@ -956,6 +991,14 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                 type: 'supervisor.product.delete',
                 payload,
                 label: `la baja de "${productToDeleteRemote.name}"`,
+                ackPromise: result.ackPromise,
+            });
+            // Eco optimista: el producto desaparece de la lista al instante y
+            // vuelve solo si la caja rechaza la baja.
+            addOptimisticProductEcho({
+                action: 'delete',
+                productId: productToDeleteRemote.id,
+                commandId: result.commandId,
                 ackPromise: result.ackPromise,
             });
             setProductToDeleteRemote(null);
@@ -2285,6 +2328,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                 targetDeviceId={pairedDeviceId}
                 productToEdit={productToEditRemote}
                 remoteAvailable={remoteActionsAvailable}
+                onOptimisticEcho={addOptimisticProductEcho}
             />
 
             {/* Modal de Confirmación de Eliminación Remota de Producto */}

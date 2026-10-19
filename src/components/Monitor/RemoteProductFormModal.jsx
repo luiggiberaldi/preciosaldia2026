@@ -12,7 +12,7 @@ import { sendSupervisorCommand } from '../../services/supervisorCommandService';
 import { trackSupervisorCommand } from '../../services/supervisorCommandTracker';
 import { buildProductRevision, extractEditableProductPatch } from '../../services/supervisorContracts';
 
-export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId, productToEdit = null, remoteAvailable = true }) {
+export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId, productToEdit = null, remoteAvailable = true, onOptimisticEcho = null }) {
     const { categories, effectiveRate: bcvRate, copEnabled, copPrimary, tasaCop } = useProductContext();
 
     // Form fields
@@ -398,6 +398,17 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
                 label: isEdit
                     ? `la edición de "${productToEdit?.name || name || 'producto'}"`
                     : `el alta de "${productPayload?.name || name || 'producto'}"`,
+                ackPromise: result.ackPromise,
+            });
+            // Eco optimista: el catálogo del supervisor muestra el cambio al
+            // instante mientras la caja confirma (se revierte solo si falla).
+            onOptimisticEcho?.({
+                action: isEdit ? 'edit' : 'create',
+                productId: isEdit ? productToEdit.id : productPayload.id,
+                patch: isEdit ? patch : null,
+                product: isEdit ? null : productPayload,
+                baseUpdatedAt: isEdit ? (productToEdit.updatedAt || productToEdit.updated_at || null) : null,
+                commandId: result.commandId,
                 ackPromise: result.ackPromise,
             });
             onClose();
