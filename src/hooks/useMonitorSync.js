@@ -11,6 +11,8 @@ import {
     buildSupervisorRealtimeChannelName,
     getSupervisorRecoveryIntervalMs,
     shouldRunSupervisorRecovery,
+    MONITOR_CONNECTED_SWEEP_INTERVAL_MS,
+    shouldRunMonitorConnectedSweep,
     getChangedSyncDocumentIds,
     isOversizeRealtimePayload,
     createSyncDiagnosticsState,
@@ -52,6 +54,7 @@ export function useMonitorSync(pairedDeviceId) {
     const subscribeInFlightRef = useRef(null);
     const removeInFlightRef = useRef(Promise.resolve());
     const recoveryTimerRef = useRef(null);
+    const sweepTimerRef = useRef(null);
     const recoveryPullInFlightRef = useRef(null);
     const lastRecoveryAtRef = useRef(0);
     const documentQueuesRef = useRef(new Map());
@@ -461,6 +464,41 @@ export function useMonitorSync(pairedDeviceId) {
         recoveryTimerRef.current = null;
     };
 
+    // ── Barrido de respaldo con Realtime "conectado" ──────────────────────────
+    // Hueco simétrico al del receptor de la caja: un canal que dice SUBSCRIBED
+    // pero no entrega eventos dejaba el eco de la caja aplicándose solo al
+    // recargar el Supervisor. El barrido corre el pull incremental (metadatos
+    // primero; payload solo de lo cambiado), así que con el eco al día cuesta
+    // una consulta vacía. Al volver a la pestaña también se barre al instante.
+    const runConnectedSweep = (lifecycleId) => {
+        if (!shouldRunMonitorConnectedSweep({
+            realtimeConnected: Boolean(subscriptionRef.current),
+            pullInFlight: Boolean(recoveryPullInFlightRef.current),
+        })) return;
+        const sweep = pullDocumentsRef.current?.(lifecycleId, { source: 'sweep' });
+        if (sweep?.catch) {
+            sweep.catch((error) => {
+                if (!isActiveLifecycle(lifecycleId)) return;
+                // Un barrido fallido no degrada el canal: Realtime sigue siendo
+                // la vía primaria y el próximo barrido reintenta.
+                console.warn('[MonitorSync] Barrido de respaldo falló:', error?.message ?? error);
+            });
+        }
+    };
+
+    const startSweepTimer = (lifecycleId) => {
+        if (sweepTimerRef.current || !isActiveLifecycle(lifecycleId)) return;
+        sweepTimerRef.current = setInterval(() => {
+            if (!isActiveLifecycle(lifecycleId)) return;
+            runConnectedSweep(lifecycleId);
+        }, MONITOR_CONNECTED_SWEEP_INTERVAL_MS);
+    };
+
+    const stopSweepTimer = () => {
+        if (sweepTimerRef.current) clearInterval(sweepTimerRef.current);
+        sweepTimerRef.current = null;
+    };
+
     const initMonitor = async (lifecycleId = lifecycleRef.current) => {
         if (!isActiveLifecycle(lifecycleId)) return { ok: false, error: 'Ciclo de sincronización obsoleto' };
         if (initInFlightRef.current) return initInFlightRef.current;
@@ -490,6 +528,7 @@ export function useMonitorSync(pairedDeviceId) {
 
                 const realtime = await subscribeToRealtime(lifecycleId);
                 startRecoveryTimer(lifecycleId);
+                startSweepTimer(lifecycleId);
                 if (!realtime.ok) {
                     setIsConnected(false);
                     setSyncState(SUPERVISOR_SYNC_STATES.DEGRADED);
@@ -529,6 +568,7 @@ export function useMonitorSync(pairedDeviceId) {
         if (oversizePullTimerRef.current) clearTimeout(oversizePullTimerRef.current);
         oversizePullTimerRef.current = null;
         stopRecoveryTimer();
+        stopSweepTimer();
 
         const initialization = initInFlightRef.current;
         if (initialization) await initialization.catch(() => {});
@@ -568,9 +608,16 @@ export function useMonitorSync(pairedDeviceId) {
             setSyncState(SUPERVISOR_SYNC_STATES.DEGRADED);
             setSyncError('Sin conexión a internet');
         };
+        const handleVisibilityChange = () => {
+            if (document.visibilityState !== 'visible') return;
+            // Los eventos perdidos mientras la pestaña descansó no se reenvían:
+            // al volver la vista se barre al instante (mismo barrido conectado).
+            runConnectedSweep(lifecycleId);
+        };
 
         window.addEventListener('online', handleOnline);
         window.addEventListener('offline', handleOffline);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
 
         return () => {
             disposedRef.current = true;
@@ -578,11 +625,13 @@ export function useMonitorSync(pairedDeviceId) {
             const documentQueues = documentQueuesRef.current;
             window.removeEventListener('online', handleOnline);
             window.removeEventListener('offline', handleOffline);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
             if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
             reconnectTimerRef.current = null;
             if (oversizePullTimerRef.current) clearTimeout(oversizePullTimerRef.current);
             oversizePullTimerRef.current = null;
             stopRecoveryTimer();
+            stopSweepTimer();
             documentQueues.clear();
             initInFlightRef.current = null;
             subscribeInFlightRef.current = null;

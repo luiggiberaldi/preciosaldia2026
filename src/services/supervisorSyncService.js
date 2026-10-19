@@ -64,6 +64,31 @@ export function getSupervisorRecoveryIntervalMs() {
     return 5 * 60_000;
 }
 
+/**
+ * Barrido de respaldo del monitor con Realtime "conectado" — el hueco
+ * simétrico al del receptor de la caja: un canal que dice SUBSCRIBED pero no
+ * entrega eventos (socket a medias, pestaña restringida, eventos perdidos
+ * durante un corte) no puede dejar al Supervisor sin el eco de la caja hasta
+ * recargar. El barrido usa el pull incremental (solo metadatos; el payload se
+ * pide únicamente para documentos realmente nuevos), así que con el eco al día
+ * la consulta queda vacía. Más frecuente que la recuperación degradada (5 min)
+ * y distinto del barrido de publicación de la caja (30 s) para no confundir
+ * contratos de timer.
+ */
+export const MONITOR_CONNECTED_SWEEP_INTERVAL_MS = 45_000;
+
+/**
+ * El barrido conectado solo corre con Realtime vivo y sin un pull ya en vuelo:
+ * apilar consultas en una pestaña restringida no aporta nada (el pull
+ * incremental ya se deduplica, pero el gate evita acumular trabajo muerto).
+ */
+export function shouldRunMonitorConnectedSweep({
+    realtimeConnected,
+    pullInFlight = false,
+} = {}) {
+    return Boolean(realtimeConnected) && !pullInFlight;
+}
+
 export function shouldRunSupervisorRecovery({
     realtimeConnected,
     recoveryInFlight = false,
@@ -185,6 +210,8 @@ export default {
     getSyncMetadataKey,
     getSupervisorRecoveryIntervalMs,
     shouldRunSupervisorRecovery,
+    MONITOR_CONNECTED_SWEEP_INTERVAL_MS,
+    shouldRunMonitorConnectedSweep,
     getChangedSyncDocumentIds,
     buildSupervisorRealtimeChannelName,
     withSyncRetry,

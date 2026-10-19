@@ -11,6 +11,8 @@ import {
     readSyncEnvelope,
     getSupervisorRecoveryIntervalMs,
     shouldRunSupervisorRecovery,
+    MONITOR_CONNECTED_SWEEP_INTERVAL_MS,
+    shouldRunMonitorConnectedSweep,
     getChangedSyncDocumentIds,
     withSyncRetry,
 } from '../src/services/supervisorSyncService';
@@ -90,6 +92,18 @@ describe('Supervisor sync contract', () => {
     it('no hace polling cuando Realtime está conectado o ya hay un pull en curso', () => {
         expect(shouldRunSupervisorRecovery({ realtimeConnected: true, now: 600_000 })).toBe(false);
         expect(shouldRunSupervisorRecovery({ recoveryInFlight: true, now: 600_000 })).toBe(false);
+    });
+
+    it('el barrido conectado solo corre con Realtime vivo y sin pull en vuelo', () => {
+        expect(shouldRunMonitorConnectedSweep({ realtimeConnected: true })).toBe(true);
+        expect(shouldRunMonitorConnectedSweep({ realtimeConnected: true, pullInFlight: true })).toBe(false);
+        expect(shouldRunMonitorConnectedSweep({ realtimeConnected: false })).toBe(false);
+        expect(shouldRunMonitorConnectedSweep({})).toBe(false);
+    });
+
+    it('el barrido conectado es más frecuente que la recuperación degradada y distinto del barrido de publicación (30 s)', () => {
+        expect(MONITOR_CONNECTED_SWEEP_INTERVAL_MS).toBe(45_000);
+        expect(MONITOR_CONNECTED_SWEEP_INTERVAL_MS).toBeLessThan(getSupervisorRecoveryIntervalMs());
     });
 
     it('solo recupera cuando el intervalo de fallback ya venció', () => {
