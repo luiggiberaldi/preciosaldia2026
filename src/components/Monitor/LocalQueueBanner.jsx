@@ -22,6 +22,11 @@ export default function LocalQueueBanner({
     if (queueCount <= 0 && pendingCount <= 0) return null;
 
     return (
+        <>
+        {/* OJO: los ConfirmModal van FUERA del wrapper `pointer-events-none`.
+            pointer-events se hereda: un modal dentro de este wrapper queda
+            transparente al tacto en navegadores reales y el usuario no puede
+            pulsar nada (ni confirmar, ni cancelar, ni la X). */}
         <div data-testid="local-queue-banner" className="pointer-events-none fixed inset-x-0 bottom-0 z-[90] flex justify-center px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
             <div className="pointer-events-auto w-full max-w-2xl rounded-3xl border border-slate-200/80 bg-white/95 p-3 shadow-2xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 sm:p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -49,7 +54,7 @@ export default function LocalQueueBanner({
                                     type="button"
                                     onClick={onUpload}
                                     disabled={uploading}
-                                    className="inline-flex min-h-11 items-center gap-1.5 rounded-2xl bg-primary-600 px-4 text-xs font-black text-white shadow-md transition hover:bg-primary-700 active:scale-95 disabled:opacity-50"
+                                    className="inline-flex min-h-11 items-center gap-1.5 rounded-2xl bg-emerald-600 px-4 text-xs font-black text-white shadow-md transition hover:bg-emerald-700 active:scale-95 disabled:opacity-50"
                                 >
                                     {uploading ? <Loader2 size={15} className="animate-spin" /> : <CloudUpload size={15} />} SUBIR AL SISTEMA
                                 </button>
@@ -74,6 +79,7 @@ export default function LocalQueueBanner({
                     </div>
                 </div>
             </div>
+        </div>
 
             <ConfirmModal
                 isOpen={confirmDiscard}
@@ -95,6 +101,6 @@ export default function LocalQueueBanner({
                 cancelText="No anular"
                 variant="warning"
             />
-        </div>
+        </>
     );
 }

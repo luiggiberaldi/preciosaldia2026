@@ -261,7 +261,7 @@ export default function SupervisorControlPanel({ control, isConnected, onToast, 
         </div>
 
         <div className="rounded-3xl border border-slate-200/70 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex gap-1 overflow-x-auto scrollbar-hide">{RECEIPT_FILTERS.map(item => (
-            <button key={item.id} type="button" onClick={() => setFilter(item.id)} className={`min-h-10 shrink-0 rounded-2xl px-3 text-xs font-black transition ${filter === item.id ? 'bg-primary-600 text-white shadow-primary' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>{item.label} ({filterCounts[item.id]})</button>
+            <button key={item.id} type="button" onClick={() => setFilter(item.id)} className={`min-h-10 shrink-0 rounded-2xl px-3 text-xs font-black transition ${filter === item.id ? 'bg-emerald-600 text-white shadow-emerald-500/20' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>{item.label} ({filterCounts[item.id]})</button>
         ))}</div></div>
 
         {control.loading ? <div className="flex min-h-56 items-center justify-center rounded-3xl border border-slate-200/70 bg-white dark:border-slate-800 dark:bg-slate-900"><Loader2 className="animate-spin text-primary-600" /></div>

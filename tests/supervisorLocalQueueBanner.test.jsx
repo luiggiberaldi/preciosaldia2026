@@ -90,4 +90,33 @@ describe('LocalQueueBanner (cola local con mando)', () => {
         await act(async () => buttonWith(container, 'Anular todos').click());
         expect(onCancelAll).toHaveBeenCalledTimes(1);
     });
+
+    it('los modales viven FUERA del wrapper pointer-events-none y reactivan el tacto', async () => {
+        // jsdom ignora el hit-testing de CSS (`.click()` siempre dispara), así
+        // que se guarda la ESTRUCTURA: un modal dentro del wrapper
+        // `pointer-events-none` hereda taps muertos en navegadores reales y el
+        // usuario queda atrapado sin poder confirmar, cancelar ni cerrar.
+        await render({ queueCount: 1, pendingCount: 1, onUpload: vi.fn(), onDiscard: vi.fn(), onCancelAll: vi.fn() });
+        await act(async () => buttonWith(container, 'DESCARTAR').click());
+
+        const banner = container.querySelector('[data-testid="local-queue-banner"]');
+        expect(banner.className).toContain('pointer-events-none');
+
+        const modalRoot = buttonWith(container, 'Descartar cambios').closest('div.fixed');
+        expect(modalRoot).toBeTruthy();
+        // El modal re-activa el tacto por si un padre apaga pointer-events.
+        expect(modalRoot.className).toContain('pointer-events-auto');
+        // Y no es descendiente del wrapper que lo apaga.
+        expect(banner.contains(modalRoot)).toBe(false);
+    });
+
+    it('SUBIR AL SISTEMA usa colores que existen en el tema', async () => {
+        // El tema (tailwind.config.js) no define la paleta `primary`: esas
+        // utilidades compilan a nada y el botón blanco sobre blanco queda
+        // invisible (texto blanco sin fondo). Bug real visto en móvil.
+        await render({ queueCount: 1, onUpload: vi.fn(), onDiscard: vi.fn() });
+        const upload = buttonWith(container, 'SUBIR AL SISTEMA');
+        expect(upload.className).not.toMatch(/\bbg-primary-/);
+        expect(upload.className).toMatch(/\bbg-emerald-600\b/);
+    });
 });
