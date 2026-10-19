@@ -1,0 +1,6 @@
+# El repo y sus tests asumen fin de línea LF: varias suites (guardrails SQL,
+# modelo de control) comparan literales multi-línea byte a byte contra archivos
+# SQL/JS, y CI corre en Linux donde el checkout siempre es LF.
+# En Windows con core.autocrlf=true un checkout reescribía los archivos con
+# CRLF y rompía esas aserciones. `eol=lf` garantiza LF en todos los checkouts.
+* text=auto eol=lf
