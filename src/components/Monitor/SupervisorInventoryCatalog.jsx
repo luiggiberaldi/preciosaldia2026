@@ -542,40 +542,8 @@ export default function SupervisorInventoryCatalog({
                                         </div>
                                     )}
 
-                                    {/* Si hay cambio pendiente en móvil, mostramos botones de confirmación/descarte rápido inline */}
-                                    {pending && stockEditProductId !== String(p.id) && (
-                                        <div className="flex items-center gap-1 animate-in fade-in zoom-in-95 duration-150">
-                                            <button
-                                                type="button"
-                                                onClick={async () => {
-                                                    triggerHaptic?.();
-                                                    const { product, nextStock } = pending;
-                                                    setStockPendingConfirm(null);
-                                                    await applyTargetStock(product, nextStock);
-                                                }}
-                                                title="Confirmar cambio de stock en la caja"
-                                                aria-label="Confirmar cambio de stock en la caja"
-                                                className="w-8 h-8 flex items-center justify-center rounded-xl bg-emerald-600 text-white shadow-md shadow-emerald-600/20 active:scale-90 transition-all hover:bg-emerald-700"
-                                            >
-                                                <Check size={14} />
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    triggerHaptic?.();
-                                                    setStockPendingConfirm(null);
-                                                }}
-                                                title="Descartar cambio"
-                                                aria-label="Descartar cambio"
-                                                className="w-8 h-8 flex items-center justify-center rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 active:scale-90 transition-all"
-                                            >
-                                                <X size={14} />
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    {/* Botón Eliminar en Móvil (visible cuando no está en ajuste pendiente) */}
-                                    {!pending && stockEditProductId !== String(p.id) && (
+                                    {/* Botón Eliminar en Móvil */}
+                                    {stockEditProductId !== String(p.id) && (
                                         <button
                                             type="button"
                                             onClick={() => {

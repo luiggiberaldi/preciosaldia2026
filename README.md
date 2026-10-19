@@ -5,6 +5,8 @@
 Este módulo forma parte de la suite corporativa integrada y está preparado para funcionar como una **Progressive Web App (PWA)** y como una aplicación nativa para **Android** a través de Capacitor.
 
 > **Deploy target:** Cloudflare Workers + Pages (ver [Deploy](#-deploy)). **No** uses Vercel — `vercel.json` fue eliminado (INFRA-010).
+>
+> 👤 **Nota para asistentes de IA y colaboradores:** el dueño de este proyecto es ***vibe coder*** (construye sin programar). Todas las explicaciones deben ser en **español sencillo**, sin jerga suelta (definir cada término técnico con una analogía), priorizando el impacto en el negocio, y **terminando siempre con el siguiente paso concreto**. Regla completa en [AGENT.md](AGENT.md).
 
 ---
 

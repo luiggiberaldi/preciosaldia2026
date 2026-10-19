@@ -289,8 +289,74 @@ export function applySupervisorProductCommand(currentProducts, payload = {}, opt
     };
 }
 
+// ── Eco optimista del catálogo del monitor ──────────────────────────────────
+// Un comando de producto enviado desde el monitor muestra su resultado en la
+// lista AL INSTANTE (como el cambio de tasa), sin esperar el viaje completo
+// monitor → caja → nube → monitor. Esto es SOLO presentación: no escribe
+// almacenamiento ni la nube; la autoridad sigue siendo la caja. La entrada se
+// retira sola cuando el eco real llega (isOptimisticEchoSettled) o cuando la
+// caja rechaza/falla el comando (reversión en el llamador).
+export function applyOptimisticProductEcho(list, entry = {}) {
+    const products = Array.isArray(list) ? list : [];
+    const id = String(entry.productId ?? entry.product?.id ?? '');
+
+    if (entry.action === 'delete') {
+        return id ? products.filter(item => String(item.id) !== id) : products;
+    }
+
+    if (entry.action === 'create') {
+        const product = entry.product;
+        if (!product || !product.id || products.some(item => String(item.id) === String(product.id))) {
+            return products;
+        }
+        return [product, ...products];
+    }
+
+    if (entry.action === 'edit') {
+        const patch = extractEditableProductPatch(entry.patch || {});
+        return products.map(item => {
+            if (String(item.id) !== id) return item;
+            const merged = { ...item, ...patch, id: item.id };
+            // FIN-030: el par de alias de precio viaja junto, igual que en la caja.
+            if ('priceUsd' in patch || 'priceUsdt' in patch) {
+                const resolvedPrice = resolveEffectivePriceUsd(patch);
+                if (resolvedPrice !== null) {
+                    merged.priceUsd = resolvedPrice;
+                    merged.priceUsdt = resolvedPrice;
+                }
+            }
+            return merged;
+        });
+    }
+
+    return products;
+}
+
+/**
+ * ¿El eco real ya refleja el cambio (o lo hizo inútil)? Reglas por acción:
+ *   create → el producto ya apareció en la base.
+ *   delete → el producto ya no está en la base.
+ *   edit   → el producto desapareció o llegó una versión más nueva
+ *            (updatedAt distinto al capturado al enviar).
+ * Mientras no esté settled, la entrada optimista mantiene el valor enviado.
+ */
+export function isOptimisticEchoSettled(entry = {}, baseProducts) {
+    const products = Array.isArray(baseProducts) ? baseProducts : [];
+    const id = String(entry.productId ?? entry.product?.id ?? '');
+    const base = products.find(item => String(item.id) === id);
+
+    if (entry.action === 'delete') return !base;
+    if (entry.action === 'create') return Boolean(base);
+    if (entry.action === 'edit') {
+        return !base || String(base.updatedAt ?? '') !== String(entry.baseUpdatedAt ?? '');
+    }
+    return true;
+}
+
 export default {
     applySupervisorProductCommand,
+    applyOptimisticProductEcho,
+    isOptimisticEchoSettled,
     buildProductRevision,
     extractEditableProductPatch,
     resolveEffectivePriceUsd,

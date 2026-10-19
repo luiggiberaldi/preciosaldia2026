@@ -1,11 +1,32 @@
 # AGENT.md — Guía Completa del Proyecto `preciosaldia-bodega`
 
-> **Versión del documento:** 1.2.0 (estado operativo Supervisor y despliegue actualizado)
-> **Última actualización:** 2026-08-10
+> **Versión del documento:** 1.2.1 (perfil del usuario vibe coder + estado operativo Supervisor)
+> **Última actualización:** 2026-10-18
 > **Estado verificado:** 130 IDs de issues registrados · 262 tests pasan · 11 omitidos explícitamente · build de producción OK
 >
 > **Producción actual:** Vercel → `https://preciosaldiaoficial.vercel.app/`
 > **Rama operativa:** `m5-supervisor-canary` · último commit productivo: `a059185` · guía actualizada en `2e7220e`
+
+---
+
+## 👤 Perfil del dueño — LEER ANTES DE CUALQUIER RESPUESTA
+
+**Luigi es *vibe coder*: construye sin programar y no lee código.** Toda explicación,
+plan, resumen de commits o respuesta de agentes en este repositorio debe cumplir:
+
+1. **Español sencillo, cero jerga suelta.** Si un término técnico es inevitable
+   (deploy, migración, TTL, RLS, bundle...), se define con una **analogía cotidiana**
+   en la misma oración.
+2. **Primero el porqué y el impacto en el negocio** (ventas, cajas, datos, clientes);
+   después —si hace falta— el detalle técnico.
+3. **Cada respuesta termina con el siguiente paso concreto** que él debe dar, en modo
+   instrucción ("Abre X → pega Y → pulsa Z"), no en forma de sugerencia vaga.
+4. **Nunca** presentar un comando, archivo o cambio sin decir qué hace, qué riesgo
+   tiene y cómo se revierte, todo en lenguaje de humano.
+5. **Producción primero:** antes de tocar algo con usuarios en vivo, explicar las
+   consecuencias en una frase clara y pedir confirmación explícita.
+6. Al cerrar tareas técnicas, ofrecer el **siguiente paso natural** del proyecto,
+   explicado también en lenguaje sencillo.
 
 ---
 

@@ -987,6 +987,14 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                 ? 'Conexión degradada'
                 : 'Desconectado';
 
+    const connectionLabelMobile = isConnected
+        ? (syncState === SUPERVISOR_SYNC_STATES.CONNECTED ? 'En Vivo' : 'Sinc.')
+        : syncState === SUPERVISOR_SYNC_STATES.PULLING
+            ? 'Recup.'
+            : syncState === SUPERVISOR_SYNC_STATES.DEGRADED
+                ? 'Degradada'
+                : 'Desconectado';
+
     return (
         <div data-testid="supervisor-panel" className="min-h-screen w-full min-w-0 bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 font-sans pb-12 transition-colors duration-300 overflow-x-hidden">
             {/* Header del Monitor */}
@@ -1010,9 +1018,9 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                     </div>
                 </div>
 
-                <div className="flex w-full sm:w-auto shrink-0 items-center justify-between sm:justify-end gap-2 sm:gap-3 sm:pl-3">
+                <div className="flex w-full sm:w-auto shrink-0 items-center justify-between sm:justify-end gap-1.5 sm:gap-3 sm:pl-3 overflow-x-auto no-scrollbar py-0.5">
                     {/* Status Badge */}
-                    <div data-testid="supervisor-connection-status" className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full text-[9px] sm:text-[10px] font-black tracking-wider uppercase shadow-xs transition-colors duration-300 shrink-0 ${
+                    <div data-testid="supervisor-connection-status" className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-[9px] sm:text-[10px] font-black tracking-wider uppercase shadow-xs transition-colors duration-300 shrink-0 ${
                         isConnected 
                             ? 'bg-emerald-50 border border-emerald-200/50 text-emerald-600 dark:bg-emerald-950/20 dark:border-emerald-800/30 dark:text-emerald-400' 
                             : 'bg-rose-50 border border-rose-200/50 text-rose-600 dark:bg-rose-950/20 dark:border-rose-800/30 dark:text-rose-400 animate-pulse'
@@ -1020,20 +1028,26 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                         {isConnected ? (
                             <>
                                 <Wifi size={12} className="shrink-0" />
-                                <span>{connectionLabel}</span>
+                                <span>
+                                    <span className="hidden sm:inline">{connectionLabel}</span>
+                                    <span className="sm:hidden">{connectionLabelMobile}</span>
+                                </span>
                             </>
                         ) : (
                             <>
                                 <WifiOff size={12} className="shrink-0" />
-                                <span>{connectionLabel}</span>
+                                <span>
+                                    <span className="hidden sm:inline">{connectionLabel}</span>
+                                    <span className="sm:hidden">{connectionLabelMobile}</span>
+                                </span>
                             </>
                         )}
                     </div>
 
-                    <div className="flex items-center gap-1.5 sm:gap-2">
+                    <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                         <button
                             onClick={() => { triggerHaptic?.(); setShowCommandDiagnostics(true); }}
-                            className="min-h-10 min-w-10 sm:min-h-11 sm:min-w-11 p-2 sm:p-2.5 rounded-2xl text-slate-400 hover:text-blue-500 hover:bg-blue-50 border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 dark:hover:text-blue-400 transition-colors flex items-center justify-center shrink-0"
+                            className="min-h-9 min-w-9 sm:min-h-11 sm:min-w-11 p-1.5 sm:p-2.5 rounded-xl sm:rounded-2xl text-slate-400 hover:text-blue-500 hover:bg-blue-50 border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 dark:hover:text-blue-400 transition-colors flex items-center justify-center shrink-0"
                             title="Diagnóstico de Comandos"
                             aria-label="Diagnóstico de Comandos"
                         >
@@ -1042,7 +1056,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
 
                         <button
                             onClick={() => { triggerHaptic?.(); setShowSyncDiagnostics(true); }}
-                            className="min-h-10 min-w-10 sm:min-h-11 sm:min-w-11 p-2 sm:p-2.5 rounded-2xl text-slate-400 hover:text-blue-500 hover:bg-blue-50 border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 dark:hover:text-blue-400 transition-colors flex items-center justify-center shrink-0"
+                            className="min-h-9 min-w-9 sm:min-h-11 sm:min-w-11 p-1.5 sm:p-2.5 rounded-xl sm:rounded-2xl text-slate-400 hover:text-blue-500 hover:bg-blue-50 border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 dark:hover:text-blue-400 transition-colors flex items-center justify-center shrink-0"
                             title="Diagnóstico de Sincronización"
                             aria-label="Diagnóstico de Sincronización"
                         >
@@ -1060,8 +1074,9 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                 }
                             }}
                             disabled={syncLoading}
-                            className="min-h-10 min-w-10 sm:min-h-11 sm:min-w-11 p-2 sm:p-2.5 rounded-2xl text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 dark:hover:text-emerald-400 transition-colors disabled:opacity-50 flex items-center justify-center shrink-0"
+                            className="min-h-9 min-w-9 sm:min-h-11 sm:min-w-11 p-1.5 sm:p-2.5 rounded-xl sm:rounded-2xl text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 dark:hover:text-emerald-400 transition-colors disabled:opacity-50 flex items-center justify-center shrink-0"
                             title="Actualizar Datos"
+                            aria-label="Actualizar Datos"
                         >
                             <RefreshCw size={15} className={syncLoading ? "animate-spin text-emerald-500" : ""} />
                         </button>
@@ -1069,10 +1084,10 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                         <button 
                             onClick={() => { triggerHaptic?.(); setShowRateModal(true); }}
                             disabled={!remoteActionsAvailable}
-                            className="min-h-10 min-w-10 sm:min-h-11 flex items-center justify-center gap-1.5 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-700 shadow-xs transition-all hover:bg-emerald-100 active:scale-95 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-300 shrink-0 sm:px-3 sm:text-xs"
+                            className="min-h-9 min-w-9 sm:min-h-11 flex items-center justify-center gap-1 rounded-xl sm:rounded-2xl border border-emerald-200 bg-emerald-50 px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs font-bold text-emerald-700 shadow-xs transition-all hover:bg-emerald-100 active:scale-95 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-300 shrink-0"
                             title="Ajustar Tasa Remota"
                         >
-                            <TrendingUp size={14} className="shrink-0" />
+                            <TrendingUp size={13} className="shrink-0" />
                             <span className="hidden sm:inline">Ajustar Tasa</span><span className="sm:hidden">Tasa</span>
                         </button>
 
@@ -1085,8 +1100,9 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                                 setShowDisconnectConfirm(true);
                             }}
                             disabled={disconnecting}
-                            className="min-h-10 min-w-10 sm:min-h-11 sm:min-w-11 p-2 sm:p-2.5 rounded-2xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 dark:hover:text-rose-400 transition-colors disabled:opacity-50 flex items-center justify-center shrink-0"
+                            className="min-h-9 min-w-9 sm:min-h-11 sm:min-w-11 p-1.5 sm:p-2.5 rounded-xl sm:rounded-2xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 dark:hover:text-rose-400 transition-colors disabled:opacity-50 flex items-center justify-center shrink-0"
                             title="Desvincular Dispositivo"
+                            aria-label="Desvincular Dispositivo"
                         >
                             <LogOut size={15} />
                         </button>
