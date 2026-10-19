@@ -30,6 +30,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node MISMO que el equipo (v24): vitest corre bajo node, y el entorno
+      # jsdom depende de su versión (p. ej. brand-check de Blob en FileReader de
+      # compression.js pasa en 24 y falla en 20).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
       # Misma versión de bun que el equipo (bun.lock es formato texto: Bun >= 1.2).
       - uses: oven-sh/setup-bun@v2
         with:
