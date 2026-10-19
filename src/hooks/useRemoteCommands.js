@@ -228,6 +228,9 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 result = applySupervisorProductCommand(currentProducts, payload);
 
                 await storageService.setItem('bodega_products_v1', result.products);
+                // Eco al instante: el estado local ya es real, así que la UI
+                // refresca ANTES del viaje a la nube (igual que applyRateCommand).
+                window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_products_v1', source: 'remote' } }));
                 // Los comandos de producto aún confirman DESPUÉS de publicar:
                 // estos hitos permiten medirlo (ackLeadMs sale negativo).
                 markAckTelemetry(payload.commandId, 'local_applied');
@@ -242,6 +245,8 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 publish = classifyProductPublishResult(pushResult);
                 if (publish.rollback) {
                     await storageService.setItem('bodega_products_v1', currentProducts);
+                    // El rollback también debe verse al instante en la pantalla.
+                    window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_products_v1', source: 'remote' } }));
                     throw new Error(pushResult?.error || 'No se pudo publicar el producto');
                 }
                 if (publish.published) {
