@@ -132,3 +132,14 @@ variable forzada a `'false'` en el proyecto Vercel.
 - **Blindaje de fin de línea:** `.gitattributes` fija LF para archivos de texto. Un cambio de rama en Windows reescribía los archivos con CRLF y rompía 4 tests de guardrails SQL que comparan literales multi-línea (causa raíz reparada; aserciones intactas).
 
 **QA:** lint 0 errores, `tsc` limpio, suite completa **142 archivos / 1535 tests en verde**, build OK; más el gate pre-push (e2e checkout móvil) y el CI de Actions en el push. La suite corrió completa DESPUÉS de la reparación de fin de línea.
+
+---
+
+## 2026-10-19 — release 2.0.3 a producción (el supervisor surte efecto sin recargas)
+
+**Contenido del release:**
+- **La caja aplica las órdenes del supervisor sin recargar.** Dos huecos dejaban un ajuste de stock del supervisor "sin efecto" hasta recargar la caja: (1) si la sesión Auth fallaba al arrancar, el receptor quedaba mudo — sin canal y sin reintentos — hasta la próxima recarga; (2) un canal Realtime que decía "conectado" pero no entregaba eventos no tenía respaldo alguno (los eventos de un corte no se reenvían). Ahora el arranque reintenta con backoff hasta suscribirse (jamás dos canales), hay un barrido de respaldo cada 15 s con el canal conectado (una consulta ligera de órdenes pendientes, normalmente vacía) y se barre al volver red/visibilidad. Realtime sigue siendo la entrega inmediata (< 1 s típico); el peor caso queda acotado a ~15 s y ninguna orden vence sin aplicar (TTL 5 min).
+- **El Supervisor recibe el eco de la caja sin recargar:** barrido de respaldo conectado cada 45 s en `useMonitorSync` (pull incremental: solo metadatos cuando no hay cambios, payload únicamente de lo nuevo) + barrido al instante al volver a la pestaña. Hueco simétrico al de la caja.
+- Los tests que afirmaban "con Realtime conectado no se consulta" se reescribieron al nuevo contrato (barrido acotado, una consulta por intervalo, sin ráfagas): ese comportamiento era exactamente el bug. Casos nuevos: sesión caída al arrancar, barrido silencioso, eco aplicado por barrido y limpieza de timers.
+
+**QA:** lint 0 errores, `tsc` limpio, suite completa **143 archivos / 1542 tests en verde** (10 skipped preexistentes), build PWA OK; más el gate pre-push (e2e) y el CI de Actions en el push. p95 del ACK sin regresión (2.3 ms sobre un presupuesto de 60 ms).
