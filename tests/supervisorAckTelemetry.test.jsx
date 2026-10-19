@@ -66,7 +66,10 @@ vi.mock('../src/hooks/store/useAuthStore', () => ({
 vi.mock('../src/services/supervisorAuth', () => ({
     ensureSupervisorSession: vi.fn(async () => ({ session: { user: { id: 'auth-1' } }, error: null })),
 }));
-vi.mock('../src/services/supervisorCommandService', () => ({
+vi.mock('../src/services/supervisorCommandService', async (importOriginal) => ({
+    // Las constantes del hook (backoff, barrido de respaldo) viven en este
+    // servicio: el módulo real se trae de fondo para no perderlas en el mock.
+    ...(await importOriginal()),
     claimSupervisorCommand: vi.fn(async () => ({ ok: true, claimed: true, status: 'received' })),
     fetchSupervisorCommandsForRecovery: vi.fn(async () => {
         h.state.fetchCalls += 1;

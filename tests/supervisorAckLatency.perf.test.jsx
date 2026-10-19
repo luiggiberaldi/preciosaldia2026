@@ -85,7 +85,9 @@ vi.mock('../src/hooks/store/useAuthStore', () => ({
 vi.mock('../src/services/supervisorAuth', () => ({
     ensureSupervisorSession: vi.fn(async () => ({ session: { user: { id: 'auth-1' } }, error: null })),
 }));
-vi.mock('../src/services/supervisorCommandService', () => ({
+vi.mock('../src/services/supervisorCommandService', async (importOriginal) => ({
+    // Mismo motivo que en los demás suites: conservar las constantes reales.
+    ...(await importOriginal()),
     claimSupervisorCommand: vi.fn(async ({ commandId }) => {
         // t0 por corrida: el inicio del procesamiento de ESE comando.
         h.state.claimTimes[commandId] = now();

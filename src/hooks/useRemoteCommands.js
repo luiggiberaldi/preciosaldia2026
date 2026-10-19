@@ -14,6 +14,7 @@ import {
     readSupervisorCommandAck,
     RECOVERY_BASE_DELAY_MS,
     RECOVERY_MAX_DELAY_MS,
+    RECEIVER_SWEEP_INTERVAL_MS,
     SUPERVISOR_TERMINAL_COMMAND_STATUSES,
     withSupervisorCommandLock,
 } from '../services/supervisorCommandService';
@@ -82,7 +83,7 @@ const APPLIED_COMMANDS_KEY = 'supervisor_applied_commands_v1';
 // Backoff de recuperación compartido con la degradación de la espera de ACK
 // (Fase 3): vive en supervisorCommandService para no crear un ciclo de imports
 // y se re-exporta aquí para conservar la API pública de este hook.
-export { getRecoveryDelayMs, RECOVERY_BASE_DELAY_MS, RECOVERY_MAX_DELAY_MS };
+export { getRecoveryDelayMs, RECOVERY_BASE_DELAY_MS, RECOVERY_MAX_DELAY_MS, RECEIVER_SWEEP_INTERVAL_MS };
 
 function shortSupervisorId(value) {
     if (!value || typeof value !== 'string') return null;
@@ -134,6 +135,7 @@ export function useRemoteCommands(deviceId, enabled = true) {
         let recoveryTimer = null;
         let recoveryAttempt = 0;
         let recoveryInFlight = false;
+        let initInFlight = null;
 
         const clearRecoveryTimer = () => {
             if (recoveryTimer) clearTimeout(recoveryTimer);
@@ -149,7 +151,10 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 if (disposed) return;
                 recoveryInFlight = true;
                 try {
-                    await loadPendingCommands();
+                    // Sin canal vivo el tick re-arma el arranque (p. ej. la
+                    // sesión falló al montar); con canal, barre pendientes.
+                    if (!channel) await initialize();
+                    else await loadPendingCommands();
                 } finally {
                     recoveryInFlight = false;
                 }
@@ -174,15 +179,17 @@ export function useRemoteCommands(deviceId, enabled = true) {
             if (!channel && !disposed) initialize();
         };
         // Fase 4: al recuperar red (online) o visibilidad, el barrido pendiente
-        // se ADELANTA en vez de esperar el backoff (hasta 20 s). No agrega
-        // consultas nuevas: reemplaza el timer de backoff por la consulta
-        // inmediata y respeta el semáforo de una sola recuperación en vuelo.
+        // se ADELANTA en vez de esperar el backoff (hasta 20 s). También corre
+        // con el canal "conectado": los eventos de un corte no se reenvían, así
+        // que al volver red/visibilidad se barre de inmediato (eso es lo que
+        // «despierta» la caja sin recargarla). Respeta el semáforo de una sola
+        // recuperación en vuelo.
         const handleConnectionReady = () => {
-            if (disposed || channelStatus === 'SUBSCRIBED' || recoveryInFlight) return;
+            if (disposed || recoveryInFlight) return;
             clearRecoveryTimer();
             recoveryAttempt = 0;
             recoveryInFlight = true;
-            loadPendingCommands()
+            (channel ? loadPendingCommands() : initialize())
                 .catch(() => {})
                 .finally(() => {
                     recoveryInFlight = false;
@@ -656,12 +663,21 @@ export function useRemoteCommands(deviceId, enabled = true) {
         };
 
         const initialize = async () => {
+            if (disposed) return;
+            // Un canal ya vivo no se vuelve a crear: jamás dos suscripciones.
+            if (channel) return;
+            if (initInFlight) return initInFlight;
+            const run = (async () => {
             const { session, error } = await ensureSupervisorSession();
             if (error || !session) {
                 console.warn('[SupervisorReceiver] Sesión no disponible', {
                     deviceId: shortSupervisorId(deviceId),
                     error: error?.message || 'sin sesión',
                 });
+                // Sin canal y sin reintento el receptor quedaría mudo hasta la
+                // próxima recarga de la caja: se reprograma el arranque con el
+                // mismo backoff de recuperación.
+                scheduleRecovery();
                 return;
             }
             if (disposed) return;
@@ -699,6 +715,13 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 });
 
             await loadPendingCommands();
+            })();
+            initInFlight = run;
+            try {
+                await run;
+            } finally {
+                if (initInFlight === run) initInFlight = null;
+            }
         };
 
         initialize();
@@ -739,9 +762,25 @@ export function useRemoteCommands(deviceId, enabled = true) {
         void retryPendingPublish();
         const pendingPublishTimer = setInterval(() => { void retryPendingPublish(); }, 30000);
 
+        // Barrido de respaldo con el canal "conectado": acota el caso en que
+        // Realtime dice SUBSCRIBED pero no entrega eventos (socket a medias,
+        // pestaña restringida, eventos perdidos durante un corte) — hoy ese
+        // silencio dejaba las órdenes del supervisor aplicándose solo al
+        // recargar la caja. Una consulta ligera por intervalo (normalmente
+        // vacía); Realtime sigue siendo la entrega inmediata.
+        let sweepInFlight = false;
+        const sweepTimer = setInterval(() => {
+            if (disposed || sweepInFlight || recoveryInFlight || !channel || channelStatus !== 'SUBSCRIBED') return;
+            sweepInFlight = true;
+            loadPendingCommands()
+                .catch(() => {})
+                .finally(() => { sweepInFlight = false; });
+        }, RECEIVER_SWEEP_INTERVAL_MS);
+
         return () => {
             disposed = true;
             clearInterval(pendingPublishTimer);
+            clearInterval(sweepTimer);
             clearRecoveryTimer();
             window.removeEventListener('supervisor_pairing_revoked', handlePairingRevoked);
             window.removeEventListener('supervisor_pairing_active', handlePairingActive);

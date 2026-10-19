@@ -332,6 +332,16 @@ export function isRetryableCreateError(error) {
 export const RECOVERY_BASE_DELAY_MS = 5_000;
 export const RECOVERY_MAX_DELAY_MS = 20_000;
 
+// Barrido de respaldo del receptor con el canal Realtime "conectado". Un canal
+// que dice SUBSCRIBED pero no entrega eventos (socket a medias, pestaña
+// restringida, eventos perdidos durante un corte) no puede dejar órdenes del
+// supervisor aplicándose solo tras recargar la caja. Una consulta ligera de
+// órdenes pendientes por intervalo (normalmente vacía) acota la espera sin
+// tocar el camino rápido: Realtime sigue siendo la entrega inmediata. Con el
+// TTL extendido de inventario/productos en 5 min, un barrido de 15 s jamás
+// deja una orden vencer sin aplicar.
+export const RECEIVER_SWEEP_INTERVAL_MS = 15_000;
+
 /**
  * Delay exponencial con jitter completo. `random` es inyectable para tests.
  * attempt 0 → ~[base, 2·base); crece hasta el máximo.

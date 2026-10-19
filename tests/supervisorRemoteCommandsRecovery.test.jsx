@@ -57,7 +57,8 @@ vi.mock('../src/services/supervisorInventoryCommand', () => ({
 }));
 vi.mock('../src/services/supervisorUserCommand', () => ({ applySupervisorUserCommand: vi.fn() }));
 
-import { useRemoteCommands, RECOVERY_BASE_DELAY_MS } from '../src/hooks/useRemoteCommands';
+import { useRemoteCommands, RECOVERY_BASE_DELAY_MS, RECEIVER_SWEEP_INTERVAL_MS } from '../src/hooks/useRemoteCommands';
+import { ensureSupervisorSession } from '../src/services/supervisorAuth';
 
 function Harness({ deviceId = 'device-12345678', enabled = true }) {
     useRemoteCommands(deviceId, enabled);
@@ -107,14 +108,20 @@ describe('useRemoteCommands: recuperacion con Realtime degradado', () => {
         await act(async () => { h.state.statusCallback(status, null); });
     }
 
-    it('SUBSCRIBED no programa recuperacion', async () => {
+    it('SUBSCRIBED con canal silencioso barre de respaldo, una consulta por intervalo', async () => {
         await mount();
         // La consulta inicial de arranque no cuenta: se mide desde aquí.
         const baseline = h.state.fetchCalls;
         await setStatus('SUBSCRIBED');
-        await act(async () => { vi.advanceTimersByTime(RECOVERY_BASE_DELAY_MS * 10); });
+        // El backoff no corre con SUBSCRIBED; el barrido de respaldo acota el
+        // canal que dice conectado pero no entrega eventos (antes eso dejaba
+        // las órdenes aplicándose solo al recargar la caja).
+        await act(async () => { vi.advanceTimersByTime(RECEIVER_SWEEP_INTERVAL_MS); });
         await flush();
-        expect(h.state.fetchCalls).toBe(baseline);
+        expect(h.state.fetchCalls).toBe(baseline + 1);
+        await act(async () => { vi.advanceTimersByTime(RECEIVER_SWEEP_INTERVAL_MS); });
+        await flush();
+        expect(h.state.fetchCalls).toBe(baseline + 2);
     });
 
     it('CHANNEL_ERROR programa una consulta de recuperacion y no se duplica', async () => {
@@ -134,12 +141,14 @@ describe('useRemoteCommands: recuperacion con Realtime degradado', () => {
         expect(h.state.fetchCalls - afterFirst).toBeLessThanOrEqual(1);
     });
 
-    it('volver a SUBSCRIBED detiene la recuperacion pendiente', async () => {
+    it('volver a SUBSCRIBED detiene el backoff de recuperacion', async () => {
         await mount();
         await setStatus('CHANNEL_ERROR');
         await setStatus('SUBSCRIBED');
         const before = h.state.fetchCalls;
-        await act(async () => { vi.advanceTimersByTime(RECOVERY_BASE_DELAY_MS * 10); });
+        // La ventana del backoff queda cancelada: no hay consultas por ella.
+        // (El barrido de respaldo es aparte y corre en su propio intervalo.)
+        await act(async () => { vi.advanceTimersByTime(RECOVERY_BASE_DELAY_MS * 2); });
         await flush();
         expect(h.state.fetchCalls).toBe(before);
     });
@@ -179,13 +188,35 @@ describe('useRemoteCommands: recuperacion con Realtime degradado', () => {
         expect(h.state.fetchCalls).toBe(baseline + 1);
     });
 
-    it('online con canal SUBSCRIBED no consulta', async () => {
+    it('online con canal SUBSCRIBED barre por eventos perdidos durante el corte', async () => {
         await mount();
         await setStatus('SUBSCRIBED');
         const before = h.state.fetchCalls;
+        // Los eventos de un corte no se reenvían: al volver la red se barre
+        // aunque el canal siga diciendo conectado (igual que al recargar, pero
+        // sin recargar).
         await act(async () => { window.dispatchEvent(new Event('online')); });
         await flush();
-        expect(h.state.fetchCalls).toBe(before);
+        expect(h.state.fetchCalls).toBe(before + 1);
+    });
+
+    it('la sesión no disponible al arrancar no deja el receptor mudo', async () => {
+        const ensure = vi.mocked(ensureSupervisorSession);
+        ensure.mockResolvedValueOnce({ session: null, error: new Error('sin red') });
+        ensure.mockResolvedValueOnce({ session: null, error: new Error('sin red') });
+        await act(async () => root.render(<Harness />));
+        await flush();
+        // Sin sesión no hay canal: el receptor NO queda suscrito…
+        expect(h.state.statusCallback).toBe(null);
+        const before = h.state.fetchCalls;
+        // …pero el arranque se reintenta con backoff hasta suscribirse y
+        // consultar (antes: mudo hasta la próxima recarga de la caja).
+        await act(async () => { vi.advanceTimersByTime(RECOVERY_BASE_DELAY_MS * 2); });
+        await flush();
+        await act(async () => { vi.advanceTimersByTime(RECOVERY_BASE_DELAY_MS * 4); });
+        await flush();
+        expect(h.state.statusCallback).toBeTypeOf('function');
+        expect(h.state.fetchCalls).toBeGreaterThan(before);
     });
 
     it('una rafaga de eventos de reconexion no duplica consultas', async () => {
