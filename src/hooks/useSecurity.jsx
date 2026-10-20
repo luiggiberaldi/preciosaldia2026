@@ -6,6 +6,7 @@ import { verifyInstallOwnership, ensureInstallIdentity, migrateDeviceIdentity, D
 import { useLicenseMonitoring } from './useLicenseMonitoring';
 import { useDemoCountdown } from './useDemoCountdown';
 import { LICENSE_POLICY } from '../utils/securityConstants';
+import { resolveLicenseState, demoDurationDays } from '../config/licensePolicy';
 import { sendDeviceHeartbeat } from '../services/deviceHeartbeat';
 
 // SEC-008 (temporal): false relaja la revocación por cambio de fingerprint.
@@ -15,12 +16,33 @@ const SEC008_MISMATCH_ENFORCED = false;
 const APP_VERSION = '1.0.0';
 const PRODUCT_ID = 'bodega';
 
-const DEMO_DURATION_MS = 72 * 60 * 60 * 1000; // 72 horas (3 dias)
+// Red lenta o caída no debe congelar la verificación de licencia ni el arranque
+// (2026-10-20: la app se quedaba en "Verificando licencia..." con deviceId null
+// cuando la nube no respondía). Toda llamada de red de este módulo tiene techo
+// de tiempo y degrada a caché offline / no-premium en vez de colgarse.
+const NETWORK_TIMEOUT_MS = 8000;
 
-// Helper seguro para obtener el estado de la licencia respetando RLS o haciendo fallback
+function withTimeout(promise, ms = NETWORK_TIMEOUT_MS) {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`Timeout de red (${ms}ms)`)), ms);
+        Promise.resolve(promise).then(
+            (value) => { clearTimeout(timer); resolve(value); },
+            (error) => { clearTimeout(timer); reject(error); },
+        );
+    });
+}
+
+// Duración de la demo local: sale de la política compartida (demo3 = 3 días).
+const DEMO_DURATION_MS = demoDurationDays('demo3') * 24 * 60 * 60 * 1000;
+
+// Helper seguro para obtener el estado de la licencia respetando RLS o haciendo fallback.
+// Ambas rutas tienen techo de tiempo: una consulta colgada degrada a error y el
+// caller cae a la caché offline en vez de quedarse en "Verificando licencia...".
 async function _fetchRemoteLicense(currentDeviceId) {
     try {
-        const { data, error } = await supabase.rpc('get_license_status', { p_device_id: currentDeviceId });
+        const { data, error } = await withTimeout(
+            supabase.rpc('get_license_status', { p_device_id: currentDeviceId }),
+        );
         if (!error && data) {
             const record = Array.isArray(data) ? data[0] : data;
             if (record) {
@@ -30,12 +52,14 @@ async function _fetchRemoteLicense(currentDeviceId) {
     } catch (e) {
         // Silencioso
     }
-    return supabase
-        .from('licenses')
-        .select('type, is_active, expires_at, created_at')
-        .eq('device_id', currentDeviceId)
-        .eq('product_id', PRODUCT_ID)
-        .maybeSingle();
+    return withTimeout(
+        supabase
+            .from('licenses')
+            .select('type, is_active, expires_at, created_at')
+            .eq('device_id', currentDeviceId)
+            .eq('product_id', PRODUCT_ID)
+            .maybeSingle(),
+    ).catch((error) => ({ data: null, error }));
 }
 
 // SEC-022 / INFRA-011: Security headers (CSP, X-Frame-Options, X-Content-Type-Options,
@@ -67,51 +91,26 @@ function useSecurityState() {
     const [isMonthlyGracePeriod, setIsMonthlyGracePeriod] = useState(false);
     const [monthlyGraceDaysLeft, setMonthlyGraceDaysLeft] = useState(0);
 
-    const applyLicenseState = useCallback((type, isActive, expiresAtVal, createdAt) => {
-        if (!isActive || type === 'revoked' || type === 'registered') {
-            setIsPremium(false);
-            setIsDemo(false);
-            setIsMonthlyGracePeriod(false);
-            setMonthlyGraceDaysLeft(0);
-            return { isPremium: false, isDemo: false, isGrace: false, graceDays: 0 };
-        }
+    // Regla ÚNICA de vida de la licencia: config/licensePolicy.js, el mismo
+    // módulo que aplica la Estación Maestra. Antes esta regla estaba escrita
+    // aquí y divergía del servidor: la Estación daba 5 días de gracia a las
+    // demos mientras la caja las cortaba en seco (LIC-04), y una mensual sin
+    // vencimiento quedaba premium para siempre (LIC-10).
+    const applyLicenseState = useCallback((type, isActive, expiresAtVal) => {
+        const state = resolveLicenseState({ type, isActive, expiresAt: expiresAtVal });
 
-        const expiresAt = expiresAtVal ? new Date(expiresAtVal).getTime() : null;
-        let isPrem = false;
-        let isDem = false;
-        let isGrace = false;
-        let graceDays = 0;
+        setIsPremium(state.isPremium);
+        setIsDemo(state.isDemo);
+        setIsMonthlyGracePeriod(state.isGrace);
+        setMonthlyGraceDaysLeft(state.graceDays);
+        if (state.isDemo && state.expiresAtMs) setDemoExpires(state.expiresAtMs);
 
-        if (type === 'demo7' || type === 'demo3') {
-            if (expiresAt && Date.now() < expiresAt) {
-                isPrem = true;
-                isDem = true;
-            }
-        } else if (type === 'monthly') {
-            if (expiresAt) {
-                const gracePeriodEnd = expiresAt + 5 * 24 * 60 * 60 * 1000;
-                if (Date.now() < expiresAt) {
-                    isPrem = true;
-                } else if (Date.now() < gracePeriodEnd) {
-                    isPrem = true;
-                    isGrace = true;
-                    const diffTime = gracePeriodEnd - Date.now();
-                    graceDays = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
-                }
-            } else {
-                isPrem = true;
-            }
-        } else if (type === 'permanent') {
-            isPrem = true;
-        }
-
-        setIsPremium(isPrem);
-        setIsDemo(isDem);
-        setIsMonthlyGracePeriod(isGrace);
-        setMonthlyGraceDaysLeft(graceDays);
-        if (expiresAt && isDem) setDemoExpires(expiresAt);
-
-        return { isPremium: isPrem, isDemo: isDem, isGrace, graceDays };
+        return {
+            isPremium: state.isPremium,
+            isDemo: state.isDemo,
+            isGrace: state.isGrace,
+            graceDays: state.graceDays,
+        };
     }, []);
 
     // Demo countdown hook
@@ -163,7 +162,7 @@ function useSecurityState() {
 
     // HOOK-040: checkLicense memoizado para evitar recreate en cada render.
     // SEC-001/SEC-007: Solo aceptar tokens con firma RSA válida.
-    const checkLicense = useCallback(async (currentDeviceId) => {
+    const checkLicenseRaw = useCallback(async (currentDeviceId) => {
         // SEC-001/SEC-007: Solo aceptar tokens con firma RSA válida.
         // Si el token almacenado es legacy (XOR, sin '.') se elimina y se cae
         // al flujo de validación contra el servidor.
@@ -172,8 +171,16 @@ function useSecurityState() {
 
         if (rawStored) {
             if (rawStored.includes('.')) {
-                const { valid, payload } = await verifyLicenseToken(rawStored);
-                if (valid) tokenObj = payload;
+                try {
+                    const { valid, payload } = await verifyLicenseToken(rawStored);
+                    if (valid) tokenObj = payload;
+                } catch (e) {
+                    // Crypto no disponible (contexto inseguro) o token ilegible:
+                    // degrada a la verificación remota/caché en vez de colgar aquí.
+                    if (import.meta.env?.DEV) {
+                        console.warn('[Security] Token no verificable:', e?.message ?? e);
+                    }
+                }
             } else {
                 // SEC-001: Token legacy XOR — rechazar y limpiar.
                 if (import.meta.env?.DEV) {
@@ -328,6 +335,21 @@ function useSecurityState() {
         setLoading(false);
     }, [setDemoExpiredMsg]);
 
+    // La verificación de licencia NUNCA debe dejar la pantalla colgada en
+    // "Verificando licencia...": cualquier error inesperado degrada a no-premium
+    // (o a la caché offline ya aplicada) y el loading siempre se cierra.
+    const checkLicense = useCallback(async (currentDeviceId) => {
+        try {
+            await checkLicenseRaw(currentDeviceId);
+        } catch (error) {
+            if (import.meta.env?.DEV) {
+                console.warn('[Security] checkLicense falló:', error?.message ?? error);
+            }
+        } finally {
+            setLoading(false);
+        }
+    }, [checkLicenseRaw]);
+
     useEffect(() => {
         const initDeviceId = async () => {
             // Local-only staging harness. This path is impossible in production
@@ -336,63 +358,87 @@ function useSecurityState() {
                 && import.meta.env.VITE_SUPERVISOR_E2E_STAGING === 'true';
             let storedId;
 
-            if (supervisorStagingE2E) {
-                const seededId = localStorage.getItem('pda_device_id');
-                storedId = ['e2e-primary-device', 'e2e-monitor-device'].includes(seededId)
-                    ? seededId
-                    : (localStorage.getItem('pda_pairing_mode') === 'monitor'
-                        ? 'e2e-monitor-device'
-                        : 'e2e-primary-device');
-                localStorage.setItem('pda_device_id', storedId);
-            } else {
-                // Identidad única por instalación: si la instalación no tiene ID,
-                // se genera uno aleatorio (ya NO se deriva del navegador: dos
-                // equipos generaban el mismo PDA-V2-… y compartían licencia/datos).
-                // Si ya hay un ID guardado, se conserva tal cual.
-                const { deviceId: ensuredId } = ensureInstallIdentity();
-                storedId = ensuredId;
+            try {
+                if (supervisorStagingE2E) {
+                    const seededId = localStorage.getItem('pda_device_id');
+                    storedId = ['e2e-primary-device', 'e2e-monitor-device'].includes(seededId)
+                        ? seededId
+                        : (localStorage.getItem('pda_pairing_mode') === 'monitor'
+                            ? 'e2e-monitor-device'
+                            : 'e2e-primary-device');
+                    localStorage.setItem('pda_device_id', storedId);
+                } else {
+                    // Identidad única por instalación: si la instalación no tiene ID,
+                    // se genera uno aleatorio (ya NO se deriva del navegador: dos
+                    // equipos generaban el mismo PDA-V2-… y compartían licencia/datos).
+                    // Si ya hay un ID guardado, se conserva tal cual.
+                    const { deviceId: ensuredId } = ensureInstallIdentity();
+                    storedId = ensuredId;
 
-                // SEC-008: Re-verificar identidad. Si el dispositivo cambió (o si alguien
-                // inyectó un pda_device_id arbitrario), invalidamos la sesión premium.
-                const owned = await verifyInstallOwnership(storedId);
-                if (!owned) {
-                    // NO se regenera pda_device_id: la nube asocia la caja a su ID original.
-                    if (import.meta.env?.DEV) {
-                        console.warn('[Security] Identidad no verificada (SEC-008). ID original conservado.');
+                    // SEC-008: Re-verificar identidad. Si el dispositivo cambió (o si alguien
+                    // inyectó un pda_device_id arbitrario), invalidamos la sesión premium.
+                    // Tolerante a fallos: crypto/storage no disponibles no frenan el arranque.
+                    let owned = true;
+                    try {
+                        owned = await verifyInstallOwnership(storedId);
+                    } catch (error) {
+                        if (import.meta.env?.DEV) {
+                            console.warn('[Security] Verificación de identidad falló:', error?.message ?? error);
+                        }
                     }
-                    if (SEC008_MISMATCH_ENFORCED) {
-                        // Identidad distinta → revocar premium y exigir re-vinculación explícita.
-                        localStorage.removeItem('pda_premium_token');
-                        setIntegrityWarning(true);
-                        setRevinculacionRequerida(true);
+                    if (!owned) {
+                        // NO se regenera pda_device_id: la nube asocia la caja a su ID original.
+                        if (import.meta.env?.DEV) {
+                            console.warn('[Security] Identidad no verificada (SEC-008). ID original conservado.');
+                        }
+                        if (SEC008_MISMATCH_ENFORCED) {
+                            // Identidad distinta → revocar premium y exigir re-vinculación explícita.
+                            localStorage.removeItem('pda_premium_token');
+                            setIntegrityWarning(true);
+                            setRevinculacionRequerida(true);
+                        }
                     }
                 }
-            }
 
-            // Auto-registro idempotente de filas al iniciar; los heartbeats posteriores
-            // actualizan last_seen sin repetir comprobaciones/inserciones de registro.
-            try {
-                if (!supervisorStagingE2E && import.meta.env.VITE_SUPABASE_URL) {
-                    const bName = localStorage.getItem('business_name') || localStorage.getItem('restaurant_name') || '';
-                    const mEmail = localStorage.getItem('marketing_email') || '';
-                    const clientName = mEmail ? `${bName} | ${mEmail}` : bName;
-                    const { error } = await supabase.rpc('auto_register_device', {
-                        p_device_id: storedId,
-                        p_product_id: PRODUCT_ID,
-                        p_client_name: clientName,
-                    });
-                    if (error) throw error;
+                // Auto-registro idempotente de filas al iniciar; los heartbeats posteriores
+                // actualizan last_seen sin repetir comprobaciones/inserciones de registro.
+                // Con techo de tiempo: la nube colgada no frena el arranque (el registro es
+                // idempotente y el heartbeat posterior lo reintentará).
+                try {
+                    if (!supervisorStagingE2E && import.meta.env.VITE_SUPABASE_URL) {
+                        const bName = localStorage.getItem('business_name') || localStorage.getItem('restaurant_name') || '';
+                        const mEmail = localStorage.getItem('marketing_email') || '';
+                        const clientName = mEmail ? `${bName} | ${mEmail}` : bName;
+                        const { error } = await withTimeout(supabase.rpc('auto_register_device', {
+                            p_device_id: storedId,
+                            p_product_id: PRODUCT_ID,
+                            p_client_name: clientName,
+                        }));
+                        if (error) throw error;
+                    }
+                } catch (error) {
+                    if (import.meta.env?.DEV) {
+                        console.warn('[Security] auto_register_device falló:', error?.message ?? error);
+                    }
                 }
             } catch (error) {
+                // La identidad local falló por completo: el arranque no puede quedarse
+                // en "Verificando licencia..." para siempre.
                 if (import.meta.env?.DEV) {
-                    console.warn('[Security] auto_register_device falló:', error?.message ?? error);
+                    console.warn('[Security] initDeviceId falló:', error?.message ?? error);
                 }
             }
 
             // Montar el monitor después de intentar el registro evita que el primer
             // heartbeat llegue antes de que existan las filas de presencia/licencia.
-            setDeviceId(storedId);
-            checkLicense(storedId);
+            // Garantizado pase lo que pase arriba: siempre se publica la identidad
+            // local y se verifica la licencia (que a su vez degrada a caché offline).
+            if (storedId) {
+                setDeviceId(storedId);
+                checkLicense(storedId);
+            } else {
+                setLoading(false);
+            }
         };
 
         initDeviceId();
@@ -400,7 +446,7 @@ function useSecurityState() {
         // FIX 3: Leer demo flag desde IndexedDB
                         storageService.getItem('pda_demo_flag_v1', null).then(r => {
             if (r?.used) setDemoUsed(true);
-        });
+        }).catch(() => { /* storage no disponible */ });
     }, [checkLicense]);
 
     // Tras cambiar el ID de la estación, la licencia y la presencia se
