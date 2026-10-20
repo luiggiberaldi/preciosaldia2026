@@ -57,9 +57,64 @@ function assertDeviceId(deviceId) {
     return normalized;
 }
 
+// Fase 1 (2026-10-20): el snapshot pesado se publica en SEGUNDO PLANO y jamás
+// bloquea la emisión del código. Un solo reintento ante fallo; mientras hay una
+// publicación en vuelo no se dispara otra (evita ráfagas al pulsar "Intentar de
+// nuevo"). Un snapshot colgado no vence: se libera al asentar la promesa.
+export const BACKGROUND_SYNC_RETRY_DELAY_MS = 2000;
+
+const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+let backgroundSyncInFlight = false;
+
+function describeSyncFailure(error) {
+    const detail = String(error || 'No se pudieron preparar los datos para el supervisor');
+    // RLS own-row sobre sync_documents = la identidad de la caja no quedó ligada
+    // a la sesión actual. Mensaje accionable en vez del error crudo de PostgREST.
+    return /row-level security|42501/i.test(detail)
+        ? `La identidad de esta caja no coincide con la sesión de la nube. Cierra y vuelve a abrir la app e inténtalo de nuevo. (${detail})`
+        : detail;
+}
+
+function publishSnapshotInBackground(deviceId, syncSnapshot, sleep = defaultSleep) {
+    if (backgroundSyncInFlight) return false;
+    backgroundSyncInFlight = true;
+
+    const attempt = async (isRetry) => {
+        try {
+            // La primera llamada es síncrona: los tests pueden observarla sin esperar ticks.
+            const result = await syncSnapshot(deviceId, false, true);
+            if (result && result.ok === false && !isRetry) {
+                await sleep(BACKGROUND_SYNC_RETRY_DELAY_MS);
+                return attempt(true);
+            }
+            return result || { ok: true };
+        } catch (error) {
+            if (!isRetry) {
+                await sleep(BACKGROUND_SYNC_RETRY_DELAY_MS);
+                return attempt(true);
+            }
+            return { ok: false, error: error?.message || String(error) };
+        }
+    };
+
+    void attempt(false)
+        .then((result) => {
+            if (result && result.ok === false) {
+                console.warn('[PairingService] El snapshot en segundo plano no se publicó:', describeSyncFailure(result.error));
+            }
+        })
+        .finally(() => {
+            backgroundSyncInFlight = false;
+        });
+    return true;
+}
+
 /**
- * Prepara los datos una vez y solicita el token al RPC existente.
- * Las dependencias opcionales facilitan pruebas sin tocar el cliente real.
+ * Solicita el token al RPC existente. El código es lo urgente: se emite sin
+ * esperar el snapshot pesado, que se publica después en segundo plano
+ * (`syncBeforeIssue`, con un reintento simple). Las dependencias opcionales
+ * facilitan pruebas sin tocar el cliente real.
  */
 export async function createPairingToken({
     deviceId,
@@ -67,6 +122,7 @@ export async function createPairingToken({
     ensureSession = ensureSupervisorSession,
     registerDeviceSession = ensureDeviceSessionRegistered,
     syncBeforeIssue = forceSyncAllPOSData,
+    sleep = defaultSleep,
     onProgress,
 } = {}) {
     const normalizedDeviceId = assertDeviceId(deviceId);
@@ -89,20 +145,6 @@ export async function createPairingToken({
         throw new Error(reason || 'No se pudo registrar la identidad de esta caja');
     }
 
-    onProgress?.('Preparando los datos para el supervisor…');
-    // Bootstrap del primer pairing: publica el snapshot aunque todavía no
-    // exista un monitor vinculado, pero respeta hashes para evitar egress
-    // innecesario en reintentos o aperturas posteriores.
-    const syncResult = await syncBeforeIssue(normalizedDeviceId, false, true);
-    if (syncResult && syncResult.ok === false) {
-        const detail = syncResult.error || 'No se pudieron preparar los datos para el supervisor';
-        // RLS own-row sobre sync_documents = la identidad de la caja no quedó ligada
-        // a la sesión actual. Mensaje accionable en vez del error crudo de PostgREST.
-        throw new Error(/row-level security|42501/i.test(detail)
-            ? `La identidad de esta caja no coincide con la sesión de la nube. Cierra y vuelve a abrir la app e inténtalo de nuevo. (${detail})`
-            : detail);
-    }
-
     onProgress?.('Generando el código temporal…');
     const { data, error } = await supabase.rpc('generate_pairing_token', {
         p_device_id: normalizedDeviceId,
@@ -111,6 +153,12 @@ export async function createPairingToken({
 
     const token = normalizePairingToken(data);
     if (!token) throw new Error('El servidor no devolvió un código de vinculación válido');
+
+    // Bootstrap del primer pairing: publica el snapshot aunque todavía no exista
+    // un monitor vinculado, pero respeta hashes para evitar egress innecesario.
+    // En segundo plano: el humano tarda más en escanear el QR de lo que tarda la
+    // subida, y un maletón lento jamás debe volver a expirar el código.
+    publishSnapshotInBackground(normalizedDeviceId, syncBeforeIssue, sleep);
 
     return {
         token,

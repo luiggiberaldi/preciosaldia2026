@@ -110,31 +110,46 @@ describe('supervisorPairingService', () => {
             .toMatch(/otra sesión segura/i);
     });
 
-    it('rechaza una preparación de datos fallida antes de llamar al RPC', async () => {
-        const rpc = vi.fn();
-        await expect(createPairingToken({
+    // Fase 1 (2026-10-20): el snapshot pesado ya NO bloquea la emisión del token.
+    // Comportamiento nuevo: el fallo del snapshot se reintenta y se registra en
+    // segundo plano; el código se emite igualmente.
+    it('el fallo del snapshot no bloquea la emisión del token', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const rpc = vi.fn().mockResolvedValue({ data: 'abc123', error: null });
+        const syncBeforeIssue = vi.fn().mockResolvedValue({ ok: false, error: 'sync caído' });
+        const result = await createPairingToken({
             deviceId: 'device-12345678',
             supabase: { rpc },
             ensureSession: vi.fn().mockResolvedValue({ session: {} }),
             registerDeviceSession: vi.fn().mockResolvedValue({ ok: true }),
-            syncBeforeIssue: vi.fn().mockResolvedValue({ ok: false, error: 'sync caído' }),
-        })).rejects.toThrow('sync caído');
-        expect(rpc).not.toHaveBeenCalled();
+            syncBeforeIssue,
+            sleep: () => Promise.resolve(),
+        });
+        expect(result.token).toBe('ABC123');
+        expect(rpc).toHaveBeenCalledOnce();
+        await vi.waitFor(() => expect(syncBeforeIssue).toHaveBeenCalledTimes(2));
+        warn.mockRestore();
     });
 
-    it('traduce el rechazo RLS de sync_documents a un mensaje accionable', async () => {
-        const rpc = vi.fn();
-        await expect(createPairingToken({
+    it('traduce el rechazo RLS de sync_documents a un mensaje accionable en el registro', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const rpc = vi.fn().mockResolvedValue({ data: 'abc123', error: null });
+        const syncBeforeIssue = vi.fn().mockResolvedValue({
+            ok: false,
+            error: 'new row violates row-level security policy for table "sync_documents"',
+        });
+        const result = await createPairingToken({
             deviceId: 'device-12345678',
             supabase: { rpc },
             ensureSession: vi.fn().mockResolvedValue({ session: {} }),
             registerDeviceSession: vi.fn().mockResolvedValue({ ok: true }),
-            syncBeforeIssue: vi.fn().mockResolvedValue({
-                ok: false,
-                error: 'new row violates row-level security policy for table "sync_documents"',
-            }),
-        })).rejects.toThrow(/Cierra y vuelve a abrir la app/i);
-        expect(rpc).not.toHaveBeenCalled();
+            syncBeforeIssue,
+            sleep: () => Promise.resolve(),
+        });
+        expect(result.token).toBe('ABC123');
+        await vi.waitFor(() => expect(warn).toHaveBeenCalled());
+        expect(warn.mock.calls.flat().join(' ')).toMatch(/Cierra y vuelve a abrir la app/i);
+        warn.mockRestore();
     });
 
     it('revoca un código pendiente al cancelar el modal', async () => {
@@ -188,6 +203,61 @@ describe('supervisorPairingService', () => {
         const message = getPairingErrorMessage({ code: 'DEVICE_SESSION_NOT_BOUND', message: 'La identidad de esta caja no quedó ligada a la sesión de la nube.' });
         expect(message).toMatch(/identidad de esta caja no quedó ligada/i);
         expect(message).not.toMatch(/No se pudo abrir la sesión segura/);
+    });
+});
+
+describe('createPairingToken — el código no espera el snapshot (Fase 1)', () => {
+    // Módulo fresco por prueba: el guard de snapshot en vuelo es estado del módulo.
+    const loadService = async () => {
+        vi.resetModules();
+        return import('../src/services/supervisorPairingService');
+    };
+    const baseDeps = (overrides = {}) => ({
+        deviceId: 'device-12345678',
+        supabase: { rpc: vi.fn().mockResolvedValue({ data: '  abc123  ', error: null }) },
+        ensureSession: vi.fn().mockResolvedValue({ session: { user: { id: 'device-auth' } } }),
+        registerDeviceSession: vi.fn().mockResolvedValue({ ok: true }),
+        sleep: vi.fn().mockResolvedValue(undefined),
+        ...overrides,
+    });
+
+    it('(a) emite el token aunque el snapshot en segundo plano nunca termine', async () => {
+        const { createPairingToken } = await loadService();
+        const syncBeforeIssue = vi.fn(() => new Promise(() => {}));
+        const result = await createPairingToken(baseDeps({ syncBeforeIssue }));
+        expect(result.token).toBe('ABC123');
+        expect(syncBeforeIssue).toHaveBeenCalledWith('device-12345678', false, true);
+    });
+
+    it('(b) el snapshot fallido se reintenta una vez y solo se registra', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const { createPairingToken } = await loadService();
+        const syncBeforeIssue = vi.fn().mockResolvedValue({ ok: false, error: 'sync caído' });
+        const sleep = vi.fn().mockResolvedValue(undefined);
+        const result = await createPairingToken(baseDeps({ syncBeforeIssue, sleep }));
+        expect(result.token).toBe('ABC123');
+        await vi.waitFor(() => expect(syncBeforeIssue).toHaveBeenCalledTimes(2));
+        expect(sleep).toHaveBeenCalledOnce();
+        expect(warn.mock.calls.flat().join(' ')).toMatch(/sync caído/);
+        warn.mockRestore();
+    });
+
+    it('(c) un rechazo del RPC llega al usuario sin pasar por el timeout y sin disparar el snapshot', async () => {
+        const { createPairingToken } = await loadService();
+        const syncBeforeIssue = vi.fn();
+        await expect(createPairingToken(baseDeps({
+            supabase: { rpc: vi.fn().mockRejectedValue(new Error('Esta caja ya tiene un supervisor conectado')) },
+            syncBeforeIssue,
+        }))).rejects.toThrow('ya tiene un supervisor conectado');
+        expect(syncBeforeIssue).not.toHaveBeenCalled();
+    });
+
+    it('(d) reintentar en ráfaga no dispara snapshots duplicados', async () => {
+        const { createPairingToken } = await loadService();
+        const syncBeforeIssue = vi.fn(() => new Promise(() => {}));
+        const deps = baseDeps({ syncBeforeIssue });
+        await Promise.all([createPairingToken(deps), createPairingToken(deps)]);
+        expect(syncBeforeIssue).toHaveBeenCalledOnce();
     });
 });
 
