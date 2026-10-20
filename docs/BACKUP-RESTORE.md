@@ -97,7 +97,9 @@ aplicarse antes de publicar el backup automático para usuarios finales.
 
 **Endpoint (lado Estación Maestra):** `src/app/api/backup/relay/route.ts`
 - `POST { deviceId, backup_data }` → upsert en `cloud_backups` con
-  service-role (bypasea RLS), mismo patrón que `api/backup/complete`.
+  service-role (bypasea RLS). Escribe el payload COMPLETO en `backup_data`.
+  (`api/backup/complete` quedó retirado con `410 Gone`: sobrescribía esa misma
+  columna con solo metadatos y destruía el respaldo real.)
 - `GET ?deviceId=...` → devuelve `backup_data` de la fila.
 - CORS abierto (`*`), normalización y validación de `deviceId`.
 

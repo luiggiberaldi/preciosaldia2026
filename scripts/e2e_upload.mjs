@@ -1,6 +1,8 @@
 // E2E armature: rebuilds the device backup payload, uploads to cloud_backups
-// (service-role, same as Estación Maestra api/backup/complete) and seeds
-// sync_documents (the production P2P restore channel).
+// (service-role, same writer contract as the POS: backup_data = full payload)
+// and seeds sync_documents (the production P2P restore channel).
+// NOTE: /api/backup/complete is retired (410 Gone) — it wrote metadata INTO
+// backup_data and destroyed real backups. Never write metadata into backup_data.
 // Run from repo root: node preciosaldia-bodega/scripts/e2e_upload.mjs
 import { readFileSync, writeFileSync } from 'fs';
 import { gzipSync } from 'zlib';
