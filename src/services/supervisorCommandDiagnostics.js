@@ -184,6 +184,90 @@ export function formatAckMs(value) {
     return value != null && Number.isFinite(Number(value)) ? `${Number(value)} ms` : '—';
 }
 
+// ── Log estructurado + último comando (Fase 2, plan 2026-10-20) ─────────────
+// Regla: ningún error del servidor se traga en silencio. Todo desenlace de
+// comando deja el "último comando enviado" persistido (para el panel) y todo
+// fallo además un log estructurado con commandId, status y error reales.
+
+export const SUPERVISOR_LAST_COMMAND_KEY = 'supervisor_last_command_v1';
+
+const FAILURE_STATUSES = ['failed', 'rejected', 'cancelled', 'expired', 'ack_failed', 'invalid', 'timeout', 'unauthenticated', 'unauthorized', 'disabled'];
+
+let lastCommandOutcome = null;
+let pendingLastCommandWrite = Promise.resolve();
+
+/**
+ * Log estructurado (grep-able) de un fallo de comando: commandId, status y
+ * error. Nunca lanza: el log jamás interrumpe el flujo del comando.
+ */
+export function supervisorLog({ commandId = null, type = null, status = null, error = null, phase = 'command' } = {}) {
+    try {
+        console.error(`[Supervisor] ${phase} · ${status || 'sin estado'} · ${type || 'sin tipo'}${commandId ? ` · ${commandId}` : ''}`, {
+            commandId,
+            type,
+            status,
+            error,
+        });
+    } catch {
+        // El log jamás interrumpe el flujo del comando.
+    }
+}
+
+/**
+ * Registra el "último comando enviado: <tipo> → <estado> (<error>)" (la
+ * última entrada gana) y lo persiste para que sobreviva al cierre del panel y
+ * a los reinicios de la app.
+ */
+export function recordLastCommandOutcome({ commandId = null, type = null, status = null, error = null, at = new Date().toISOString() } = {}) {
+    try {
+        const entry = { commandId, type, status, error, at };
+        lastCommandOutcome = entry;
+        pendingLastCommandWrite = pendingLastCommandWrite
+            .then(() => storageService.setItem(SUPERVISOR_LAST_COMMAND_KEY, entry))
+            .catch(() => {
+                // Sin almacenamiento el estado sigue vivo en memoria.
+            });
+        return entry;
+    } catch {
+        return null;
+    }
+}
+
+export function getLastCommandOutcome() {
+    return lastCommandOutcome ? { ...lastCommandOutcome } : null;
+}
+
+export function flushLastCommandOutcome() {
+    return pendingLastCommandWrite;
+}
+
+/** Último comando desde la persistencia (la memoria no manda: la app puede haberse reiniciado). */
+export async function readLastCommandOutcome({ storage = storageService } = {}) {
+    try {
+        await flushLastCommandOutcome();
+        const stored = await storage.getItem(SUPERVISOR_LAST_COMMAND_KEY, null);
+        if (stored && typeof stored === 'object' && !Array.isArray(stored)) return stored;
+    } catch {
+        // Sin almacenamiento se usa lo que hay en memoria.
+    }
+    return getLastCommandOutcome();
+}
+
+/**
+ * Punto único de reporte de un desenlace de comando: persiste el "último
+ * comando" y, si el desenlace es un fallo (o trae error), deja el log
+ * estructurado con commandId, status y error. Lo usan los call-sites (fallos de
+ * envío) y el tracker (resultados del ACK) para no duplicar registros.
+ */
+export function reportSupervisorCommandOutcome({ commandId = null, type = null, status = null, error = null } = {}) {
+    const entry = recordLastCommandOutcome({ commandId, type, status, error });
+    const isFailure = FAILURE_STATUSES.includes(String(status || '')) || Boolean(error);
+    if (isFailure) {
+        supervisorLog({ commandId, type, status, error, phase: 'command-failure' });
+    }
+    return entry;
+}
+
 /**
  * Mezcla telemetría y reconciliaciones por commandId en filas de diagnóstico
  * (más reciente primero) + estadísticas globales del ACK.
@@ -285,10 +369,12 @@ export async function loadCommandDiagnostics({ storage = storageService } = {}) 
 export async function clearCommandDiagnostics({ storage = storageService } = {}) {
     reconciliations = [];
     verifications = [];
+    lastCommandOutcome = null;
     await Promise.all([
         clearAckTelemetry({ storage }).catch(() => {}),
         storage.setItem(SUPERVISOR_RECONCILIATIONS_KEY, []).catch(() => {}),
         storage.setItem(SUPERVISOR_VERIFICATIONS_KEY, []).catch(() => {}),
+        storage.setItem(SUPERVISOR_LAST_COMMAND_KEY, null).catch(() => {}),
     ]);
 }
 
@@ -310,6 +396,13 @@ export default {
     commandTypeLabel,
     statusChipLabel,
     formatAckMs,
+    SUPERVISOR_LAST_COMMAND_KEY,
+    supervisorLog,
+    recordLastCommandOutcome,
+    getLastCommandOutcome,
+    readLastCommandOutcome,
+    flushLastCommandOutcome,
+    reportSupervisorCommandOutcome,
     buildCommandDiagnostics,
     loadCommandDiagnostics,
     clearCommandDiagnostics,

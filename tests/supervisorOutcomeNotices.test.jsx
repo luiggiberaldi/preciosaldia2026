@@ -36,6 +36,7 @@ vi.mock('../src/components/Toast', () => ({
 }));
 
 import SupervisorRateModal from '../src/components/Monitor/SupervisorRateModal';
+import RemoteUsersManager from '../src/components/Monitor/RemoteUsersManager';
 import { sendSupervisorCommand, awaitSupervisorCommandAck, inspectSupervisorCommandState, shouldAwaitSupervisorAck } from '../src/services/supervisorCommandService';
 import { showToast } from '../src/components/Toast';
 import {
@@ -249,5 +250,121 @@ describe('integración: confirmar y seguir con el resultado siempre visible', ()
 
         expect(onClose).not.toHaveBeenCalled();
         expect(showToast).toHaveBeenCalledWith('No hay sesión segura', 'error');
+    });
+
+    it('una excepción del envío muestra el mensaje REAL del error (nunca un genérico solo)', async () => {
+        sendSupervisorCommand.mockRejectedValue(new Error('Ventana temporal inválida'));
+
+        const onClose = vi.fn();
+        await act(async () => root.render(
+            <SupervisorRateModal isOpen onClose={onClose} targetDeviceId="device-1" currentRateMode="bcv" rates={{}} remoteAvailable />,
+        ));
+        await act(async () => {
+            Array.from(container.querySelectorAll('button')).find(button => button.textContent.includes('Aplicar Tasa Remota')).click();
+        });
+        await act(async () => {});
+
+        expect(onClose).not.toHaveBeenCalled();
+        expect(showToast).toHaveBeenCalledWith(expect.stringContaining('Ventana temporal inválida'), 'error');
+    });
+});
+
+// ── Fase 2 del plan 2026-10-20: ningún error del servidor en silencio ───────
+// Regla: todo ACK failed/rejected/cancelled termina en UI con el
+// error/error_message REAL del servidor, sin importar en qué campo venga.
+
+describe('Fase 2: el error real del servidor siempre llega a la UI', () => {
+    const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+
+    it('(b) un ACK failed con error_message crudo muestra el texto exacto del servidor', async () => {
+        const notify = vi.fn();
+        trackSupervisorCommand({
+            commandId: 'cmd-raw-err',
+            type: 'supervisor.inventory.batch.adjust',
+            label: 'el ajuste de inventario',
+            ackPromise: Promise.resolve({
+                ok: false,
+                status: 'failed',
+                commandId: 'cmd-raw-err',
+                ack: null,
+                error: null,
+                error_message: 'Ventana temporal inválida',
+            }),
+            notify,
+        });
+        await tick();
+
+        const finals = finalsOf(notify);
+        expect(finals).toHaveLength(1);
+        expect(finals[0][0]).toContain('Ventana temporal inválida');
+    });
+
+    it('(b) un ACK failed con el motivo dentro del payload del ACK también se muestra', async () => {
+        const notify = vi.fn();
+        trackSupervisorCommand({
+            commandId: 'cmd-ack-payload-err',
+            type: 'supervisor.product.update',
+            label: 'la edición de "Arroz"',
+            ackPromise: Promise.resolve({
+                ok: false,
+                status: 'rejected',
+                commandId: 'cmd-ack-payload-err',
+                ack: { error_message: 'Payload de ajuste por lote inválido' },
+                error: null,
+            }),
+            notify,
+        });
+        await tick();
+
+        const finals = finalsOf(notify);
+        expect(finals).toHaveLength(1);
+        expect(finals[0][0]).toContain('Payload de ajuste por lote inválido');
+    });
+
+    it('(d) RemoteUsersManager: una excepción del envío muestra el mensaje REAL del error', async () => {
+        globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+        localStorage.setItem('bodega_users_catalog_v1', JSON.stringify([{ id: 'u1', nombre: 'Carlos', rol: 'CAJERO' }]));
+        sendSupervisorCommand.mockRejectedValue(new Error('Ventana temporal inválida'));
+        const confirmSpy = vi.spyOn(window, 'confirm').mockImplementation(() => true);
+        const localContainer = document.createElement('div');
+        document.body.appendChild(localContainer);
+        const localRoot = createRoot(localContainer);
+        try {
+            await act(async () => localRoot.render(<RemoteUsersManager targetDeviceId="device-1" />));
+            await act(async () => {});
+            const deleteButton = localContainer.querySelector('button[title="Eliminar usuario"]');
+            expect(deleteButton).toBeTruthy();
+            await act(async () => deleteButton.click());
+            await act(async () => {});
+        } finally {
+            await act(async () => localRoot.unmount());
+            localContainer.remove();
+            confirmSpy.mockRestore();
+            localStorage.clear();
+        }
+
+        expect(showToast).toHaveBeenCalledWith(expect.stringContaining('Ventana temporal inválida'), 'error');
+    });
+
+    it('(b) un ACK cancelled muestra también el motivo real del servidor', async () => {
+        const notify = vi.fn();
+        trackSupervisorCommand({
+            commandId: 'cmd-cancel-reason',
+            type: 'supervisor.product.update',
+            label: 'la edición de "Arroz"',
+            ackPromise: Promise.resolve({
+                ok: false,
+                status: 'cancelled',
+                commandId: 'cmd-cancel-reason',
+                ack: { error_message: 'Anulada por el administrador' },
+                error: null,
+            }),
+            notify,
+        });
+        await tick();
+
+        const finals = finalsOf(notify);
+        expect(finals).toHaveLength(1);
+        expect(finals[0][0]).toContain('Anulada por el administrador');
     });
 });

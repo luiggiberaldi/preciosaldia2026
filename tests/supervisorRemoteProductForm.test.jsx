@@ -85,4 +85,35 @@ describe('RemoteProductFormModal (IVA e imagen)', () => {
         await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
         expect(showToast).toHaveBeenCalledWith(expect.stringMatching(/MB/), 'warning');
     });
+
+    // ── Fase 2 del plan 2026-10-20: ningún error del servidor en silencio ────
+    async function fillName(value) {
+        const nameInput = container.querySelector('input[placeholder="Ej: Harina PAN 1kg"]');
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        setter.call(nameInput, value);
+        nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    it('(a) un create que resuelve ok:false muestra el texto EXACTO del error del servidor', async () => {
+        const { sendSupervisorCommand } = await import('../src/services/supervisorCommandService');
+        sendSupervisorCommand.mockClear();
+        sendSupervisorCommand.mockResolvedValue({ ok: false, status: 'failed', error: 'Ventana temporal inválida' });
+        await render();
+        await act(async () => fillName('Harina PAN 1kg'));
+        await act(async () => buttonByText('Guardar en Caja').click());
+
+        expect(sendSupervisorCommand).toHaveBeenCalledTimes(1);
+        expect(showToast).toHaveBeenCalledWith('Ventana temporal inválida', 'error');
+    });
+
+    it('(d) una excepción del envío muestra el mensaje REAL del error (nunca un genérico solo)', async () => {
+        const { sendSupervisorCommand } = await import('../src/services/supervisorCommandService');
+        sendSupervisorCommand.mockClear();
+        sendSupervisorCommand.mockRejectedValue(new Error('Ventana temporal inválida'));
+        await render();
+        await act(async () => fillName('Harina PAN 1kg'));
+        await act(async () => buttonByText('Guardar en Caja').click());
+
+        expect(showToast).toHaveBeenCalledWith(expect.stringContaining('Ventana temporal inválida'), 'error');
+    });
 });

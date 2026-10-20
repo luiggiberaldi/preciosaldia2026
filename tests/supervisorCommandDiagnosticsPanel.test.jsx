@@ -10,8 +10,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import SupervisorCommandDiagnosticsPanel from '../src/components/Monitor/SupervisorCommandDiagnosticsPanel';
 import {
     clearCommandDiagnostics,
+    flushLastCommandOutcome,
     flushReconciliations,
     recordReconciliation,
+    reportSupervisorCommandOutcome,
 } from '../src/services/supervisorCommandDiagnostics';
 import {
     finishAckTelemetry,
@@ -115,5 +117,40 @@ describe('SupervisorCommandDiagnosticsPanel', () => {
         await flush();
         expect(container.querySelector('[data-testid="diagnostics-empty"]')).toBeTruthy();
         expect(container.querySelector('[data-testid="diagnostics-row-cmd-limp-1"]')).toBe(null);
+    });
+
+    // ── Fase 2 del plan 2026-10-20: ningún error del servidor en silencio ────
+    it('(c) el "último comando enviado" muestra tipo → estado (error) y sobrevive a cerrar y abrir el panel', async () => {
+        reportSupervisorCommandOutcome({
+            commandId: 'cmd-last',
+            type: 'supervisor.inventory.batch.adjust',
+            status: 'failed',
+            error: 'Ventana temporal inválida',
+        });
+        await flushLastCommandOutcome();
+
+        await act(async () => root.render(<SupervisorCommandDiagnosticsPanel isOpen onClose={() => {}} />));
+        await flush();
+
+        const banner = container.querySelector('[data-testid="diagnostics-last-command"]');
+        expect(banner).toBeTruthy();
+        expect(banner.textContent).toContain('Último comando enviado');
+        expect(banner.textContent).toContain('Lote de inventario');
+        expect(banner.textContent).toContain('Fallido');
+        expect(banner.textContent).toContain('Ventana temporal inválida');
+
+        // Cerrar y volver a abrir el panel: el estado persistido se mantiene.
+        await act(async () => root.unmount());
+        container.remove();
+        container = document.createElement('div');
+        document.body.appendChild(container);
+        root = createRoot(container);
+        await act(async () => root.render(<SupervisorCommandDiagnosticsPanel isOpen onClose={() => {}} />));
+        await flush();
+
+        const reopened = container.querySelector('[data-testid="diagnostics-last-command"]');
+        expect(reopened).toBeTruthy();
+        expect(reopened.textContent).toContain('Lote de inventario');
+        expect(reopened.textContent).toContain('Ventana temporal inválida');
     });
 });

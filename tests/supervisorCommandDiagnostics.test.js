@@ -4,21 +4,28 @@
 // commandId, mezcla con la telemetría del ACK (estado + latencias) y
 // estadísticas globales (p50/p95 del ACK, misma definición del test de
 // rendimiento).
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     RECONCILIATIONS_MAX_ENTRIES,
+    SUPERVISOR_LAST_COMMAND_KEY,
     buildCommandDiagnostics,
     clearCommandDiagnostics,
     commandTypeLabel,
+    flushLastCommandOutcome,
     flushReconciliations,
     formatAckMs,
+    getLastCommandOutcome,
     getReconciliations,
     loadCommandDiagnostics,
     percentileOf,
+    readLastCommandOutcome,
     readReconciliations,
+    recordLastCommandOutcome,
     recordReconciliation,
+    reportSupervisorCommandOutcome,
     shortCommandId,
     statusChipLabel,
+    supervisorLog,
 } from '../src/services/supervisorCommandDiagnostics';
 import {
     finishAckTelemetry,
@@ -196,5 +203,96 @@ describe('supervisorCommandDiagnostics · mezcla por commandId', () => {
         await clearCommandDiagnostics({ storage: createMapStorage() });
         const { rows } = await loadCommandDiagnostics({ storage: createMapStorage() });
         expect(rows).toHaveLength(0);
+    });
+});
+
+// ── Fase 2 del plan 2026-10-20: último comando + log estructurado ───────────
+// "Último comando enviado: <tipo> → <estado> (<error>)" debe reflejar el
+// resultado aunque el usuario cierre y abra el panel (persistido, no memoria),
+// y cada fallo deja un log estructurado con commandId, status y error.
+
+describe('supervisorCommandDiagnostics · último comando y log estructurado', () => {
+    beforeEach(async () => {
+        await clearCommandDiagnostics();
+    });
+
+    afterEach(async () => {
+        await flushLastCommandOutcome();
+    });
+
+    it('reportSupervisorCommandOutcome guarda el último comando con su error real', async () => {
+        reportSupervisorCommandOutcome({
+            commandId: 'cmd-last',
+            type: 'supervisor.product.create',
+            status: 'failed',
+            error: 'Ventana temporal inválida',
+        });
+        await flushLastCommandOutcome();
+
+        expect(getLastCommandOutcome()).toMatchObject({
+            commandId: 'cmd-last',
+            type: 'supervisor.product.create',
+            status: 'failed',
+            error: 'Ventana temporal inválida',
+        });
+    });
+
+    it('el último comando persiste en storage: sobrevive al cierre y apertura (la memoria no manda)', async () => {
+        recordLastCommandOutcome({
+            commandId: 'cmd-en-memoria',
+            type: 'supervisor.rate.set',
+            status: 'applied',
+            error: null,
+        });
+        await flushLastCommandOutcome();
+
+        // Un storage con otra entrada (lo que quedaría tras un reinicio de la
+        // app) manda sobre la memoria: el estado se lee de lo persistido.
+        const storage = createMapStorage();
+        await storage.setItem(SUPERVISOR_LAST_COMMAND_KEY, {
+            commandId: 'cmd-persistido',
+            type: 'supervisor.inventory.batch.adjust',
+            status: 'failed',
+            error: 'Ventana temporal inválida',
+            at: '2026-10-20T12:00:00.000Z',
+        });
+        const stored = await readLastCommandOutcome({ storage });
+        expect(stored).toMatchObject({ commandId: 'cmd-persistido', error: 'Ventana temporal inválida' });
+    });
+
+    it('supervisorLog emite el log estructurado con commandId, status y error', () => {
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            supervisorLog({ commandId: 'cmd-log', type: 'supervisor.product.create', status: 'failed', error: 'Ventana temporal inválida' });
+            // OJO: mockRestore() limpia el historial del spy — la aserción va antes.
+            expect(consoleError).toHaveBeenCalledWith(
+                expect.stringContaining('cmd-log'),
+                expect.objectContaining({ commandId: 'cmd-log', status: 'failed', error: 'Ventana temporal inválida' }),
+            );
+        } finally {
+            consoleError.mockRestore();
+        }
+    });
+
+    it('reportSupervisorCommandOutcome loguea cada fallo y guarda silencio el éxito limpio', async () => {
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            reportSupervisorCommandOutcome({ commandId: 'cmd-fail', type: 'supervisor.product.delete', status: 'rejected', error: 'El producto ya no existe' });
+            reportSupervisorCommandOutcome({ commandId: 'cmd-ok', type: 'supervisor.product.create', status: 'applied', error: null });
+            await flushLastCommandOutcome();
+
+            expect(consoleError).toHaveBeenCalledWith(
+                expect.stringContaining('cmd-fail'),
+                expect.objectContaining({ commandId: 'cmd-fail', status: 'rejected', error: 'El producto ya no existe' }),
+            );
+            expect(consoleError).not.toHaveBeenCalledWith(
+                expect.stringContaining('cmd-ok'),
+                expect.anything(),
+            );
+        } finally {
+            consoleError.mockRestore();
+        }
+        // El último comando es el más reciente, incluso si fue un éxito.
+        expect(getLastCommandOutcome()).toMatchObject({ commandId: 'cmd-ok', status: 'applied' });
     });
 });

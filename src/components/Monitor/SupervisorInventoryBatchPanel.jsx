@@ -16,7 +16,7 @@ import {
 } from '../../services/supervisorInventoryDraft';
 import { sendSupervisorInventoryBatch } from '../../services/supervisorInventoryBatchSender';
 import { buildInventoryBatchTargets, nextStockOpAfterInspection } from '../../services/supervisorStockOps';
-import { recordReconciliation } from '../../services/supervisorCommandDiagnostics';
+import { recordReconciliation, reportSupervisorCommandOutcome } from '../../services/supervisorCommandDiagnostics';
 import { notifyStockToast, stockMessage } from '../../services/supervisorStockMessages';
 import { inspectSupervisorCommandState, sendSupervisorCommand } from '../../services/supervisorCommandService';
 import { commandOutcomeToAck, trackSupervisorCommand } from '../../services/supervisorCommandTracker';
@@ -464,10 +464,10 @@ export default function SupervisorInventoryBatchPanel({
         // Fase 10: un solo comando batch y ACK global. Ninguna línea se marca
         // aplicada hasta que ese ACK llega.
         setProgress({ completed: 0, total: summary.totalLines, awaitingAck: true, phase: 'sending' });
+        // "Confirma y sigue": al quedar la orden registrada el panel se
+        // cierra y el tracker garantiza el aviso final del desenlace.
+        let trackedCommandId = null;
         try {
-            // "Confirma y sigue": al quedar la orden registrada el panel se
-            // cierra y el tracker garantiza el aviso final del desenlace.
-            let trackedCommandId = null;
             const senderPromise = sendSupervisorInventoryBatch({
                 draft,
                 products,
@@ -528,8 +528,11 @@ export default function SupervisorInventoryBatchPanel({
                     ? { commandId: result.commandId, targets, totalLines: summary.totalLines }
                     : null);
                 setProgress(null);
-                setFormError(stockMessage('BATCH_UNCONFIRMED'));
-                if (!trackedCommandId) notifyStockToast(showToast, 'BATCH_UNCONFIRMED_TOAST');
+                setFormError(`${stockMessage('BATCH_UNCONFIRMED')}${result.error ? ` ${result.error}` : ''}`);
+                if (!trackedCommandId) {
+                    reportSupervisorCommandOutcome({ commandId: result.commandId || null, type: 'supervisor.inventory.batch.adjust', status: status || 'timeout', error: result.error || null });
+                    notifyStockToast(showToast, 'BATCH_UNCONFIRMED_TOAST');
+                }
                 onCompleted?.(result, targets);
                 return;
             }
@@ -544,8 +547,13 @@ export default function SupervisorInventoryBatchPanel({
                     : status === 'cancelled'
                         ? 'BATCH_CANCELLED'
                         : 'BATCH_REJECTED');
-                setFormError(`${reason}. ${stockMessage('PENDING_LINES', { count: summary.totalLines })}`);
-                if (!trackedCommandId) notifyStockToast(showToast, 'BATCH_PARTIAL', { applied: 0, pending: summary.totalLines });
+                // Fase 2: el texto crudo del servidor SIEMPRE acompaña al resumen;
+                // jamás se traga ni se resume.
+                setFormError(`${reason}. ${result.error ? `${result.error}. ` : ''}${stockMessage('PENDING_LINES', { count: summary.totalLines })}`);
+                if (!trackedCommandId) {
+                    reportSupervisorCommandOutcome({ commandId: result.commandId || null, type: 'supervisor.inventory.batch.adjust', status, error: result.error || null });
+                    notifyStockToast(showToast, 'BATCH_PARTIAL', { applied: 0, pending: summary.totalLines });
+                }
                 onCompleted?.(result, targets);
                 return;
             }
@@ -554,6 +562,7 @@ export default function SupervisorInventoryBatchPanel({
                 setIsUncertain(false);
                 setProgress(null);
                 setFormError(result.error || stockMessage('REVIEW_LINES'));
+                if (!trackedCommandId) reportSupervisorCommandOutcome({ commandId: result.commandId || null, type: 'supervisor.inventory.batch.adjust', status, error: result.error || null });
                 // Nada se envió: la vista revierte cualquier display provisional.
                 onCompleted?.(result, targets);
                 return;
@@ -581,12 +590,16 @@ export default function SupervisorInventoryBatchPanel({
             }));
             if (connectionLost || appliedCount === 0) {
                 setProgress(null);
-                setFormError(stockMessage(connectionLost ? 'CONNECTION_LOST' : 'NONE_CONFIRMED', { count: pendingCount }));
+                const baseMessage = stockMessage(connectionLost ? 'CONNECTION_LOST' : 'NONE_CONFIRMED', { count: pendingCount });
+                setFormError(result.error ? `${baseMessage} ${result.error}` : baseMessage);
             } else {
                 setProgress({ completed: appliedCount, total: summary.totalLines, partial: true });
                 setFormError('');
             }
-            if (!trackedCommandId) notifyStockToast(showToast, 'BATCH_PARTIAL', { applied: appliedCount, pending: pendingCount });
+            if (!trackedCommandId) {
+                reportSupervisorCommandOutcome({ commandId: result.commandId || null, type: 'supervisor.inventory.batch.adjust', status: status || 'failed', error: result.error || null });
+                notifyStockToast(showToast, 'BATCH_PARTIAL', { applied: appliedCount, pending: pendingCount });
+            }
             onCompleted?.(result, targets);
         } catch (error) {
             // Excepción no clasificada = estado incierto: tampoco se recomienda
@@ -596,6 +609,7 @@ export default function SupervisorInventoryBatchPanel({
             setReconciled(null);
             setProgress(null);
             setFormError(stockMessage('BATCH_CONFIRM_ERROR', { error: error?.message }));
+            if (!trackedCommandId) reportSupervisorCommandOutcome({ type: 'supervisor.inventory.batch.adjust', status: 'failed', error: error?.message || 'error desconocido' });
             // Estado desconocido: la vista deja el stock objetivo como provisional
             // y lo reconcilia sola (o lo revierte si el lote terminó fallando).
             onCompleted?.({ ok: false, status: 'timeout', uncertain: true, error: error?.message || 'error desconocido' }, targets);

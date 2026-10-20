@@ -15,6 +15,7 @@
 
 import { showToast } from '../components/Toast';
 import * as commandService from './supervisorCommandService';
+import { reportSupervisorCommandOutcome } from './supervisorCommandDiagnostics';
 
 // Resolución defensiva de dependencias del servicio: el tracker debe seguir
 // siendo la autoridad de avisos aunque el servicio esté parcialmente disponible
@@ -99,9 +100,15 @@ export function describeSupervisorCommand(type, payload = {}) {
     }
 }
 
+// El motivo real del servidor puede venir como `error` (resultado normalizado)
+// o como `error_message` (fila cruda del ACK, dentro o fuera de su payload).
+// Se muestra el texto tal cual llega: jamás se resume, se traga ni se mapea.
+function rawAckReason(ack) {
+    return String(ack?.error || ack?.error_message || ack?.ack?.error_message || ack?.ack?.error || '').trim();
+}
+
 function ackReason(ack) {
-    const reason = String(ack?.error || '').trim();
-    return reason || 'La caja no indicó el motivo.';
+    return rawAckReason(ack) || 'La caja no indicó el motivo.';
 }
 
 function ackStockDetail(ack) {
@@ -135,8 +142,10 @@ export function buildCommandNotice(kind, { label = 'el cambio', ack = null, inte
             return { message: `❌ La caja rechazó el cambio — ${label}. ${ackReason(ack)}`, type: 'error' };
         case 'failed':
             return { message: `❌ No se pudo aplicar el cambio — ${label}. ${ackReason(ack)}`, type: 'error' };
-        case 'cancelled':
-            return { message: `⚠️ El cambio fue cancelado — ${label}`, type: 'warning' };
+        case 'cancelled': {
+            const reason = rawAckReason(ack);
+            return { message: `⚠️ El cambio fue cancelado — ${label}${reason ? `. ${reason}` : ''}`, type: 'warning' };
+        }
         case 'waiting':
             return { message: `⏳ Sigue esperando a la caja — ${label} puede seguir en camino`, type: 'warning' };
         case 'expired':
@@ -187,6 +196,14 @@ function settle(record, ack, notify) {
     record.state = ack.status;
     record.outcome = ack;
     notifyNotice(notify, ack.status, record, ack);
+    // Fase 2: el desenlace queda como "último comando" (para el panel) y, si
+    // falló, con log estructurado (commandId, status, error real).
+    reportSupervisorCommandOutcome({
+        commandId: record.commandId,
+        type: record.type,
+        status: ack.status,
+        error: rawAckReason(ack) || null,
+    });
     emitChange();
 }
 
@@ -195,6 +212,12 @@ function settleExpired(record, notify) {
     record.finalNotified = true;
     record.state = 'expired';
     notifyNotice(notify, 'expired', record);
+    reportSupervisorCommandOutcome({
+        commandId: record.commandId,
+        type: record.type,
+        status: 'expired',
+        error: null,
+    });
     emitChange();
 }
 

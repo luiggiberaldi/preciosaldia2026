@@ -4,6 +4,7 @@ import { showToast } from '../Toast';
 import { SUPERVISOR_REMOTE_MUTATIONS_ENABLED, SUPERVISOR_REMOTE_RATE_ENABLED } from '../../config/supervisorPolicy';
 import { sendSupervisorCommand } from '../../services/supervisorCommandService';
 import { trackSupervisorCommand } from '../../services/supervisorCommandTracker';
+import { reportSupervisorCommandOutcome } from '../../services/supervisorCommandDiagnostics';
 
 export default function SupervisorRateModal({ isOpen, onClose, targetDeviceId, currentRateMode, currentCustomRate, rates = {}, remoteAvailable = true }) {
     const [rateMode, setRateMode] = useState(currentRateMode || 'bcv');
@@ -57,6 +58,7 @@ export default function SupervisorRateModal({ isOpen, onClose, targetDeviceId, c
             });
 
             if (!result.ok) {
+                reportSupervisorCommandOutcome({ commandId: result.commandId || null, type: 'supervisor.rate.set', status: result.status || 'failed', error: result.error || null });
                 showToast(result.error, result.status === 'disabled' ? 'warning' : 'error');
                 return;
             }
@@ -76,7 +78,10 @@ export default function SupervisorRateModal({ isOpen, onClose, targetDeviceId, c
             onClose();
         } catch (e) {
             console.error('[SupervisorRateModal] Error enviando orden de tasa:', e);
-            showToast('Error al enviar la orden de cambio de tasa', 'error');
+            // Nunca un genérico solo: el motivo real del fallo llega a la UI.
+            const errorText = e?.message || 'error desconocido';
+            reportSupervisorCommandOutcome({ type: 'supervisor.rate.set', status: 'failed', error: errorText });
+            showToast(`Error al enviar la orden de cambio de tasa: ${errorText}`, 'error');
         } finally {
             setIsSubmitting(false);
         }

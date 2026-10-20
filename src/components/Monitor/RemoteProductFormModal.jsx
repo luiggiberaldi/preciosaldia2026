@@ -10,6 +10,7 @@ import { Save } from 'lucide-react';
 import { SUPERVISOR_REMOTE_PRODUCTS_ENABLED } from '../../config/supervisorPolicy';
 import { sendSupervisorCommand } from '../../services/supervisorCommandService';
 import { trackSupervisorCommand } from '../../services/supervisorCommandTracker';
+import { reportSupervisorCommandOutcome } from '../../services/supervisorCommandDiagnostics';
 import { buildProductRevision, extractEditableProductPatch } from '../../services/supervisorContracts';
 
 export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId, productToEdit = null, remoteAvailable = true, onOptimisticEcho = null }) {
@@ -384,6 +385,7 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
             });
 
             if (!result.ok) {
+                reportSupervisorCommandOutcome({ commandId: result.commandId || null, type: isEdit ? 'supervisor.product.update' : 'supervisor.product.create', status: result.status || 'failed', error: result.error || null });
                 showToast(result.error, result.status === 'disabled' ? 'warning' : 'error');
                 return;
             }
@@ -414,7 +416,10 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
             onClose();
         } catch (err) {
             console.error('[RemoteProductFormModal] Error enviando producto:', err);
-            showToast('Error al enviar la orden de producto', 'error');
+            // Nunca un genérico solo: el motivo real del fallo llega a la UI.
+            const errorText = err?.message || 'error desconocido';
+            reportSupervisorCommandOutcome({ type: productToEdit ? 'supervisor.product.update' : 'supervisor.product.create', status: 'failed', error: errorText });
+            showToast(`Error al enviar la orden de producto: ${errorText}`, 'error');
         } finally {
             setIsSubmitting(false);
         }

@@ -21,7 +21,7 @@ import SupervisorInventoryBatchPanel from '../components/Monitor/SupervisorInven
 import SupervisorCommandDiagnosticsPanel from '../components/Monitor/SupervisorCommandDiagnosticsPanel';
 import SupervisorSyncDiagnosticsPanel from '../components/Monitor/SupervisorSyncDiagnosticsPanel';
 import { useSupervisorTeamNotices } from '../hooks/useSupervisorTeamNotices';
-import { getVerifications, recordReconciliation, recordVerification } from '../services/supervisorCommandDiagnostics';
+import { getVerifications, recordReconciliation, recordVerification, reportSupervisorCommandOutcome } from '../services/supervisorCommandDiagnostics';
 import SupervisorInventoryToolbar from '../components/Monitor/SupervisorInventoryToolbar';
 import SupervisorInventoryCatalog from '../components/Monitor/SupervisorInventoryCatalog';
 import { createInventoryDraft, addInventoryDraftLine } from '../services/supervisorInventoryDraft';
@@ -219,6 +219,9 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
     // suben solos al volver la conexión (barrido de 30 s + evento online) o con
     // SUBIR AL SISTEMA. Descartar es siempre una decisión del usuario.
     const [queueEntries, setQueueEntries] = useState(() => getQueuedSupervisorCommands());
+    // Último aviso de fallo de cola mostrado: el barrido automático de 30 s no
+    // spamea el mismo error, pero todo error NUEVO (o reintento manual) se avisa.
+    const lastQueueFailureNoticeRef = useRef(null);
     const [queueUploading, setQueueUploading] = useState(false);
 
     useEffect(() => subscribeSupervisorCommandQueue(() => {
@@ -269,7 +272,24 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
         });
         setQueueUploading(false);
         if (summary?.sent) {
+            lastQueueFailureNoticeRef.current = null;
             showToast?.(`${summary.sent} ${summary.sent === 1 ? 'cambio subido' : 'cambios subidos'} a la caja`, 'success');
+        }
+        const firstFailure = (summary?.results || []).find(item => item?.failed);
+        if (firstFailure) {
+            // Fase 2: el error del servidor NUNCA se traga — el texto crudo llega
+            // a la UI y al log estructurado, con el cambio que falló.
+            const errorText = firstFailure.result?.error || 'sin confirmación';
+            reportSupervisorCommandOutcome({
+                type: firstFailure.entry?.type || null,
+                status: firstFailure.result?.status || 'failed',
+                error: errorText,
+            });
+            const notice = `No se pudo subir "${firstFailure.entry?.label || 'un cambio pendiente'}": ${errorText}`;
+            if (manual || notice !== lastQueueFailureNoticeRef.current) {
+                lastQueueFailureNoticeRef.current = notice;
+                showToast?.(notice, 'error');
+            }
         }
         return summary;
     };
@@ -981,6 +1001,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                 send: (args) => sendSupervisorCommand(args),
             });
             if (!result.ok) {
+                reportSupervisorCommandOutcome({ type: 'supervisor.product.delete', status: result.status || 'failed', error: result.error || null });
                 showToast?.(result.error, result.status === 'disabled' ? 'warning' : 'error');
                 return;
             }
@@ -1008,7 +1029,10 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
             });
             setProductToDeleteRemote(null);
         } catch (e) {
-            showToast?.('Error al eliminar producto', 'error');
+            // Nunca un genérico solo: el motivo real del fallo llega a la UI.
+            const errorText = e?.message || 'error desconocido';
+            reportSupervisorCommandOutcome({ type: 'supervisor.product.delete', status: 'failed', error: errorText });
+            showToast?.(`Error al eliminar producto: ${errorText}`, 'error');
         } finally {
             setDeletingRemoteProduct(false);
         }

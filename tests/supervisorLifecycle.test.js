@@ -33,9 +33,16 @@ describe('Supervisor lifecycle guardrails', () => {
         expect(pairingManager).toContain('stillPaired');
     });
 
-    it('prepara los datos antes de generar el QR y usa reconciliación protegida por hash', () => {
+    it('genera el QR sin esperar el snapshot y usa reconciliación protegida por hash', () => {
         expect(pairingManager).toContain('createPairingToken({ deviceId })');
-        expect(pairingService).toContain('syncBeforeIssue(normalizedDeviceId, false, true)');
+        // Fase 1 (2026-10-20): el snapshot va en segundo plano, DESPUÉS del token,
+        // con hash (forceUnconditional=false) y allowBeforePairing=true. Jamás se
+        // espera (sin `await syncBeforeIssue`): un maletón lento no expira el código.
+        expect(pairingService).toContain('syncSnapshot(deviceId, false, true)');
+        expect(pairingService).not.toContain('await syncBeforeIssue(');
+        expect(pairingService).toContain('publishSnapshotInBackground(normalizedDeviceId');
+        expect(pairingService.indexOf("rpc('generate_pairing_token'"))
+            .toBeLessThan(pairingService.indexOf('publishSnapshotInBackground(normalizedDeviceId'));
         expect(cloudSync).toContain('return { ok: true, error: null, pushed }');
         expect(monitorSync).toContain('getSupervisorRecoveryIntervalMs()');
         expect(monitorSync).toContain(".in('doc_id', SUPERVISOR_SYNC_KEYS)");

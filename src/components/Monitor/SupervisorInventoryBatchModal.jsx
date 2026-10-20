@@ -12,6 +12,7 @@ import {
 import SupervisorSelect from './SupervisorSelect';
 import { sendSupervisorCommand } from '../../services/supervisorCommandService';
 import { trackSupervisorCommand } from '../../services/supervisorCommandTracker';
+import { reportSupervisorCommandOutcome } from '../../services/supervisorCommandDiagnostics';
 import { SUPERVISOR_REMOTE_EGRESS_ENABLED } from '../../config/supervisorPolicy';
 import { readConfiguredPresentationFactor } from '../../services/supervisorInventoryDraft';
 import { stockMessage } from '../../services/supervisorStockMessages';
@@ -182,6 +183,7 @@ export default function SupervisorInventoryBatchModal({
                 payload: commandPayload,
             });
             if (!result.ok) {
+                reportSupervisorCommandOutcome({ commandId: result.commandId || null, type: 'supervisor.inventory.batch.adjust', status: result.status || 'failed', error: result.error || null });
                 setFormError(result.error || stockMessage('SEND_FAILED'));
                 return;
             }
@@ -197,6 +199,7 @@ export default function SupervisorInventoryBatchModal({
             });
             onClose?.();
         } catch (error) {
+            reportSupervisorCommandOutcome({ type: 'supervisor.inventory.batch.adjust', status: 'failed', error: error?.message || 'error desconocido' });
             setFormError(error?.message || stockMessage('SEND_FAILED'));
         } finally {
             setIsSubmitting(false);

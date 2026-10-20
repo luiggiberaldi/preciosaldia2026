@@ -745,6 +745,47 @@ describe('Fase 10: ACK global del lote en el panel', () => {
         expect(onCompleted).toHaveBeenCalledTimes(1);
     });
 
+    // ── Fase 2 del plan 2026-10-20: ningún error del servidor en silencio ────
+    it('(d) un rechazo del servidor muestra su texto REAL además del resumen', async () => {
+        const onCompleted = vi.fn();
+        sendSupervisorInventoryBatch.mockImplementation(async ({ draft }) => ({
+            ok: false,
+            status: 'rejected',
+            uncertain: false,
+            commandId: 'cmd-1',
+            error: 'Payload de ajuste por lote inválido',
+            results: draft.lines.map(line => ({ line, status: 'pending' })),
+            applied: [],
+            failed: [],
+            pending: draft.lines.map(line => ({ line, status: 'pending' })),
+        }));
+
+        const confirmButton = await openReviewWithOneLine({ onCompleted });
+        await act(async () => confirmButton.click());
+
+        expect(container.textContent).toContain('Payload de ajuste por lote inválido');
+    });
+
+    it('(d) el estado incierto también conserva el texto REAL del servidor', async () => {
+        sendSupervisorInventoryBatch.mockImplementation(async ({ draft }) => ({
+            ok: false,
+            status: 'timeout',
+            uncertain: true,
+            commandId: 'cmd-1',
+            error: 'La caja no confirmó la orden a tiempo',
+            results: draft.lines.map(line => ({ line, status: 'pending' })),
+            applied: [],
+            failed: [],
+            pending: draft.lines.map(line => ({ line, status: 'pending' })),
+        }));
+
+        const confirmButton = await openReviewWithOneLine({});
+        await act(async () => confirmButton.click());
+
+        expect(container.textContent).toContain('La caja aún no confirma el lote');
+        expect(container.textContent).toContain('La caja no confirmó la orden a tiempo');
+    });
+
     it('ACK aplicado con advertencias: éxito con advertencias y cierre del panel', async () => {
         const onCompleted = vi.fn();
         const onClose = vi.fn();

@@ -5,6 +5,7 @@ import { showToast } from '../Toast';
 import { SUPERVISOR_REMOTE_MUTATIONS_ENABLED } from '../../config/supervisorPolicy';
 import { sendSupervisorCommand } from '../../services/supervisorCommandService';
 import { trackSupervisorCommand } from '../../services/supervisorCommandTracker';
+import { reportSupervisorCommandOutcome } from '../../services/supervisorCommandDiagnostics';
 import { hashPin } from '../../utils/crypto';
 import { validatePin } from '../../utils/securityConstants';
 import SupervisorSelect from './SupervisorSelect';
@@ -101,6 +102,7 @@ export default function RemoteUsersManager({ targetDeviceId }) {
                 payload: commandPayload,
             });
             if (!result.ok) {
+                reportSupervisorCommandOutcome({ commandId: result.commandId || null, type, status: result.status || 'failed', error: result.error || null });
                 showToast(result.error, result.status === 'disabled' ? 'warning' : 'error');
                 return false;
             }
@@ -116,7 +118,11 @@ export default function RemoteUsersManager({ targetDeviceId }) {
             return true;
         } catch (e) {
             console.error('[RemoteUsersManager] Error enviando orden:', e);
-            showToast('Error enviando orden a la caja', 'error');
+            // Nunca un genérico solo: el motivo real del fallo llega a la UI.
+            const errorText = e?.message || 'error desconocido';
+            const actionType = { add: 'supervisor.user.create', edit: 'supervisor.user.update', delete: 'supervisor.user.delete' }[payload.action] || payload.action || null;
+            reportSupervisorCommandOutcome({ type: actionType, status: 'failed', error: errorText });
+            showToast(`Error enviando orden a la caja: ${errorText}`, 'error');
             return false;
         }
     };

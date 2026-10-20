@@ -12,7 +12,7 @@ import {
 } from '../services/supervisorControlService';
 import { sendSupervisorCommand } from '../services/supervisorCommandService';
 import { describeSupervisorCommand, trackSupervisorCommand } from '../services/supervisorCommandTracker';
-import { getVerifications, readVerifications } from '../services/supervisorCommandDiagnostics';
+import { getVerifications, readVerifications, reportSupervisorCommandOutcome, supervisorLog } from '../services/supervisorCommandDiagnostics';
 
 export function useSupervisorControl({ targetDeviceId, enabled = false, onCommandRow = null } = {}) {
     const [commands, setCommands] = useState([]);
@@ -150,8 +150,11 @@ export function useSupervisorControl({ targetDeviceId, enabled = false, onComman
     const cancel = useCallback(async (commandId) => {
         setActionId(commandId);
         const result = await cancelSupervisorCommand({ commandId });
-        if (!result.ok) setError(result.error);
-        else await refresh({ silent: true });
+        if (!result.ok) {
+            setError(result.error);
+            // Log estructurado del fallo (el aviso visible ya lo muestra el panel).
+            supervisorLog({ commandId, type: null, status: result.status || 'failed', error: result.error || null, phase: 'cancel-failure' });
+        } else await refresh({ silent: true });
         setActionId(null);
         return result;
     }, [refresh]);
@@ -166,11 +169,14 @@ export function useSupervisorControl({ targetDeviceId, enabled = false, onComman
         for (const command of pending) {
             const result = await cancelSupervisorCommand({ commandId: command.command_id });
             if (result.ok) cancelled += 1;
-            else notCancelled.push({
-                commandId: command.command_id,
-                status: result.status || 'unknown',
-                error: result.error,
-            });
+            else {
+                supervisorLog({ commandId: command.command_id, type: command.command_type || null, status: result.status || 'failed', error: result.error || null, phase: 'cancel-failure' });
+                notCancelled.push({
+                    commandId: command.command_id,
+                    status: result.status || 'unknown',
+                    error: result.error,
+                });
+            }
         }
         if (pending.length) await refresh({ silent: true });
         return { total: pending.length, cancelled, notCancelled };
@@ -188,6 +194,8 @@ export function useSupervisorControl({ targetDeviceId, enabled = false, onComman
         });
         if (!result.ok) {
             setError(result.error);
+            // Un reintento fallido es un envío fallido: log + "último comando".
+            reportSupervisorCommandOutcome({ commandId: result.commandId || command.command_id || null, type: command.command_type || null, status: result.status || 'failed', error: result.error || null });
         } else {
             // "Confirma y sigue": el reintento también termina en aviso final.
             trackSupervisorCommand({

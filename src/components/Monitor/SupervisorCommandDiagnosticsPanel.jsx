@@ -14,6 +14,7 @@ import {
     formatAckMs,
     loadCommandDiagnostics,
     clearCommandDiagnostics,
+    readLastCommandOutcome,
     shortCommandId,
     statusChipLabel,
 } from '../../services/supervisorCommandDiagnostics';
@@ -47,12 +48,15 @@ function formatWhen(iso) {
  */
 export default function SupervisorCommandDiagnosticsPanel({ isOpen, onClose }) {
     const [diagnostics, setDiagnostics] = useState({ rows: [], summary: null });
+    const [lastCommand, setLastCommand] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
 
     const reload = useCallback(async () => {
         setIsLoading(true);
         try {
-            setDiagnostics(await loadCommandDiagnostics());
+            const [diag, last] = await Promise.all([loadCommandDiagnostics(), readLastCommandOutcome()]);
+            setDiagnostics(diag);
+            setLastCommand(last);
         } finally {
             setIsLoading(false);
         }
@@ -118,6 +122,14 @@ export default function SupervisorCommandDiagnosticsPanel({ isOpen, onClose }) {
                 </div>
 
                 <div className="space-y-5 p-5 sm:p-6">
+                    {/* Fase 2: "último comando enviado" — el desenlace del último
+                        comando con su error real, aunque el panel se cierre y abra. */}
+                    {lastCommand && (
+                        <div data-testid="diagnostics-last-command" className="flex items-start gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs font-bold text-slate-600 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-300">
+                            <Clock size={15} className="mt-0.5 shrink-0 opacity-60" />
+                            <span>Último comando enviado: {commandTypeLabel(lastCommand.type)} → {statusChipLabel(lastCommand.status)}{lastCommand.error ? ` (${lastCommand.error})` : ''}</span>
+                        </div>
+                    )}
                     {isLoading ? (
                         <div className="flex items-center justify-center gap-2 rounded-2xl border border-slate-200 p-8 text-xs font-bold text-slate-400 dark:border-slate-800">
                             <Loader2 size={16} className="animate-spin" /> Cargando diagnóstico…
