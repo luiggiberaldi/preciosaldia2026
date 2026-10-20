@@ -1,35 +1,46 @@
+import { evaluateBackupEligibility } from '../config/licensePolicy';
+
 /**
  * Regla única para el backup remoto automático.
  *
- * El backup local está disponible para todos. El remoto solo se habilita
- * cuando la licencia confirmada es permanente y está activa.
+ * El backup local está disponible para todos. El remoto es de los planes de
+ * pago (permanente y mensual) con la licencia viva, incluido el período de
+ * gracia del mensual. La decisión vive en `config/licensePolicy.js`, que es el
+ * mismo módulo que aplica la Estación Maestra.
+ *
+ * Historia (AUDITORIA-LICENCIAS.md LIC-03): esta función exigía
+ * `type === 'permanent'`, así que el servidor mandaba solicitudes de respaldo a
+ * clientes mensuales que la caja rechazaba siempre — se acumulaban como
+ * "fallidas" para siempre.
  */
-export function getPermanentBackupEntitlement({
+export function getBackupEntitlement({
     isPremium = false,
     isDemo = false,
     license = null,
     now = Date.now(),
 } = {}) {
     if (!isPremium || isDemo) {
-        return { allowed: false, reason: 'license_not_permanent' };
+        return { allowed: false, reason: 'license_not_paid' };
     }
 
     const type = license?.type ?? license?.license_type;
     const isActive = license?.isActive ?? license?.is_active;
     const expiresAt = license?.expiresAt ?? license?.expires_at ?? null;
 
-    if (type !== 'permanent') {
-        return { allowed: false, reason: 'license_not_permanent' };
-    }
-    if (isActive === false) {
-        return { allowed: false, reason: 'license_inactive' };
-    }
-    if (expiresAt && Number.isFinite(new Date(expiresAt).getTime()) && new Date(expiresAt).getTime() <= now) {
-        return { allowed: false, reason: 'license_expired' };
-    }
-
-    return { allowed: true, reason: 'permanent_active' };
+    const eligibility = evaluateBackupEligibility({ type, isActive, expiresAt }, now);
+    return eligibility.allowed
+        ? { allowed: true, reason: 'eligible' }
+        : {
+            allowed: false,
+            reason: eligibility.reason === 'not_eligible' ? 'license_not_paid' : eligibility.reason,
+        };
 }
+
+/**
+ * @deprecated Nombre histórico. El respaldo remoto es de los planes de pago
+ * (permanente y mensual), no solo del permanente. Usar `getBackupEntitlement`.
+ */
+export const getPermanentBackupEntitlement = getBackupEntitlement;
 
 export function readCachedLicense(storage = globalThis.localStorage) {
     try {
@@ -40,13 +51,13 @@ export function readCachedLicense(storage = globalThis.localStorage) {
     }
 }
 
-export function getCachedPermanentBackupEntitlement({
+export function getCachedBackupEntitlement({
     isPremium = false,
     isDemo = false,
     storage = globalThis.localStorage,
     now = Date.now(),
 } = {}) {
-    return getPermanentBackupEntitlement({
+    return getBackupEntitlement({
         isPremium,
         isDemo,
         license: readCachedLicense(storage),
@@ -54,8 +65,13 @@ export function getCachedPermanentBackupEntitlement({
     });
 }
 
+/** @deprecated Usar `getCachedBackupEntitlement`. */
+export const getCachedPermanentBackupEntitlement = getCachedBackupEntitlement;
+
 export default {
+    getBackupEntitlement,
     getPermanentBackupEntitlement,
     readCachedLicense,
+    getCachedBackupEntitlement,
     getCachedPermanentBackupEntitlement,
 };

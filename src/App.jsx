@@ -16,7 +16,7 @@ const AIAssistantWidget = lazyWithRetry(() => import('./components/AIAssistantWi
 
 import { useRates } from './hooks/useRates';
 import { useSecurity } from './hooks/useSecurity';
-import { getCachedPermanentBackupEntitlement } from './services/backupEntitlement';
+import { getCachedBackupEntitlement } from './services/backupEntitlement';
 import { RateProvider } from './context/RateContext';
 import { ProductProvider } from './context/ProductContext';
 import { CartProvider, useCart } from './context/CartContext';
@@ -65,8 +65,9 @@ export default function App() {
 
   const { isPremium, isDemo, demoTimeLeft, demoExpiredMsg, dismissExpiredMsg, deviceId, isMonthlyGracePeriod, monthlyGraceDaysLeft, forceHeartbeat } = useSecurity();
   const { isOnline, cacheRates } = useOfflineQueue();
-  const permanentBackupAllowed = getCachedPermanentBackupEntitlement({ isPremium, isDemo }).allowed;
-  useAutoBackup(isPremium, isDemo, deviceId, permanentBackupAllowed);
+  // Respaldo remoto: planes de pago (permanente y mensual) según licensePolicy.
+  const backupRemoteAllowed = getCachedBackupEntitlement({ isPremium, isDemo }).allowed;
+  useAutoBackup(isPremium, isDemo, deviceId, backupRemoteAllowed);
   // El monitor no debe montar listeners de la caja. La caja receptora sí debe
   // escuchar mientras exista al menos una capacidad remota activa.
   useRemoteCommands(

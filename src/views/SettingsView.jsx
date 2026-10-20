@@ -23,7 +23,7 @@ import { useCloudBackup } from '../hooks/useCloudBackup';
 import { useDataImportExport } from '../hooks/useDataImportExport';
 import { useAuthStore } from '../hooks/store/useAuthStore';
 import WalletView from './WalletView';
-import { getCachedPermanentBackupEntitlement } from '../services/backupEntitlement';
+import { getCachedBackupEntitlement } from '../services/backupEntitlement';
 
 
 // ───────────────────────────────────────────────────── Tab Config
@@ -57,7 +57,9 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
     const { deviceId, forceHeartbeat, isPremium, isDemo } = useSecurity();
     // El respaldo remoto, manual y automático, queda reservado para licencia
     // permanente activa. Las cuentas restantes conservan exportar/importar local.
-    const isLicensedCloud = getCachedPermanentBackupEntitlement({ isPremium, isDemo }).allowed;
+    // Nube/respaldo remoto: disponible con los planes de pago (permanent y
+    // monthly), según la política compartida config/licensePolicy.js.
+    const isLicensedCloud = getCachedBackupEntitlement({ isPremium, isDemo }).allowed;
     const { log: auditLog } = useAudit();
     const fileInputRef = useRef(null);
     const [activeTab, setActiveTab] = useState('negocio');

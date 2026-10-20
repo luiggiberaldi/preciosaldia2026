@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { KeyRound, ShieldAlert, ShieldCheck, Clock, Calendar, Hash, Copy, Check } from 'lucide-react';
 import { SectionCard } from '../../SettingsShared';
+import { productPrice } from '../../../config/licensePolicy';
+
+// Precio de venta oficial: única fuente de verdad en config/licensePolicy.js.
+// Antes el número estaba escrito a mano aquí (y decía otra cosa en la Estación).
+const PERMANENT_PRICE_USD = productPrice('bodega', 'permanent');
 
 export default function SettingsTabLicencia({ deviceId, triggerHaptic }) {
     const [idCopied, setIdCopied] = useState(false);
@@ -202,17 +207,17 @@ export default function SettingsTabLicencia({ deviceId, triggerHaptic }) {
                                 <div className="p-3.5 bg-brand-light/20 dark:bg-surface-800/5 border border-brand/10 rounded-2xl flex flex-col gap-2">
                                     <div className="flex justify-between items-center">
                                         <h4 className="text-xs font-black text-slate-800 dark:text-white">Adquirir Licencia Premium</h4>
-                                        <span className="text-[10px] bg-emerald-500 text-white font-black px-2 py-0.5 rounded-lg">$50 / Pago Único</span>
+                                        <span className="text-[10px] bg-emerald-500 text-white font-black px-2 py-0.5 rounded-lg">${PERMANENT_PRICE_USD} / Pago Único</span>
                                     </div>
                                     <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                                        Obtén tu licencia permanente por <strong>$50</strong>. Válido para <strong>solo 1 equipo (Caja)</strong> con el <strong>Modo Supervisor (Monitoreo en Vivo)</strong> incluido para tu celular.
+                                        Obtén tu licencia permanente por <strong>${PERMANENT_PRICE_USD}</strong>. Válido para <strong>solo 1 equipo (Caja)</strong> con el <strong>Modo Supervisor (Monitoreo en Vivo)</strong> incluido para tu celular.
                                     </p>
                                     <button 
                                         onClick={() => {
                                             triggerHaptic?.();
                                             const bizName = localStorage.getItem('business_name') || '';
                                             const bizPhone = localStorage.getItem('business_phone') || '';
-                                            const parts = [`Hola! Quiero adquirir la licencia de $50 (1 equipo + modo supervisor). Mi ID es: ${deviceId || 'N/A'}`];
+                                            const parts = [`Hola! Quiero adquirir la licencia de $${PERMANENT_PRICE_USD} (1 equipo + modo supervisor). Mi ID es: ${deviceId || 'N/A'}`];
                                             if (bizName) parts.push(`Negocio: ${bizName}`);
                                             if (bizPhone) parts.push(`Mi teléfono: ${bizPhone}`);
                                             window.open(`https://wa.me/584124051793?text=${encodeURIComponent(parts.join('\n'))}`, '_blank');

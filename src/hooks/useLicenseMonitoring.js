@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { supabase } from '../core/supabaseClient';
 import { sendDeviceHeartbeat } from '../services/deviceHeartbeat';
+import { graceMillisFor, remainingDays } from '../config/licensePolicy';
 
 const PRODUCT_ID = 'bodega';
 
@@ -68,10 +69,11 @@ export function useLicenseMonitoring({
                         }
                     }
 
-                    // Verificar si mensual venció por fecha incluyendo 5 días de gracia
+                    // Verificar si mensual venció por fecha, incluida la gracia.
+                    // La gracia la decide licensePolicy.js (5 días, solo mensual).
                     if (license.type === 'monthly' && license.expires_at) {
                         const expiresAt = new Date(license.expires_at).getTime();
-                        const gracePeriodEnd = expiresAt + 5 * 24 * 60 * 60 * 1000;
+                        const gracePeriodEnd = expiresAt + graceMillisFor('monthly');
                         if (Date.now() >= gracePeriodEnd && isPremium) {
                             localStorage.removeItem('pda_premium_token');
                             localStorage.removeItem('pda_license_cache');
@@ -102,12 +104,10 @@ export function useLicenseMonitoring({
                         }
                     } else if (license.type === 'monthly' && license.expires_at) {
                         const expiresAtValue = new Date(license.expires_at).getTime();
-                        const gracePeriodEnd = expiresAtValue + 5 * 24 * 60 * 60 * 1000;
+                        const gracePeriodEnd = expiresAtValue + graceMillisFor('monthly');
                         if (Date.now() < gracePeriodEnd) {
                             const isGrace = Date.now() >= expiresAtValue;
-                            const graceDays = isGrace 
-                                ? Math.max(0, Math.ceil((gracePeriodEnd - Date.now()) / (1000 * 60 * 60 * 24)))
-                                : 0;
+                            const graceDays = isGrace ? remainingDays(gracePeriodEnd, Date.now()) : 0;
                             if (onMonthlyActivated) {
                                 onMonthlyActivated(expiresAtValue, isGrace, graceDays);
                             }

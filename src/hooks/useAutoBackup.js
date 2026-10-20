@@ -94,7 +94,7 @@ function quickHash(obj) {
     return `${str.length}_${h >>> 0}`;
 }
 
-export function useAutoBackup(isPremium, isDemo, deviceId, isPermanentLicense = false) {
+export function useAutoBackup(isPremium, isDemo, deviceId, backupAllowed = false) {
     const intervalRef = useRef(null);
     const initialTimerRef = useRef(null);
     const performBackupRef = useRef(null);
@@ -102,13 +102,13 @@ export function useAutoBackup(isPremium, isDemo, deviceId, isPermanentLicense = 
     const runningTimeoutRef = useRef(null);
     const processedIdsRef = useRef(new Set());
 
-    const configRef = useRef({ isPremium, isDemo, deviceId, isPermanentLicense });
+    const configRef = useRef({ isPremium, isDemo, deviceId, backupAllowed });
     useEffect(() => {
-        configRef.current = { isPremium, isDemo, deviceId, isPermanentLicense };
-    }, [isPremium, isDemo, deviceId, isPermanentLicense]);
+        configRef.current = { isPremium, isDemo, deviceId, backupAllowed };
+    }, [isPremium, isDemo, deviceId, backupAllowed]);
 
     const performBackup = useCallback(async (forceUpload = false) => {
-        const { deviceId: devId, isPermanentLicense: permanent } = configRef.current;
+        const { deviceId: devId, backupAllowed: permanent } = configRef.current;
         try {
                 // ── Recolectar IndexedDB ────────────────────────────────
                 const idbData = {};
@@ -139,9 +139,10 @@ export function useAutoBackup(isPremium, isDemo, deviceId, isPermanentLicense = 
                 // Guardar copia local
                 await storageService.setItem(BACKUP_KEY, fullBackup);
 
-                // El backup local se hace para todos. La nube es exclusiva de
-                // licencia permanente activa; forceUpload nunca salta esta regla.
-                if (!permanent) return { ok: false, error: 'Backup remoto disponible solo con licencia permanente activa' };
+                // El backup local se hace para todos. El remoto es de los planes de pago
+                // (permanente y mensual, según config/licensePolicy.js); forceUpload
+                // nunca salta esta regla.
+                if (!permanent) return { ok: false, error: 'Backup remoto disponible solo con licencia de pago activa' };
 
                 if (devId && supabaseCloud) {
                     const todayStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
@@ -211,7 +212,7 @@ export function useAutoBackup(isPremium, isDemo, deviceId, isPermanentLicense = 
     useEffect(() => {
         // Solo dispositivos con licencia activa (no demo) escuchan solicitudes remotas de la Estación Maestra.
         // Los demos no tienen acceso a backup remoto en Drive.
-        const { isDemo: demoActive, isPermanentLicense: permanent } = configRef.current;
+        const { isDemo: demoActive, backupAllowed: permanent } = configRef.current;
         if (!deviceId || !supabaseCloud || demoActive || !permanent) return;
 
         let channel = null;
