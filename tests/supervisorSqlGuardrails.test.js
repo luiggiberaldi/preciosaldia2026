@@ -247,3 +247,41 @@ describe('Identidad de dispositivo auto-reparable (20261017)', () => {
         expect(identitySql).toContain('COMMIT;');
     });
 });
+
+describe('Reloj del dispositivo fuera del create (20261020)', () => {
+    const serverClockSql = readFileSync('supabase/migrations/20261020_supervisor_command_server_clock.sql', 'utf8');
+    // El cuerpo activo es todo lo anterior al bloque DOWN (comentario /* */).
+    const [upBody, downBody] = serverClockSql.split('/*');
+
+    it('construye la ventana con now() del servidor y solo valida la duración pedida', () => {
+        expect(upBody).toContain('v_duration := p_expires_at - p_issued_at');
+        expect(upBody).toContain("IF v_duration IS NULL OR v_duration <= interval '0' THEN");
+        expect(upBody).toContain("RAISE EXCEPTION 'Ventana temporal inválida'");
+        expect(upBody).toContain("v_duration > LEAST(v_max_ttl, interval '10 minutes')");
+        expect(upBody).toContain('now(), now() + v_duration');
+        // Sin comparaciones contra el reloj absoluto del cliente.
+        expect(upBody).not.toContain("p_issued_at < now() - interval '2 minutes'");
+        expect(upBody).not.toContain("p_issued_at > now() + interval '2 minutes'");
+        expect(upBody).not.toContain('p_expires_at <= now()');
+    });
+
+    it('conserva firma, autorización, idempotencia y permisos', () => {
+        expect(upBody).toContain('CREATE OR REPLACE FUNCTION public.create_supervisor_command(');
+        expect(upBody).toContain('p_issued_at        TIMESTAMPTZ');
+        expect(upBody).toContain('p_expires_at       TIMESTAMPTZ');
+        expect(upBody).toContain("RAISE EXCEPTION 'Monitor no autorizado para esa caja'");
+        expect(upBody).toContain("RAISE EXCEPTION 'command_id ya utilizado con otro payload'");
+        expect(upBody).toContain('REVOKE ALL ON FUNCTION public.create_supervisor_command(text, text, text, jsonb, timestamptz, timestamptz) FROM PUBLIC, anon, authenticated');
+        expect(upBody).toContain('GRANT EXECUTE ON FUNCTION public.create_supervisor_command(text, text, text, jsonb, timestamptz, timestamptz) TO authenticated;');
+        expect(upBody).toContain('BEGIN;');
+        expect(upBody).toContain('COMMIT;');
+        expect(serverClockSql).not.toMatch(/GRANT\s+[^;]*\bTO\s+anon\b/i);
+        expect(serverClockSql).not.toMatch(/DROP\s+TABLE/i);
+        expect(serverClockSql).not.toMatch(/UPDATE\s+public\.supervisor_commands/i);
+    });
+
+    it('incluye la reversión literal de la definición previa', () => {
+        expect(downBody).toContain("p_issued_at < now() - interval '2 minutes'");
+        expect(downBody).toContain('p_issued_at, p_expires_at)');
+    });
+});
