@@ -7,6 +7,7 @@ import { SectionCard } from '../../SettingsShared';
 import { showToast } from '../../Toast';
 import AuditLogViewer from '../AuditLogViewer';
 import PairingManager from '../PairingManager';
+import SystemHealthPanel from '../SystemHealthPanel';
 import ConfirmModal from '../../ConfirmModal';
 import QRCode from 'qrcode';
 import { resetPOSDataToEmpty } from '../../../hooks/useCloudSync';
@@ -335,6 +336,9 @@ export default function SettingsTabSistema({
                     </p>
                 </div>
             </SectionCard>
+
+            {/* Salud del sistema (Fase 3): reloj vs servidor, último comando y última sincronización */}
+            <SystemHealthPanel triggerHaptic={triggerHaptic} />
 
             {/* Confirmación antes de cambiar el ID de la estación */}
             <ConfirmModal
