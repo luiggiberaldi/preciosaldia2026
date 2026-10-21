@@ -479,7 +479,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     return (
         <div
             ref={setRootRef}
-            className="flex flex-col bg-surface-50 dark:bg-surface-950 p-3 sm:p-5 lg:p-6 xl:p-8"
+            className="flex flex-col bg-surface-50 dark:bg-surface-950 p-3 sm:p-5 lg:p-6 xl:p-8 pb-28 sm:pb-32"
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
@@ -494,7 +494,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             )}
 
             {/* Header Sticky con 5 Fichas Integradas (estilo donde juancho - Glassmorphism & Scroll reactive) */}
-            <div className={`sticky top-0 z-30 flex flex-col transition-all duration-200 -mx-3 sm:-mx-5 lg:-mx-6 xl:-mx-8 px-3 sm:px-5 lg:px-6 xl:px-8 py-2 mb-4 bg-surface-50/95 dark:bg-surface-950/95 backdrop-blur-md border-b ${isScrolled ? 'border-slate-200/80 dark:border-slate-800/80 shadow-md' : 'border-transparent'}`}>
+            <div className={`sticky top-0 z-30 flex flex-col transition-all duration-200 -mx-3 sm:-mx-5 lg:-mx-6 xl:-mx-8 px-3 sm:px-5 lg:px-6 xl:px-8 py-1.5 mb-3 bg-surface-50/95 dark:bg-surface-950/95 backdrop-blur-md border-b ${isScrolled ? 'border-slate-200/80 dark:border-slate-800/80 shadow-md' : 'border-transparent'}`}>
                 {/* Fila Superior: Reloj | Logo | SyncStatus */}
                 <div className="flex md:grid md:grid-cols-3 items-center justify-between">
                     {/* Reloj y fecha en PC */}
@@ -507,7 +507,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                         </span>
                     </div>
                     <div className="flex flex-col items-start md:items-center justify-center gap-0.5 shrink min-w-0">
-                        <img src={theme === 'dark' ? './logodark.png' : './logo.png'} alt="PreciosAlDía" className="h-10 sm:h-12 md:h-[85px] w-auto object-contain drop-shadow-sm shrink-0" />
+                        <img src={theme === 'dark' ? './logodark.png' : './logo.png'} alt="PreciosAlDía" className="h-9 sm:h-10 md:h-12 w-auto object-contain drop-shadow-sm shrink-0" />
                     </div>
                     <div className="flex items-center justify-end gap-1.5 shrink-0">
                         <SyncStatus />
@@ -528,34 +528,52 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                     </div>
                 </div>
 
-                {/* Fila Inferior: 4 Fichas Pro (Visibles en Tablet/Desktop sm:grid) */}
-                <div className="hidden sm:grid sm:grid-cols-4 gap-1 sm:gap-3 mt-2 pt-2 border-t border-slate-200/40 dark:border-slate-800/40 w-full max-w-4xl mx-auto">
+                {/* Fila Inferior: Fichas Pro (Visibles en Tablet/Desktop sm:grid) */}
+                <div className={`hidden sm:grid ${!isCajero ? 'grid-cols-3 md:grid-cols-6 max-w-5xl' : 'grid-cols-4 max-w-4xl'} gap-1.5 sm:gap-2 mt-2 pt-2 border-t border-slate-200/40 dark:border-slate-800/40 w-full mx-auto`}>
                     <button
                         onClick={() => { if (onNavigate) { triggerHaptic(); onNavigate('ventas'); } }}
-                        className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 px-1 sm:px-3 py-1.5 sm:py-2 bg-[#01696f] hover:bg-[#00575d] dark:bg-[#1ce2ee] dark:hover:bg-[#0bc2cd] text-white dark:text-slate-950 rounded-xl font-extrabold text-[9.5px] sm:text-xs leading-tight transition-all active:scale-95 shadow-sm text-center"
+                        className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 bg-[#01696f] hover:bg-[#00575d] dark:bg-[#1ce2ee] dark:hover:bg-[#0bc2cd] text-white dark:text-slate-950 rounded-xl font-extrabold text-[10px] sm:text-xs leading-tight transition-all active:scale-95 shadow-sm text-center"
                     >
-                        <ShoppingCart size={17} className="shrink-0" />
+                        <ShoppingCart size={16} className="shrink-0" />
                         <span className="truncate sm:whitespace-nowrap">Vender</span>
                     </button>
                     <button
                         onClick={() => { if (onNavigate) { triggerHaptic(); onNavigate('catalogo'); } }}
-                        className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 px-1 sm:px-3 py-1.5 sm:py-2 bg-[#01696f] hover:bg-[#00575d] dark:bg-[#1ce2ee] dark:hover:bg-[#0bc2cd] text-white dark:text-slate-950 rounded-xl font-extrabold text-[9.5px] sm:text-xs leading-tight transition-all active:scale-95 shadow-sm text-center"
+                        className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 bg-[#01696f] hover:bg-[#00575d] dark:bg-[#1ce2ee] dark:hover:bg-[#0bc2cd] text-white dark:text-slate-950 rounded-xl font-extrabold text-[10px] sm:text-xs leading-tight transition-all active:scale-95 shadow-sm text-center"
                     >
-                        <Store size={17} className="shrink-0" />
+                        <Store size={16} className="shrink-0" />
                         <span className="truncate sm:whitespace-nowrap">Inventario</span>
                     </button>
                     <button
                         onClick={() => { if (onNavigate) { triggerHaptic(); onNavigate('clientes'); } }}
-                        className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 px-1 sm:px-3 py-1.5 sm:py-2 bg-[#01696f] hover:bg-[#00575d] dark:bg-[#1ce2ee] dark:hover:bg-[#0bc2cd] text-white dark:text-slate-950 rounded-xl font-extrabold text-[9.5px] sm:text-xs leading-tight transition-all active:scale-95 shadow-sm text-center"
+                        className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 bg-[#01696f] hover:bg-[#00575d] dark:bg-[#1ce2ee] dark:hover:bg-[#0bc2cd] text-white dark:text-slate-950 rounded-xl font-extrabold text-[10px] sm:text-xs leading-tight transition-all active:scale-95 shadow-sm text-center"
                     >
-                        <Users size={17} className="shrink-0" />
+                        <Users size={16} className="shrink-0" />
                         <span className="truncate sm:whitespace-nowrap">Clientes</span>
                     </button>
+                    {!isCajero && (
+                        <button
+                            onClick={() => { if (onNavigate) { triggerHaptic(); onNavigate('reportes'); } }}
+                            className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 bg-[#01696f] hover:bg-[#00575d] dark:bg-[#1ce2ee] dark:hover:bg-[#0bc2cd] text-white dark:text-slate-950 rounded-xl font-extrabold text-[10px] sm:text-xs leading-tight transition-all active:scale-95 shadow-sm text-center"
+                        >
+                            <BarChart3 size={16} className="shrink-0" />
+                            <span className="truncate sm:whitespace-nowrap">Reportes</span>
+                        </button>
+                    )}
+                    {!isCajero && (
+                        <button
+                            onClick={() => { if (onNavigate) { triggerHaptic(); onNavigate('ajustes'); } }}
+                            className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 bg-[#01696f] hover:bg-[#00575d] dark:bg-[#1ce2ee] dark:hover:bg-[#0bc2cd] text-white dark:text-slate-950 rounded-xl font-extrabold text-[10px] sm:text-xs leading-tight transition-all active:scale-95 shadow-sm text-center"
+                        >
+                            <Settings size={16} className="shrink-0" />
+                            <span className="truncate sm:whitespace-nowrap">Ajustes</span>
+                        </button>
+                    )}
                     <button
                         onClick={() => { triggerHaptic(); setShowMonitor(true); }}
-                        className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 px-1 sm:px-3 py-1.5 sm:py-2 bg-[#01696f] hover:bg-[#00575d] dark:bg-[#1ce2ee] dark:hover:bg-[#0bc2cd] text-white dark:text-slate-950 rounded-xl font-extrabold text-[9.5px] sm:text-xs leading-tight transition-all active:scale-95 shadow-sm text-center"
+                        className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 bg-[#01696f] hover:bg-[#00575d] dark:bg-[#1ce2ee] dark:hover:bg-[#0bc2cd] text-white dark:text-slate-950 rounded-xl font-extrabold text-[10px] sm:text-xs leading-tight transition-all active:scale-95 shadow-sm text-center"
                     >
-                        <TrendingUp size={17} className="shrink-0" />
+                        <TrendingUp size={16} className="shrink-0" />
                         <span className="truncate sm:whitespace-nowrap">Monitor</span>
                     </button>
                 </div>
