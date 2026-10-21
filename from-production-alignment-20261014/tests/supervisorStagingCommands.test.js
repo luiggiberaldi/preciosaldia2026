@@ -4,7 +4,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 const enabled = process.env.SUPERVISOR_STAGING_COMMANDS_E2E === 'true';
 const stagingTest = enabled ? it : it.skip;
-const STAGING_URL = 'https://tdfcpwctvumbdjmifypd.supabase.co';
+const STAGING_URL = 'https://wapczmlwljkrjtfhmqko.supabase.co';
 const TARGET_DEVICE_ID = 'e2e-primary-device';
 const commandPrefix = `m2-e2e-${Date.now()}`;
 const commandIds = [];

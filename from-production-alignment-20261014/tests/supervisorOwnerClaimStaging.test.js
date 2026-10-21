@@ -4,7 +4,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 const enabled = process.env.SUPERVISOR_STAGING_PAIRING_E2E === 'true';
 const stagingTest = enabled ? it : it.skip;
-const STAGING_URL = 'https://tdfcpwctvumbdjmifypd.supabase.co';
+const STAGING_URL = 'https://wapczmlwljkrjtfhmqko.supabase.co';
 // ID sintético nuevo por ejecución: staging 007 solo acepta e2e-%.
 const DEVICE_ID = `e2e-claim-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 

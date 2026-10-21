@@ -5,7 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 // (Refs viejos fgzwmwrugerptfqfrsjd / ewwszyzzvoweudholmbf quedaron obsoletos.)
 const useSupervisorE2EStaging = import.meta.env.VITE_SUPERVISOR_E2E_STAGING === 'true';
 const supabaseUrl = useSupervisorE2EStaging
-    ? (import.meta.env.VITE_SUPABASE_STAGING_URL || 'https://tdfcpwctvumbdjmifypd.supabase.co')
+    ? (import.meta.env.VITE_SUPABASE_STAGING_URL || 'https://wapczmlwljkrjtfhmqko.supabase.co')
     : (import.meta.env.VITE_SUPABASE_CLOUD_URL || import.meta.env.VITE_SUPABASE_URL || 'https://sodgzkablshladvbtnes.supabase.co');
 const supabaseKey = useSupervisorE2EStaging
     ? import.meta.env.VITE_SUPABASE_STAGING_KEY

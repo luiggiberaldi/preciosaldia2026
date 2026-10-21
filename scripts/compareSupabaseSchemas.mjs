@@ -10,7 +10,7 @@ const PROJECTS = Object.freeze({
     }),
     staging: Object.freeze({
         name: 'precios-al-dia-staging',
-        ref: 'tdfcpwctvumbdjmifypd',
+        ref: 'wapczmlwljkrjtfhmqko',
     }),
 });
 

@@ -2,7 +2,7 @@
 // En modo staging E2E NUNCA cae en la URL de producción: si falta la URL o la
 // clave de staging, el build/arranque falla en lugar de usar producción.
 
-export const STAGING_PROJECT_REF = 'tdfcpwctvumbdjmifypd';
+export const STAGING_PROJECT_REF = 'wapczmlwljkrjtfhmqko';
 export const PRODUCTION_PROJECT_REF = 'sodgzkablshladvbtnes';
 
 // Recibe un objeto con solo las claves necesarias. No usar import.meta.env completo:

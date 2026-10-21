@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 
 // Cache por proceso: los E2E de staging reutilizan identidades anónimas para no
 // agotar el límite de tasa de signInAnonymously de Supabase.
-const STAGING_URL = 'https://tdfcpwctvumbdjmifypd.supabase.co';
+const STAGING_URL = 'https://wapczmlwljkrjtfhmqko.supabase.co';
 const pool = new Map();
 
 export async function getStagingAnonymousSession(key, slot) {

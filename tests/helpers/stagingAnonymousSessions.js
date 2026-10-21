@@ -9,7 +9,7 @@ import { resolve } from 'node:path';
 // (.staging-test-sessions.json) y se reutilizan entre corridas. Así no se crea una
 // identidad anónima nueva en cada ejecución y no se agota el límite de tasa de
 // signInAnonymously de Supabase. Si un slot guardado ya no sirve, se crea uno nuevo.
-const STAGING_URL = 'https://tdfcpwctvumbdjmifypd.supabase.co';
+const STAGING_URL = 'https://wapczmlwljkrjtfhmqko.supabase.co';
 const STORE_PATH = resolve(process.cwd(), '.staging-test-sessions.json');
 const pool = new Map();
 

@@ -81,3 +81,13 @@ The functions `e2e_set_pairing_link`, `e2e_set_canary_allowlist` and `e2e_cleanu
 - Each one is `SECURITY DEFINER`, rejects any device ID outside `e2e-%`, is executable only by `authenticated` (not `anon` or `PUBLIC`), and checks `auth.uid()`.
 - They must never exist in production. A read-only query on `sodgzkablshladvbtnes` for `e2e_%` functions returned no rows.
 - Why staging only: they write pairings, the canary allowlist and command rows, and they depend on synthetic `e2e-*` fixtures that exist only in staging. Copying them to production would open writes to real customer devices.
+
+## 2026-10-21: reaplicación completa a wapczmlwljkrjtfhmqko
+
+La cadena de este directorio (más `supabase_supervisor_commands.sql` y `supabase_supervisor_canary_allowlist_staging.sql`) se aplicó íntegra al nuevo proyecto de staging `wapczmlwljkrjtfhmqko` el 2026-10-21, con fixtures E2E (`e2e-primary-device`, `e2e-monitor-device`, canary allowlist) y sign-ins anónimos habilitados. Verificado: 14 tablas, 30 RPCs en `pg_proc`, Realtime en `sync_documents`/`supervisor_commands`, id de `sync_documents` en BIGSERIAL.
+
+Excepción deliberada: el trigger `enforce_supervisor_income_command` quedó en su **versión estricta** (la de `supabase_supervisor_canary_allowlist_staging.sql`), no en la permisiva de `20261014_020_staging_allow_product_commands_trigger.sql`. El contrato de pruebas (`tests/supervisorStagingCommands.test.js`) exige que egreso, productos y cierres fallen con "Solo ingreso y tasas remotas están habilitados"; `020` rompe esas aserciones. Habilitar comandos de producto/egreso es un cambio aparte, con aprobación y actualización de tests.
+
+Pruebas contra este proyecto (2026-10-21): `npm run test:supervisor:staging` 2/2 y `supervisorStagingCommands.test.js` 1/1, ambos en verde con limpieza sin residuos.
+
+El harness de comandos ya no usa la Management API (`SUPABASE_ACCESS_TOKEN`): el fixture/cleanup corre vía PostgREST con `SUPABASE_STAGING_SERVICE_KEY` (service key del proyecto). Los RPC de arnés mencionados arriba (`e2e_set_pairing_link`, `e2e_set_canary_allowlist`, `e2e_cleanup_commands`) **no** se recrearon en este proyecto porque el harness actual no los necesita.

@@ -4,8 +4,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 const enabled = process.env.SUPERVISOR_STAGING_COMMANDS_E2E === 'true';
 const stagingTest = enabled ? it : it.skip;
-const STAGING_URL = 'https://tdfcpwctvumbdjmifypd.supabase.co';
-const STAGING_REF = 'tdfcpwctvumbdjmifypd';
+const STAGING_URL = 'https://wapczmlwljkrjtfhmqko.supabase.co';
 const TARGET_DEVICE_ID = 'e2e-primary-device';
 const commandPrefix = `m2-e2e-${Date.now()}`;
 const commandIds = [];
@@ -15,24 +14,39 @@ function readEnvValue(name) {
     return text.match(new RegExp(`^${name}=(.*)$`, 'm'))?.[1]?.trim();
 }
 
-function sqlLiteral(value) {
-    return `'${String(value).replaceAll("'", "''")}'`;
+
+// Setup/limpieza administrativa contra staging vía PostgREST con la service key
+// del proyecto (SUPABASE_STAGING_SERVICE_KEY en .env). Se usa service_role porque
+// el PAT de SUPABASE_ACCESS_TOKEN pertenece a otra cuenta de Supabase y no ve este
+// proyecto (Management API: "Missing required permission(s): database_read").
+// No cambia ninguna aserción: solo ejecuta el fixture y la limpieza.
+async function adminRest(method, path, body) {
+    const serviceKey = readEnvValue('SUPABASE_STAGING_SERVICE_KEY');
+    if (!serviceKey) throw new Error('SUPABASE_STAGING_SERVICE_KEY ausente para el harness de staging');
+    const response = await fetch(`${STAGING_URL}/rest/v1/${path}`, {
+        method,
+        headers: {
+            apikey: serviceKey,
+            Authorization: `Bearer ${serviceKey}`,
+            'Content-Type': 'application/json',
+            Prefer: 'return=minimal',
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    if (!response.ok) {
+        throw new Error(`Admin REST staging (${method} ${path}): ${(await response.text()).slice(0, 500)}`);
+    }
 }
 
-async function managementQuery(query) {
-    const token = readEnvValue('SUPABASE_ACCESS_TOKEN');
-    if (!token) throw new Error('SUPABASE_ACCESS_TOKEN ausente para el harness de staging');
-    const response = await fetch(`https://api.supabase.com/v1/projects/${STAGING_REF}/database/query`, {
-        method: 'POST',
-        headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ query }),
+function adminUpdatePairing(values) {
+    return adminRest('PATCH', `device_pairings?primary_device_id=eq.${TARGET_DEVICE_ID}`, values);
+}
+
+function adminSetCanary(enabled) {
+    return adminRest('PATCH', `supervisor_canary_allowlist?primary_device_id=eq.${TARGET_DEVICE_ID}`, {
+        enabled,
+        updated_at: new Date().toISOString(),
     });
-    const body = await response.text();
-    if (!response.ok) throw new Error(`Management SQL staging: ${body.slice(0, 500)}`);
-    return body ? JSON.parse(body) : [];
 }
 
 async function createAnonymousClient() {
@@ -89,23 +103,17 @@ describe('Supervisor M2 staging — ACK, NACK, timeout, replay y conflicto', () 
         const primary = await createAnonymousClient();
 
         try {
-            await managementQuery(`
-                UPDATE public.device_pairings
-                SET owner_auth_id = ${sqlLiteral(primary.userId)}::uuid,
-                    monitor_auth_id = ${sqlLiteral(monitor.userId)}::uuid,
-                    revoked_at = NULL,
-                    paired_at = now()
-                WHERE primary_device_id = ${sqlLiteral(TARGET_DEVICE_ID)};
-            `);
+            await adminUpdatePairing({
+                owner_auth_id: primary.userId,
+                monitor_auth_id: monitor.userId,
+                revoked_at: null,
+                paired_at: new Date().toISOString(),
+            });
 
             // La política general no depende de la allowlist temporal: un pairing
             // sintético activo debe poder crear el ingreso aunque el fixture esté
             // deshabilitado.
-            await managementQuery(`
-                UPDATE public.supervisor_canary_allowlist
-                SET enabled = false, updated_at = now()
-                WHERE primary_device_id = ${sqlLiteral(TARGET_DEVICE_ID)};
-            `);
+            await adminSetCanary(false);
             const generalAccessId = `${commandPrefix}-general-pairing`;
             const generalAccess = await createCommand(monitor.client, generalAccessId, validPayload());
             expect(generalAccess.error).toBeNull();
@@ -213,7 +221,9 @@ describe('Supervisor M2 staging — ACK, NACK, timeout, replay y conflicto', () 
 
             const timeoutId = `${commandPrefix}-timeout`;
             expect((await createCommand(monitor.client, timeoutId, validPayload(), 700)).error).toBeNull();
-            await new Promise(resolve => setTimeout(resolve, 1_200));
+            // TTL del contrato = 700 ms, pero el desfase reloj cliente–servidor
+            // (NTP) llega a ~1.5 s: la espera debe cubrir TTL + desfase + margen.
+            await new Promise(resolve => setTimeout(resolve, 3_000));
             const expiredAck = await primary.client.rpc('ack_supervisor_command', {
                 p_command_id: timeoutId,
                 p_status: 'applied',
@@ -224,17 +234,9 @@ describe('Supervisor M2 staging — ACK, NACK, timeout, replay y conflicto', () 
             expect(expiredAck.data).toMatchObject({ command_id: timeoutId, status: 'failed' });
         } finally {
             if (commandIds.length > 0) {
-                await managementQuery(`
-                    DELETE FROM public.supervisor_commands
-                    WHERE command_id IN (${commandIds.map(sqlLiteral).join(', ')});
-                    UPDATE public.device_pairings
-                    SET owner_auth_id = NULL,
-                        monitor_auth_id = NULL
-                    WHERE primary_device_id = ${sqlLiteral(TARGET_DEVICE_ID)};
-                    UPDATE public.supervisor_canary_allowlist
-                    SET enabled = true, updated_at = now()
-                    WHERE primary_device_id = ${sqlLiteral(TARGET_DEVICE_ID)};
-                `);
+                await adminRest('DELETE', `supervisor_commands?command_id=in.(${commandIds.map((id) => `"${id}"`).join(',')})`);
+                await adminUpdatePairing({ owner_auth_id: null, monitor_auth_id: null });
+                await adminSetCanary(true);
             }
             await monitor.client.auth.signOut();
             await primary.client.auth.signOut();
@@ -243,9 +245,6 @@ describe('Supervisor M2 staging — ACK, NACK, timeout, replay y conflicto', () 
 
     afterAll(async () => {
         if (!enabled || commandIds.length === 0) return;
-        await managementQuery(`
-            DELETE FROM public.supervisor_commands
-            WHERE command_id LIKE ${sqlLiteral(`${commandPrefix}%`)};
-        `);
+        await adminRest('DELETE', `supervisor_commands?command_id=like."${commandPrefix}*"`);
     });
 });

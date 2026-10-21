@@ -472,25 +472,29 @@ describe('SEC-020: escapeHtml neutraliza XSS', () => {
 
 describe('SEC-021: supabaseClient lanza error claro si falta anon key', () => {
   it('en dev (sin env vars) crea stub que rechaza llamadas con mensaje claro', async () => {
+    // Fuerza el escenario "sin env vars" sin depender del entorno local: este clon
+    // corre en modo staging con credenciales reales en .env/.env.local, y el test
+    // debe cubrir el guardrail SEC-021 igual que en CI.
+    vi.stubEnv('VITE_SUPERVISOR_E2E_STAGING', 'false');
+    vi.stubEnv('VITE_SUPABASE_URL', '');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', '');
+    vi.stubEnv('VITE_SUPABASE_STAGING_URL', '');
+    vi.stubEnv('VITE_SUPABASE_STAGING_KEY', '');
+    vi.resetModules();
     const { supabase } = await import('../src/core/supabaseClient');
 
-    // Si las env vars están ausentes (caso default en CI), `supabase` es un Proxy
-    // que rechaza cualquier llamada con el mensaje SEC-021.
-    if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
-      let caught = null;
-      try {
-        // `supabase.from` devuelve una función (proxy get trap) que al invocarse
-        // devuelve una promesa rechazada.
-        const fromFn = supabase.from;
-        await fromFn('whatever');
-      } catch (e) {
-        caught = e;
-      }
-      expect(caught).not.toBeNull();
-      expect(String(caught.message)).toMatch(/SEC-021|Supabase|config|env/i);
-    } else {
-      // Env vars presentes — el cliente es real. Aceptamos el test como pasante.
-      expect(supabase).toBeDefined();
+    // `supabase` es un Proxy que rechaza cualquier llamada con el mensaje SEC-021.
+    let caught = null;
+    try {
+      // `supabase.from` devuelve una función (proxy get trap) que al invocarse
+      // devuelve una promesa rechazada.
+      const fromFn = supabase.from;
+      await fromFn('whatever');
+    } catch (e) {
+      caught = e;
     }
+    expect(caught).not.toBeNull();
+    expect(String(caught.message)).toMatch(/SEC-021|Supabase|config|env/i);
+    vi.unstubAllEnvs();
   });
 });

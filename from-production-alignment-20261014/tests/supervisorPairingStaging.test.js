@@ -5,7 +5,7 @@ import { getStagingAnonymousSession } from './helpers/stagingAnonymousSessions.j
 
 const enabled = process.env.SUPERVISOR_STAGING_PAIRING_E2E === 'true';
 const stagingTest = enabled ? it : it.skip;
-const STAGING_URL = 'https://tdfcpwctvumbdjmifypd.supabase.co';
+const STAGING_URL = 'https://wapczmlwljkrjtfhmqko.supabase.co';
 // ID nuevo por ejecución: la caja reclama su dueño con su primera sesión.
 const PRIMARY_DEVICE_ID = `e2e-box-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 // Formato real que genera la app: mon-<uuid>.
@@ -37,6 +37,10 @@ describe('Supervisor pairing en staging — dos identidades anónimas', () => {
         cleanup.push(primary, monitor, intruder);
 
         try {
+        // Licencia permanente sintética (022): prerequisito del reclamo (021).
+        const seeded = await primary.client.rpc('e2e_seed_synthetic_license', { p_device_id: PRIMARY_DEVICE_ID });
+        expect(seeded.error).toBeNull();
+
         // 007: la caja emite un código de reclamo y el dueño lo canjea antes de generar tokens.
         const claimCode = await primary.client.rpc('create_owner_claim_code', { p_device_id: PRIMARY_DEVICE_ID });
         expect(claimCode.error).toBeNull();
@@ -96,6 +100,8 @@ describe('Supervisor pairing en staging — dos identidades anónimas', () => {
             // Borra la fila de prueba que creó esta ejecución (solo e2e-%, solo su dueño).
             const { error: delError } = await primary.client.rpc('e2e_delete_pairing', { p_device_id: PRIMARY_DEVICE_ID });
             if (delError) console.warn('[e2e] no se pudo borrar la fila de prueba:', delError.message);
+            const { error: licError } = await primary.client.rpc('e2e_delete_synthetic_license', { p_device_id: PRIMARY_DEVICE_ID });
+            if (licError) console.warn('[e2e] no se pudo borrar la licencia sintética:', licError.message);
         }
     }, 60_000);
 });

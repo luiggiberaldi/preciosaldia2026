@@ -1,8 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
     AppliedCommandGuard,
     validateSupervisorCommand,
 } from '../src/services/supervisorContracts';
+// Política fijada en modo contención: este test verifica el contrato de comandos
+// con las mutaciones remotas deshabilitadas, sin depender del .env.local del entorno.
+vi.mock('../src/config/supervisorPolicy', () => ({
+    SUPERVISOR_REMOTE_MUTATIONS_ENABLED: false,
+    SUPERVISOR_REMOTE_INCOME_ENABLED: false,
+    SUPERVISOR_REMOTE_RATE_ENABLED: false,
+    SUPERVISOR_REMOTE_EGRESS_ENABLED: false,
+    default: {
+        SUPERVISOR_REMOTE_MUTATIONS_ENABLED: false,
+        SUPERVISOR_REMOTE_INCOME_ENABLED: false,
+        SUPERVISOR_REMOTE_RATE_ENABLED: false,
+        SUPERVISOR_REMOTE_EGRESS_ENABLED: false,
+    },
+}));
+
 import {
     buildSupervisorCommand,
     sendSupervisorCommand,

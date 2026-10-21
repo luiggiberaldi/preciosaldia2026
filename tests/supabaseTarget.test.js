@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { resolveSupabaseTarget, isSupervisorStagingMode, hasSupabaseBackend } from '../src/config/supabaseTarget.js';
 
-const STAGING_URL = 'https://tdfcpwctvumbdjmifypd.supabase.co';
+const STAGING_URL = 'https://wapczmlwljkrjtfhmqko.supabase.co';
 const PROD_URL = 'https://sodgzkablshladvbtnes.supabase.co';
 
 describe('resolveSupabaseTarget', () => {
