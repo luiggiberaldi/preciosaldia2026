@@ -77,13 +77,13 @@ export default function TasaOficialCard({
             <div className="min-h-full bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col justify-between">
                 <div>
                     {/* Header */}
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center justify-between mb-2 gap-2">
                         <h3 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1.5">
-                            <ArrowUpRight size={13} className="text-brand" /> Tasa de Cambio
+                            <ArrowUpRight size={13} className="text-brand shrink-0" /> <span className="truncate">Tasa de Cambio</span>
                         </h3>
                         <div className="flex items-center gap-1.5">
                             <span
-                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 whitespace-nowrap ${
                                     rateMode === 'manual'
                                         ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200/50 dark:border-amber-800/30'
                                         : rateMode === 'euro'
@@ -154,7 +154,7 @@ export default function TasaOficialCard({
                             triggerHaptic?.();
                             setIsModalOpen(true);
                         }}
-                        className="w-full mt-3 py-2 px-3 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700/60 rounded-xl text-xs font-bold flex items-center justify-between group active:scale-[0.98] transition-all"
+                        className="w-full mt-3 py-2 px-3 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700/60 rounded-xl text-xs font-bold flex items-center justify-between group active:scale-[0.98] transition-all whitespace-nowrap"
                         aria-label="Actualizar o ajustar tasa"
                     >
                         <span className="flex items-center gap-2">

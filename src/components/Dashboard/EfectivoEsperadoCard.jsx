@@ -27,11 +27,11 @@ export default function EfectivoEsperadoCard({
         <>
             <div className="min-h-full bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col justify-between">
                 <div>
-                    <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1.5">
-                            <Wallet size={13} className="text-brand" /> Efectivo esperado en caja
+                    <div className="flex items-center justify-between mb-2 gap-2">
+                        <h3 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1.5 min-w-0 truncate">
+                            <Wallet size={13} className="text-brand shrink-0" /> <span className="truncate">Efectivo esperado en caja</span>
                         </h3>
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200/50 dark:border-emerald-800/30">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200/50 dark:border-emerald-800/30 shrink-0 whitespace-nowrap">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                             En vivo
                         </span>
@@ -67,7 +67,7 @@ export default function EfectivoEsperadoCard({
                         triggerHaptic?.();
                         setIsArqueoOpen(true);
                     }}
-                    className="w-full mt-3 py-2 px-3 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700/60 rounded-xl text-xs font-bold flex items-center justify-between group active:scale-[0.98] transition-all"
+                    className="w-full mt-3 py-2 px-3 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700/60 rounded-xl text-xs font-bold flex items-center justify-between group active:scale-[0.98] transition-all whitespace-nowrap"
                     aria-label="Previsualizar arqueo de caja"
                 >
                     <span className="flex items-center gap-2">

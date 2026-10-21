@@ -12,11 +12,11 @@ export default function DashboardCashControls({
     copPrimary,
     tasaCop,
     bcvRate,
-    todayCashFlow = [],
+    todayCashFlow,
     todayApertura,
-    todaySales = [],
-    todayTotalUsd = 0,
-    todayTotalCop = 0,
+    todaySales,
+    todayTotalUsd,
+    todayTotalCop,
     onDailyClose,
     onOpenGasto,
     onTasaClick,
@@ -25,8 +25,9 @@ export default function DashboardCashControls({
     triggerHaptic,
 }) {
     return (
-        <section className="grid grid-cols-1 xl:grid-cols-2 gap-3 mb-5" aria-label="Resumen y controles de caja">
-            <div className={`grid grid-cols-1 ${isAdmin ? 'sm:grid-cols-2' : ''} gap-3`}>
+        <section className="space-y-3.5 mb-5" aria-label="Resumen y controles de caja">
+            {/* Fila 1: Métricas de Caja (Efectivo Esperado y Tasa Oficial en ancho completo ~440px en laptop) */}
+            <div className={`grid grid-cols-1 ${isAdmin ? 'sm:grid-cols-2' : ''} gap-3.5`}>
                 {isAdmin && (
                     <EfectivoEsperadoCard
                         paymentBreakdown={paymentBreakdown}
@@ -46,14 +47,15 @@ export default function DashboardCashControls({
                 />
             </div>
 
-            <div className="grid grid-cols-1 gap-3">
+            {/* Fila 2: Acciones Operativas de Caja */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 items-stretch">
                 {(todayCashFlow.length > 0 || todaySales.length > 0) ? (
                     <button
                         type="button"
                         onClick={onDailyClose}
-                        className="w-full min-h-[96px] bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white rounded-2xl p-4 shadow-lg shadow-red-500/20 active:scale-[0.98] transition-all flex items-center justify-between group"
+                        className="w-full min-h-[88px] bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white rounded-2xl p-4 shadow-lg shadow-red-500/20 active:scale-[0.98] transition-all flex items-center justify-between group"
                     >
-                        <span className="flex items-center gap-3 min-w-0">
+                        <span className="flex items-center gap-3.5 min-w-0">
                             <span className="w-11 h-11 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm shrink-0">
                                 <LockIcon size={22} />
                             </span>
@@ -72,7 +74,7 @@ export default function DashboardCashControls({
                         </span>
                     </button>
                 ) : (
-                    <div className="w-full min-h-[96px] bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 flex items-center gap-3">
+                    <div className="w-full min-h-[88px] bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 flex items-center gap-3">
                         <span className="w-10 h-10 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl flex items-center justify-center shrink-0">
                             <CheckCircle2 size={20} className="text-emerald-500" />
                         </span>
@@ -83,24 +85,24 @@ export default function DashboardCashControls({
                     </div>
                 )}
 
-                <div className={`grid grid-cols-1 ${isAdmin && todayApertura && (onOpenAporte || onGoVentas) ? 'sm:grid-cols-2' : ''} gap-3`}>
+                <div className={`grid grid-cols-1 ${isAdmin && todayApertura && (onOpenAporte || onGoVentas) ? 'grid-cols-2' : ''} gap-3`}>
                     <button
                         type="button"
                         onClick={() => { triggerHaptic && triggerHaptic(); onOpenGasto && onOpenGasto(); }}
-                    className="w-full min-h-[96px] bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200/70 dark:border-rose-900/50 rounded-2xl p-4 shadow-sm active:scale-[0.98] transition-all flex items-center justify-between group"
-                >
-                    <span className="flex items-center gap-3 min-w-0">
-                        <span className="w-11 h-11 bg-rose-100 dark:bg-rose-900/40 rounded-xl flex items-center justify-center shadow-inner shrink-0">
-                            <Wallet size={22} className="text-rose-600 dark:text-rose-400" />
-                        </span>
-                        <span className="text-left min-w-0">
-                            <span className="block text-sm font-black">Registrar Gasto</span>
-                            <span className="block text-[11px] text-rose-500/80 font-bold">Abonos, compras e insumos</span>
-                        </span>
-                    </span>
-                    <span className="w-8 h-8 bg-rose-100 dark:bg-rose-900/40 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
-                        <Plus size={18} className="text-rose-600 dark:text-rose-400" />
-                    </span>
+                        className="w-full min-h-[84px] sm:min-h-[88px] bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200/70 dark:border-rose-900/50 rounded-2xl p-3 sm:p-3.5 shadow-sm active:scale-[0.98] transition-all flex flex-col justify-between group text-left"
+                    >
+                        <div className="flex items-center justify-between w-full">
+                            <span className="w-8 h-8 sm:w-9 sm:h-9 bg-rose-100 dark:bg-rose-900/40 rounded-xl flex items-center justify-center shadow-inner shrink-0">
+                                <Wallet size={18} className="text-rose-600 dark:text-rose-400" />
+                            </span>
+                            <span className="w-6 h-6 sm:w-7 sm:h-7 bg-rose-100 dark:bg-rose-900/40 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                                <Plus size={14} className="text-rose-600 dark:text-rose-400" />
+                            </span>
+                        </div>
+                        <div className="mt-2 min-w-0">
+                            <span className="block text-xs sm:text-sm font-black truncate">Registrar Gasto</span>
+                            <span className="block text-[10px] text-rose-500/80 font-bold truncate">Compras, insumos</span>
+                        </div>
                     </button>
                     {isAdmin && todayApertura && (onOpenAporte || onGoVentas) && (
                         <button
@@ -110,20 +112,20 @@ export default function DashboardCashControls({
                                 if (onOpenAporte) onOpenAporte();
                                 else if (onGoVentas) onGoVentas();
                             }}
-                            className="w-full min-h-[96px] bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-900/50 rounded-2xl p-4 shadow-sm active:scale-[0.98] transition-all flex items-center justify-between group"
+                            className="w-full min-h-[84px] sm:min-h-[88px] bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-900/50 rounded-2xl p-3 sm:p-3.5 shadow-sm active:scale-[0.98] transition-all flex flex-col justify-between group text-left"
                         >
-                            <span className="flex items-center gap-3 min-w-0">
-                                <span className="w-11 h-11 bg-emerald-100 dark:bg-emerald-900/40 rounded-xl flex items-center justify-center shadow-inner shrink-0">
-                                    <Wallet size={22} className="text-emerald-600 dark:text-emerald-400" />
+                            <div className="flex items-center justify-between w-full">
+                                <span className="w-8 h-8 sm:w-9 sm:h-9 bg-emerald-100 dark:bg-emerald-900/40 rounded-xl flex items-center justify-center shadow-inner shrink-0">
+                                    <Wallet size={18} className="text-emerald-600 dark:text-emerald-400" />
                                 </span>
-                                <span className="text-left min-w-0">
-                                    <span className="block text-sm font-black">Registrar Aporte</span>
-                                    <span className="block text-[11px] text-emerald-600/80 dark:text-emerald-400/80 font-bold">Efectivo adicional del turno</span>
+                                <span className="w-6 h-6 sm:w-7 sm:h-7 bg-emerald-100 dark:bg-emerald-900/40 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                                    <Plus size={14} className="text-emerald-600 dark:text-emerald-400" />
                                 </span>
-                            </span>
-                            <span className="w-8 h-8 bg-emerald-100 dark:bg-emerald-900/40 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
-                                <Plus size={18} className="text-emerald-600 dark:text-emerald-400" />
-                            </span>
+                            </div>
+                            <div className="mt-2 min-w-0">
+                                <span className="block text-xs sm:text-sm font-black truncate">Registrar Aporte</span>
+                                <span className="block text-[10px] text-emerald-600/80 dark:text-emerald-400/80 font-bold truncate">Efectivo turno</span>
+                            </div>
                         </button>
                     )}
                 </div>
