@@ -1,6 +1,5 @@
 import { round2, mulR, divR } from '../utils/dinero.js';
 import { getDateRange, getLocalISODate } from '../utils/dateHelpers.js';
-import { matchesSearch } from '../utils/searchMatch.js';
 
 const SALE_TYPES = new Set(['VENTA', 'VENTA_FIADA', 'VENTA_CASHEA']);
 const EXPENSE_TYPES = new Set(['GASTO_INTERNO', 'PAGO_PROVEEDOR']);
@@ -142,14 +141,6 @@ export function calculateSupervisorCashSummary(records = [], bcvRate = 1) {
             continue;
         }
 
-        if (record.tipo === 'APORTE_CAJA') {
-            addCash(cashFlow, 'USD', record.aporteUsd);
-            addCash(cashFlow, 'BS', record.aporteBs);
-            addCash(cashFlow, 'COP', record.aporteCop);
-            cashMovementCount += 1;
-            continue;
-        }
-
         let touchedCash = false;
         if (Array.isArray(record.payments) && record.payments.length > 0) {
             for (const payment of record.payments) {
@@ -262,11 +253,15 @@ export function filterSupervisorInventoryMovements(movements = [], {
     status = 'todos',
     includeIncomplete = true,
 } = {}) {
+    const query = String(search).trim().toLowerCase();
     return (Array.isArray(movements) ? movements : []).filter(movement => {
         if (direction !== 'todos' && movement.direction !== direction) return false;
         if (status !== 'todos' && movement.status !== status) return false;
         if (!includeIncomplete && movement.isIncomplete) return false;
-        return matchesSearch([movement.productName, movement.productId, movement.reason, movement.lotReference, movement.supplierName], search);
+        if (!query) return true;
+        return [movement.productName, movement.productId, movement.reason, movement.lotReference, movement.supplierName]
+            .filter(Boolean)
+            .some(value => String(value).toLowerCase().includes(query));
     });
 }
 

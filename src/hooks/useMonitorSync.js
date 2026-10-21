@@ -30,8 +30,6 @@ export function useMonitorSync(pairedDeviceId) {
     const [syncError, setSyncError] = useState(null);
     const subscriptionRef = useRef(null);
     const disposedRef = useRef(false);
-    const syncSuspendedRef = useRef(false);
-    const pendingApplicationsRef = useRef(new Set());
     const initInFlightRef = useRef(null);
     const reconnectTimerRef = useRef(null);
     const reconnectAttemptRef = useRef(0);
@@ -47,7 +45,7 @@ export function useMonitorSync(pairedDeviceId) {
     };
 
     const isActiveLifecycle = (lifecycleId) => (
-        !disposedRef.current && !syncSuspendedRef.current && lifecycleRef.current === lifecycleId
+        !disposedRef.current && lifecycleRef.current === lifecycleId
     );
 
     const removeChannel = async (channel) => {
@@ -73,10 +71,7 @@ export function useMonitorSync(pairedDeviceId) {
         }, delay);
     };
 
-    const applyDocToLocal = async (doc, lifecycleId = lifecycleRef.current) => {
-        if (!isActiveLifecycle(lifecycleId)) {
-            return { applied: false, rejected: true, stale: true, error: 'La sincronización del monitor está detenida' };
-        }
+    const applyDocToLocal = async (doc) => {
         const docId = doc?.doc_id;
         const collection = doc?.collection;
         const envelope = readSyncEnvelope(doc?.data);
@@ -100,12 +95,7 @@ export function useMonitorSync(pairedDeviceId) {
             return { applied: false, rejected: true, stale: true, error: 'Documento antiguo o repetido' };
         }
 
-        if (!isActiveLifecycle(lifecycleId)) {
-            return { applied: false, rejected: true, stale: true, error: 'La sincronización del monitor está detenida' };
-        }
-
         await runWithoutEco(async () => {
-            if (!isActiveLifecycle(lifecycleId)) return;
             if (collection === 'local') {
                 const stringPayload = typeof envelope.payload === 'string'
                     ? envelope.payload
@@ -127,13 +117,12 @@ export function useMonitorSync(pairedDeviceId) {
         return { applied: true, rejected: false, updatedAt: envelope.updatedAt };
     };
 
-    const applyBatch = async (docs, lifecycleId = lifecycleRef.current) => {
+    const applyBatch = async (docs) => {
         let applied = 0;
         let rejected = 0;
         for (const doc of docs || []) {
-            if (!isActiveLifecycle(lifecycleId)) break;
             try {
-                const result = await applyDocToLocal(doc, lifecycleId);
+                const result = await applyDocToLocal(doc);
                 if (result.applied) applied += 1;
                 if (result.rejected && !result.stale) rejected += 1;
             } catch (error) {
@@ -180,10 +169,8 @@ export function useMonitorSync(pairedDeviceId) {
                         filter: `device_id=eq.${pairedDeviceId}`,
                     }, async (realtimePayload) => {
                         if (!isActiveLifecycle(lifecycleId) || !realtimePayload.new) return;
-                        const application = applyDocToLocal(realtimePayload.new, lifecycleId);
-                        pendingApplicationsRef.current.add(application);
                         try {
-                            const result = await application;
+                            const result = await applyDocToLocal(realtimePayload.new);
                             if (result.applied && isActiveLifecycle(lifecycleId)) {
                                 updateLastSync(new Date());
                                 setSyncError(null);
@@ -192,8 +179,6 @@ export function useMonitorSync(pairedDeviceId) {
                             if (!isActiveLifecycle(lifecycleId)) return;
                             setSyncError(error?.message || 'No se pudo aplicar la actualización remota');
                             setSyncState(SUPERVISOR_SYNC_STATES.DEGRADED);
-                        } finally {
-                            pendingApplicationsRef.current.delete(application);
                         }
                     })
                     .subscribe((status) => {
@@ -259,7 +244,7 @@ export function useMonitorSync(pairedDeviceId) {
 
                 if (error) throw error;
 
-                const batch = await applyBatch(docs || [], lifecycleId);
+                const batch = await applyBatch(docs || []);
                 if (!isActiveLifecycle(lifecycleId)) return { ok: false, error: 'Ciclo de sincronización obsoleto' };
                 if (batch.applied > 0) updateLastSync(new Date());
 
@@ -294,26 +279,8 @@ export function useMonitorSync(pairedDeviceId) {
 
     const triggerRefresh = async () => initMonitor();
 
-    const stopMonitorSync = async () => {
-        if (syncSuspendedRef.current) return;
-        syncSuspendedRef.current = true;
-        lifecycleRef.current += 1;
-        if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-        reconnectTimerRef.current = null;
-
-        const initialization = initInFlightRef.current;
-        if (initialization) await initialization.catch(() => {});
-        while (pendingApplicationsRef.current.size > 0) {
-            await Promise.allSettled([...pendingApplicationsRef.current]);
-        }
-        await clearSubscription();
-        setIsConnected(false);
-        setSyncState(SUPERVISOR_SYNC_STATES.REVOKED);
-    };
-
     useEffect(() => {
         disposedRef.current = false;
-        syncSuspendedRef.current = false;
         const lifecycleId = lifecycleRef.current + 1;
         lifecycleRef.current = lifecycleId;
         reconnectAttemptRef.current = 0;
@@ -361,6 +328,5 @@ export function useMonitorSync(pairedDeviceId) {
         syncState,
         syncError,
         triggerRefresh,
-        stopMonitorSync,
     };
 }

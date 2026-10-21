@@ -10,7 +10,7 @@ const CASH_FLOW_TYPES = Object.freeze([
     'PAGO_PROVEEDOR',
     'GASTO_INTERNO',
     'APERTURA_CAJA',
-    'AVANCE_EFECTIVO', 'APORTE_CAJA',
+    'AVANCE_EFECTIVO',
 ]);
 
 const finite = (value, fallback = 0) => {
@@ -125,12 +125,6 @@ export function calculateSupervisorPaymentBreakdown(sales = [], bcvRate = 1) {
             if (finite(sale.openingUsd) > 0) add('efectivo_usd', sale.openingUsd, 0, 'Efectivo $', 'USD');
             if (finite(sale.openingBs) > 0) add('efectivo_bs', 0, sale.openingBs, 'Efectivo Bs', 'BS');
             if (finite(sale.openingCop) > 0) add('efectivo_cop', 0, 0, 'Efectivo COP', 'COP');
-            continue;
-        }
-        if (sale.tipo === 'APORTE_CAJA') {
-            if (finite(sale.aporteUsd) > 0) add('efectivo_usd', sale.aporteUsd, 0, 'Efectivo $', 'USD');
-            if (finite(sale.aporteBs) > 0) add('efectivo_bs', 0, sale.aporteBs, 'Efectivo Bs', 'BS');
-            if (finite(sale.aporteCop) > 0) add('efectivo_cop', 0, 0, 'Efectivo COP', 'COP');
             continue;
         }
         if (sale.tipo === 'VENTA_FIADA') {

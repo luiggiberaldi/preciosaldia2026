@@ -6,7 +6,6 @@ import { generateFingerprint, verifyStoredFingerprint, seedFingerprintAnchor } f
 import { useLicenseMonitoring } from './useLicenseMonitoring';
 import { useDemoCountdown } from './useDemoCountdown';
 import { LICENSE_POLICY } from '../utils/securityConstants';
-import { sendDeviceHeartbeat } from '../services/deviceHeartbeat';
 
 const APP_VERSION = '1.0.0';
 const PRODUCT_ID = 'bodega';
@@ -317,75 +316,75 @@ function useSecurityState() {
             } catch { }
         }
 
-        // Al iniciar se consultó el estado remoto de licencia; no se requiere un
-        // heartbeat extra aquí: el monitor enviará el primero tras montar.
+        // Registro y heartbeat garantizado en Supabase para el 100% de los dispositivos
+        const registerAndHeartbeat = async () => {
+            try {
+                const bName = localStorage.getItem('business_name') || localStorage.getItem('restaurant_name') || '';
+                const mEmail = localStorage.getItem('marketing_email') || '';
+                const clientName = mEmail ? `${bName} | ${mEmail}` : bName;
+                await supabase.rpc('auto_register_device', {
+                    p_device_id: currentDeviceId,
+                    p_product_id: PRODUCT_ID,
+                    p_client_name: clientName
+                });
+                await supabase.rpc('heartbeat_device', {
+                    p_device_id: currentDeviceId,
+                    p_product_id: PRODUCT_ID,
+                    p_client_name: clientName
+                });
+            } catch (e) {
+                if (import.meta.env?.DEV) {
+                    console.warn('[Security] Registro / heartbeat falló:', e?.message ?? e);
+                }
+            }
+        };
+
+        registerAndHeartbeat();
+
         setLoading(false);
     }, [setDemoExpiredMsg]);
 
     useEffect(() => {
         const initDeviceId = async () => {
-            // Local-only staging harness. This path is impossible in production
-            // builds and uses only the database's synthetic e2e-* identifiers.
-            const supervisorStagingE2E = import.meta.env?.DEV
-                && import.meta.env.VITE_SUPERVISOR_E2E_STAGING === 'true';
-            let storedId;
-
-            if (supervisorStagingE2E) {
-                const seededId = localStorage.getItem('pda_device_id');
-                storedId = ['e2e-primary-device', 'e2e-monitor-device'].includes(seededId)
-                    ? seededId
-                    : (localStorage.getItem('pda_pairing_mode') === 'monitor'
-                        ? 'e2e-monitor-device'
-                        : 'e2e-primary-device');
-                localStorage.setItem('pda_device_id', storedId);
-            } else {
-                // SEC-008: Re-verificar fingerprint. Si el dispositivo cambió (o si alguien
-                // inyectó un pda_device_id arbitrario), invalidamos la sesión premium.
-                storedId = localStorage.getItem('pda_device_id');
-                const currentFp = await generateFingerprint();
-                if (storedId) {
-                    const matches = await verifyStoredFingerprint(storedId, currentFp);
-                    if (!matches) {
-                        // Fingerprint manipulado o cambiado → revocar premium y re-fijar deviceId.
-                        if (import.meta.env?.DEV) {
-                            console.warn('[Security] Fingerprint mismatch detectado (SEC-008). Revocando sesión.');
-                        }
-                        localStorage.removeItem('pda_premium_token');
-                        setIntegrityWarning(true);
-                        storedId = currentFp;
-                        localStorage.setItem('pda_device_id', storedId);
+            // SEC-008: Re-verificar fingerprint. Si el dispositivo cambió (o si alguien
+            // inyectó un pda_device_id arbitrario), invalidamos la sesión premium.
+            let storedId = localStorage.getItem('pda_device_id');
+            const currentFp = await generateFingerprint();
+            if (storedId) {
+                const matches = await verifyStoredFingerprint(storedId, currentFp);
+                if (!matches) {
+                    // Fingerprint manipulado o cambiado → revocar premium y re-fijar deviceId.
+                    if (import.meta.env?.DEV) {
+                        console.warn('[Security] Fingerprint mismatch detectado (SEC-008). Revocando sesión.');
                     }
-                } else {
+                    localStorage.removeItem('pda_premium_token');
+                    setIntegrityWarning(true);
                     storedId = currentFp;
                     localStorage.setItem('pda_device_id', storedId);
                 }
-                // SEC-008-r2: mantener el ancla de identidad fresca en instalaciones reales.
-                seedFingerprintAnchor(storedId, currentFp);
+            } else {
+                storedId = currentFp;
+                localStorage.setItem('pda_device_id', storedId);
             }
+            // SEC-008-r2: mantener la ancla de identidad fresca. Tras un match exacto
+            // lo es/actualiza verifyStoredFingerprint; aquí cubre el registro fresco y la
+            // rotación post-manipulación, de modo que el ID activo quede protegido
+            // contra drift futuro desde su primer día.
+            seedFingerprintAnchor(storedId, currentFp);
+            setDeviceId(storedId);
 
-            // Auto-registro idempotente de filas al iniciar; los heartbeats posteriores
-            // actualizan last_seen sin repetir comprobaciones/inserciones de registro.
+            // Auto-registro: registrar dispositivo si no existe (sin importar licencia)
             try {
-                if (!supervisorStagingE2E && import.meta.env.VITE_SUPABASE_URL) {
+                if (import.meta.env.VITE_SUPABASE_URL) {
                     const bName = localStorage.getItem('business_name') || localStorage.getItem('restaurant_name') || '';
                     const mEmail = localStorage.getItem('marketing_email') || '';
                     const clientName = mEmail ? `${bName} | ${mEmail}` : bName;
-                    const { error } = await supabase.rpc('auto_register_device', {
-                        p_device_id: storedId,
-                        p_product_id: PRODUCT_ID,
-                        p_client_name: clientName,
-                    });
-                    if (error) throw error;
+                    await supabase.rpc('auto_register_device', { p_device_id: storedId, p_product_id: PRODUCT_ID, p_client_name: clientName });
                 }
-            } catch (error) {
-                if (import.meta.env?.DEV) {
-                    console.warn('[Security] auto_register_device falló:', error?.message ?? error);
-                }
+            } catch (e) {
+                if (import.meta.env?.DEV) console.warn('[Security] auto_register_device falló:', e?.message ?? e);
             }
 
-            // Montar el monitor después de intentar el registro evita que el primer
-            // heartbeat llegue antes de que existan las filas de presencia/licencia.
-            setDeviceId(storedId);
             checkLicense(storedId);
         };
 
@@ -763,10 +762,10 @@ function useSecurityState() {
         const mEmail = localStorage.getItem('marketing_email') || '';
         const clientName = mEmail ? `${bName} | ${mEmail}` : bName;
         try {
-            await sendDeviceHeartbeat(supabase, {
-                deviceId: deviceId || localStorage.getItem('pda_device_id'),
-                productId: PRODUCT_ID,
-                clientName,
+            await supabase.rpc('heartbeat_device', {
+                p_device_id: deviceId || localStorage.getItem('pda_device_id'),
+                p_product_id: PRODUCT_ID,
+                p_client_name: clientName
             });
         } catch(e) {
             console.error('Error forcing heartbeat:', e);

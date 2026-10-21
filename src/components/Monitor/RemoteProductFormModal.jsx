@@ -3,8 +3,6 @@ import { Modal } from '../Modal';
 import ProductFormQuick from '../Products/ProductFormQuick';
 import { useProductContext } from '../../context/ProductContext';
 import { buildProductPayload } from '../../utils/productProcessor';
-import { prepareProductFormState } from '../../hooks/useProductForm';
-import { getGranelUnitMode } from '../../utils/granel';
 import { showToast } from '../Toast';
 import { Save } from 'lucide-react';
 import { SUPERVISOR_REMOTE_MUTATIONS_ENABLED } from '../../config/supervisorPolicy';
@@ -27,13 +25,13 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
     const [costBs, setCostBs] = useState('');
     const [costCop, setCostCop] = useState('');
 
-    const [stock, setStock] = useState('');
+    const [stock, setStock] = useState('0');
     const [lowStockAlert, setLowStockAlert] = useState('5');
     const [image, setImage] = useState(null);
 
     const [packagingType, setPackagingType] = useState('suelto');
     const [unitsPerPackage, setUnitsPerPackage] = useState('1');
-    const [stockInLotes, setStockInLotes] = useState('');
+    const [stockInLotes, setStockInLotes] = useState('0');
     const [granelUnit, setGranelUnit] = useState('kg');
     const [sellByUnit, setSellByUnit] = useState(false);
     const [unitPriceUsd, setUnitPriceUsd] = useState('');
@@ -45,32 +43,33 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
 
     useEffect(() => {
         if (productToEdit) {
-            const formState = prepareProductFormState(productToEdit, bcvRate);
-            setName(formState.name || '');
-            setBarcode(formState.barcode || '');
-            setCategory(formState.category || 'General');
-            setPriceUsd(formState.priceUsd || '');
-            setPriceBs(formState.priceBs || '');
+            setName(productToEdit.name || '');
+            setBarcode(productToEdit.barcode || '');
+            setCategory(productToEdit.category || 'General');
+            setPriceUsd(productToEdit.priceUsd != null ? String(productToEdit.priceUsd) : (productToEdit.priceUsdt != null ? String(productToEdit.priceUsdt) : ''));
+            setPriceBs(productToEdit.priceBs != null ? String(productToEdit.priceBs) : '');
             setPriceCop(productToEdit.priceCop != null ? String(productToEdit.priceCop) : '');
-            setPricingMode(formState.pricingMode || 'tasa_dia');
-            setPriceBsUsdRef(formState.priceBsUsdRef || '');
+            setPricingMode(productToEdit.pricingMode || 'tasa_dia');
+            setPriceBsUsdRef(productToEdit.priceBsUsdRef != null ? String(productToEdit.priceBsUsdRef) : '');
 
-            setCostUsd(formState.costUsd || '');
-            setCostBs(formState.costBs || '');
+            const rawCostUsd = productToEdit.costUsd != null ? String(productToEdit.costUsd) : (productToEdit.costPrice != null ? String(productToEdit.costPrice) : '');
+            setCostUsd(rawCostUsd);
+            const derivedCostBs = rawCostUsd && bcvRate > 0 ? (parseFloat(rawCostUsd) * bcvRate).toFixed(2) : (productToEdit.costBs != null ? String(productToEdit.costBs) : '');
+            setCostBs(derivedCostBs);
             setCostCop(productToEdit.costCop != null ? String(productToEdit.costCop) : '');
 
-            setStock(formState.stock !== undefined && formState.stock !== null ? String(formState.stock) : '0');
-            setLowStockAlert(String(formState.lowStockAlert ?? 5));
-            setImage(formState.image || null);
+            setStock(productToEdit.stock != null ? String(productToEdit.stock) : '0');
+            setLowStockAlert(productToEdit.lowStockAlert != null ? String(productToEdit.lowStockAlert) : (productToEdit.minStock != null ? String(productToEdit.minStock) : '5'));
+            setImage(productToEdit.image || null);
             setImageMatches([]);
             setIsSearchingImage(false);
 
-            setPackagingType(formState.packagingType || 'suelto');
-            setUnitsPerPackage(formState.unitsPerPackage != null ? String(formState.unitsPerPackage) : '1');
-            setStockInLotes(formState.stockInLotes != null ? String(formState.stockInLotes) : '0');
-            setGranelUnit(formState.granelUnit || 'kg');
-            setSellByUnit(Boolean(formState.sellByUnit));
-            setUnitPriceUsd(formState.unitPriceUsd != null ? String(formState.unitPriceUsd) : '');
+            setPackagingType(productToEdit.packagingType || 'suelto');
+            setUnitsPerPackage(productToEdit.unitsPerPackage != null ? String(productToEdit.unitsPerPackage) : '1');
+            setStockInLotes(productToEdit.stockInLotes != null ? String(productToEdit.stockInLotes) : '0');
+            setGranelUnit(productToEdit.granelUnit || 'kg');
+            setSellByUnit(Boolean(productToEdit.sellByUnit));
+            setUnitPriceUsd(productToEdit.unitPriceUsd != null ? String(productToEdit.unitPriceUsd) : '');
             setUnitPriceCop(productToEdit.unitPriceCop != null ? String(productToEdit.unitPriceCop) : '');
         } else {
             setName('');
@@ -86,7 +85,7 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
             setCostBs('');
             setCostCop('');
 
-            setStock('');
+            setStock('0');
             setLowStockAlert('5');
             setImage(null);
             setImageMatches([]);
@@ -94,7 +93,7 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
 
             setPackagingType('suelto');
             setUnitsPerPackage('1');
-            setStockInLotes('');
+            setStockInLotes('0');
             setGranelUnit('kg');
             setSellByUnit(false);
             setUnitPriceUsd('');
@@ -249,9 +248,7 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
                 unitPriceUsd,
                 unitPriceCop,
                 category,
-                lowStockAlert,
-                lowStockAlertCanonical: true,
-                granelUnitMode: getGranelUnitMode(),
+                lowStockAlert
             };
 
             const processed = buildProductPayload(formData, bcvRate);

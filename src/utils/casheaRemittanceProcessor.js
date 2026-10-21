@@ -1,5 +1,6 @@
 import { storageService } from './storageService';
 import { divR, mulR, round2, subR } from './dinero';
+import { formatUsd } from './calculatorUtils';
 import { withLock } from './withLock';
 import { deepFreeze } from './deepFreeze';
 import { CurrencyService } from '../services/CurrencyService';
@@ -55,7 +56,7 @@ export async function processCasheaRemittance({
             return { error: 'Este cliente no tiene remesa Cashea pendiente' };
         }
         if (amountUsd > pendiente + 0.01) {
-            return { error: `El monto excede lo pendiente ($${pendiente.toFixed(2)})` };
+            return { error: `El monto excede lo pendiente ($${formatUsd(pendiente)})` };
         }
 
         // Nunca dejar casheaDeuda negativa aunque el monto exceda por redondeo.

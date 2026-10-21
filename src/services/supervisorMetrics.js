@@ -1,5 +1,4 @@
 import { round2 } from '../utils/dinero.js';
-import { isLowStockProduct } from '../utils/granel.js';
 import {
     calculateSupervisorSalesMetrics,
     normalizeProduct,
@@ -19,7 +18,7 @@ export function calculateInventoryMetrics(products = []) {
         totalQty += product.stock;
 
         if (product.stock <= 0) outOfStockCount += 1;
-        else if (isLowStockProduct(product)) lowStockCount += 1;
+        else if (product.stock <= product.lowStockAlert) lowStockCount += 1;
     }
 
     return {

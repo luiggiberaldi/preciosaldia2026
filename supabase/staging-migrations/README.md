@@ -38,6 +38,42 @@ They are a **partial staging E2E schema alignment**, not a full application clon
 
 7b. **Reaplicada el 2026-10-14.** El SQL de 007 no estaba realmente aplicado aunque figuraba en `supabase_migrations`: faltaban `create_owner_claim_code`, `claim_owner_device` y las columnas `claim_*`, y `generate_pairing_token` seguía con la brecha de reclamo. Se reaplicó en una transacción tras respaldo previo ([scratch/staging-backup-before-007-reapply.md](../../scratch/staging-backup-before-007-reapply.md)). Verificado después: funciones y columnas presentes, `anon` sin EXECUTE, 6 filas originales intactas. Casos con sesiones simuladas en transacciones revertidas: tercero bloqueado, dueño genera token, caja sin dueño bloqueada, código malo rechazado, reuso rechazado. Sin residuales. Después, E2E reales: reclamo de dueño 1/1, pairing clásico 1/1, desvinculación con secreto 1/1 y aislamiento entre dueños 1/1. Todos sin filas residuales. La UI del código de reclamo está en `PairingManager.jsx`; los E2E reclaman dueño antes de generar token.
 
+8. **`20261014_011_staging_owner_proof_claim_only.sql` — aplicada en staging el 2026-10-14.** `generate_pairing_token` solo lo ejecuta el dueño registrado; nunca reclama ni asigna dueño. `claim_owner_device` es el único camino para fijar `owner_auth_id`. Respaldo previo: [scratch/staging-backup-before-011.sql](../../scratch/staging-backup-before-011.sql). Verificado: `anon` sin EXECUTE, `authenticated` con EXECUTE, 6 cajas intactas con dueño. Nueve casos de ataque en transacción revertida (tercero bloqueado, código malo/caducado/reusado rechazado, fuerza bruta bloquea, dueño genera token, reclamo sobre caja con dueño bloqueado) sin residuales. Efecto colateral: deja de crear la fila de la caja de forma implícita.
+
+9. **`20261014_012_staging_register_device_pairing.sql` — aplicada en staging el 2026-10-14.** Añade `register_device_pairing(p_device_id)`: crea solo la fila de una caja `e2e-*` sin dueño, idempotente, sin tocar `owner_auth_id`. Solo `authenticated`. Necesaria porque 011 quitó la creación implícita. La app la llama en `PairingManager.jsx` solo en modo staging. Verificado: E2E de supervisor en staging 2/2 con los tests ajustados para registrar la caja antes del reclamo, sin residuales.
+
+10. **`20261014_016_staging_backup_tables_owner_policy.sql` — aplicada en staging el 2026-10-14.** Políticas de dueño (`is_own_device_row`) para `cloud_backups` y `sync_documents`, y lectura propia de `device_sessions` para `authenticated`. Sustituye la política permisiva `staging_authenticated_sync_read` (`e2e-%`) de `sync_documents`. Verificado en transacción revertida: dueño A ve solo sus filas, no puede reasignarlas, dueño B no ve las de A. Staging sin residuales después.
+
+11. **`20261014_017_staging_register_device_session.sql` — aplicada en staging el 2026-10-14.** RPC `register_device_session(p_device_id)` `SECURITY DEFINER`, solo `authenticated`. Rechaza `device_id` fuera de `e2e-*`, cajas inexistentes y reasignación a otro usuario. Verificado en transacción revertida (dueño registra, repetición idempotente, id no sintético rechazado, tercero rechazado). `useCloudBackup` la usa a través de [src/utils/deviceIdentity.js](../../src/utils/deviceIdentity.js).
+
+### Registro de auditoría (2026-10-14)
+
+| Paso | Resultado |
+|---|---|
+| Respaldo de definiciones antes de 011 | `scratch/staging-backup-before-011.sql` |
+| Aplicar 011 (transacción) | HTTP 201 |
+| Casos de ataque 011 | 9/9 comportamiento esperado |
+| Aplicar 012 | HTTP 201 |
+| `npm run test:supervisor:staging` | 2/2 pasan tras ajustar tests |
+| `npx vitest run supervisor` | 18 archivos pasan, 7 de staging omitidos sin su flag |
+| Filas residuales `e2e-*` | 0; total 6 cajas, todas con dueño |
+| Producción (`sodgzkablshladvbtnes`) | no tocada |
+| Canje del código (prueba inválida) | Una sesión anónima que no era la del dueño canjeó primero (orden incorrecto en el script). Dueño de `e2e-primary-device` quedo asignado a esa sesión anónima de staging. Aislamiento posterior OK: tercero no genera token (bloqueado) y no vuelve a reclamar (rechazado). Repetido después con orden correcto (dueño primero, tercero después) en caja `e2e-iso-*` nueva: dueño canjea OK, tercero rechazado, tercero no genera token, dueño genera token OK. Fila de prueba borrada con service role tras comprobar `e2e-*` y sin monitor; 0 residuales. Cubierto también por [tests/supervisorOwnerClaimOrderStaging.test.js](../../tests/supervisorOwnerClaimOrderStaging.test.js): pasa con `SUPERVISOR_STAGING_PAIRING_E2E=true` y se omite sin el flag. |
+| Prueba de UI del botón de reclamo | OK: entrar como Administrador, Ajustes > Sistema > Generar código. Apareció el código con contador de 10 min, sin error. Confirmado en BD: hash activo, sin dueño, 0 intentos |
+
+## Autorización explícita para pruebas en staging (2026-10-14)
+
+El responsable del proyecto autorizó explícitamente, para este trabajo, lo siguiente **solo en el proyecto de staging `tdfcpwctvumbdjmifypd`**:
+
+- Crear y eliminar filas de prueba con identificadores sintéticos `e2e-*` (incluida una caja `e2e-owner-b-test` para el segundo dueño).
+- Iniciar sesiones anónimas de prueba y ejecutar el canje de código de reclamo entre dos dueños.
+- Levantar el servidor local de Vite en modo `staging` y usar el navegador para la prueba.
+- Añadir al arnés de staging de `src/hooks/useSecurity.jsx` un identificador sintético adicional, activo solo con `import.meta.env.DEV` y `VITE_SUPERVISOR_E2E_STAGING=true`.
+
+No está autorizado: tocar el proyecto de producción (`sodgzkablshladvbtnes`), cerrar `anon` en producción, aplicar DDL nuevo en staging sin revisión, ni borrar datos fuera de los `e2e-*` creados por estas pruebas. Al terminar, las filas `e2e-*` de prueba se eliminan y se verifica que no quedan residuales.
+
+12. **`20261014_018_staging_e2e_delete_unowned_synthetic.sql` — aplicada en staging el 2026-10-14.** RPC `e2e_delete_unowned_synthetic()`, solo `authenticated`. Borra únicamente cajas `e2e-bk-%`/`e2e-iso-%` sin `owner_auth_id`, `monitor_auth_id` ni `monitor_device_id`. Permite que las pruebas limpien las cajas que `register_device_pairing` deja sin dueño. Verificado: `anon` sin EXECUTE, `authenticated` con EXECUTE. La prueba de respaldos la llama al terminar; las pruebas de aislamiento de dueños aún no.
+
 ## Staging-only E2E harness RPCs (not in a file here)
 
 The functions `e2e_set_pairing_link`, `e2e_set_canary_allowlist` and `e2e_cleanup_commands` were applied **directly to staging** (`tdfcpwctvumbdjmifypd`) so the Supervisor command harness no longer needs the Management API token. They are not stored as a migration file in this directory yet; add one before any reproducible rebuild of staging.

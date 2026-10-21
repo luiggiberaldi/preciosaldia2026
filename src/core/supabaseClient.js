@@ -14,9 +14,21 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+import { isSupervisorStagingMode, resolveSupabaseTarget } from '../config/supabaseTarget';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// En modo staging usa solo el proyecto de staging (fuente única: supabaseTarget.js).
+const supabaseEnv = {
+    VITE_SUPERVISOR_E2E_STAGING: import.meta.env.VITE_SUPERVISOR_E2E_STAGING,
+    VITE_SUPABASE_STAGING_URL: import.meta.env.VITE_SUPABASE_STAGING_URL,
+    VITE_SUPABASE_STAGING_KEY: import.meta.env.VITE_SUPABASE_STAGING_KEY,
+};
+const isStagingMode = isSupervisorStagingMode(supabaseEnv);
+const supabaseUrl = isStagingMode
+    ? resolveSupabaseTarget(supabaseEnv).url
+    : import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = isStagingMode
+    ? resolveSupabaseTarget(supabaseEnv).key
+    : import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // SEC-021: error claro en boot si falta alguna variable.
 if (!supabaseUrl || !supabaseAnonKey) {

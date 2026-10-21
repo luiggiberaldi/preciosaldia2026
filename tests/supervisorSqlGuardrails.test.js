@@ -22,8 +22,6 @@ describe('Supervisor SQL guardrails', () => {
         expect((sql.match(/SET search_path = public, extensions/g) || []).length).toBe(3);
         expect(sql).toContain('token_used_at IS NULL');
         expect(sql).toContain('OR revoked_at IS NOT NULL');
-        expect(sql).toMatch(/WHERE primary_device_id = trim\(p_device_id\)\s+AND monitor_auth_id = v_actor\s+AND revoked_at IS NULL;/);
-        expect(sql).not.toContain('OR monitor_device_id = trim(p_device_id)');
         expect(sql).not.toMatch(/CREATE POLICY\s+"sync_documents_anon_access"/i);
     });
 

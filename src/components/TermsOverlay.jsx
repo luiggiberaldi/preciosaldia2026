@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Check, FileText, ChevronDown, Store, Phone } from 'lucide-react';
 import { normalizeVzlaPhone, isValidVzlaPhone, displayVzlaPhone } from '../utils/phoneValidation';
+import { isSupervisorStagingMode } from '../config/supabaseTarget';
 
 export default function TermsOverlay({ onAccept, isLicenseLoading = true, isPremium = false, isDemo = false }) {
     const [hasAccepted, setHasAccepted] = useState(
@@ -60,6 +61,8 @@ export default function TermsOverlay({ onAccept, isLicenseLoading = true, isPrem
     const phoneValid = isValidVzlaPhone(businessPhone);
     const phoneError = phoneTouched && !phoneValid;
 
+    // Staging E2E: se omiten T&C y datos del negocio para acelerar las pruebas.
+    if (isSupervisorStagingMode(import.meta.env)) return null;
     if (isLicenseLoading || (isPremium && !isDemo) || hasAccepted) return null;
 
     return (

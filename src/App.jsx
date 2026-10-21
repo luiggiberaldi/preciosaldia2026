@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useMemo, Suspense } from 'react';
-import { Home, ShoppingCart, Store, Users, Download, FlaskConical, BarChart3, WifiOff, X, Settings, Clock } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo, Suspense, lazy } from 'react';
+import { Home, ShoppingCart, Store, Users, Download, FlaskConical, Moon, Sun, BarChart3, WifiOff, X, Settings, Clock } from 'lucide-react';
 
 import DashboardView from './views/DashboardView';
 
@@ -29,11 +29,11 @@ import CommandPalette from './components/CommandPalette';
 import LockScreen from './components/security/LockScreen';
 import { useAutoLock } from './hooks/useAutoLock';
 import { useAuthStore } from './hooks/store/useAuthStore';
+import { LogOut } from 'lucide-react';
 import { purgeOldEntries } from './services/auditService';
 import { UpdateBanner } from './components/UpdateBanner';
 import { useCloudSync } from './hooks/useCloudSync';
 import { ImagePrecacheRunner } from './hooks/useImagePrecache';
-import { purgeForeignImageCache } from './services/imageBlobCache';
 import {
   SUPERVISOR_REMOTE_MUTATIONS_ENABLED,
   SUPERVISOR_REMOTE_INCOME_ENABLED,
@@ -57,7 +57,7 @@ export default function App() {
     setMountedViews(prev => ({...prev, [activeTab]: true}));
   }, [activeTab]);
 
-  const { isPremium, isDemo, loading: isLicenseLoading, demoTimeLeft, demoExpiredMsg, dismissExpiredMsg, deviceId, isMonthlyGracePeriod, monthlyGraceDaysLeft, forceHeartbeat } = useSecurity();
+  const { isPremium, isDemo, demoTimeLeft, demoExpiredMsg, dismissExpiredMsg, deviceId, isMonthlyGracePeriod, monthlyGraceDaysLeft, forceHeartbeat } = useSecurity();
   const { isOnline, cacheRates } = useOfflineQueue();
   useAutoBackup(isPremium, isDemo, deviceId);
   // El monitor no debe montar listeners de la caja. Las mutaciones remotas
@@ -155,13 +155,10 @@ export default function App() {
 
   const lastClickTimeRef = useRef(0);
 
-  const { rates, rateDiscrepancyWarning, updateData, loading: ratesLoading } = useRates();
+  const { rates, rateDiscrepancyWarning } = useRates();
 
   // Purge old audit log entries on startup
   useEffect(() => { purgeOldEntries(); }, []);
-
-  // Descarta imágenes cacheadas de otro proyecto Supabase (URLs que ya no resuelven)
-  useEffect(() => { purgeForeignImageCache(); }, []);
 
   // Cache rates whenever they update
   useEffect(() => { if (rates) cacheRates(rates); }, [rates, cacheRates]);
@@ -300,7 +297,7 @@ export default function App() {
   if (isMonitorMode) {
     return (
       <ErrorBoundary>
-        <RateProvider rates={rates} rateDiscrepancyWarning={rateDiscrepancyWarning} updateData={updateData} ratesLoading={ratesLoading}>
+        <RateProvider rates={rates} rateDiscrepancyWarning={rateDiscrepancyWarning}>
           <ProductProvider rates={rates} rateDiscrepancyWarning={rateDiscrepancyWarning}>
             <ImagePrecacheRunner />
             <Suspense fallback={<div className="flex-1 flex items-center justify-center p-6 text-slate-500 font-bold">Cargando monitor...</div>}>
@@ -317,7 +314,7 @@ export default function App() {
       <UpdateBanner />
 
       {/* Terms and Conditions Overlay (First Use) */}
-      <TermsOverlay onAccept={forceHeartbeat} isLicenseLoading={isLicenseLoading} isPremium={isPremium} isDemo={isDemo} />
+      <TermsOverlay onAccept={forceHeartbeat} />
 
 
       {/* Lock Screen — solo si login está activado y no hay sesión activa */}
@@ -413,7 +410,7 @@ export default function App() {
       )}
 
 
-      <RateProvider rates={rates} rateDiscrepancyWarning={rateDiscrepancyWarning} updateData={updateData} ratesLoading={ratesLoading}>
+      <RateProvider rates={rates} rateDiscrepancyWarning={rateDiscrepancyWarning}>
       <CartProvider>
       <ProductProvider>
         {/* OFFLINE-IMG: precalienta el cache del SW con TODAS las imágenes del inventario */}
@@ -440,7 +437,7 @@ export default function App() {
           </ErrorBoundary>
         </div>
 
-        <div className={`flex-1 min-h-0 flex flex-col ${activeTab === 'catalogo' ? '' : 'hidden'}`}>
+        <div className={`flex-1 flex flex-col ${activeTab === 'catalogo' ? '' : 'hidden'}`}>
           <ErrorBoundary>
             <PremiumGuard featureName="Inventario de Productos">
               {(activeTab === 'catalogo' || mountedViews.catalogo) && (

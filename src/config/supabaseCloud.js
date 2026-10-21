@@ -11,6 +11,9 @@ const supabaseKey = useSupervisorE2EStaging
     ? import.meta.env.VITE_SUPABASE_STAGING_KEY
     : (import.meta.env.VITE_SUPABASE_CLOUD_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY);
 
+// Compatibilidad con el cache de imágenes agregado en esta rama de trabajo.
+export const supabaseCloudUrl = supabaseUrl;
+
 if (useSupervisorE2EStaging && !supabaseKey) {
     throw new Error('Falta VITE_SUPABASE_STAGING_KEY para ejecutar E2E contra staging');
 }

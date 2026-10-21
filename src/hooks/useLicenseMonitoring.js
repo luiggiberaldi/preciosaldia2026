@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
 import { supabase } from '../core/supabaseClient';
-import { sendDeviceHeartbeat } from '../services/deviceHeartbeat';
 
 const PRODUCT_ID = 'bodega';
 
@@ -125,7 +124,8 @@ export function useLicenseMonitoring({
             verifyStatus();
             try {
                 const clientName = localStorage.getItem('business_name') || localStorage.getItem('restaurant_name') || '';
-                await sendDeviceHeartbeat(supabase, { deviceId, productId: PRODUCT_ID, clientName });
+                await supabase.rpc('auto_register_device', { p_device_id: deviceId, p_product_id: PRODUCT_ID, p_client_name: clientName });
+                await supabase.rpc('heartbeat_device', { p_device_id: deviceId, p_product_id: PRODUCT_ID, p_client_name: clientName });
             } catch (e) {
                 if (import.meta.env?.DEV) {
                     console.warn('[LicenseMonitoring] heartbeat falló:', e?.message ?? e);
@@ -134,7 +134,7 @@ export function useLicenseMonitoring({
         };
 
         sendHeartbeat();
-        // Mantener el intervalo actual de presencia; se evita repetir auto_register_device.
+        // Frecuencia constante de heartbeat a 3 minutos para mantener estado online preciso en Estación Maestra
         const heartbeatIntervalMs = 3 * 60 * 1000;
         const heartbeatInterval = setInterval(sendHeartbeat, heartbeatIntervalMs);
 

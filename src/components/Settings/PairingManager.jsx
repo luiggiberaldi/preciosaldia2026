@@ -15,11 +15,6 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
     const [timeLeft, setTimeLeft] = useState(0);
     const [checkingStatus, setCheckingStatus] = useState(false);
     const [showConfirmUnpair, setShowConfirmUnpair] = useState(false);
-    const [claimCode, setClaimCode] = useState('');
-    const [claimTimeLeft, setClaimTimeLeft] = useState(0);
-    const [claimInput, setClaimInput] = useState('');
-    const [claimBusy, setClaimBusy] = useState(false);
-    const claimTimerRef = useRef(null);
     
     const canvasRef = useRef(null);
     const timerRef = useRef(null);
@@ -121,7 +116,6 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
             disposed = true;
             clearInterval(timerRef.current);
             clearInterval(pollRef.current);
-            clearInterval(claimTimerRef.current);
             const channel = pairingSubscriptionRef.current;
             pairingSubscriptionRef.current = null;
             if (channel) supabaseCloud.removeChannel(channel).catch(() => {});
@@ -235,72 +229,6 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
             );
         }
     }, [pairingState, token]);
-
-    // 4a. Código de reclamo de dueño (007): la caja lo muestra; el dueño lo canjea.
-    const handleCreateClaimCode = async () => {
-        triggerHaptic?.();
-        setClaimBusy(true);
-        try {
-            const { session, error: sessionError } = await ensureSupervisorSession();
-            if (sessionError || !session) throw sessionError || new Error('No hay sesión segura del dispositivo');
-
-            const { data: code, error } = await supabaseCloud.rpc('create_owner_claim_code', {
-                p_device_id: deviceId
-            });
-            if (error) throw error;
-
-            setClaimCode(code);
-            setClaimTimeLeft(600); // 10 minutos, igual que la expiración en servidor
-            clearInterval(claimTimerRef.current);
-            claimTimerRef.current = setInterval(() => {
-                setClaimTimeLeft(prev => {
-                    if (prev <= 1) {
-                        clearInterval(claimTimerRef.current);
-                        setClaimCode('');
-                        return 0;
-                    }
-                    return prev - 1;
-                });
-            }, 1000);
-        } catch (err) {
-            console.error('[PairingManager] Error creando código de reclamo:', err);
-            showToast(err?.message?.includes('ya tiene dueño')
-                ? 'Esta caja ya tiene dueño registrado'
-                : 'No se pudo generar el código de reclamo', 'error');
-        } finally {
-            setClaimBusy(false);
-        }
-    };
-
-    // 4b. El dueño canjea el código mostrado en la caja.
-    const handleClaimOwner = async () => {
-        const code = claimInput.trim().toUpperCase();
-        if (!code) return;
-        triggerHaptic?.();
-        setClaimBusy(true);
-        try {
-            const { session, error: sessionError } = await ensureSupervisorSession();
-            if (sessionError || !session) throw sessionError || new Error('No hay sesión segura del dispositivo');
-
-            const { data, error } = await supabaseCloud.rpc('claim_owner_device', {
-                p_device_id: deviceId,
-                p_code: code
-            });
-            if (error) throw error;
-            if (!data?.success) {
-                showToast(data?.message || 'No se pudo reclamar la caja', 'error');
-                return;
-            }
-
-            setClaimInput('');
-            showToast('Dueño de la caja registrado', 'success');
-        } catch (err) {
-            console.error('[PairingManager] Error reclamando caja:', err);
-            showToast('No se pudo reclamar la caja', 'error');
-        } finally {
-            setClaimBusy(false);
-        }
-    };
 
     // 4. Cancelar emparejamiento / Cerrar QR
     const handleCancelPairing = () => {
@@ -473,48 +401,6 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
                             </>
                         )}
                     </button>
-
-                    {/* 007: reclamo del primer dueño por posesión física */}
-                    <div className="p-4 bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800 rounded-2xl space-y-3">
-                        <div>
-                            <h4 className="text-xs font-black text-slate-700 dark:text-slate-200">Reclamar dueño de esta caja</h4>
-                            <p className="text-[10px] text-slate-400 leading-normal mt-1">
-                                Muestra un código de un solo uso en esta pantalla y canjéalo desde la cuenta del dueño.
-                            </p>
-                        </div>
-
-                        {claimCode ? (
-                            <div className="text-center space-y-1">
-                                <div className="text-2xl font-black tracking-widest text-slate-800 dark:text-white select-all">{claimCode}</div>
-                                <span className="text-[10px] text-slate-400 font-bold">Expira en {formatTimeLeft(claimTimeLeft)}</span>
-                            </div>
-                        ) : (
-                            <button
-                                onClick={handleCreateClaimCode}
-                                disabled={claimBusy}
-                                className="w-full py-2.5 bg-slate-700 hover:bg-slate-800 text-white font-black text-xs rounded-xl disabled:opacity-50 transition-all"
-                            >
-                                Generar código de reclamo
-                            </button>
-                        )}
-
-                        <div className="flex gap-2">
-                            <input
-                                value={claimInput}
-                                onChange={(e) => setClaimInput(e.target.value)}
-                                placeholder="Código del dueño"
-                                maxLength={24}
-                                className="flex-1 px-3 py-2 text-xs font-bold uppercase rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
-                            />
-                            <button
-                                onClick={handleClaimOwner}
-                                disabled={claimBusy || !claimInput.trim()}
-                                className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-black text-xs rounded-xl disabled:opacity-50 transition-all"
-                            >
-                                Canjear
-                            </button>
-                        </div>
-                    </div>
                 </div>
             )}
 

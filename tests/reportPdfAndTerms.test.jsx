@@ -18,6 +18,8 @@ describe('reporte PDF y primer uso', () => {
 
     beforeEach(() => {
         globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+        // .env.local activa el modo staging; este test cubre el primer uso normal.
+        vi.stubEnv('VITE_SUPERVISOR_E2E_STAGING', 'false');
         localStorage.clear();
         container = document.createElement('div');
         document.body.appendChild(container);
