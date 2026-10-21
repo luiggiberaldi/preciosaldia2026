@@ -86,39 +86,47 @@ export default function DashboardStats({
 
             {/* Egresos del Día */}
             <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-orange-200 dark:border-orange-800/30 shadow-sm relative overflow-hidden">
-                    <div className="absolute -right-4 -top-4 w-16 h-16 bg-orange-50 dark:bg-orange-900/10 rounded-full blur-2xl"></div>
-                    <div className="flex items-center justify-between relative z-10">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-orange-100 dark:bg-orange-900/30 rounded-xl flex items-center justify-center shadow-inner">
-                                <Package size={20} className="text-orange-500" />
-                            </div>
-                            <div>
-                                <p className="text-[11px] font-medium text-slate-400">Egresos del día</p>
-                                {copEnabled && copPrimary && tasaCop > 0 ? (
-                                    <>
-                                        <p className="text-2xl font-outfit font-semibold text-orange-600 dark:text-orange-400">-{formatCop(todayExpensesUsd * tasaCop)} COP</p>
-                                        <p className="text-[10px] text-orange-400">-${todayExpensesUsd.toFixed(2)} · {formatBs(todayExpensesUsd * bcvRate)} Bs</p>
-                                    </>
-                                ) : (
-                                    <>
-                                        <p className="text-2xl font-outfit font-semibold text-orange-600 dark:text-orange-400">-$<AnimatedCounter value={todayExpensesUsd} /></p>
-                                        <p className="text-[10px] text-orange-400">{formatBs(todayExpensesUsd * bcvRate)} Bs</p>
-                                        {copEnabled && tasaCop > 0 && <p className="text-[10px] text-orange-400">{formatCop(todayExpensesUsd * tasaCop)} COP</p>}
-                                    </>
-                                )}
-                                {todayGastosUsd > 0 && (
-                                    <div className="mt-2 pt-1.5 border-t border-orange-100/50 dark:border-orange-950/50 flex gap-3 text-[10px] text-slate-400 font-bold">
-                                        <span>Caja Chica: -${todayGastosUsd.toFixed(2)}</span>
-                                        {todayExpensesUsd - todayGastosUsd > 0.01 && (
-                                            <span>Proveedores: -${(todayExpensesUsd - todayGastosUsd).toFixed(2)}</span>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                        <span className="text-xs font-bold text-orange-500 bg-orange-50 dark:bg-orange-900/20 px-2.5 py-1 rounded-lg shrink-0 self-start">{todayExpenses.length} {todayExpenses.length === 1 ? 'pago' : 'pagos'}</span>
+                <div className="absolute -right-4 -top-4 w-16 h-16 bg-orange-50 dark:bg-orange-900/10 rounded-full blur-2xl"></div>
+                <div className="flex items-center justify-between mb-3 relative z-10">
+                    <div className="w-10 h-10 bg-orange-100 dark:bg-orange-900/30 rounded-xl flex items-center justify-center shadow-inner shrink-0">
+                        <Package size={20} className="text-orange-500" />
                     </div>
+                    <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30 px-2 py-1 rounded-lg tracking-wider shrink-0 whitespace-nowrap">
+                        {todayExpenses.length} {todayExpenses.length === 1 ? 'PAGO' : 'PAGOS'}
+                    </span>
                 </div>
+                <div className="relative z-10">
+                    {copEnabled && copPrimary && tasaCop > 0 ? (
+                        <>
+                            <div className="flex items-baseline gap-1">
+                                <span className="text-2xl sm:text-3xl font-outfit font-semibold text-orange-600 dark:text-orange-400 tracking-tight">
+                                    -{formatCop(todayExpensesUsd * tasaCop)} <span className="text-base">COP</span>
+                                </span>
+                            </div>
+                            <p className="text-[10px] font-bold text-orange-400 mt-0.5">-${todayExpensesUsd.toFixed(2)} · {formatBs(todayExpensesUsd * bcvRate)} Bs</p>
+                        </>
+                    ) : (
+                        <>
+                            <div className="flex items-baseline gap-1">
+                                <span className="text-2xl sm:text-3xl font-outfit font-semibold text-orange-600 dark:text-orange-400 tracking-tight">
+                                    -$<AnimatedCounter value={todayExpensesUsd} />
+                                </span>
+                            </div>
+                            <p className="text-sm font-bold text-orange-400 mt-0.5">{formatBs(todayExpensesUsd * bcvRate)} Bs</p>
+                            {copEnabled && tasaCop > 0 && <p className="text-[10px] text-orange-400">{formatCop(todayExpensesUsd * tasaCop)} COP</p>}
+                        </>
+                    )}
+                    <p className="text-[11px] font-medium text-slate-400 mt-1">Egresos del día</p>
+                    {todayGastosUsd > 0 && (
+                        <div className="mt-2 pt-1.5 border-t border-orange-100/50 dark:border-orange-950/50 flex flex-wrap gap-2 text-[10px] text-slate-400 font-bold">
+                            <span>Caja Chica: -${todayGastosUsd.toFixed(2)}</span>
+                            {todayExpensesUsd - todayGastosUsd > 0.01 && (
+                                <span>Proveedores: -${(todayExpensesUsd - todayGastosUsd).toFixed(2)}</span>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </div>
 
             {/* Ganancia Estimada */}
             <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 shadow-sm relative overflow-hidden">

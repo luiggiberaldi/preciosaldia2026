@@ -652,7 +652,7 @@ function BottomNav({
   }, [cart]);
 
   return (
-    <div className="fixed bottom-1 left-0 right-0 lg:right-[400px] px-1 sm:px-6 pb-[max(0.25rem,env(safe-area-inset-bottom))] pt-0 max-w-xl lg:max-w-lg mx-auto z-30 pointer-events-none animate-in slide-in-from-bottom-4 duration-300">
+    <div className={`fixed bottom-1 left-0 right-0 ${activeTab === 'ventas' ? 'lg:right-[400px]' : ''} px-1 sm:px-6 pb-[max(0.25rem,env(safe-area-inset-bottom))] pt-0 max-w-xl lg:max-w-lg mx-auto z-30 pointer-events-none animate-in slide-in-from-bottom-4 duration-300`}>
       <div className="relative bg-slate-900/95 dark:bg-slate-950/95 backdrop-blur-2xl rounded-2xl px-1 sm:px-2 py-1.5 flex justify-between items-center shadow-2xl shadow-black/40 border border-white/10 ring-1 ring-black/10 pointer-events-auto">
         {tabs.map(tab => {
           const isVender = tab.id === 'ventas';
