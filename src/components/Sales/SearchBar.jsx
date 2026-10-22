@@ -14,6 +14,8 @@ import {
     parseWeightInput,
     formatGranelDisplay,
     isLiquidProduct,
+    isLowStockProduct,
+    formatPresentationLabel,
     useGranelUnitMode,
 } from '../../utils/granel';
 import SmartImage from '../SmartImage';
@@ -154,7 +156,7 @@ const SearchBar = forwardRef(function SearchBar({
                         className="max-h-[380px] overflow-y-auto overscroll-contain divide-y divide-slate-100 dark:divide-slate-800/50"
                     >
                         {searchResults.map((p, index) => {
-                            const isLowStock = (p.stock ?? 0) <= (p.lowStockAlert ?? 5) && (p.stock ?? 0) >= 0;
+                            const isLowStock = isLowStockProduct(p); // BULTOS-001: umbral canónico
                             const isOutOfStock = (p.stock ?? 0) === 0;
                             const catInfo = BODEGA_CATEGORIES.find(c => c.id === p.category);
                             const catColor = catInfo ? CATEGORY_COLORS[catInfo.color] : null;
@@ -193,6 +195,12 @@ const SearchBar = forwardRef(function SearchBar({
                                             {catInfo && catInfo.id !== 'otros' && catInfo.id !== 'todos' && catColor && (
                                                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${catColor}`}>
                                                     {catInfo.label}
+                                                </span>
+                                            )}
+                                            {/* BULTOS-001: badge de presentación — distingue bulto de unidad */}
+                                            {formatPresentationLabel(p) && (
+                                                <span className="flex items-center gap-0.5 text-[9px] font-black text-brand dark:text-brand">
+                                                    <Package size={9} /> {formatPresentationLabel(p)}
                                                 </span>
                                             )}
                                             {p.pricingMode === 'dual_usd' && p.priceBsUsdRef > 0 && (

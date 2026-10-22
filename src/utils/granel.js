@@ -351,10 +351,15 @@ export const formatGranelDisplay = (canonicalQty, productOrUnit, mode = getGrane
  * carry the product unit metadata; legacy `isWeight` snapshots retain the old
  * kg label rather than guessing whether the missing unit was liquid.
  * @param {object} item
+ * BULTOS-001: la etiqueta refleja el MODO DE VENTA real de la línea — bulto
+ * → "1 bulto · 12 uds" (con su equivalencia; `short: true` → "1 bulto"),
+ * unidad suelta → "1 ud". Sin esto, un bulto de 12 se pintaba como "1 u".
+ * @param {object} item
  * @param {'kg_lt'|'gr_ml'} [mode]
+ * @param {{short?: boolean}} [opts]
  */
-export const formatSaleItemQuantity = (item, mode = getGranelUnitMode()) => {
-    if (!item) return '0 u';
+export const formatSaleItemQuantity = (item, mode = getGranelUnitMode(), { short = false } = {}) => {
+    if (!item) return '0 uds';
     const knownUnit = item.granelUnit || item.unit;
     if (isGranelProduct(item) && knownUnit && isGranelProduct(knownUnit)) {
         return formatGranelDisplay(item.qty, item, mode);
@@ -362,7 +367,39 @@ export const formatSaleItemQuantity = (item, mode = getGranelUnitMode()) => {
     if (item.isWeight || item.soldByWeight || isGranelProduct(item)) {
         return `${formatStockDisplay(item.qty, true)} kg`;
     }
-    return `${item.qty ?? 0} u`;
+    const qty = Number(item.qty ?? 0);
+    const rawUpp = item._unitsPerPackage ?? item.unitsPerPackage;
+    const uPP = Number(rawUpp);
+    const hasFactor = Number.isFinite(uPP) && uPP > 1;
+    // Items históricos no persistían _mode: el sufijo '_unit' del id era la
+    // marca de unidad suelta (convención que usa FinancialEngine).
+    const saleMode = item._mode ?? (String(item.id ?? '').endsWith('_unit') ? 'unit' : 'package');
+    // Misma regla canónica que calculateItemStockDeduction: solo los productos
+    // de bulto vendidos en modo 'package' se cuentan en bultos.
+    const soldAsBulto = (item.packagingType === 'lote' || item.unit === 'paquete') && saleMode !== 'unit';
+    if (soldAsBulto) {
+        const bultos = `${qty} ${qty === 1 ? 'bulto' : 'bultos'}`;
+        // Sin factor conocido (ventas históricas) se etiqueta el bulto sin su
+        // equivalencia, en vez de mentir "1 ud".
+        return (short || !hasFactor) ? bultos : `${bultos} · ${qty * uPP} uds`;
+    }
+    return `${qty} ${qty === 1 ? 'ud' : 'uds'}`;
+};
+
+/**
+ * BULTOS-001: etiqueta de presentación para tarjetas y búsquedas.
+ * "Bulto · 12 uds" para productos de bulto; para una línea de unidad suelta
+ * aclara "Unidad suelta · bulto de 12 uds". null cuando no aplica (granel,
+ * suelto o factor desconocido).
+ * @param {object} item Producto del catálogo o línea de venta.
+ */
+export const formatPresentationLabel = (item) => {
+    const uPP = Number(item?._unitsPerPackage ?? item?.unitsPerPackage);
+    if (!((item?.packagingType === 'lote' || item?.unit === 'paquete') && Number.isFinite(uPP) && uPP > 1)) return null;
+    const saleMode = item?._mode ?? (String(item?.id ?? '').endsWith('_unit') ? 'unit' : 'package');
+    return saleMode === 'unit'
+        ? `Unidad suelta · bulto de ${uPP} uds`
+        : `Bulto · ${uPP} uds`;
 };
 
 /**
@@ -377,18 +414,34 @@ export const formatGranelInputValue = (canonicalQty, mode = getGranelUnitMode())
 };
 
 /** Format a product's canonical low-stock alert threshold for the current UI. */
-export const formatLowStockAlert = (product, mode = getGranelUnitMode()) => {
-    if (isGranelProduct(product)) {
-        return `${formatGranelDisplay(product.lowStockAlert ?? 5, product, mode)} mín.`;
+/**
+ * Umbral canónico de stock bajo, en las MISMAS unidades que `product.stock`
+ * (uds o kg/L). BULTOS-001: un solo criterio para todas las alertas —
+ * `lowStockAlert` primero, `minStock` (campo legado) como respaldo, 5 por
+ * defecto. Antes cada vista miraba un campo distinto (minStock, lowStockAlert,
+ * o ambos en orden invertido) y las alertas divergían entre sí.
+ */
+export const lowStockThreshold = (product) => {
+    for (const raw of [product?.lowStockAlert, product?.minStock]) {
+        if (raw == null || raw === '') continue;
+        const n = Number(raw);
+        if (Number.isFinite(n) && n >= 0) return n;
     }
-    return `${product?.lowStockAlert ?? 5} uds mín.`;
+    return 5;
+};
+
+export const formatLowStockAlert = (product, mode = getGranelUnitMode()) => {
+    const threshold = lowStockThreshold(product);
+    if (isGranelProduct(product)) {
+        return `${formatGranelDisplay(threshold, product, mode)} mín.`;
+    }
+    return `${threshold} uds mín.`;
 };
 
 /** True when stock and its low-stock threshold share canonical kg/L units. */
 export const isLowStockProduct = (product) => {
     const stock = Number(product?.stock ?? 0);
-    const threshold = Number(product?.lowStockAlert ?? 5);
-    return stock >= 0 && stock <= threshold;
+    return stock >= 0 && stock <= lowStockThreshold(product);
 };
 
 /** Parse a visible g/ml or kg/L threshold into the canonical kg/L scale. */

@@ -6,7 +6,7 @@ import SmartImage from '../SmartImage';
 import { FinancialEngine } from '../../core/FinancialEngine';
 import { getCartIvaOpts } from '../../config/taxConfig';
 import { showToast } from '../Toast';
-import { isGranelProduct, granelUnitLabel, parseCartQuantity, formatStockDisplay, useGranelUnitMode, formatGranelDisplay, parseWeightToCanonical } from '../../utils/granel'; // GRANEL-001
+import { isGranelProduct, granelUnitLabel, parseCartQuantity, formatStockDisplay, useGranelUnitMode, formatGranelDisplay, parseWeightToCanonical, formatSaleItemQuantity, formatPresentationLabel } from '../../utils/granel'; // GRANEL-001
 
 export default function CartPanel({
     cart,
@@ -196,6 +196,12 @@ export default function CartPanel({
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <p className={`text-xs font-bold text-slate-800 dark:text-slate-100 leading-tight mb-0.5 ${isCashAdvance ? 'break-words' : 'truncate'}`}>{item.name}</p>
+                                            {/* BULTOS-001: badge de presentación — distingue bulto de unidad suelta */}
+                                            {!isCashAdvance && formatPresentationLabel(item) && (
+                                                <p className="flex items-center gap-1 text-[9px] font-black text-brand dark:text-brand leading-none mb-0.5">
+                                                    <Package size={9} /> {formatPresentationLabel(item)}
+                                                </p>
+                                            )}
                                             <div className={`flex items-center flex-wrap ${isCashAdvance ? 'gap-1' : 'gap-1'}`}>
                                                 {/* SYNC-CESTA-001: el producto salió del catálogo con la línea ya cargada. */}
                                                 {!isCashAdvance && item._productMissing && (
@@ -272,7 +278,7 @@ export default function CartPanel({
                                         ) : (
                                             <div className="flex items-center gap-1">
                                                 <span className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md">
-                                                    {itemIsGranel ? formatGranelDisplay(1, item, granelUnitMode) : '1 un.'}
+                                                    {itemIsGranel ? formatGranelDisplay(1, item, granelUnitMode) : formatSaleItemQuantity(item, granelUnitMode, { short: true })}
                                                 </span>
                                             </div>
                                         )}

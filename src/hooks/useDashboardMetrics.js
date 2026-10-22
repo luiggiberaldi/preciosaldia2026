@@ -3,7 +3,8 @@ import { FinancialEngine } from '../core/FinancialEngine';
 import { computeReceivablesMovements } from '../utils/receivablesReport';
 import { sumR, mulR } from '../utils/dinero';
 import { getLocalISODate } from '../utils/dateHelpers';
-import { isLowStockProduct } from '../utils/granel';
+import { isLowStockProduct, isGranelProduct, calculateItemStockDeduction } from '../utils/granel';
+import { computeInventoryValuation } from '../utils/inventoryValuation'; // BULTOS-001
 import { CASH_SHIFT_TYPES, findOpenCashShift, isRecordInOpenCashShift } from '../utils/cashShift';
 
 /**
@@ -202,8 +203,9 @@ export function useDashboardMetrics(sales, customers, products, bcvRate) {
                 s.items.forEach(item => {
                     const isCustom = item.isCustom || String(item.id || '').startsWith('custom_') || item.name?.toLowerCase()?.trim() === 'venta libre' || item.name?.toLowerCase()?.startsWith('venta libre');
                     if (isCustom) return;
-                    if (!todayProductMap[item.name]) todayProductMap[item.name] = { name: item.name, qty: 0, revenue: 0 };
-                    todayProductMap[item.name].qty += item.qty;
+                    if (!todayProductMap[item.name]) todayProductMap[item.name] = { name: item.name, qty: 0, revenue: 0, isWeight: Boolean(isGranelProduct(item) || item.isWeight) };
+                    // BULTOS-001: agregados en unidades canónicas (qty en modo bulto son bultos).
+                    todayProductMap[item.name].qty += calculateItemStockDeduction(item);
                     todayProductMap[item.name].revenue = sumR(todayProductMap[item.name].revenue, mulR(item.priceUsd, item.qty));
                 });
             }
@@ -211,34 +213,10 @@ export function useDashboardMetrics(sales, customers, products, bcvRate) {
         return Object.values(todayProductMap).sort((a, b) => b.qty - a.qty).slice(0, 10);
     }, [todaySales]);
 
-    // Métricas financieras del inventario en stock
-    const inventoryMetrics = useMemo(() => {
-        let totalRetailUsd = 0;
-        let totalCostUsd = 0;
-
-        products.forEach(p => {
-            const qty = p.stock ?? 0;
-            if (qty <= 0) return;
-            const retailPrice = (p.sellByUnit && p.unitPriceUsd > 0) ? p.unitPriceUsd : (p.priceUsdt || p.priceUsd || 0);
-            const actualQty = (p.sellByUnit && p.unitsPerPackage > 1) ? (qty * p.unitsPerPackage) : qty;
-
-            totalRetailUsd += (retailPrice * actualQty);
-            const unitCost = p.costUsd || 0;
-            totalCostUsd += (unitCost * qty);
-        });
-
-        const totalProfitUsd = totalRetailUsd - totalCostUsd;
-        const marginPct = totalRetailUsd > 0 ? (totalProfitUsd / totalRetailUsd) * 100 : 0;
-        const markupPct = totalCostUsd > 0 ? (totalProfitUsd / totalCostUsd) * 100 : 0;
-
-        return {
-            totalRetailUsd,
-            totalCostUsd,
-            totalProfitUsd,
-            marginPct,
-            markupPct
-        };
-    }, [products]);
+    // Métricas financieras del inventario en stock.
+    // BULTOS-001: valorización canónica compartida (stock en unidades, precio y
+    // costo por bulto se dividen por unitsPerPackage) — utils/inventoryValuation.
+    const inventoryMetrics = useMemo(() => computeInventoryValuation(products), [products]);
 
     return {
         today,

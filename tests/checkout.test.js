@@ -447,6 +447,53 @@ describe('Remanente de cambio entre USD y Bs', () => {
     });
 });
 
+// ════════════════════════════════════════════════════════════════════════
+// BULTOS-001 — Snapshot del modo de venta en el ítem persistido
+// ════════════════════════════════════════════════════════════════════════
+describe('BULTOS-001: snapshot de modo de venta en el ítem persistido', () => {
+    const bultoProduct = { id: 'p1', name: 'Mayonesa', stock: 50, costUsd: 4, unit: 'paquete', packagingType: 'lote', unitsPerPackage: 12 };
+    const bultoItem = {
+        id: 'p1', name: 'Mayonesa', qty: 1, priceUsd: 10, costUsd: 4, costBs: 0,
+        isWeight: false, unit: 'paquete', packagingType: 'lote',
+        _mode: 'package', _unitsPerPackage: 12,
+    };
+
+    it('congela _mode y _unitsPerPackage para recibos, tickets e historial', async () => {
+        const result = await processSaleTransaction(baseOpts({
+            cart: [bultoItem],
+            products: [bultoProduct],
+        }));
+
+        expect(result.success).toBe(true);
+        const item = result.sale.items[0];
+        expect(item._mode).toBe('package');
+        expect(item._unitsPerPackage).toBe(12);
+    });
+
+    it('la venta por bulto descuenta unidades canónicas del stock', async () => {
+        await processSaleTransaction(baseOpts({
+            cart: [bultoItem],
+            products: [bultoProduct],
+        }));
+
+        const saved = await storageService.getItem('bodega_products_v1');
+        expect(saved[0].stock).toBe(38); // 50 − 1 bulto × 12 uds
+    });
+
+    it('la unidad suelta persiste _mode unit, su factor y _originalId', async () => {
+        const result = await processSaleTransaction(baseOpts({
+            cart: [{ ...bultoItem, id: 'p1_unit', name: 'Mayonesa (Ud.)', _mode: 'unit', _originalId: 'p1' }],
+            products: [bultoProduct],
+        }));
+
+        expect(result.success).toBe(true);
+        const item = result.sale.items[0];
+        expect(item._mode).toBe('unit');
+        expect(item._unitsPerPackage).toBe(12);
+        expect(item._originalId).toBe('p1');
+    });
+});
+
 describe('Visibilidad inteligente de saldo a favor', () => {
     it('oculta el método cuando el pago ya cubre o supera la venta', () => {
         expect(shouldShowWalletSection({ saldoDisponible: 2.76, faltaSinSaldo: 0, saldoAplicado: 0 })).toBe(false);

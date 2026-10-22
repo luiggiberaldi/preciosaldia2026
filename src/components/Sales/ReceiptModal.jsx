@@ -3,7 +3,7 @@ import { CheckCircle, Wallet, Send, X, Printer } from 'lucide-react';
 import { formatBs, formatCop } from '../../utils/calculatorUtils';
 import { printThermalTicket } from '../../utils/ticketGenerator';
 import CasheaIcon from '../CasheaIcon';
-import { formatGranelDisplay, getGranelUnitMode, isGranelProduct } from '../../utils/granel';
+import { getGranelUnitMode, formatSaleItemQuantity } from '../../utils/granel';
 
 export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, currentRate, copPrimary }) {
     if (!receipt) return null;
@@ -135,7 +135,7 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                                 const itemPriceUsd = isDualBs ? parseFloat(item.priceBsUsdRef) : item.priceUsd;
                                 const priceBs = itemPriceUsd * (receipt.rate || 0);
                                 const totalBs = itemPriceUsd * item.qty * (receipt.rate || 0);
-                                const qtyStr = isGranelProduct(item) ? formatGranelDisplay(item.qty, item, receiptGranelMode) : `${item.qty} u`;
+                                const qtyStr = formatSaleItemQuantity(item, receiptGranelMode); // BULTOS-001: bulto vs ud
 
                                 if (item.isCashAdvance) {
                                     return (

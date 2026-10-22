@@ -3,6 +3,7 @@
 
 import { storageService } from '../utils/storageService';
 import { getActivePaymentMethods } from '../config/paymentMethods';
+import { isLowStockProduct } from '../utils/granel'; // BULTOS-001
 
 export async function compileSystemConsciousnessContext({ effectiveRate, tasaCop, products, cart, usuarioActivo, isOnline }) {
     const role = usuarioActivo?.rol || 'CAJERO';
@@ -15,7 +16,7 @@ export async function compileSystemConsciousnessContext({ effectiveRate, tasaCop
 
     // 2. INVENTARIO & SALUD DE STOCK
     const totalProducts = products?.length || 0;
-    const lowStockItems = products ? products.filter(p => (p.stock ?? 0) <= (p.lowStockAlert ?? 5) && (p.stock ?? 0) >= 0) : [];
+    const lowStockItems = products ? products.filter(p => isLowStockProduct(p)) : []; // BULTOS-001: umbral canónico
     const outOfStockItems = products ? products.filter(p => (p.stock ?? 0) <= 0) : [];
 
     const criticalStockSummary = lowStockItems

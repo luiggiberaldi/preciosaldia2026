@@ -5,6 +5,7 @@ import { getPaymentLabel, getPaymentIcon, toTitleCase, PAYMENT_ICONS } from '../
 import { generateDailyClosePDF } from '../../utils/dailyCloseGenerator';
 import { printerSerial } from '../../services/PrinterSerial';
 import { showToast } from '../Toast';
+import { isGranelProduct, calculateItemStockDeduction } from '../../utils/granel'; // BULTOS-001
 
 export default function CierreHistoryCard({ cierre, correlativo, bcvRate, products, copEnabled, copPrimary, tasaCop }) {
     const [isExpanded, setIsExpanded] = useState(false);
@@ -43,8 +44,9 @@ export default function CierreHistoryCard({ cierre, correlativo, bcvRate, produc
         cierre.salesForStats.forEach(s => {
             if (s.items) {
                 s.items.forEach(item => {
-                    if (!todayProductMap[item.name]) todayProductMap[item.name] = { name: item.name, qty: 0, revenue: 0 };
-                    todayProductMap[item.name].qty += item.qty;
+                    if (!todayProductMap[item.name]) todayProductMap[item.name] = { name: item.name, qty: 0, revenue: 0, isWeight: Boolean(isGranelProduct(item) || item.isWeight) };
+                    // BULTOS-001: agregados en unidades canónicas (qty en modo bulto son bultos).
+                    todayProductMap[item.name].qty += calculateItemStockDeduction(item);
                     todayProductMap[item.name].revenue += item.priceUsd * item.qty;
                 });
             }

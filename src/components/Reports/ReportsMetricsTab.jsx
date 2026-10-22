@@ -618,7 +618,7 @@ export default function ReportsMetricsTab({
                                             }`}>{i + 1}</span>
                                             <div className="flex-1 min-w-0 text-left">
                                                 <p className="text-xs font-bold text-slate-750 dark:text-slate-200 truncate">{p.name}</p>
-                                                <p className="text-[9px] text-slate-400 font-medium">{p.qty} vendidos</p>
+                                                <p className="text-[9px] text-slate-400 font-medium">{p.qty} {p.isWeight ? 'kg' : 'uds'} vendidos</p>
                                             </div>
                                             <span className="text-xs font-black text-brand-dark dark:text-brand shrink-0">
                                                 {copEnabled && copPrimary && tasaCop > 0 ? `${formatCop(p.revenue * tasaCop)} COP` : `$${p.revenue.toFixed(2)}`}

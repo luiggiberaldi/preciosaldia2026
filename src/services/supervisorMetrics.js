@@ -1,5 +1,6 @@
 import { round2 } from '../utils/dinero.js';
 import { isLowStockProduct } from '../utils/granel.js';
+import { computeInventoryValuation } from '../utils/inventoryValuation.js'; // BULTOS-001
 import {
     calculateSupervisorSalesMetrics,
     normalizeProduct,
@@ -7,15 +8,15 @@ import {
 
 export function calculateInventoryMetrics(products = []) {
     const list = (Array.isArray(products) ? products : []).map(normalizeProduct);
-    let totalCost = 0;
-    let totalRetail = 0;
+    // BULTOS-001: valorización canónica compartida — stock en unidades, precio y
+    // costo por bulto se dividen por unitsPerPackage (utils/inventoryValuation).
+    // Antes se multiplicaba `stock × precioDeBulto`, sobrevaluando ×uPP.
+    const { totalCostUsd, totalRetailUsd } = computeInventoryValuation(list);
     let totalQty = 0;
     let lowStockCount = 0;
     let outOfStockCount = 0;
 
     for (const product of list) {
-        totalCost += product.costUsd * product.stock;
-        totalRetail += product.priceUsd * product.stock;
         totalQty += product.stock;
 
         if (product.stock <= 0) outOfStockCount += 1;
@@ -23,12 +24,12 @@ export function calculateInventoryMetrics(products = []) {
     }
 
     return {
-        totalCost: round2(totalCost),
-        totalRetail: round2(totalRetail),
+        totalCost: round2(totalCostUsd),
+        totalRetail: round2(totalRetailUsd),
         totalQty,
         lowStockCount,
         outOfStockCount,
-        expectedProfit: round2(Math.max(0, totalRetail - totalCost)),
+        expectedProfit: round2(Math.max(0, totalRetailUsd - totalCostUsd)),
         count: list.length,
     };
 }

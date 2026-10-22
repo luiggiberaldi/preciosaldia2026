@@ -5,6 +5,7 @@ import { storageService } from '../utils/storageService';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { showToast } from '../components/Toast';
 import { notifyStockToast, stockMessage } from '../services/supervisorStockMessages';
+import { lowStockThreshold } from '../utils/granel'; // BULTOS-001
 import { 
     TrendingUp, Package, Coins, Users, LogOut,
     RefreshCw, Wifi, WifiOff, Clock, FileText, DollarSign,
@@ -677,7 +678,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
             if (!matchesSearch) return false;
             
             if (filterStockInventario === 'bajo') {
-                return p.stock > 0 && p.stock <= (p.minStock || 5);
+                return p.stock > 0 && p.stock <= lowStockThreshold(p); // BULTOS-001: umbral canónico
             }
             if (filterStockInventario === 'agotado') {
                 return p.stock <= 0;
@@ -870,8 +871,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
         return products
             .filter(p => {
                 const stock = Number(p.stock) || 0;
-                const minStock = Number(p.minStock ?? p.lowStockAlert) || 5;
-                return stock > 0 && stock <= minStock;
+                return stock > 0 && stock <= lowStockThreshold(p); // BULTOS-001: umbral canónico
             })
             .sort((a, b) => {
                 const stockA = Number(a.stock) || 0;

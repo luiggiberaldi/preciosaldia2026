@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { storageService } from '../utils/storageService';
+import { calculateItemStockDeduction } from '../utils/granel'; // BULTOS-001
 
 export function useInventoryVelocity(productsTrigger) {
     const [salesVelocityMap, setSalesVelocityMap] = useState({});
@@ -33,9 +34,13 @@ export function useInventoryVelocity(productsTrigger) {
                 const velocityMap = {};
                 recentSales.forEach(sale => {
                     (sale.items || []).forEach(item => {
-                        const key = item.id || item.name;
+                        // BULTOS-001: clave por producto real (los items de unidad suelta
+                        // llevan el sufijo '_unit' en el id o guardan _originalId) y
+                        // cantidad en unidades canónicas — `qty` en modo bulto son bultos,
+                        // no unidades, y stock está en unidades.
+                        const key = String(item._originalId || item.id || item.name || '').replace(/_unit$/, '');
                         if (!velocityMap[key]) velocityMap[key] = 0;
-                        velocityMap[key] += item.qty;
+                        velocityMap[key] += calculateItemStockDeduction(item);
                     });
                 });
 

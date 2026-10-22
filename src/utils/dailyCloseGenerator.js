@@ -485,7 +485,10 @@ export async function generateDailyClosePDF({
                 
                 doc.setFont('helvetica', 'bold');
                 doc.setTextColor(...INK);
-                const revenueStr = `${p.qty} u/kg  ·  Total: ${fmtUsd(p.revenue)} · (Bs ${formatBs(mulR(p.revenue, bcvRate))})`;
+                // BULTOS-001: agregados en unidades canónicas (kg para granel, uds
+                // para el resto). Cierres viejos sin isWeight conservan el rótulo mixto.
+                const unitLabel = p.isWeight == null ? 'u/kg' : (p.isWeight ? 'kg' : 'uds');
+                const revenueStr = `${p.qty} ${unitLabel}  ·  Total: ${fmtUsd(p.revenue)} · (Bs ${formatBs(mulR(p.revenue, bcvRate))})`;
                 doc.text(revenueStr, RIGHT - 6, topY, { align: 'right' });
                 
                 topY += 5.5;
@@ -1168,7 +1171,8 @@ export async function generateDailyClosePDF({
 
             doc.setFontSize(fMuted);
             doc.setTextColor(...MUTED);
-            doc.text(`${p.qty} vend. · ${fmtUsd(p.revenue)} · Bs ${formatBs(mulR(p.revenue, bcvRate))}`, M + 5, y);
+            const unitLabel = p.isWeight == null ? 'u/kg' : (p.isWeight ? 'kg' : 'uds');
+            doc.text(`${p.qty} ${unitLabel} vend. · ${fmtUsd(p.revenue)} · Bs ${formatBs(mulR(p.revenue, bcvRate))}`, M + 5, y);
             y += 5.5;
         });
 

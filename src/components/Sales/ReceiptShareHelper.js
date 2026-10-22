@@ -1,5 +1,5 @@
 import { formatBs } from '../../utils/calculatorUtils';
-import { formatGranelDisplay, getGranelUnitMode, isGranelProduct } from '../../utils/granel';
+import { getGranelUnitMode, formatSaleItemQuantity } from '../../utils/granel';
 
 /**
  * Builds a WhatsApp-ready receipt URL for sharing a sale.
@@ -22,9 +22,7 @@ export function buildReceiptWhatsAppUrl(receipt, currentRate) {
 
     const receiptGranelMode = r.granelUnitMode || getGranelUnitMode();
     const itemsLines = (r.items ?? []).map(item => {
-        const qty = isGranelProduct(item)
-            ? formatGranelDisplay(item.qty, item, receiptGranelMode)
-            : `${item.qty} und`;
+        const qty = formatSaleItemQuantity(item, receiptGranelMode); // BULTOS-001: bulto vs ud
         const subUsd = (item.priceUsd * item.qty).toFixed(2);
         const unitPriceUsd = parseFloat(item.priceUsd).toFixed(2);
         const priceBs = item.priceUsd * (r.rate || 1);

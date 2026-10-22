@@ -326,7 +326,7 @@ export default function CierreCajaWizard({
                                                     <span className="w-5 h-5 bg-brand-light dark:bg-surface-800/30 rounded-md flex items-center justify-center text-[10px] font-black text-brand">{i + 1}</span>
                                                     <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate max-w-[160px]">{p.name}</span>
                                                 </div>
-                                                <span className="text-xs font-bold text-slate-500 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-md">{p.qty} uds</span>
+                                                <span className="text-xs font-bold text-slate-500 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-md">{p.qty} {p.isWeight ? 'kg' : 'uds'}</span>
                                             </div>
                                         ))}
                                     </div>

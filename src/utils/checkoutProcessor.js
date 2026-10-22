@@ -231,6 +231,12 @@ export async function processSaleTransaction({
             unit: i.unit ?? null,
             granelUnit: i.granelUnit ?? i.unit ?? null,
             packagingType: i.packagingType ?? null,
+            // BULTOS-001: snapshot del modo de venta — sin estos campos, recibos,
+            // tickets, historial y velocidad no podían distinguir "1 bulto" de
+            // "1 ud" (el carrito los trae; antes se descartaban al persistir).
+            _mode: i._mode ?? null,
+            _unitsPerPackage: i._unitsPerPackage ?? i.unitsPerPackage ?? null,
+            _originalId: i._originalId ?? null,
             isCashAdvance: i.isCashAdvance || null,
             montoEfectivo: i.montoEfectivo || null,
             montoComision: i.montoComision || null,

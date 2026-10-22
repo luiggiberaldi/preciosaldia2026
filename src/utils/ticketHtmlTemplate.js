@@ -1,6 +1,6 @@
 import { formatBs, formatCop, formatUsd } from './calculatorUtils.js';
 import { mulR, divR, round0, round2 } from './dinero.js';
-import { getGranelUnitMode, formatGranelDisplay, isGranelProduct } from './granel.js';
+import { getGranelUnitMode, formatSaleItemQuantity } from './granel.js';
 
 function escapeHtml(str) {
     if (str === null || str === undefined) return '';
@@ -45,9 +45,8 @@ export function buildTicketHtml(sale, bcvRate, paperConfig, settings) {
         const isDualBs = item.pricingMode === 'dual_usd' && (Number(item.priceBsUsdRef) || 0) > 0 && isBsSale;
         const effectivePriceUsd = isDualBs ? (Number(item.priceBsUsdRef) || 0) : item.priceUsd;
 
-        const qtyUnit = isGranelProduct(item)
-            ? formatGranelDisplay(item.qty, item, granelMode)
-            : `${item.qty}u`;
+        // BULTOS-001: etiqueta según modo de venta ("1 bulto · 12 uds", "1 ud", kg).
+        const qtyUnit = formatSaleItemQuantity(item, granelMode);
         // FIN-024: mulR en vez de multiplicación raw.
         const itemExactBs = item.exactBs ?? (item.isCashAdvance && item.currency === 'BS' ? (item.montoEfectivo + item.montoComision) : null);
         const sub = itemExactBs != null ? (rate > 0 ? divR(itemExactBs, rate) : effectivePriceUsd) : mulR(effectivePriceUsd, item.qty);

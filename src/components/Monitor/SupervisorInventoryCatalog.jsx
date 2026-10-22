@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { lowStockThreshold } from '../../utils/granel'; // BULTOS-001
 import {
     Package,
     Hash,
@@ -123,7 +124,7 @@ export default function SupervisorInventoryCatalog({
                         ? stockPendingConfirm
                         : null;
                 const effectiveDisplayStock = pending ? pending.nextStock : stock;
-                const minStock = p.minStock || 5;
+                const minStock = lowStockThreshold(p); // BULTOS-001: umbral canónico
                 const isNegative = stock < 0;
                 const isAgotado = stock === 0;
                 const isBajo = !isNegative && !isAgotado && stock <= minStock;
