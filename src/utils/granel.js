@@ -595,3 +595,27 @@ export const qtyFromMoneyAmount = (amount, currency, unitPriceUsd, effectiveRate
     const qty = normalizeStockValue(amountUsd / price, true);
     return qty > 0 ? qty : null;
 };
+
+// ── BULTOS-001: deducción canónica por modo de venta ─────────────────────────
+// Centraliza la fórmula correcta para checkoutProcessor, voidSaleProcessor y
+// los guards de SalesView.
+// Granel → qty directo (decimal, 3 dec.)
+// Unidad suelta → qty directo (1 ud = 1 del stock canónico)
+// Bulto/Lote → qty × unitsPerPackage (1 bulto = N unidades del stock)
+// Suelto/unidad con unitsPerPackage configurado → qty (NO multiplicar: su qty
+// ya está en unidades; unitsPerPackage solo sirve para ajustes por bulto en
+// StockBatchModal — ver productProcessor.js)
+export function calculateItemStockDeduction(item) {
+    // Granel: usa la cantidad directa en kg/L
+    if (isGranelProduct(item)) return item.qty;
+
+    // Modo 'unit': una unidad suelta equivale a 1 unidad en stock canónico
+    if (item._mode === 'unit') return item.qty;
+
+    // Solo los productos de bulto descuentan qty × uds por bulto.
+    const isBulto = item.packagingType === 'lote' || item.unit === 'paquete';
+    if (!isBulto) return item.qty;
+
+    const uPP = item._unitsPerPackage || item.unitsPerPackage || 1;
+    return item.qty * uPP;
+}

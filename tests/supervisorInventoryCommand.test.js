@@ -99,6 +99,27 @@ describe('Supervisor inventory batch command', () => {
             expect(plan.updatedProducts).toHaveLength(2);
             expect(plan.updatedSales).toHaveLength(2);
         });
+
+        it('gate de defensa del desacople: el plan solo difiere del catálogo en el stock de los productos tocados', () => {
+            // El desacople de la publicación de productos se apoya en que el
+            // lote es stock-puro (§2 del plan 2026-10-22). Si un comando futuro
+            // toca lotes, precios u otros campos, este gate falla y el call-site
+            // debe volver a publicar el catálogo (decisión explícita, nunca un
+            // diff frágil de "¿cambió solo stock?" en runtime).
+            const result = calculateSupervisorInventoryBatchPlan(batchProducts, [], batchPayload, {
+                commandId: 'command-gate-stock',
+                timestamp: '2026-10-22T12:00:00.000Z',
+            });
+            expect(result.updatedProducts).toHaveLength(batchProducts.length);
+            result.updatedProducts.forEach((after, index) => {
+                const before = batchProducts[index];
+                expect(after.id).toBe(before.id);
+                const changedKeys = Object.keys({ ...before, ...after })
+                    .filter(key => JSON.stringify(before[key]) !== JSON.stringify(after[key]));
+                const touched = result.lineResults.some(line => String(line.productId) === String(before.id));
+                expect(changedKeys).toEqual(touched ? ['stock'] : []);
+            });
+        });
     });
 
     it('calcula delta, stock final y movimiento auditable', () => {
@@ -246,7 +267,9 @@ describe('Supervisor inventory batch command', () => {
         expect(state.bodega_sales_v1).toHaveLength(2);
         expect(result.pendingPublish).toEqual(expect.objectContaining({
             commandId: 'command-rollback-1',
-            keys: ['bodega_products_v1', 'bodega_sales_v1'],
+            // Desacople 2026-10-22: la deuda con la nube es solo la familia de
+            // ventas; el catálogo es baseline y su stock viaja como efecto.
+            keys: ['bodega_sales_v1'],
         }));
     });
 
@@ -276,18 +299,21 @@ describe('Supervisor inventory batch command', () => {
         function createFailingStorage(initial = {}) {
             const state = structuredClone(initial);
             const setLog = [];
+            const setOpts = [];
             const failures = [];
             return {
                 state,
                 setLog,
+                setOpts,
                 failNextSet(key, { mode = 'throw', error = new Error(`write failed: ${key}`), times = 1, skip = 0 } = {}) {
                     failures.push({ key, mode, error, times, skip });
                 },
                 async getItem(key, fallback = null) {
                     return Object.prototype.hasOwnProperty.call(state, key) ? structuredClone(state[key]) : fallback;
                 },
-                async setItem(key, value) {
+                async setItem(key, value, options) {
                     setLog.push(key);
+                    setOpts.push({ key, options });
                     const failure = failures.find(f => f.key === key && (f.times > 0 || f.skip > 0));
                     if (failure) {
                         if (failure.skip > 0) {
@@ -448,7 +474,11 @@ describe('Supervisor inventory batch command', () => {
                 storage, pushSync: pushFail, payload, commandId: 'cmd-pub-1',
             });
             expect(first.status).toBe('applied_with_warnings');
-            expect(storage.state[JOURNAL_KEY]).toMatchObject({ state: 'published_pending', commandId: 'cmd-pub-1' });
+            expect(storage.state[JOURNAL_KEY]).toMatchObject({
+                state: 'published_pending',
+                commandId: 'cmd-pub-1',
+                pendingKeys: ['bodega_sales_v1'],
+            });
             const movementsAfterApply = storage.state.bodega_sales_v1.length;
             const productsAfterApply = structuredClone(storage.state.bodega_products_v1);
 
@@ -459,7 +489,9 @@ describe('Supervisor inventory batch command', () => {
                 pushSync: async (key, value) => { pushes.push({ key, value }); return { ok: true }; },
             });
             expect(retry).toEqual({ retried: true, ok: true, commandId: 'cmd-pub-1' });
-            expect(pushes.map(item => item.key).sort()).toEqual(['bodega_products_v1', 'bodega_sales_v1']);
+            // Desacople: se reintenta SOLO la familia de ventas; el catálogo no
+            // se publica por un lote de inventario.
+            expect(pushes.map(item => item.key)).toEqual(['bodega_sales_v1']);
             expect(storage.state.bodega_sales_v1).toHaveLength(movementsAfterApply);
             expect(storage.state.bodega_products_v1).toEqual(productsAfterApply);
             expect(storage.state[JOURNAL_KEY]).toBeUndefined();
@@ -490,6 +522,64 @@ describe('Supervisor inventory batch command', () => {
             expect(storage.state[JOURNAL_KEY]).toBeUndefined();
         });
 
+        it('journal legacy con ambas claves: publica lo que dice y reduce pendingKeys a la fallida', async () => {
+            // Escrito por la versión pre-desacople (pendingKeys aún debía el
+            // catálogo): se liquida con la semántica con la que se escribió y,
+            // al fallar una clave, pendingKeys queda reducido a las fallidas.
+            const storage = createFailingStorage({
+                ...baseState,
+                [JOURNAL_KEY]: {
+                    version: 1,
+                    commandId: 'cmd-legacy-1',
+                    state: 'published_pending',
+                    createdAt: '2026-10-21T12:00:00.000Z',
+                    pendingKeys: ['bodega_products_v1', 'bodega_sales_v1'],
+                    docs: [
+                        { key: 'bodega_products_v1', before: baseState.bodega_products_v1, after: baseState.bodega_products_v1 },
+                        { key: 'bodega_sales_v1', before: baseState.bodega_sales_v1, after: baseState.bodega_sales_v1 },
+                    ],
+                },
+            });
+
+            const pushes = [];
+            const first = await retryInventoryPublish({
+                storage,
+                pushSync: async (key) => {
+                    pushes.push(key);
+                    return key === 'bodega_sales_v1' ? { ok: false, error: 'sales caído' } : { ok: true };
+                },
+            });
+            expect(first).toEqual({ retried: true, ok: false, commandId: 'cmd-legacy-1', failedKeys: ['bodega_sales_v1'] });
+            expect(pushes.sort()).toEqual(['bodega_products_v1', 'bodega_sales_v1']);
+            expect(storage.state[JOURNAL_KEY].pendingKeys).toEqual(['bodega_sales_v1']);
+
+            const secondPushes = [];
+            const second = await retryInventoryPublish({
+                storage,
+                pushSync: async (key) => { secondPushes.push(key); return { ok: true }; },
+            });
+            expect(second).toEqual({ retried: true, ok: true, commandId: 'cmd-legacy-1' });
+            expect(secondPushes).toEqual(['bodega_sales_v1']);
+            expect(storage.state[JOURNAL_KEY]).toBeUndefined();
+        });
+
+        it('desacople: la escritura local de productos va con skipSyncPush y la de ventas conserva su red de auto-enqueue', async () => {
+            const storage = createFailingStorage(baseState);
+            await applySupervisorInventoryBatchTransaction({
+                storage, pushSync: pushOk, payload, commandId: 'cmd-desacople-1', timestamp: '2026-10-22T12:00:00.000Z',
+            });
+
+            const optionsByKey = Object.fromEntries(storage.setOpts.map(({ key, options }) => [key, options]));
+            // Productos: escritura local durable SIN encolar publicación — el
+            // cambio de stock ya viaja como efecto en la familia de ventas.
+            expect(optionsByKey.bodega_products_v1).toEqual({ skipSyncPush: true });
+            // Ventas: el auto-enqueue del interceptor queda como red de
+            // seguridad (§3.1.6 del plan de desacople); su dedup por hash evita
+            // el segundo viaje cuando el journal ya publicó (sellado en
+            // cloudSyncSalesPeriods).
+            expect(optionsByKey.bodega_sales_v1?.skipSyncPush).toBeFalsy();
+        });
+
         it('detecta escrituras tragadas (setItem que no rechaza) verificando por lectura', async () => {
             const storage = createFailingStorage(baseState);
             // 'silent' imita el fallback de cuota de storageService: traga el error.
@@ -501,6 +591,84 @@ describe('Supervisor inventory batch command', () => {
 
             expect(storage.state[JOURNAL_KEY]).toMatchObject({ state: 'pending' });
             expect(storage.state.bodega_products_v1).toEqual(baseState.bodega_products_v1);
+        });
+
+        it('Fase 4: el journal guarda los snapshots como strings y la recuperación los restaura completos', async () => {
+            const storage = createFailingStorage(baseState);
+            storage.failNextSet('bodega_sales_v1'); // estado mixto con journal pendiente
+
+            await expect(applySupervisorInventoryBatchTransaction({
+                storage, pushSync: pushOk, payload, commandId: 'cmd-pack-1',
+            })).rejects.toMatchObject({ status: 'recoverable' });
+
+            const journal = storage.state[JOURNAL_KEY];
+            expect(journal.docs.map(doc => doc.key)).toEqual(['bodega_products_v1', 'bodega_sales_v1']);
+            // Los snapshots viajan como strings marcados (comprimidos si hay
+            // soporte), no como grafos de objetos.
+            for (const doc of journal.docs) {
+                expect(typeof doc.before).toBe('string');
+                expect(typeof doc.after).toBe('string');
+                expect(
+                    doc.after.startsWith('z1:') || doc.after.startsWith('j1:'),
+                ).toBe(true);
+            }
+
+            const recovery = await recoverSupervisorInventoryJournal(storage);
+            expect(recovery).toEqual({ recovered: true, commandId: 'cmd-pack-1', direction: 'rollforward' });
+            expect(storage.state.bodega_products_v1[0].stock).toBe(58);
+            expect(storage.state.bodega_sales_v1).toHaveLength(2);
+            expect(storage.state.bodega_sales_v1[1].movementId).toBe('supervisor-cmd-pack-1');
+            expect(storage.state[JOURNAL_KEY]).toBeUndefined();
+        });
+
+        it('Fase 4: un snapshot ilegible no escribe basura y conserva el journal', async () => {
+            const storage = createFailingStorage({
+                ...baseState,
+                [JOURNAL_KEY]: {
+                    version: 1,
+                    commandId: 'cmd-pack-corrupt',
+                    state: 'pending',
+                    createdAt: '2026-10-21T12:00:00.000Z',
+                    docs: [
+                        { key: 'bodega_products_v1', before: 'j1:{"roto":', after: 'j1:{"roto":' },
+                        { key: 'bodega_sales_v1', before: baseState.bodega_sales_v1, after: baseState.bodega_sales_v1 },
+                    ],
+                },
+            });
+
+            await expect(recoverSupervisorInventoryJournal(storage)).rejects.toMatchObject({ status: 'recoverable' });
+            expect(storage.state[JOURNAL_KEY]).toMatchObject({ commandId: 'cmd-pack-corrupt' });
+            expect(storage.state.bodega_products_v1).toEqual(baseState.bodega_products_v1);
+        });
+
+        it('Fase 4: el reintento de publicación cae al snapshot comprimido si el storage quedó vacío', async () => {
+            const storage = createFailingStorage(baseState);
+            await applySupervisorInventoryBatchTransaction({
+                storage, pushSync: pushFail, payload, commandId: 'cmd-pack-retry-1',
+            });
+            expect(storage.state[JOURNAL_KEY]).toMatchObject({ state: 'published_pending' });
+
+            // Journal legacy (pre-desacople): aún debía ambos documentos, así el
+            // fallback al snapshot 'after' se sella para los dos; los journals
+            // nuevos solo deben la familia de ventas.
+            storage.state[JOURNAL_KEY].pendingKeys = ['bodega_products_v1', 'bodega_sales_v1'];
+
+            // Corte total: las claves desaparecen del storage y solo queda el journal.
+            delete storage.state.bodega_products_v1;
+            delete storage.state.bodega_sales_v1;
+
+            const pushes = [];
+            const retry = await retryInventoryPublish({
+                storage,
+                pushSync: async (key, value) => { pushes.push({ key, value }); return { ok: true }; },
+            });
+            expect(retry).toMatchObject({ retried: true, ok: true, commandId: 'cmd-pack-retry-1' });
+
+            const productsPush = pushes.find(item => item.key === 'bodega_products_v1');
+            const salesPush = pushes.find(item => item.key === 'bodega_sales_v1');
+            expect(productsPush.value[0].stock).toBe(58);
+            expect(salesPush.value).toHaveLength(2);
+            expect(salesPush.value[1].movementId).toBe('supervisor-cmd-pack-retry-1');
         });
 
         it('un journal corrupto no autoriza escrituras sobre otras claves', async () => {
@@ -540,7 +708,8 @@ describe('Supervisor inventory batch command', () => {
             });
 
             expect(result.status).toBe('applied');
-            expect(events).toEqual(['ack', 'publish:bodega_products_v1', 'publish:bodega_sales_v1']);
+            // Desacople: el lote solo publica la familia de ventas.
+            expect(events).toEqual(['ack', 'publish:bodega_sales_v1']);
         });
 
         it('Fase 11: un error en onLocalApplied no interrumpe la aplicación ni la publicación', async () => {
@@ -559,7 +728,7 @@ describe('Supervisor inventory batch command', () => {
 
             expect(result.status).toBe('applied');
             expect(storage.state.bodega_products_v1[0].stock).toBe(58);
-            expect(pushed.sort()).toEqual(['bodega_products_v1', 'bodega_sales_v1']);
+            expect(pushed.sort()).toEqual(['bodega_sales_v1']);
             expect(warn).toHaveBeenCalled();
             warn.mockRestore();
         });

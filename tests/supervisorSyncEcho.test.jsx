@@ -173,6 +173,9 @@ const h = vi.hoisted(() => {
 
     return {
         state,
+        dispatchRow,
+        dispatchCommand,
+        dispatchDoc,
         client: {
             from,
             rpc,
@@ -335,6 +338,30 @@ describe('E2E caja+monitor: el eco de sincronización de un ajuste de inventario
         return localforage.getItem('bodega_products_v1');
     }
 
+    /**
+     * Baseline del catálogo en el monitor: el doc de productos que la caja
+     * publica en su arranque/vinculación (con su `stockAsOf`). Desde el desacople
+     * (2026-10-22) un lote de inventario ya NO re-publica el catálogo — su
+     * movimiento viaja en la familia de ventas y el monitor lo pliega sobre este
+     * baseline. Sin baseline no hay nada que plegar (y en producción siempre lo
+     * hay: es el mismo doc que llega en el pull inicial del monitor).
+     */
+    async function seedMonitorCatalogBaseline() {
+        h.dispatchDoc({
+            device_id: CAJA_DEVICE_ID,
+            collection: 'store',
+            doc_id: 'bodega_products_v1',
+            data: {
+                schemaVersion: 1,
+                payload: structuredClone(CAJA_PRODUCTS),
+                updatedAt: '2026-10-21T12:00:00.000Z',
+                stockAsOf: '2026-10-21T12:00:00.000Z',
+            },
+            updated_at: '2026-10-21T12:00:00.000Z',
+        });
+        await waitFor(async () => (await monitorProducts())[0]?.stock === 22);
+    }
+
     async function waitForCajaPushQuiescence() {
         // El ACK sale ANTES de la publicación (Fase 11): la cadena de publicación
         // de la caja puede seguir en vuelo cuando el lote ya resolvió. Cada push
@@ -348,8 +375,71 @@ describe('E2E caja+monitor: el eco de sincronización de un ajuste de inventario
         });
     }
 
+    it('plan de stock delta: el stock del monitor se deriva del baseline + los efectos de la venta', async () => {
+        await mountBothDevices();
+
+        // 1. El doc de productos publica el baseline: stock 22 con stockAsOf
+        //    12:00 (todo lo anterior ya está incluido en el stock del payload).
+        h.dispatchDoc({
+            device_id: CAJA_DEVICE_ID,
+            collection: 'store',
+            doc_id: 'bodega_products_v1',
+            data: {
+                schemaVersion: 1,
+                payload: [{ id: 'p1', name: 'Mayonesa E2E', stock: 22 }],
+                updatedAt: '2026-10-21T12:00:00.000Z',
+                stockAsOf: '2026-10-21T12:00:00.000Z',
+            },
+            updated_at: '2026-10-21T12:00:00.000Z',
+        });
+        await waitFor(async () => (await monitorProducts())[0]?.stock === 22);
+
+        // 2. La venta de las 12:05 viaja en la familia de ventas con su efecto
+        //    embebido: el monitor la pliega y el stock derivado queda en 20.
+        h.dispatchDoc({
+            device_id: CAJA_DEVICE_ID,
+            collection: 'store',
+            doc_id: 'bodega_sales_v1:2026-10',
+            data: {
+                schemaVersion: 1,
+                payload: [{
+                    id: 'v-delta-1',
+                    tipo: 'VENTA',
+                    status: 'COMPLETADA',
+                    timestamp: '2026-10-21T12:05:00.000Z',
+                    stockEffects: [{ productId: 'p1', delta: -2, stockBefore: 22, stockAfter: 20, at: '2026-10-21T12:05:00.000Z' }],
+                }],
+                updatedAt: '2026-10-21T12:05:30.000Z',
+            },
+            updated_at: '2026-10-21T12:05:30.000Z',
+        });
+        await waitFor(async () => (await monitorProducts())[0]?.stock === 20);
+
+        // Re-derivable: la misma venta re-entregada no vuelve a descontar.
+        h.dispatchDoc({
+            device_id: CAJA_DEVICE_ID,
+            collection: 'store',
+            doc_id: 'bodega_sales_v1:2026-10',
+            data: {
+                schemaVersion: 1,
+                payload: [{
+                    id: 'v-delta-1',
+                    tipo: 'VENTA',
+                    status: 'COMPLETADA',
+                    timestamp: '2026-10-21T12:05:00.000Z',
+                    stockEffects: [{ productId: 'p1', delta: -2, stockBefore: 22, stockAfter: 20, at: '2026-10-21T12:05:00.000Z' }],
+                }],
+                updatedAt: '2026-10-21T12:06:30.000Z',
+            },
+            updated_at: '2026-10-21T12:06:30.000Z',
+        });
+        await flush();
+        expect((await monitorProducts())[0].stock).toBe(20);
+    });
+
     it('un ajuste pedido por el monitor termina en el stock del MONITOR (eco end-to-end)', async () => {
         await mountBothDevices();
+        await seedMonitorCatalogBaseline();
 
         const result = await sendSupervisorInventoryBatch({
             draft: buildAdjustmentDraft(),
@@ -367,7 +457,9 @@ describe('E2E caja+monitor: el eco de sincronización de un ajuste de inventario
         const cajaProducts = await storageService.getItem('bodega_products_v1');
         expect(cajaProducts[0].stock).toBe(30);
 
-        // 3. EL ECO: el monitor real aplicó el doc publicado → su stock es 30.
+        // 3. EL ECO: el monitor deriva 30 = baseline 22 + el efecto del
+        //    movimiento publicado en la familia de ventas (desacople: el lote ya
+        //    no re-publica el catálogo).
         await waitFor(async () => (await monitorProducts())?.[0]?.stock === 30);
         expect((await monitorProducts())[0].stock).toBe(30);
 
@@ -435,6 +527,7 @@ describe('E2E caja+monitor: el eco de sincronización de un ajuste de inventario
 
     it('reintentar el mismo lote tras el eco es un no-op aplicado: no se crea otro comando', async () => {
         await mountBothDevices();
+        await seedMonitorCatalogBaseline();
 
         const first = await sendSupervisorInventoryBatch({
             draft: buildAdjustmentDraft(),
@@ -470,6 +563,7 @@ describe('E2E caja+monitor: el eco de sincronización de un ajuste de inventario
         vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
         setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
         await mountBothDevices();
+        await seedMonitorCatalogBaseline();
 
         // Contrato del timer: el barrido de la caja está cableado cada 30 s.
         expect(setIntervalSpy.mock.calls.some(([, delay]) => delay === 30000)).toBe(true);

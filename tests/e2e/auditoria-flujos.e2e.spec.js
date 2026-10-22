@@ -372,9 +372,10 @@ test('F6 reportes: cuentas por cobrar y PDF', async ({ page }) => {
     record('F6 reportes: cuentas por cobrar y PDF', 'ok', 'sección de cuentas por cobrar visible con neto −$15,00 (fiado $10 / cobranzas $25)');
 
     // Descarga del PDF del reporte: el archivo real debe generarse.
+    // (2e05448 renombró el botón del header de Reportes a «PDF de ventas y caja».)
     const [download] = await Promise.all([
         page.waitForEvent('download', { timeout: 30_000 }),
-        page.getByRole('button', { name: /Descargar PDF/ }).first().click(),
+        page.getByRole('button', { name: /PDF de ventas y caja/ }).first().click(),
     ]);
     const filePath = await download.path();
     const bytes = fs.readFileSync(filePath);

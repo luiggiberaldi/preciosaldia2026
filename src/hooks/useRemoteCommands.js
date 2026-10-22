@@ -19,6 +19,7 @@ import {
     withSupervisorCommandLock,
 } from '../services/supervisorCommandService';
 import { applySupervisorInventoryBatchTransaction, retryInventoryPublish } from '../services/supervisorInventoryCommand';
+import { publishKeyNow } from '../services/cloudPublishQueue';
 import { finishAckTelemetry, markAckTelemetry } from '../services/supervisorAckTelemetry';
 import {
     applySupervisorProductCommand,
@@ -241,47 +242,49 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 // Los comandos de producto aún confirman DESPUÉS de publicar:
                 // estos hitos permiten medirlo (ackLeadMs sale negativo).
                 markAckTelemetry(payload.commandId, 'local_applied');
-                let pushResult;
-                try {
-                    pushResult = await pushCloudSync('bodega_products_v1', result.products, true);
-                } finally {
-                    markAckTelemetry(payload.commandId, 'publish_end');
-                }
-                // `skipped` NO es publicado: si el push se salta, el cambio queda
-                // aplicado solo en la caja y el ACK no puede decir "applied" liso.
-                publish = classifyProductPublishResult(pushResult);
-                if (publish.rollback) {
-                    await storageService.setItem('bodega_products_v1', currentProducts);
-                    // El rollback también debe verse al instante en la pantalla.
-                    window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_products_v1', source: 'remote' } }));
-                    throw new Error(pushResult?.error || 'No se pudo publicar el producto');
-                }
-                if (publish.published) {
-                    clearProductPublishPending();
-                } else {
-                    // Aplicado localmente pero sin publicación confirmada: queda
-                    // marcado y el barrido periódico re-publica hasta confirmar.
-                    markProductPublishPending(payload.commandId);
-                }
-                window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_products_v1', source: 'remote' } }));
             });
+            // Fase 1 (plan de cuelgue de caja): la red queda FUERA de
+            // pos_write_lock — el «Cobrar» del cajero no espera la subida de
+            // ~1.3 MB. La publicación usa el publicador single-flight con
+            // RELECTURA del valor fresco: publicar el snapshot calculado bajo el
+            // lock borraría en la nube la venta que el cajero hizo mientras tanto
+            // (sync_documents es last-write-wins).
+            let pushResult;
+            try {
+                pushResult = await publishKeyNow('bodega_products_v1');
+            } finally {
+                markAckTelemetry(payload.commandId, 'publish_end');
+            }
+            // `skipped` NO es publicado: si el push se salta, el cambio queda
+            // aplicado solo en la caja y el ACK no puede decir "applied" liso.
+            publish = classifyProductPublishResult(pushResult);
+            if (publish.published) {
+                clearProductPublishPending();
+            } else {
+                // Aplicado localmente pero sin publicación confirmada: queda
+                // marcado y el barrido periódico re-publica hasta confirmar.
+                // SIN rollback: revertir el catálogo pisaría la venta que el
+                // cajero escribió mientras se publicaba (semántica Fase 11: lo
+                // aplicado localmente es real; la nube se pone al día después).
+                markProductPublishPending(payload.commandId);
+            }
+            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_products_v1', source: 'remote' } }));
 
             return {
                 commandId: payload.commandId,
                 action: result.action,
                 productId: result.productId,
-                status: publish?.status || 'applied',
+                status: publish?.published ? 'applied' : 'applied_with_warnings',
             };
         };
 
         const applyInventoryBatchCommand = async (payload, commandId) => {
             let adjustment;
             let acknowledgedEarly = false;
+            let ackPayload = null;
             await withLock('pos_write_lock', async () => {
                 adjustment = await applySupervisorInventoryBatchTransaction({
                     storage: storageService,
-                    // La publicación de ESTE comando marca su fin (último push en
-                    // resolver) para medir cuánto la precede el ACK.
                     pushSync: async (key, value, ...rest) => {
                         try {
                             return await pushCloudSync(key, value, ...rest);
@@ -291,15 +294,19 @@ export function useRemoteCommands(deviceId, enabled = true) {
                     },
                     payload,
                     commandId,
+                    // Fase 2 (plan de cuelgue de caja): la publicación NO corre
+                    // dentro de la transacción ni del lock. El journal queda en
+                    // 'published_pending' y lo resuelve la publicación fuera del
+                    // lock (recuperable por el barrido si la red falla).
+                    deferPublish: true,
                     // Fase 11: tan pronto como el estado local es durable se
-                    // confirma la orden, ANTES de la publicación cloud. La
-                    // publicación pendiente se recupera con el journal; el
-                    // supervisor nunca espera por la nube.
+                    // confirma la orden, ANTES de la publicación cloud. El ACK
+                    // viaja FUERA del lock (abajo): la red nunca bloquea al cajero.
                     onLocalApplied: async (applied) => {
                         // El estado local ya es durable: este hito marca cuánto
                         // tarda la caja en dejar la orden aplicada localmente.
                         markAckTelemetry(commandId, 'local_applied', { acknowledgedEarly: true });
-                        const ackPayload = {
+                        ackPayload = {
                             commandId,
                             productId: payload.productId,
                             unitsDelta: applied.unitsDelta,
@@ -315,34 +322,50 @@ export function useRemoteCommands(deviceId, enabled = true) {
                         });
                         appliedCommands.accept(commandId, Number.MAX_SAFE_INTEGER);
                         acknowledgedEarly = true;
-                        try {
-                            await ackCommand(commandId, 'applied', ackPayload);
-                            supervisorLog('ACK enviado antes de la publicación cloud', {
-                                commandId: shortSupervisorId(commandId),
-                            });
-                        } catch (ackError) {
-                            supervisorLog('ACK aplicado pendiente de reintento', {
-                                commandId: shortSupervisorId(commandId),
-                                error: ackError?.message || ackError,
-                            });
-                        }
                     },
                 });
 
                 window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_products_v1', source: 'remote' } }));
                 window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_sales_v1', source: 'remote' } }));
+            });
 
-                // Reintento de publicaciones pendientes DESPUÉS de aplicar y
-                // confirmar: nunca debe retrasar el ACK. Sus documentos son un
-                // snapshot del estado acumulado, así que un lote nuevo los subsume.
+            // ── FUERA de pos_write_lock: ni el ACK ni la red bloquean al cajero ──
+            if (acknowledgedEarly && ackPayload) {
                 try {
-                    await retryInventoryPublish({ storage: storageService, pushSync: pushCloudSync });
-                } catch (publishError) {
-                    supervisorLog('Reintento de publicación pendiente falló', {
-                        error: publishError?.message || publishError,
+                    await ackCommand(commandId, 'applied', ackPayload);
+                    supervisorLog('ACK enviado antes de la publicación cloud', {
+                        commandId: shortSupervisorId(commandId),
+                    });
+                } catch (ackError) {
+                    supervisorLog('ACK aplicado pendiente de reintento', {
+                        commandId: shortSupervisorId(commandId),
+                        error: ackError?.message || ackError,
                     });
                 }
-            });
+            }
+
+            // La publicación del lote (y de cualquier pendiente previo) ocurre
+            // fuera del lock. El journal 'published_pending' la hace recuperable
+            // y retryInventoryPublish publica el estado FRESH del storage.
+            let publishOk = false;
+            try {
+                const publishResult = await retryInventoryPublish({
+                    storage: storageService,
+                    pushSync: async (key, value, ...rest) => {
+                        try {
+                            return await pushCloudSync(key, value, ...rest);
+                        } finally {
+                            markAckTelemetry(commandId, 'publish_end');
+                        }
+                    },
+                });
+                publishOk = publishResult?.ok !== false;
+            } catch (publishError) {
+                supervisorLog('Publicación del lote pendiente de reintento', {
+                    commandId: shortSupervisorId(commandId),
+                    error: publishError?.message || publishError,
+                });
+            }
 
             return {
                 commandId,
@@ -351,7 +374,7 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 stockBefore: adjustment.stockBefore,
                 stockAfter: adjustment.stockAfter,
                 acknowledgedEarly,
-                status: adjustment.status === 'applied_with_warnings' ? 'applied_with_warnings' : 'applied',
+                status: publishOk ? 'applied' : 'applied_with_warnings',
             };
         };
 

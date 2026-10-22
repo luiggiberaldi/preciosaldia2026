@@ -45,7 +45,15 @@ describe('Supervisor lifecycle guardrails', () => {
             .toBeLessThan(pairingService.indexOf('publishSnapshotInBackground(normalizedDeviceId'));
         expect(cloudSync).toContain('return { ok: true, error: null, pushed }');
         expect(monitorSync).toContain('getSupervisorRecoveryIntervalMs()');
-        expect(monitorSync).toContain(".in('doc_id', SUPERVISOR_SYNC_KEYS)");
+        // Fase 4: el pull del monitor ya no filtra doc_id por allowlist en el
+        // servidor (la familia `bodega_sales_v1:<periodo>` no cabe en ella).
+        // La misma guarda vive ahora en dos piezas: la selección de claves en
+        // cliente (allowlist + familia de ventas) y el fetch de payloads SOLO
+        // por ids explícitos permitidos (SEC-002: nunca se descarga un doc
+        // fuera de contrato).
+        expect(monitorSync).toContain('SUPERVISOR_SYNC_KEYS.includes(doc.doc_id) || isSalesSyncDocId(doc.doc_id)');
+        expect(monitorSync).toContain(".in('doc_id', targetDocIds)");
+        expect(monitorSync).not.toContain(".in('doc_id', SUPERVISOR_SYNC_KEYS)");
         expect(cloudSync).toContain('forceSyncAllPOSData(deviceId, false)');
         expect(cloudSync).not.toContain('forceSyncAllPOSData(deviceId, true)');
     });

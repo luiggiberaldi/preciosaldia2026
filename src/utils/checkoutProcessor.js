@@ -4,7 +4,7 @@ import { CUSTOMER_MOVEMENT_TYPES, normalizeCustomer } from './customerLedger.js'
 import { logEvent } from '../services/auditService.js';
 import { useAuthStore } from '../hooks/store/useAuthStore.js';
 import { round2, round0, round3, sumR, subR, divR, mulR } from './dinero.js';
-import { GRANEL_MODE_GR_ML, getGranelUnitMode, isGranelProduct } from './granel.js'; // GRANEL-001
+import { GRANEL_MODE_GR_ML, getGranelUnitMode, isGranelProduct, calculateItemStockDeduction } from './granel.js'; // GRANEL-001
 import { withLock } from './withLock.js';          // FIN-007: feature detection + fallback.
 import { deepFreeze } from './deepFreeze.js';      // FIN-008: deep freeze (no solo shallow).
 import { FINANCIAL_EPSILON } from './securityConstants.js';
@@ -300,8 +300,61 @@ export async function processSaleTransaction({
     const lockResult = await withLock('pos_write_lock', async () => {
         const existingSales = await storageService.getItem(SALES_KEY, []);
         const saleNumber = existingSales.reduce((mx, s) => Math.max(mx, s.saleNumber || 0), 0) + 1;
+
+        // ── Deducir stock con precisión ──
+        // FIN-027-pattern: re-leer productos fresco aquí para evitar stale state.
+        // Plan de stock delta: la deducción se calcula ANTES de persistir la
+        // venta porque su delta real viaja embebido en el registro (`stockEffects`),
+        // que es lo único que se publica por un cobro.
+        const freshProducts = await storageService.getItem(PRODUCTS_KEY, products);
+        const allowNeg = localStorage.getItem('allow_negative_stock') === 'true';
+        let negativeStockUsed = false;
+        const negativeItems = [];
+        const stockEffects = [];
+        const stockAt = sale.timestamp || new Date().toISOString();
+
+        const updatedProducts = freshProducts.map(p => {
+            const cartItemsForThisProduct = cart.filter(i => (i._originalId || i.id) === p.id);
+            if (cartItemsForThisProduct.length > 0) {
+                // GRANEL-001: la suma de cantidades deducidas se acumula a 3 decimales.
+                // sumR (round2) convertía 0.125 kg en 0.13 antes de restar → stock erróneo.
+                // BULTOS-001: la deducción sale de calculateItemStockDeduction (fórmula
+                // única): granel → qty; unidad suelta → qty; bulto → qty × unitsPerPackage.
+                const totalDeducted = cartItemsForThisProduct.reduce((sum, item) => {
+                    const deduction = calculateItemStockDeduction(item);
+                    if (isGranelProduct(item)) return round3(sum + deduction);
+                    return sum + deduction; // entero estricto para package/unit
+                }, 0);
+
+                // GRANEL-001: granel conserva hasta 3 decimales al descontar
+                // (subR truncaba a 2, perdiendo el tercer decimal en 0.125 kg).
+                // El resto de productos permanece estrictamente entero.
+                const stockBefore = p.stock ?? 0;
+                const newStock = isGranelProduct(p)
+                    ? round3(stockBefore - totalDeducted)
+                    : round0(stockBefore - totalDeducted);
+                const stockAfter = allowNeg ? newStock : Math.max(0, newStock);
+                // FIN-014: auditar uso de stock negativo (no mover el flag, solo loguear).
+                if (newStock < 0 && allowNeg) {
+                    negativeStockUsed = true;
+                    negativeItems.push({ productId: p.id, name: p.name, stockBefore, deducted: totalDeducted, stockAfter: newStock });
+                }
+                // Delta REAL aplicado (tras el clamp): si había 2 y se pidieron 5
+                // con clamp a 0, el delta es −2, no −5.
+                stockEffects.push({
+                    productId: p.id,
+                    delta: isGranelProduct(p) ? round3(stockAfter - stockBefore) : round0(stockAfter - stockBefore),
+                    stockBefore,
+                    stockAfter,
+                    at: stockAt,
+                });
+                return { ...p, stock: stockAfter };
+            }
+            return p;
+        });
+
         // FIN-008: deep-freeze el sale persistido final.
-        let finalPersistedSale = deepFreeze({ ...sale, saleNumber });
+        let finalPersistedSale = deepFreeze({ ...sale, saleNumber, stockEffects });
 
         // Validación financiera dentro del lock y contra el snapshot más fresco,
         // antes de persistir venta o stock.
@@ -343,40 +396,6 @@ export async function processSaleTransaction({
             { saleId: finalPersistedSale.id, total: activeCartTotalUsd, items: cart.length }
         );
 
-        // ── Deducir stock con precisión ──
-        // FIN-027-pattern: re-leer productos fresco aquí para evitar stale state.
-        const freshProducts = await storageService.getItem(PRODUCTS_KEY, products);
-        const allowNeg = localStorage.getItem('allow_negative_stock') === 'true';
-        let negativeStockUsed = false;
-        const negativeItems = [];
-
-        const updatedProducts = freshProducts.map(p => {
-            const cartItemsForThisProduct = cart.filter(i => (i._originalId || i.id) === p.id);
-            if (cartItemsForThisProduct.length > 0) {
-                // GRANEL-001: la suma de cantidades deducidas se acumula a 3 decimales.
-                // sumR (round2) convertía 0.125 kg en 0.13 antes de restar → stock erróneo.
-                const totalDeducted = cartItemsForThisProduct.reduce((sum, item) => {
-                    if (isGranelProduct(item)) return round3(sum + item.qty);
-                    if (item._mode === 'unit') return round3(sum + divR(item.qty, item._unitsPerPackage || 1));
-                    return round3(sum + item.qty);
-                }, 0);
-
-                // GRANEL-001: granel conserva hasta 3 decimales al descontar
-                // (subR truncaba a 2, perdiendo el tercer decimal en 0.125 kg).
-                // El resto de productos permanece estrictamente entero.
-                const newStock = isGranelProduct(p)
-                    ? round3((p.stock ?? 0) - totalDeducted)
-                    : round0((p.stock ?? 0) - totalDeducted);
-                // FIN-014: auditar uso de stock negativo (no mover el flag, solo loguear).
-                if (newStock < 0 && allowNeg) {
-                    negativeStockUsed = true;
-                    negativeItems.push({ productId: p.id, name: p.name, stockBefore: p.stock ?? 0, deducted: totalDeducted, stockAfter: newStock });
-                }
-                return { ...p, stock: allowNeg ? newStock : Math.max(0, newStock) };
-            }
-            return p;
-        });
-
         if (negativeStockUsed) {
             const user = useAuthStore.getState().usuarioActivo;
             logEvent('CONFIG', 'NEGATIVE_STOCK_USED',
@@ -387,7 +406,10 @@ export async function processSaleTransaction({
         }
 
         // FIN-008: deep-freeze products antes de retornar.
-        await storageService.setItem(PRODUCTS_KEY, updatedProducts);
+        // Plan de stock delta: el cambio de stock ya viaja dentro de la venta
+        // publicada (`stockEffects`), así que el catálogo se escribe localmente
+        // SIN re-publicarse por cada cobro.
+        await storageService.setItem(PRODUCTS_KEY, updatedProducts, { skipSyncPush: true });
         deepFreeze(updatedProducts);
 
         let updatedCustomers = customers;

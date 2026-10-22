@@ -651,37 +651,44 @@ async function suiteStockModos() {
     section('📦 SUITE D3: Stock Modos (unidad, peso, empaque, stock negativo)');
 
     // Simula la lógica de deducción de stock en checkoutProcessor.js
+    // (espejo de calculateItemStockDeduction en utils/granel.js — BULTOS-001)
     function calcDeduccion(items) {
         return items.reduce((sum, item) => {
-            if (item.isWeight)         return sum + item.qty;
-            if (item._mode === 'unit') return sum + divR(item.qty, item._unitsPerPackage || 1);
-            return sum + item.qty;
+            if (item.isWeight) return sum + item.qty;
+            if (item._mode === 'unit') return sum + item.qty;
+            const isBulto = item.packagingType === 'lote' || item.unit === 'paquete';
+            if (!isBulto) return sum + item.qty;
+            return sum + item.qty * (item._unitsPerPackage || item.unitsPerPackage || 1);
         }, 0);
     }
 
-    // Modo estándar (qty = paquetes)
+    // Modo estándar (producto simple: qty = unidades)
     const d1 = calcDeduccion([{ qty: 3 }]);
-    assertEqual(d1, 3, 'Stock: modo estándar → deduce qty en paquetes');
+    assertEqual(d1, 3, 'Stock: producto simple → deduce qty unidades');
+
+    // BULTOS-001: producto de bulto sí multiplica
+    const d1b = calcDeduccion([{ qty: 3, packagingType: 'lote', _unitsPerPackage: 20 }]);
+    assertEqual(d1b, 60, 'Stock: 3 bultos de 20 uds → 60 unidades deducidas');
 
     // Modo peso (kg/unidad libre)
     const d2 = calcDeduccion([{ qty: 1.5, isWeight: true }]);
     assertEqual(d2, 1.5, 'Stock: modo peso → deduce qty directamente');
 
-    // Modo unidad (subdivide el empaque)
+    // Modo unidad (unidades sueltas: deduce 1:1, NO divide)
     const d3 = calcDeduccion([{ qty: 12, _mode: 'unit', _unitsPerPackage: 6 }]);
-    assertClose(d3, 2, 'Stock: modo unidad 12u÷6u/pkg → 2 paquetes deducidos', 0.001);
+    assertEqual(d3, 12, 'Stock: modo unidad 12u sueltas → 12 unidades deducidas');
 
     // Modo unidad parcial
     const d4 = calcDeduccion([{ qty: 3, _mode: 'unit', _unitsPerPackage: 4 }]);
-    assertClose(d4, 0.75, 'Stock: modo unidad 3u÷4u/pkg → 0.75 paquetes deducidos', 0.001);
+    assertEqual(d4, 3, 'Stock: modo unidad 3u sueltas → 3 unidades deducidas');
 
     // Mezcla de modos en el mismo carrito
     const d5 = calcDeduccion([
-        { qty: 2 },                                        // estándar
+        { qty: 2 },                                        // simple
         { qty: 0.5, isWeight: true },                      // peso
-        { qty: 8, _mode: 'unit', _unitsPerPackage: 4 },   // unidad (2 paquetes)
+        { qty: 8, _mode: 'unit', _unitsPerPackage: 4 },   // unidad suelta (8 uds)
     ]);
-    assertClose(d5, 4.5, 'Stock: mezcla de modos → 2 + 0.5 + 2 = 4.5', 0.001);
+    assertClose(d5, 10.5, 'Stock: mezcla de modos → 2 + 0.5 + 8 = 10.5', 0.001);
 
     // Stock negativo: con allow_negative_stock = true → puede ser negativo
     function applyStock(currentStock, deduccion, allowNeg) {
@@ -696,6 +703,10 @@ async function suiteStockModos() {
     // _unitsPerPackage ausente → default a 1 (no crash)
     const d6 = calcDeduccion([{ qty: 4, _mode: 'unit' }]); // sin _unitsPerPackage
     assertEqual(d6, 4, 'Stock: sin _unitsPerPackage → default 1 → deduce qty unidades');
+
+    // BULTOS-001: suelto con unitsPerPackage NO multiplica (regresión)
+    const d7 = calcDeduccion([{ qty: 2, packagingType: 'suelto', _unitsPerPackage: 24 }]);
+    assertEqual(d7, 2, 'Stock: suelto con uds/bulto configurado → NO multiplica');
 
     log('Lógica de deducción de stock certificada: estándar, peso, unidad, mezcla, negativo.', 'success');
 }

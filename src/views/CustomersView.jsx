@@ -52,6 +52,12 @@ export default function CustomersView({ triggerHaptic, isActive }) {
     const [activePaymentMethods, setActivePaymentMethods] = useState([]);
     const [resetBalanceCustomer, setResetBalanceCustomer] = useState(null);
     const { effectiveRate, rates, tasaCop, copEnabled, copPrimary } = useProductContext();
+    // Proveedores: el BCV real (decisión de a3562ba — facturas y pagos se
+    // convierten contra la cotización oficial). La cartera del cliente NO:
+    // sus deudas nacen en la caja con `effectiveRate` (recibo «Tasa BCV
+    // Aplicada»), así que un abono en Bs debe cancelar exactamente la deuda
+    // que el recibo declaró en Bs — usar el BCV crudo aquí desajustaba la
+    // conversión (Bs 120 de un fiado de $3 a 40 Bs/$ acreditaban $0,14).
     const bcvRate = rates?.bcv?.price || 0;
     const { log: auditLog } = useAudit();
     const [expandedHistory, setExpandedHistory] = useState(null);
@@ -219,7 +225,7 @@ export default function CustomersView({ triggerHaptic, isActive }) {
             currencyMode,
             customer: target,
             paymentMethod: metodo,
-            bcvRate,
+            bcvRate: effectiveRate,
             tasaCop,
             copEnabled,
         });
@@ -245,7 +251,7 @@ export default function CustomersView({ triggerHaptic, isActive }) {
             type: transactionModal.type,
             customer: transactionModal.customer,
             paymentMethod,
-            bcvRate,
+            bcvRate: effectiveRate,
             tasaCop,
             copEnabled
         });
@@ -522,7 +528,7 @@ export default function CustomersView({ triggerHaptic, isActive }) {
                                 <CustomerCard
                                     customer={customer}
                                     creditLensEntry={creditLens.byCustomer[customer.id]}
-                                    bcvRate={bcvRate}
+                                    bcvRate={effectiveRate}
                                     tasaCop={tasaCop}
                                     copEnabled={copEnabled}
                                     copPrimary={copPrimary}
@@ -591,7 +597,7 @@ export default function CustomersView({ triggerHaptic, isActive }) {
                 paymentMethod={paymentMethod}
                 setPaymentMethod={setPaymentMethod}
                 activePaymentMethods={activePaymentMethods}
-                bcvRate={bcvRate}
+                bcvRate={effectiveRate}
                 tasaCop={tasaCop}
                 copEnabled={copEnabled}
                 copPrimary={copPrimary}
@@ -644,7 +650,7 @@ export default function CustomersView({ triggerHaptic, isActive }) {
                     setDeleteCustomerTarget(selectedCustomer);
                     setSelectedCustomer(null);
                 }}
-                bcvRate={bcvRate}
+                bcvRate={effectiveRate}
                 tasaCop={tasaCop}
                 copEnabled={copEnabled}
                 copPrimary={copPrimary}
@@ -683,7 +689,7 @@ export default function CustomersView({ triggerHaptic, isActive }) {
             {detailingTransaction && (
                 <TransactionDetailModal
                     sale={detailingTransaction}
-                    bcvRate={bcvRate}
+                    bcvRate={effectiveRate}
                     tasaCop={tasaCop}
                     copEnabled={copEnabled}
                     copPrimary={copPrimary}

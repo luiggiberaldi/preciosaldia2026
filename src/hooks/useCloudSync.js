@@ -8,6 +8,7 @@ import { ensureDeviceSessionRegistered } from '../utils/deviceIdentity';
 import { showToast } from '../components/Toast';
 import { isPrimaryPairingActive, readPairingRow } from '../services/supervisorPairingState';
 import { mergeLedgerEntries, rebuildCustomersFromLedger } from '../utils/customerLedger';
+import { isGranelProduct, normalizeStockValue } from '../utils/granel';
 import {
     buildSyncEnvelope,
     getSyncMetadataKey,
@@ -59,6 +60,220 @@ function quickHash(value) {
 
 const LAST_PUSH_HASH_PREFIX = 'bodega_last_periodic_push_hash_';
 
+// ─── Fase 4: familia bodega_sales_v1 por periodos ──────────────────────────
+// El documento monolítico de ventas (~600 KB medidos en el backup del
+// 2026-10-19) se publica partido por periodos:
+//   `bodega_sales_v1:<YYYY-MM>` (shards `#2`, `#3`… cuando el mes es enorme)
+//   `bodega_sales_v1:recent` (ventas sin fecha válida)
+// El lector (monitor y pull inicial) mergea todos los docs de la familia con
+// el legacy `bodega_sales_v1`, que sigue legible pero ya NO se reescribe
+// (migración perezosa al escribir). Semántica de merge sellada en tests:
+//   - doc legacy: unión; los registros locales ganan por id. `[]` limpia todo.
+//   - doc de periodo: unión; lo entrante gana por id (mutaciones como
+//     `ANULADA` viajan en el doc del periodo). `[]` limpia SOLO ese periodo.
+export const SALES_SYNC_BASE_KEY = 'bodega_sales_v1';
+// Cota de aceptación del plan: ningún documento de sync_documents pasa de ~500 KB.
+export const SALES_SYNC_MAX_DOC_BYTES = 500_000;
+// Presupuesto de empaquetado por shard (deja margen bajo la cota dura).
+export const SALES_SYNC_PACK_BUDGET_BYTES = 400_000;
+// Documentos publicados alguna vez por este equipo: el vaciado total debe
+// tumbearlos a todos para que ningún lector conserve ventas fantasma.
+export const SALES_SYNC_TRACKING_KEY = 'pda_sales_sync_docs_v1';
+
+export function isSalesSyncDocId(docId) {
+    return docId === SALES_SYNC_BASE_KEY
+        || (typeof docId === 'string' && docId.startsWith(`${SALES_SYNC_BASE_KEY}:`));
+}
+
+function salesPeriodFromTimestamp(value) {
+    if (typeof value !== 'string') return null;
+    const candidate = value.slice(0, 7);
+    return /^\d{4}-\d{2}$/.test(candidate) ? candidate : null;
+}
+
+/** Periodo de una venta: `YYYY-MM` de su fecha; sin fecha válida → `recent`. */
+export function getSalesSyncPeriodOf(record) {
+    return salesPeriodFromTimestamp(record?.timestamp)
+        || salesPeriodFromTimestamp(record?.fecha)
+        || 'recent';
+}
+
+function parseSalesSyncDocId(docId) {
+    if (!isSalesSyncDocId(docId) || docId === SALES_SYNC_BASE_KEY) return null;
+    const rest = docId.slice(SALES_SYNC_BASE_KEY.length + 1);
+    const match = rest.match(/^(.*?)(?:#(\d+))?$/);
+    if (!match || !match[1]) return null;
+    return { period: match[1], shard: match[2] ? Number(match[2]) : 1 };
+}
+
+function compareSalesRecords(a, b) {
+    const ta = a?.timestamp || a?.fecha || '';
+    const tb = b?.timestamp || b?.fecha || '';
+    if (ta !== tb) return ta < tb ? -1 : 1;
+    const ia = String(a?.id ?? '');
+    const ib = String(b?.id ?? '');
+    return ia < ib ? -1 : ia > ib ? 1 : 0;
+}
+
+/**
+ * Parte las ventas en documentos por periodo (con shards por presupuesto de
+ * bytes). El orden es canónico (fecha, id), así que un append al final del
+ * periodo solo reescribe el último shard: la escritura incremental toca el
+ * periodo y el shard tocados, nunca el historial completo.
+ */
+export function buildSalesSyncPlan(sales) {
+    const list = Array.isArray(sales) ? sales : [];
+    const byPeriod = new Map();
+    for (const record of list) {
+        const period = getSalesSyncPeriodOf(record);
+        if (!byPeriod.has(period)) byPeriod.set(period, []);
+        byPeriod.get(period).push(record);
+    }
+
+    const plan = [];
+    for (const [period, records] of byPeriod) {
+        const sorted = [...records].sort(compareSalesRecords);
+        let shard = [];
+        let shardBytes = 0;
+        let shardIndex = 0;
+        const flush = () => {
+            if (shard.length === 0) return;
+            shardIndex += 1;
+            plan.push({
+                docId: shardIndex === 1
+                    ? `${SALES_SYNC_BASE_KEY}:${period}`
+                    : `${SALES_SYNC_BASE_KEY}:${period}#${shardIndex}`,
+                period,
+                shard: shardIndex,
+                records: shard,
+                bytes: shardBytes,
+            });
+            shard = [];
+            shardBytes = 0;
+        };
+        for (const record of sorted) {
+            const bytes = JSON.stringify(record).length + 1;
+            if (shard.length > 0 && shardBytes + bytes > SALES_SYNC_PACK_BUDGET_BYTES) flush();
+            shard.push(record);
+            shardBytes += bytes;
+        }
+        flush();
+    }
+    return plan;
+}
+
+/**
+ * Merge de un documento de la familia en el arreglo local de ventas.
+ * El doc legacy es unión con "lo local gana" (nunca pisa: es histórico);
+ * los docs de periodo son unión con "lo entrante gana" (llevan las
+ * mutaciones frescas). `[]` = tombstone: limpia el periodo del doc, o todo
+ * si es el legacy (semántica de snapshot vacío publicable de F3).
+ */
+export function mergeSalesSyncDoc(localSales, docId, payload) {
+    const local = Array.isArray(localSales) ? localSales : [];
+    const incoming = Array.isArray(payload) ? payload : [];
+
+    if (docId === SALES_SYNC_BASE_KEY) {
+        if (incoming.length === 0) return [];
+        const localIds = new Set(local.map((r) => r?.id));
+        return [...local, ...incoming.filter((r) => !localIds.has(r?.id))];
+    }
+
+    const parsed = parseSalesSyncDocId(docId);
+    if (!parsed) return local;
+
+    if (incoming.length === 0) {
+        return local.filter((r) => getSalesSyncPeriodOf(r) !== parsed.period);
+    }
+
+    const incomingIds = new Set(incoming.map((r) => r?.id));
+    const incomingById = new Map(incoming.map((r) => [r?.id, r]));
+    const merged = local.map((r) => (incomingIds.has(r?.id) ? incomingById.get(r?.id) : r));
+    const localIds = new Set(local.map((r) => r?.id));
+    for (const record of incoming) {
+        if (!localIds.has(record?.id)) merged.push(record);
+    }
+    return merged;
+}
+
+function readSalesSyncTrackedIds() {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(SALES_SYNC_TRACKING_KEY) || '[]');
+        return Array.isArray(parsed) ? parsed.filter((id) => isSalesSyncDocId(id)) : [];
+    } catch {
+        return [];
+    }
+}
+
+function rememberSalesSyncTrackedIds(ids) {
+    const merged = new Set([...readSalesSyncTrackedIds(), ...ids.filter((id) => isSalesSyncDocId(id))]);
+    localStorage.setItem(SALES_SYNC_TRACKING_KEY, JSON.stringify([...merged]));
+}
+
+// ─── Fase 1 del plan de stock delta ──────────────────────────────────────────
+// docs/plans/2026-10-21-plan-stock-delta-en-doc-de-venta.md: el movimiento de
+// stock de cada cobro/anulación viaja embebido en el registro de la familia de
+// ventas (`stockEffects: [{ productId, delta, at }]`, log append-only: la
+// anulación agrega sus efectos inversos al mismo registro), y los movimientos
+// de lote del supervisor ya traen stockBefore/stockAfter. El lector deriva el
+// stock visible:
+//     stock = baseline (payload del catálogo publicado, con su `stockAsOf`)
+//           + Σ efectos con `at` POSTERIOR a `stockAsOf`
+// Es una suma sobre registros completos: idempotente, insensible al orden y
+// re-derivable desde cero. Sin `stockAsOf` válido no se pliega nada (el doc de
+// catálogo se usa tal cual: compatibilidad con escritores legacy).
+
+function effectIsAfter(effectAt, stockAsOf) {
+    if (typeof effectAt !== 'string' || typeof stockAsOf !== 'string') return false;
+    const at = Date.parse(effectAt);
+    const asOf = Date.parse(stockAsOf);
+    return !Number.isNaN(at) && !Number.isNaN(asOf) && at > asOf;
+}
+
+/**
+ * Suma neta de deltas de stock por producto para los efectos posteriores a
+ * `stockAsOf`. Fuentes: `stockEffects` de cada registro (cobros y anulaciones)
+ * y los movimientos de lote del supervisor (delta = stockAfter − stockBefore).
+ */
+export function collectStockEffectsDeltas(sales, stockAsOf) {
+    const deltas = new Map();
+    if (typeof stockAsOf !== 'string' || Number.isNaN(Date.parse(stockAsOf))) return deltas;
+    const add = (productId, delta, at) => {
+        if (productId == null || !Number.isFinite(delta) || delta === 0) return;
+        if (!effectIsAfter(at, stockAsOf)) return;
+        const key = String(productId);
+        deltas.set(key, (deltas.get(key) || 0) + delta);
+    };
+    for (const record of Array.isArray(sales) ? sales : []) {
+        if (!record) continue;
+        if (Array.isArray(record.stockEffects)) {
+            for (const effect of record.stockEffects) {
+                add(effect?.productId, Number(effect?.delta), effect?.at);
+            }
+        } else if (typeof record.movementId === 'string' && record.productId != null
+            && Number.isFinite(Number(record.stockAfter)) && Number.isFinite(Number(record.stockBefore))) {
+            add(record.productId, Number(record.stockAfter) - Number(record.stockBefore), record.timestamp);
+        }
+    }
+    return deltas;
+}
+
+/**
+ * Stock derivado: baseline del catálogo + efectos no incluidos en él. Devuelve
+ * la lista tal cual cuando no hay nada que plegar (o no hay baseline).
+ */
+export function reconcileStockFromEffects(products, sales, stockAsOf) {
+    const list = Array.isArray(products) ? products : [];
+    const deltas = collectStockEffectsDeltas(sales, stockAsOf);
+    if (deltas.size === 0) return list;
+    return list.map(product => {
+        const delta = deltas.get(String(product?.id));
+        if (!delta || !product) return product;
+        const base = Number(product.stock) || 0;
+        return { ...product, stock: normalizeStockValue(base + delta, isGranelProduct(product)) };
+    });
+}
+
 /**
  * Evidencia de que este equipo ya sincronizó antes (hashes de push confirmados
  * o metadotos de documentos aplicados). Un equipo verdaderamente nuevo no tiene
@@ -86,7 +301,7 @@ export const EMPTY_SNAPSHOT_KEYS = ['bodega_sales_v1', 'bodega_products_v1', 'bo
 // ─── Estado Global del Motor ───────────────────────────────────────────────
 let globalSubscription = null;
 let isSyncingFromCloud = false; // true mientras aplicamos cambios de la nube → evita eco
-let pendingPush = {};           // Debounce: { [key]: timeoutId }
+let pendingPush = {};           // Debounce: { [key]: { timer, capturedAt } }
 let _currentDeviceId = '';      // Device ID activo para pushCloudSync
 let isCloudSyncActive = false;   // Evita empujar a la nube si el dispositivo no está autenticado/emparejado
 
@@ -112,15 +327,32 @@ const DEBOUNCE_LIGHT_MS = 300;
 const DEBOUNCE_HEAVY_MS = 3000;
 
 function _debouncePush(key, value) {
-    if (pendingPush[key]) clearTimeout(pendingPush[key]);
+    if (pendingPush[key]) clearTimeout(pendingPush[key].timer);
     const delay = HEAVY_KEYS.includes(key) ? DEBOUNCE_HEAVY_MS : DEBOUNCE_LIGHT_MS;
-    pendingPush[key] = setTimeout(() => {
-        delete pendingPush[key];
-        pushCloudSync(key, value).catch(() => {});
-    }, delay);
+    // Fase 1 del plan de stock delta: `capturedAt` es el instante en que el
+    // valor quedó producido (la escritura local que lo encoló), NO el del push:
+    // una venta entre captura y push no está reflejada en el payload y su
+    // efecto debe plegarse aparte en el lector (ver stockAsOfFor).
+    const capturedAt = new Date().toISOString();
+    pendingPush[key] = {
+        capturedAt,
+        timer: setTimeout(() => {
+            delete pendingPush[key];
+            pushCloudSync(key, value, false, false, null, capturedAt).catch(() => {});
+        }, delay),
+    };
 }
 
-export const pushCloudSync = async (key, value, forceUnconditional = false, allowBeforePairing = false, deviceIdOverride = null) => {
+/**
+ * Solo el doc de productos sella baseline de stock: su payload es un snapshot
+ * del catálogo cuyo `stock` ya incluye todos los efectos con `at <= stockAsOf`.
+ */
+function stockAsOfFor(key, capturedAt) {
+    if (key !== 'bodega_products_v1') return null;
+    return capturedAt || new Date().toISOString();
+}
+
+export const pushCloudSync = async (key, value, forceUnconditional = false, allowBeforePairing = false, deviceIdOverride = null, capturedAt = null) => {
     if (!supabaseCloud) return { ok: false, skipped: true, error: 'Supabase no disponible' };
     if (isSyncingFromCloud) return { ok: false, skipped: true, error: 'Cambio remoto en aplicación' };
     // El primer pairing necesita publicar el snapshot antes de que exista
@@ -143,13 +375,70 @@ export const pushCloudSync = async (key, value, forceUnconditional = false, allo
         return { ok: true, skipped: true, reason: 'Sin cambios' };
     }
 
-    const collectionType = LOCAL_KEYS.includes(key) ? 'local' : 'store';
+    // Fase 4: la familia de ventas se publica partido por periodos.
+    if (key === SALES_SYNC_BASE_KEY) {
+        return pushSalesFamilySync(value, { stampDeviceId, forceUnconditional, hashKey, currentHash });
+    }
+
+    const result = await upsertSyncDocument(stampDeviceId, key, value, { stockAsOf: stockAsOfFor(key, capturedAt) });
+    if (!result.ok) return { ok: false, skipped: false, error: result.error };
+
+    // Solo confirmar el hash después de que Supabase confirmó el upsert.
+    localStorage.setItem(hashKey, currentHash);
+    return { ok: true, skipped: false, updatedAt: result.updatedAt, data: result.data ?? null };
+};
+
+/**
+ * Fase 4: publica `bodega_sales_v1` partido por periodos.
+ *  - Solo reescribe los documentos cuyo contenido cambió (hash por documento):
+ *    una venta nueva toca el periodo (y shard) suyos, no el historial entero.
+ *  - El doc legacy NO se reescribe (migración perezosa al escribir): queda
+ *    como histórico legible que los lectores mergean con los periodos.
+ *  - Con el arreglo vacío (vaciado confirmado) se tumba el legacy y todos los
+ *    periodos publicados: el snapshot vacío es publicable (F3) y ningún lector
+ *    conserva ventas fantasma.
+ */
+async function pushSalesFamilySync(value, { stampDeviceId, forceUnconditional, hashKey, currentHash }) {
+    const list = Array.isArray(value) ? value : null;
+    if (!list) return { ok: false, skipped: false, error: 'Documento de ventas inválido' };
+
+    const updatedAt = new Date().toISOString();
+
+    if (list.length === 0) {
+        const tombstones = [...new Set([SALES_SYNC_BASE_KEY, ...readSalesSyncTrackedIds()])];
+        for (const docId of tombstones) {
+            const result = await upsertSyncDocument(stampDeviceId, docId, []);
+            if (!result.ok) return { ok: false, skipped: false, error: result.error };
+            localStorage.setItem(LAST_PUSH_HASH_PREFIX + docId, quickHash([]));
+        }
+        localStorage.setItem(hashKey, currentHash);
+        return { ok: true, skipped: false, updatedAt, published: tombstones };
+    }
+
+    const plan = buildSalesSyncPlan(list);
+    const published = [];
+    for (const slice of plan) {
+        const sliceHash = quickHash(slice.records);
+        const sliceHashKey = LAST_PUSH_HASH_PREFIX + slice.docId;
+        if (!forceUnconditional && localStorage.getItem(sliceHashKey) === sliceHash) continue;
+        const result = await upsertSyncDocument(stampDeviceId, slice.docId, slice.records);
+        if (!result.ok) return { ok: false, skipped: false, error: result.error, published };
+        localStorage.setItem(sliceHashKey, sliceHash);
+        published.push(slice.docId);
+    }
+    rememberSalesSyncTrackedIds(published);
+    localStorage.setItem(hashKey, currentHash);
+    return { ok: true, skipped: false, updatedAt, published };
+}
+
+async function upsertSyncDocument(stampDeviceId, docId, value, { stockAsOf = null } = {}) {
+    const collectionType = LOCAL_KEYS.includes(docId) ? 'local' : 'store';
     const updatedAt = new Date().toISOString();
     const document = {
         device_id: stampDeviceId,
         collection: collectionType,
-        doc_id: key,
-        data: buildSyncEnvelope(value, updatedAt),
+        doc_id: docId,
+        data: buildSyncEnvelope(value, updatedAt, { stockAsOf }),
         updated_at: updatedAt,
     };
 
@@ -161,15 +450,12 @@ export const pushCloudSync = async (key, value, forceUnconditional = false, allo
             if (response.error) throw response.error;
             return response;
         });
-
-        // Solo confirmar el hash después de que Supabase confirmó el upsert.
-        localStorage.setItem(hashKey, currentHash);
-        return { ok: true, skipped: false, updatedAt, data: result.data ?? null };
+        return { ok: true, updatedAt, data: result.data ?? null };
     } catch (error) {
         console.warn('[CloudSync] No se pudo confirmar el push:', error?.message ?? error);
-        return { ok: false, skipped: false, error: error?.message || 'Error de sincronización' };
+        return { ok: false, error: error?.message || 'Error de sincronización' };
     }
-};
+}
 
 /**
  * SEC-009 / HOOK-011: Reemplazo EXPLÍCITO del antiguo monkeypatch.
@@ -302,16 +588,21 @@ async function _applyFromCloud(docId, collection, data) {
             return false;
         }
 
+        // Fase 4: los docs por periodo de la familia de ventas se validan como
+        // su clave base (el contrato conoce `bodega_sales_v1`, no los periodos).
+        const isSalesFamily = isSalesSyncDocId(docId);
+        const contractKey = isSalesFamily ? SALES_SYNC_BASE_KEY : docId;
+
         // Contrato común del supervisor: incluso el primary debe rechazar
         // documentos no allowlisted antes de aplicarlos localmente.
-        const supervisorValidation = validateSupervisorSyncDocument(docId, payload);
+        const supervisorValidation = validateSupervisorSyncDocument(contractKey, payload);
         if (!supervisorValidation.valid) {
             console.warn(`[CloudSync] Documento remoto rechazado: ${supervisorValidation.error}`);
             return false;
         }
 
         // DATA-001: Validación de Schema antes de escribir en almacenamiento local
-        const validator = STORE_SCHEMAS[docId];
+        const validator = STORE_SCHEMAS[contractKey];
         if (validator) {
             let dataToValidate = payload;
             if (typeof payload === 'string' && (payload.startsWith('[') || payload.startsWith('{'))) {
@@ -344,7 +635,22 @@ async function _applyFromCloud(docId, collection, data) {
                     console.warn(`[CloudSync] Conflictos de ledger retenidos localmente: ${merged.conflicts.length}`);
                 }
             }
-            await lf.setItem(docId, payloadToStore);
+            let writeKey = docId;
+            if (isSalesFamily) {
+                // Fase 4: merge en el lector — los periodos (y el legacy) se
+                // fusionan en la clave local única que leen las vistas.
+                writeKey = SALES_SYNC_BASE_KEY;
+                const localSales = await lf.getItem(SALES_SYNC_BASE_KEY);
+                payloadToStore = mergeSalesSyncDoc(localSales, docId, payload);
+            } else if (docId === 'bodega_products_v1') {
+                // Plan de stock delta: el payload del catálogo es el baseline (su
+                // `stock` ya incluye los efectos con at <= stockAsOf); el stock
+                // visible pliega los efectos posteriores de la familia de ventas.
+                // Sin stockAsOf válido se usa tal cual (compatibilidad).
+                const localSales = await lf.getItem(SALES_SYNC_BASE_KEY);
+                payloadToStore = reconcileStockFromEffects(payload, localSales, envelope.stockAsOf ?? null);
+            }
+            await lf.setItem(writeKey, payloadToStore);
             if (docId === 'bodega_customer_ledger_v1') {
                 const localCustomers = await lf.getItem('bodega_customers_v1');
                 if (Array.isArray(localCustomers)) {
@@ -354,12 +660,17 @@ async function _applyFromCloud(docId, collection, data) {
             }
 
             // Notificar a los componentes React que lean este store
-            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: docId, source: 'remote' } }));
+            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: writeKey, source: 'remote' } }));
         }
 
         // Update local hash to prevent periodic push from re-uploading what we just downloaded
         const hashKey = LAST_PUSH_HASH_PREFIX + docId;
-        localStorage.setItem(hashKey, quickHash(payloadToStore));
+        // Fase 4: el hash del doc de periodo refleja SU payload (el escritor lo
+        // salta sin re-subir); el de la clave base refleja el arreglo fusionado.
+        localStorage.setItem(hashKey, quickHash(isSalesFamily ? payload : payloadToStore));
+        if (isSalesFamily) {
+            localStorage.setItem(LAST_PUSH_HASH_PREFIX + SALES_SYNC_BASE_KEY, quickHash(payloadToStore));
+        }
         if (envelope.updatedAt) localStorage.setItem(metadataKey, envelope.updatedAt);
         return true;
     } finally {

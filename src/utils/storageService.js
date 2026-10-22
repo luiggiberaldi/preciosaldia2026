@@ -90,7 +90,7 @@ export const storageService = {
      * 1. Storage Circuit Breaker: bloquea vaciados o reducciones drásticas (>5 ítems → <10%).
      * 2. Shadow Snapshots: guarda una copia espejo en IndexedDB antes de cada sobrescritura.
      */
-    async setItem(key, value) {
+    async setItem(key, value, options = {}) {
         try {
             // 🧱 CAPA 1: DISYUNTOR DE ALMACENAMIENTO (Circuit Breaker para Catálogo)
             if (key === 'bodega_products_v1') {
@@ -129,7 +129,12 @@ export const storageService = {
             // el push. `queueCloudSync` usa debounce, así que para cuando el push
             // real corra el flag ya estaría restaurado; verificamos aquí, de forma
             // síncrona, mientras runWithoutEco mantiene el flag activo.
-            if (!isSyncingFromCloud()) queueCloudSync(key, value);
+            //
+            // `skipSyncPush` (plan de stock delta): el cambio ya viaja dentro de
+            // otro documento publicado (el delta de stock embebido en la venta),
+            // así que la escritura local es correcta pero NO debe re-publicar el
+            // catálogo entero. Solo los call-sites de stock puro lo usan.
+            if (!options?.skipSyncPush && !isSyncingFromCloud()) queueCloudSync(key, value);
         } catch (error) {
             // RE-LANZAR CircuitBreaker obligatoriamente para evitar que el catch general escriba en localStorage
             if (error?.message?.includes('[CircuitBreaker]')) {

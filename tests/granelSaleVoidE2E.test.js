@@ -309,3 +309,94 @@ describe('GRANEL-001 E2E: venta 0.350 kg + anulación restaura el stock exacto',
         expect(products.find(p => p.id === 'queso-001').stock).toBe(55.15); // 55.5 − 0.350
     });
 });
+
+// ════════════════════════════════════════════════════════════════════════
+// Plan de stock delta (fase 1) — el delta viaja embebido en la venta y el
+// catálogo local NO se re-publica por cada cobro
+// ════════════════════════════════════════════════════════════════════════
+describe('stock delta fase 1: efectos embebidos + catálogo sin re-publicar', () => {
+    const productsWriteCalls = () => storageService.setItem.mock.calls.filter(([key]) => key === PRODUCTS_KEY);
+
+    it('el cobro embebe su delta real en la venta y escribe el catálogo con skipSyncPush', async () => {
+        const saleResult = await processSaleTransaction(granelSaleOpts(0.350));
+        expect(saleResult.success).toBe(true);
+
+        // El delta REAL aplicado viaja en el registro (0.35 kg, con su `at`).
+        expect(saleResult.sale.stockEffects).toHaveLength(1);
+        expect(saleResult.sale.stockEffects[0]).toMatchObject({
+            productId: 'queso-001',
+            delta: -0.35,
+            stockBefore: 55.5,
+            stockAfter: 55.15,
+        });
+        expect(typeof saleResult.sale.stockEffects[0].at).toBe('string');
+
+        // Gate fail-first: antes del cambio la escritura del catálogo iba SIN
+        // opciones y el interceptor de storageService encolaba su publicación
+        // completa por cada cobro.
+        const writes = productsWriteCalls();
+        expect(writes).toHaveLength(1);
+        expect(writes[0][2]).toEqual({ skipSyncPush: true });
+
+        // La venta (que SÍ lleva el delta) no se suprime: su push es el vehículo.
+        const salesWrites = storageService.setItem.mock.calls.filter(([key]) => key === SALES_KEY);
+        expect(salesWrites).toHaveLength(1);
+        expect(salesWrites[0][2]).toBeUndefined();
+    });
+
+    it('la anulación agrega sus efectos inversos al log del registro reemplazado', async () => {
+        const saleResult = await processSaleTransaction(granelSaleOpts(0.350));
+        const sales = await storageService.getItem(SALES_KEY, []);
+        const products = await storageService.getItem(PRODUCTS_KEY, []);
+        storageService.setItem.mockClear();
+
+        await processVoidSale(saleResult.sale, sales, products);
+
+        const salesAfter = await storageService.getItem(SALES_KEY, []);
+        const voided = salesAfter[0];
+        expect(voided.status).toBe('ANULADA');
+        // Log append-only: el efecto del cobro y el inverso de la anulación.
+        expect(voided.stockEffects).toHaveLength(2);
+        expect(voided.stockEffects[0]).toMatchObject({ productId: 'queso-001', delta: -0.35, stockAfter: 55.15 });
+        expect(voided.stockEffects[1]).toMatchObject({
+            productId: 'queso-001',
+            delta: 0.35,
+            stockBefore: 55.15,
+            stockAfter: 55.5,
+        });
+        expect(voided.stockEffects[1].at >= voided.stockEffects[0].at).toBe(true);
+
+        // El catálogo restaurado tampoco se re-publica.
+        const writes = productsWriteCalls();
+        expect(writes).toHaveLength(1);
+        expect(writes[0][2]).toEqual({ skipSyncPush: true });
+    });
+
+    it('el delta es el cambio REAL aplicado: con clamp a 0 no se registra la cantidad pedida', async () => {
+        // Stock 2 y carrito de 5 unidades → el stock queda en 0 (clamp) y el
+        // delta que viaja es −2, no −5.
+        const unit = {
+            id: 'refresco-002', name: 'Refresco 2', unit: 'unidad', packagingType: 'suelto',
+            stock: 2, priceUsd: 1, priceUsdt: 1, costUsd: 0.5, costBs: 0, isWeight: false,
+        };
+        _memoryStore.set(PRODUCTS_KEY, [unit]);
+        const result = await processSaleTransaction({
+            granelUnitMode: 'kg_lt',
+            cart: [{ ...unit, qty: 5, _originalId: unit.id }],
+            cartTotalUsd: 5, cartTotalBs: 200, cartSubtotalUsd: 5,
+            payments: [{ amountUsd: 5, amountBs: 0, currency: 'USD', methodId: 'efectivo_usd', methodLabel: 'Efectivo $' }],
+            changeBreakdown: { changeUsdGiven: 0, changeBsGiven: 0 },
+            selectedCustomerId: null, customers: [], products: [unit], effectiveRate: 40,
+            tasaCop: 0, copEnabled: false, discountData: null, useAutoRate: false,
+        });
+
+        expect(result.success).toBe(true);
+        expect(result.sale.stockEffects).toHaveLength(1);
+        expect(result.sale.stockEffects[0]).toMatchObject({
+            productId: 'refresco-002',
+            delta: -2,
+            stockBefore: 2,
+            stockAfter: 0,
+        });
+    });
+});

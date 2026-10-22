@@ -20,6 +20,28 @@ import {
     SUPERVISOR_SYNC_STATES,
 } from '../services/supervisorSyncService';
 import { clearMonitorCache } from '../services/monitorUnpair';
+// Fase 4: los docs por periodo de `bodega_sales_v1` se mergean en la clave
+// local única; la familia no está en la allowlist de claves y se lee por prefijo.
+import { SALES_SYNC_BASE_KEY, isSalesSyncDocId, mergeSalesSyncDoc, reconcileStockFromEffects } from './useCloudSync';
+
+// Plan de stock delta: el catálogo del monitor es una VISTA derivada — el
+// baseline del último doc de productos (con su `stockAsOf`) más los efectos de
+// la familia de ventas que el baseline todavía no incluye.
+const PRODUCTS_KEY = 'bodega_products_v1';
+const PRODUCTS_STOCK_BASELINE_KEY = 'pda_products_stock_baseline_v1';
+
+async function rederiveProductsFromBaseline(mergedSales) {
+    try {
+        const baseline = await localforage.getItem(PRODUCTS_STOCK_BASELINE_KEY);
+        if (!baseline || !Array.isArray(baseline.products)) return;
+        const derived = reconcileStockFromEffects(baseline.products, mergedSales, baseline.stockAsOf ?? null);
+        await localforage.setItem(PRODUCTS_KEY, derived);
+        window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: PRODUCTS_KEY, source: 'remote' } }));
+    } catch (error) {
+        // Best-effort: la derivación nunca rompe la aplicación del doc de ventas.
+        console.warn('[MonitorSync] No se pudo re-derivar el stock del catálogo', error?.message || error);
+    }
+}
 import { isMonitorPairingActive, readPairingRow } from '../services/supervisorPairingState';
 
 localforage.config({ name: 'BodegaApp', storeName: 'bodega_app_data' });
@@ -114,7 +136,11 @@ export function useMonitorSync(pairedDeviceId) {
             return { applied: false, rejected: true, error: envelope.error };
         }
 
-        const validation = validateSupervisorSyncDocument(docId, envelope.payload);
+        // Fase 4: los docs por periodo de la familia de ventas se validan como
+        // su clave base (el contrato conoce `bodega_sales_v1`, no los periodos).
+        const isSalesFamily = isSalesSyncDocId(docId);
+        const contractKey = isSalesFamily ? SALES_SYNC_BASE_KEY : docId;
+        const validation = validateSupervisorSyncDocument(contractKey, envelope.payload);
         if (!validation.valid) {
             return { applied: false, rejected: true, error: validation.error };
         }
@@ -148,8 +174,31 @@ export function useMonitorSync(pairedDeviceId) {
                 }));
                 window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: docId, source: 'remote' } }));
             } else {
-                await localforage.setItem(docId, envelope.payload);
-                window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: docId, source: 'remote' } }));
+                let writeKey = docId;
+                if (isSalesFamily) {
+                    // Fase 4: merge en el lector — los periodos (y el legacy)
+                    // se fusionan en la clave local única que leen las vistas.
+                    writeKey = SALES_SYNC_BASE_KEY;
+                    const localSales = await localforage.getItem(SALES_SYNC_BASE_KEY);
+                    const mergedSales = mergeSalesSyncDoc(localSales, docId, envelope.payload);
+                    await localforage.setItem(writeKey, mergedSales);
+                    // Plan de stock delta: los efectos de stock viajan en la venta;
+                    // el stock del catálogo se re-deriva desde el baseline guardado.
+                    await rederiveProductsFromBaseline(mergedSales);
+                } else if (docId === PRODUCTS_KEY) {
+                    // Plan de stock delta: el payload del catálogo es el baseline
+                    // (su `stock` ya incluye los efectos con at <= stockAsOf); la
+                    // vista pliega sobre él los efectos posteriores.
+                    const localSales = await localforage.getItem(SALES_SYNC_BASE_KEY);
+                    await localforage.setItem(PRODUCTS_STOCK_BASELINE_KEY, {
+                        products: envelope.payload,
+                        stockAsOf: envelope.stockAsOf ?? null,
+                    });
+                    await localforage.setItem(writeKey, reconcileStockFromEffects(envelope.payload, localSales, envelope.stockAsOf ?? null));
+                } else {
+                    await localforage.setItem(docId, envelope.payload);
+                }
+                window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: writeKey, source: 'remote' } }));
             }
         });
 
@@ -372,43 +421,46 @@ export function useMonitorSync(pairedDeviceId) {
             if (sessionError || !session) throw sessionError || new Error('No hay sesión segura del monitor');
             if (!isActiveLifecycle(lifecycleId)) return { ok: false, skipped: true, error: 'Ciclo de sincronización obsoleto' };
 
-            let docs = [];
+            // Fase 4: primero solo metadatos y SIN filtro de doc_id en el
+            // servidor: la familia `bodega_sales_v1:<periodo>` no cabe en la
+            // allowlist de claves fijas. La selección de claves ocurre en el
+            // lado cliente (allowlist + familia de ventas) y el payload pesado
+            // se pide solo para esos ids: ningún documento fuera de contrato se
+            // descarga (SEC-002).
+            const { data: metadata, error: metadataError } = await supabaseCloud
+                .from('sync_documents')
+                .select('collection, doc_id, updated_at')
+                .eq('device_id', pairedDeviceId)
+                .in('collection', ['store', 'local']);
+            if (metadataError) throw metadataError;
+
+            const allowedDocs = (metadata || []).filter((doc) =>
+                SUPERVISOR_SYNC_KEYS.includes(doc.doc_id) || isSalesSyncDocId(doc.doc_id));
+
+            let targetDocIds;
             if (full) {
-                const { data, error } = await supabaseCloud
-                    .from('sync_documents')
-                    .select('collection, doc_id, data, updated_at')
-                    .eq('device_id', pairedDeviceId)
-                    .in('collection', ['store', 'local'])
-                    .in('doc_id', SUPERVISOR_SYNC_KEYS);
-                if (error) throw error;
-                docs = data || [];
+                targetDocIds = allowedDocs.map((doc) => doc.doc_id);
             } else {
-                // Primero transferimos solo metadatos. El payload pesado se
-                // solicita únicamente para documentos realmente modificados.
-                const { data: metadata, error: metadataError } = await supabaseCloud
-                    .from('sync_documents')
-                    .select('collection, doc_id, updated_at')
-                    .eq('device_id', pairedDeviceId)
-                    .in('collection', ['store', 'local'])
-                    .in('doc_id', SUPERVISOR_SYNC_KEYS);
-
-                if (metadataError) throw metadataError;
-
-                const changedDocIds = getChangedSyncDocumentIds(
-                    metadata,
+                // El payload pesado se solicita únicamente para documentos
+                // realmente modificados (watermark por documento).
+                targetDocIds = getChangedSyncDocumentIds(
+                    allowedDocs,
                     (docId) => localStorage.getItem(getSyncMetadataKey(docId)),
                 );
 
-                if (changedDocIds.length === 0) {
+                if (targetDocIds.length === 0) {
                     return { ok: true, applied: 0, rejected: 0, skipped: true, reason: 'Sin cambios remotos' };
                 }
+            }
 
+            let docs = [];
+            if (targetDocIds.length > 0) {
                 const { data, error } = await supabaseCloud
                     .from('sync_documents')
                     .select('collection, doc_id, data, updated_at')
                     .eq('device_id', pairedDeviceId)
                     .in('collection', ['store', 'local'])
-                    .in('doc_id', changedDocIds);
+                    .in('doc_id', targetDocIds);
                 if (error) throw error;
                 docs = data || [];
             }

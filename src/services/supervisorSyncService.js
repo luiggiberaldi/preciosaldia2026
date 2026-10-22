@@ -12,11 +12,16 @@ export const SUPERVISOR_SYNC_STATES = Object.freeze({
 
 const isPlainObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
-export function buildSyncEnvelope(payload, updatedAt = new Date().toISOString()) {
+export function buildSyncEnvelope(payload, updatedAt = new Date().toISOString(), { stockAsOf = null } = {}) {
     return {
         schemaVersion: SUPERVISOR_SYNC_SCHEMA_VERSION,
         payload,
         updatedAt,
+        // Fase 1 del plan de stock delta: el estado de stock de este payload ya
+        // incluye todos los efectos con `at <= stockAsOf` (solo el doc de
+        // productos). Los lectores legacy lo ignoran; los nuevos derivan el
+        // stock visible plegando sobre él solo los efectos posteriores.
+        ...(stockAsOf ? { stockAsOf } : {}),
     };
 }
 
@@ -39,12 +44,19 @@ export function readSyncEnvelope(data) {
         return { valid: false, error: 'updatedAt inválido' };
     }
 
+    // Campo aditivo (plan de stock delta): ausente o inválido → null, que el
+    // lector interpreta como "sin baseline: usar el payload tal cual".
+    const stockAsOf = typeof data.stockAsOf === 'string' && !Number.isNaN(Date.parse(data.stockAsOf))
+        ? data.stockAsOf
+        : null;
+
     return {
         valid: true,
         error: null,
         payload: data.payload,
         schemaVersion,
         updatedAt,
+        stockAsOf,
     };
 }
 

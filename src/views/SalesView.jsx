@@ -13,7 +13,7 @@ import { showToast } from '../components/Toast';
 import { ShoppingCart, X, DollarSign, CheckCircle2, Trash2 } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useProductContext } from '../context/ProductContext';
-import { isGranelProduct, parseCartQuantity, adjustStockValue, parseEan13ScaleBarcode } from '../utils/granel'; // GRANEL-001
+import { isGranelProduct, parseCartQuantity, adjustStockValue, parseEan13ScaleBarcode, calculateItemStockDeduction } from '../utils/granel'; // GRANEL-001
 import { deriveCartFields, resyncCartItems } from '../utils/cartSync'; // SYNC-CESTA-001
 
 // Components
@@ -511,13 +511,20 @@ export default function SalesView({ triggerHaptic, isActive }) {
             const addingQty = existingInCart ? (qtyOverride || 1) : qtyToAdd;
             const existingQtyForThis = existingInCart ? existingInCart.qty : 0;
             const newQty = existingQtyForThis + addingQty;
-            const stockNeeded = forceMode === 'unit' ? newQty / (product.unitsPerPackage || 1) : newQty;
+            // BULTOS-001: unidades canónicas de stock que consumirá esta línea
+            // (unidad suelta → qty; bulto → qty × uds/bulto; granel → qty).
+            const stockNeeded = calculateItemStockDeduction({
+                ...product,
+                qty: newQty,
+                _mode: forceMode || 'package',
+                _unitsPerPackage: product.unitsPerPackage || 1,
+            });
 
             const otherCartItems = currentCart.filter(i => (i._originalId || i.id) === product.id && i.id !== cartId);
-            const otherStockUsed = otherCartItems.reduce((sum, item) => {
-                if (item._mode === 'unit') return sum + (item.qty / (item._unitsPerPackage || 1));
-                return sum + item.qty;
-            }, 0);
+            const otherStockUsed = otherCartItems.reduce(
+                (sum, item) => sum + calculateItemStockDeduction(item),
+                0
+            );
 
             if (stockNeeded + otherStockUsed > currentStock) {
                 playError();
@@ -532,13 +539,20 @@ export default function SalesView({ triggerHaptic, isActive }) {
             const existingInCart = currentCart.find(i => i.id === cartId && i.priceUsd === priceToUse);
             const existingQtyForThis = existingInCart ? existingInCart.qty : 0;
             const newQty = existingQtyForThis + (qtyOverride || 1);
-            const stockNeeded = forceMode === 'unit' ? newQty / (product.unitsPerPackage || 1) : newQty;
+            // BULTOS-001: unidades canónicas de stock que consumirá esta línea
+            // (unidad suelta → qty; bulto → qty × uds/bulto; granel → qty).
+            const stockNeeded = calculateItemStockDeduction({
+                ...product,
+                qty: newQty,
+                _mode: forceMode || 'package',
+                _unitsPerPackage: product.unitsPerPackage || 1,
+            });
 
             const otherCartItems = currentCart.filter(i => (i._originalId || i.id) === product.id && i.id !== cartId);
-            const otherStockUsed = otherCartItems.reduce((sum, item) => {
-                if (item._mode === 'unit') return sum + (item.qty / (item._unitsPerPackage || 1));
-                return sum + item.qty;
-            }, 0);
+            const otherStockUsed = otherCartItems.reduce(
+                (sum, item) => sum + calculateItemStockDeduction(item),
+                0
+            );
 
             if (stockNeeded + otherStockUsed > currentStock) {
                 showToast(`${product.name}: stock agotado, vendiendo sin inventario`, 'info');
@@ -623,11 +637,12 @@ export default function SalesView({ triggerHaptic, isActive }) {
                     const totalUsed = currentCart.reduce((sum, item) => {
                         if ((item._originalId || item.id) !== originalId) return sum;
                         if (item.id === id) return sum;
-                        const normalizedQty = adjustStockValue(item.qty, 0, isGranelProduct(item));
-                        if (item._mode === 'unit') return sum + (normalizedQty / (item._unitsPerPackage || 1));
-                        return sum + normalizedQty;
+                        return sum + calculateItemStockDeduction({
+                            ...item,
+                            qty: adjustStockValue(item.qty, 0, isGranelProduct(item)),
+                        });
                     }, 0);
-                    const thisItemStock = cartItem._mode === 'unit' ? newQty / (cartItem._unitsPerPackage || 1) : newQty;
+                    const thisItemStock = calculateItemStockDeduction({ ...cartItem, qty: newQty });
                     if (totalUsed + thisItemStock > availableStock) {
                         playError();
                         showToast(`${cartItem.name}: stock maximo alcanzado`, 'warning');

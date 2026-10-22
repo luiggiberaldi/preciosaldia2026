@@ -1,8 +1,8 @@
 import { storageService } from './storageService.js';
 import { logEvent } from '../services/auditService.js';
 import { useAuthStore } from '../hooks/store/useAuthStore.js';
-import { divR, sumR, round2, round3 } from './dinero.js';
-import { isGranelProduct, adjustStockValue } from './granel.js'; // GRANEL-001
+import { sumR, round2, round3, round0 } from './dinero.js';
+import { isGranelProduct, adjustStockValue, calculateItemStockDeduction } from './granel.js'; // GRANEL-001
 import { withLock } from './withLock.js';
 import { deepFreeze } from './deepFreeze.js';
 import { applyCustomerMovementsWithinLock } from '../services/customerWalletService.js';
@@ -74,26 +74,63 @@ export async function processVoidSale(saleParam, currentSales, currentProducts) 
         const freshSale = freshSales.find(s => s.id === sale.id);
         if (!freshSale || freshSale.status === 'ANULADA') throw new Error('Esta venta ya fue anulada.');
 
-        const updatedSales = freshSales.map(s => s.id === sale.id ? { ...s, status: 'ANULADA' } : s);
-
         const freshProducts = await storageService.getItem(PRODUCTS_KEY, currentProducts || []);
+        // Plan de stock delta: la restauración se calcula primero porque sus
+        // efectos inversos viajan embebidos en el registro de venta anulado.
+        const voidAt = new Date().toISOString();
+        const voidEffects = [];
         let updatedProducts = freshProducts;
-        if (freshSale.items?.length > 0) {
+        if (freshSale.items?.length > 0 || freshSale.stockEffects?.length > 0) {
             updatedProducts = freshProducts.map(p => {
-                const itemsInSale = freshSale.items.filter(i => (i._originalId || i.id) === p.id);
-                if (itemsInSale.length === 0) return p;
-                // GRANEL-001: la suma a restaurar se acumula a 3 decimales para no
-                // perder el tercer decimal del peso vendido (0.125 kg → 0.13 con sumR).
-                const totalToRestore = itemsInSale.reduce((sum, item) => {
-                    if (isGranelProduct(item)) return round3(sum + item.qty);
-                    if (item._mode === 'unit') return round3(sum + divR(item.qty, item._unitsPerPackage || 1));
-                    return round3(sum + item.qty);
-                }, 0);
+                const itemsInSale = (freshSale.items || []).filter(i => (i._originalId || i.id) === p.id);
+                const recordedDeltas = (Array.isArray(freshSale.stockEffects) ? freshSale.stockEffects : [])
+                    .filter(e => String(e.productId) === String(p.id));
+                if (itemsInSale.length === 0 && recordedDeltas.length === 0) return p;
+                // BULTOS-001/TAREA 4B: si la venta trae stockEffects registrados, se
+                // invierte el delta REAL aplicado en su momento — correcto incluso para
+                // ventas pre-fix cuya deducción fue menor (no inflar el stock al anular).
+                // Si no hay deltas registrados, se recalcula con la fórmula canónica
+                // (con la salvedad documentada para ventas históricas muy antiguas).
+                let totalToRestore;
+                if (recordedDeltas.length > 0) {
+                    const raw = recordedDeltas.reduce((sum, e) => sum + (Number(e.delta) || 0), 0);
+                    totalToRestore = isGranelProduct(p) ? round3(-raw) : round0(-raw);
+                } else {
+                    // GRANEL-001: la suma a restaurar se acumula a 3 decimales para no
+                    // perder el tercer decimal del peso vendido (0.125 kg → 0.13 con sumR).
+                    totalToRestore = itemsInSale.reduce((sum, item) => {
+                        const deduction = calculateItemStockDeduction(item);
+                        if (isGranelProduct(item)) return round3(sum + deduction);
+                        return sum + deduction;
+                    }, 0);
+                }
                 // GRANEL-001: granel restaura hasta 3 decimales sin drift;
                 // el resto permanece entero estricto.
-                return { ...p, stock: adjustStockValue(p.stock || 0, totalToRestore, isGranelProduct(p)) };
+                const stockBefore = p.stock || 0;
+                const stockAfter = adjustStockValue(stockBefore, totalToRestore, isGranelProduct(p));
+                // Efecto inverso REAL aplicado (post-redondeo), con su propio `at`:
+                // cuenta aunque la venta original sea anterior al baseline del
+                // catálogo (ver plan de stock delta §4).
+                voidEffects.push({
+                    productId: p.id,
+                    delta: isGranelProduct(p) ? round3(stockAfter - stockBefore) : round0(stockAfter - stockBefore),
+                    stockBefore,
+                    stockAfter,
+                    at: voidAt,
+                });
+                return { ...p, stock: stockAfter };
             });
         }
+
+        // El registro viaja como reemplazo completo (convención existente) con su
+        // log append-only: los efectos del cobro más los inversos de la anulación.
+        const updatedSales = freshSales.map(s => s.id === sale.id
+            ? {
+                ...s,
+                status: 'ANULADA',
+                stockEffects: [...(Array.isArray(s.stockEffects) ? s.stockEffects : []), ...voidEffects],
+            }
+            : s);
 
         const savedCustomers = await storageService.getItem(CUSTOMERS_KEY, []);
         let updatedCustomers = savedCustomers;
@@ -145,7 +182,9 @@ export async function processVoidSale(saleParam, currentSales, currentProducts) 
 
         await storageService.setItem(SALES_KEY, updatedSales);
         await storageService.setItem(CUSTOMERS_KEY, updatedCustomers);
-        await storageService.setItem(PRODUCTS_KEY, updatedProducts);
+        // Plan de stock delta: la restauración ya viaja dentro del registro de
+        // venta anulado; el catálogo local se escribe SIN re-publicarse.
+        await storageService.setItem(PRODUCTS_KEY, updatedProducts, { skipSyncPush: true });
 
         deepFreeze(updatedProducts);
         deepFreeze(updatedCustomers);
