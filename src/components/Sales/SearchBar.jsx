@@ -93,7 +93,7 @@ const SearchBar = forwardRef(function SearchBar({
 
             {/* Search Dropdown */}
             {searchResults.length > 0 && (
-                <div className="absolute top-full mt-2 left-0 right-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-20 overflow-hidden">
+                <div className="absolute top-full mt-2 left-0 right-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-50 overflow-hidden">
                     {searchResults.map((p, index) => {
                         const isLowStock = (p.stock ?? 0) <= (p.lowStockAlert ?? 5) && (p.stock ?? 0) >= 0;
                         const isOutOfStock = (p.stock ?? 0) === 0;
@@ -195,7 +195,7 @@ const SearchBar = forwardRef(function SearchBar({
 
             {/* ─── POPUP JERARQUÍA: Paquete o Unidad ─── */}
             {hierarchyPending && (
-                <div className="absolute top-full mt-2 left-0 right-0 z-30 bg-white dark:bg-slate-900 border-2 border-surface-300 dark:border-surface-800 rounded-2xl shadow-2xl shadow-primary/10 overflow-hidden">
+                <div className="absolute top-full mt-2 left-0 right-0 z-50 bg-white dark:bg-slate-900 border-2 border-surface-300 dark:border-surface-800 rounded-2xl shadow-2xl shadow-primary/10 overflow-hidden">
                     <div className="p-3 bg-brand-light dark:bg-surface-800/20 border-b border-surface-200 dark:border-surface-800">
                         <div className="flex items-center justify-between">
                             <div>
@@ -359,7 +359,7 @@ function WeightPopup({ weightPending, setWeightPending, addToCart, effectiveRate
     };
 
     return (
-        <div className="absolute top-full mt-2 left-0 right-0 z-30 bg-white dark:bg-slate-900 border-2 border-amber-200 dark:border-amber-800 rounded-2xl shadow-2xl shadow-amber-500/10 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="absolute top-full mt-2 left-0 right-0 z-50 bg-white dark:bg-slate-900 border-2 border-amber-200 dark:border-amber-800 rounded-2xl shadow-2xl shadow-amber-500/10 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-100 dark:border-amber-800">
                 <div className="flex items-center justify-between">
                     <div>
