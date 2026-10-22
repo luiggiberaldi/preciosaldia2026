@@ -305,10 +305,10 @@ export default function CategoryBar({
                                     key={p.id}
                                     onClick={() => { triggerHaptic && triggerHaptic(); addToCart(p); }}
                                     disabled={isDisabled}
-                                    className={`group relative flex flex-col justify-between p-3 bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-md transition-all text-left active:scale-[0.98] ${isDisabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+                                    className={`group relative isolate flex flex-col justify-between p-3 bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-md transition-all text-left active:scale-[0.98] ${isDisabled ? 'opacity-40 cursor-not-allowed' : ''}`}
                                 >
                                     {/* Stock Badge flotante en la esquina superior derecha de la tarjeta (Pill) */}
-                                    <span className={`absolute top-2.5 right-2.5 text-[9px] font-extrabold px-2 py-0.5 rounded-full z-20 border shadow-2xs ${
+                                    <span className={`absolute top-2.5 right-2.5 text-[9px] font-extrabold px-2 py-0.5 rounded-full z-10 border shadow-2xs ${
                                         isOut
                                             ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border-rose-200'
                                             : 'bg-emerald-100/90 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border-emerald-200/60'

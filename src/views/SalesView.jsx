@@ -847,9 +847,9 @@ export default function SalesView({ triggerHaptic, isActive }) {
                         {/* ── Left Column: Search + Categories ── */}
                         <div className="flex-1 min-h-0 flex flex-col lg:min-w-0 overflow-y-auto lg:overflow-hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
                             {/* ── ZONA SUPERIOR: Buscador + Tasa (fila horizontal en desktop) ── */}
-                            <div className="shrink-0 mb-3 flex items-stretch gap-3">
+                            <div className="shrink-0 mb-3 flex items-stretch gap-3 relative z-30">
                                 {/* Buscador: ocupa todo el espacio */}
-                                <div className="flex-1 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-3 sm:p-4 shadow-sm border border-slate-100 dark:border-slate-800 relative">
+                                <div className="flex-1 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-3 sm:p-4 shadow-sm border border-slate-100 dark:border-slate-800 relative z-30">
                                     <SearchBar
                                         ref={searchInputRef}
                                         searchTerm={searchTerm}
