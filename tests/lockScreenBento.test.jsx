@@ -74,6 +74,17 @@ describe('LockScreen Bento Card Redesign', () => {
     vi.clearAllMocks();
   });
 
+  // El panel de detalles de supervisión arranca plegado (optimización móvil del
+  // commit del panel plegable): la telemetría y las acciones viven dentro, así
+  // que las pruebas lo expanden antes de verificarlas.
+  function expandSupervisionPanel() {
+    const toggle = container.querySelector('[aria-label="Panel de supervisión y enlace"]');
+    expect(toggle).toBeTruthy();
+    act(() => {
+      toggle.click();
+    });
+  }
+
   it('renders bento card with supervisor status and device telemetries', async () => {
     const onOpenPairing = vi.fn();
     const onOpenPairingIssuer = vi.fn();
@@ -90,6 +101,10 @@ describe('LockScreen Bento Card Redesign', () => {
     // Verify Bento card header
     expect(container.textContent).toContain('Supervisión & Enlace');
     expect(container.textContent).toContain('1 Vinculado');
+
+    // El detalle arranca plegado; al expandirlo aparece la telemetría.
+    expect(container.textContent).not.toContain('Esta Caja');
+    expandSupervisionPanel();
 
     // Verify Local POS ID
     expect(container.textContent).toContain('Esta Caja');
@@ -132,6 +147,7 @@ describe('LockScreen Bento Card Redesign', () => {
     });
 
     expect(container.textContent).toContain('Sin Enlace');
+    expandSupervisionPanel();
     expect(container.textContent).toContain('Ninguno enlazado');
   });
 
@@ -145,6 +161,7 @@ describe('LockScreen Bento Card Redesign', () => {
       );
     });
 
+    expandSupervisionPanel();
     const unpairTriggerBtn = container.querySelector('button[title="Desvincular supervisor"]');
     expect(unpairTriggerBtn).toBeTruthy();
 

@@ -201,7 +201,7 @@ describe('comandos de producto: "aplicado sin sincronizar" queda cubierto', () =
         expect(readProductPublishPending()).toBeNull();
     });
 
-    it('un fallo real de publicación revierte el cambio local y no deja marca', async () => {
+    it('un fallo real de publicación NO revierte el cambio local y deja la marca del barrido', async () => {
         h.pushCloudSync.mockResolvedValue({ ok: false, skipped: false, error: 'RLS' });
 
         await act(async () => { root = createRoot(container); });
@@ -212,11 +212,14 @@ describe('comandos de producto: "aplicado sin sincronizar" queda cubierto', () =
         await act(async () => { insert({ new: buildProductRow() }); });
         await flush();
 
-        // Rollback: el catálogo vuelve al estado previo (nada quedó a medias) y
-        // el comando queda recordado como fallido (reintentable, no "aplicado").
+        // Semántica Fase 1 del plan de cuelgue de caja (deliberada, sin
+        // rollback): revertir el catálogo pisaría la venta que el cajero
+        // escribió mientras se publicaba. El cambio local queda aplicado, el
+        // comando confirma con advertencia (reintentable por el barrido) y la
+        // marca de pendiente activa la re-publicación periódica.
         const products = h.state.storage.get('bodega_products_v1');
-        expect(products[0].priceUsd).toBe(2);
-        expect(rememberedCommand('cmd-product-1')).toMatchObject({ status: 'failed' });
-        expect(readProductPublishPending()).toBeNull();
+        expect(products[0].priceUsd).toBe(2.5);
+        expect(rememberedCommand('cmd-product-1')).toMatchObject({ status: 'applied_with_warnings' });
+        expect(readProductPublishPending()).toMatchObject({ commandId: 'cmd-product-1' });
     });
 });
