@@ -175,6 +175,7 @@ export function statusChipLabel(status) {
         case 'expired': return 'Expirado';
         case 'failed': return 'Fallido';
         case 'ack_failed': return 'ACK fallido';
+        case 'unresolved': return 'Sin confirmar';
         default: return status ? String(status) : 'Sin ACK';
     }
 }
@@ -191,7 +192,7 @@ export function formatAckMs(value) {
 
 export const SUPERVISOR_LAST_COMMAND_KEY = 'supervisor_last_command_v1';
 
-const FAILURE_STATUSES = ['failed', 'rejected', 'cancelled', 'expired', 'ack_failed', 'invalid', 'timeout', 'unauthenticated', 'unauthorized', 'disabled'];
+const FAILURE_STATUSES = ['failed', 'rejected', 'cancelled', 'expired', 'ack_failed', 'invalid', 'timeout', 'unauthenticated', 'unauthorized', 'disabled', 'unresolved'];
 
 let lastCommandOutcome = null;
 let pendingLastCommandWrite = Promise.resolve();

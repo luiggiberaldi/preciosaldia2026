@@ -117,7 +117,12 @@ function ackStockDetail(ack) {
 }
 
 function ackWarningsDetail(ack) {
-    const warnings = ack?.ack?.warnings ?? ack?.ack?.warning;
+    // H4 (auditoría 2026-10-22): las reservas viajan en el payload del ACK y se
+    // buscan a la profundidad que traiga cada camino (el ACK normalizado del
+    // tracker, el resultado del sender de lote o el payload crudo).
+    const warnings = ack?.ack?.warnings ?? ack?.ack?.warning
+        ?? ack?.ack?.ack?.warnings ?? ack?.ack?.ack?.warning
+        ?? ack?.warnings ?? ack?.warning;
     if (!warnings) return '';
     const text = Array.isArray(warnings) ? warnings.join('; ') : String(warnings);
     return text.trim() ? ` (${text.trim()})` : '';
@@ -135,7 +140,9 @@ export function buildCommandNotice(kind, { label = 'el cambio', ack = null, inte
                 ? { message: `✈️ Cambio enviado a la caja — esperando confirmación: ${label}`, type: 'info' }
                 : { message: `📣 Notificación enviada a la caja: ${label}`, type: 'info' };
         case 'applied':
-            return { message: `✅ La caja aplicó tu cambio — ${label}${ackStockDetail(ack)}`, type: 'success' };
+            // H4: si el ACK trae reservas (p. ej. confirmación temprana con
+            // publicación pendiente), el aviso verde también las explica.
+            return { message: `✅ La caja aplicó tu cambio — ${label}${ackStockDetail(ack)}${ackWarningsDetail(ack)}`, type: 'success' };
         case 'applied_with_warnings':
             return { message: `⚠️ Se aplicó con reservas — ${label}${ackWarningsDetail(ack)}`, type: 'warning' };
         case 'rejected':
@@ -275,7 +282,16 @@ async function run(record, deps) {
     }
 
     // Presupuesto agotado sin confirmación: nunca silencio. El aviso ámbar
-    // "sigue esperando" es el resultado visible de este camino.
+    // "sigue esperando" es el resultado visible de este camino. H5 (auditoría
+    // 2026-10-22): el desenlace TAMBIÉN queda en la telemetría — antes este era
+    // el único camino que terminaba sin reportar el resultado al diagnóstico
+    // (el «último comando» se quedaba pegado en «enviado»).
+    reportSupervisorCommandOutcome({
+        commandId: record.commandId,
+        type: record.type,
+        status: 'unresolved',
+        error: 'Sin confirmación de la caja tras el presupuesto de reconciliación',
+    });
     if (!record.finalNotified) announceWaiting(record, notify);
 }
 

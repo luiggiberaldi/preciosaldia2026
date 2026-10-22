@@ -54,6 +54,7 @@ vi.mock('../src/services/supervisorCommandService', async (importOriginal) => ({
 vi.mock('../src/services/supervisorInventoryCommand', () => ({
     applySupervisorInventoryBatchTransaction: vi.fn(),
     retryInventoryPublish: vi.fn(async () => ({ retried: false, ok: true })),
+    recoverSupervisorInventoryJournal: vi.fn(async () => ({ recovered: false, commandId: null, direction: null })),
 }));
 vi.mock('../src/services/supervisorUserCommand', () => ({ applySupervisorUserCommand: vi.fn() }));
 

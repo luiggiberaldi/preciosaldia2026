@@ -18,7 +18,8 @@ import {
     SUPERVISOR_TERMINAL_COMMAND_STATUSES,
     withSupervisorCommandLock,
 } from '../services/supervisorCommandService';
-import { applySupervisorInventoryBatchTransaction, retryInventoryPublish } from '../services/supervisorInventoryCommand';
+import { applySupervisorInventoryBatchTransaction, recoverSupervisorInventoryJournal, retryInventoryPublish } from '../services/supervisorInventoryCommand';
+import { writeVerifiedValue } from '../utils/verifiedWrite';
 import { publishKeyNow } from '../services/cloudPublishQueue';
 import { finishAckTelemetry, markAckTelemetry } from '../services/supervisorAckTelemetry';
 import {
@@ -235,7 +236,11 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 const currentProducts = await storageService.getItem('bodega_products_v1', []) || [];
                 result = applySupervisorProductCommand(currentProducts, payload);
 
-                await storageService.setItem('bodega_products_v1', result.products);
+                // H1 (auditoría 2026-10-22): escritura CON relectura.
+                // storageService.setItem traga errores (cuota llena → fallback →
+                // cola) y un cambio perdido no puede confirmarse jamás como
+                // aplicado: eso era un falso positivo del ACK.
+                await writeVerifiedValue(storageService, 'bodega_products_v1', result.products);
                 // Eco al instante: el estado local ya es real, así que la UI
                 // refresca ANTES del viaje a la nube (igual que applyRateCommand).
                 window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_products_v1', source: 'remote' } }));
@@ -243,6 +248,26 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 // estos hitos permiten medirlo (ackLeadMs sale negativo).
                 markAckTelemetry(payload.commandId, 'local_applied');
             });
+            // H2 (auditoría 2026-10-22): el registro de «aplicado» se escribe
+            // ANTES de la publicación. Si la caja se corta en el viaje de
+            // ~1.3 MB, la reaplicación encuentra el registro y solo re-confirma;
+            // antes el re-intento caía en el guard de revisión y respondía
+            // «failed» con el cambio ya aplicado (falso negativo).
+            await rememberAppliedCommand(payload.commandId, {
+                status: 'applied',
+                ackPayload: {
+                    commandId: payload.commandId,
+                    action: result.action,
+                    productId: result.productId,
+                    status: 'applied',
+                },
+                errorMessage: null,
+                expiresAt: Number.MAX_SAFE_INTEGER,
+            });
+            // La marca de re-publicación se coloca ANTES del viaje y se retira
+            // al confirmar: un corte a mitad de publicación deja activa la red
+            // de seguridad del barrido, no un catálogo desincronizado sin marca.
+            markProductPublishPending(payload.commandId);
             // Fase 1 (plan de cuelgue de caja): la red queda FUERA de
             // pos_write_lock — el «Cobrar» del cajero no espera la subida de
             // ~1.3 MB. La publicación usa el publicador single-flight con
@@ -252,6 +277,11 @@ export function useRemoteCommands(deviceId, enabled = true) {
             let pushResult;
             try {
                 pushResult = await publishKeyNow('bodega_products_v1');
+            } catch (publishError) {
+                // Un fallo de publicación NUNCA convierte un cambio local ya
+                // aplicado en «failed» (semántica Fase 11): se degrada a la
+                // advertencia con la marca de re-publicación ya colocada.
+                pushResult = { ok: false, skipped: false, error: publishError?.message || 'Error de sincronización' };
             } finally {
                 markAckTelemetry(payload.commandId, 'publish_end');
             }
@@ -260,13 +290,6 @@ export function useRemoteCommands(deviceId, enabled = true) {
             publish = classifyProductPublishResult(pushResult);
             if (publish.published) {
                 clearProductPublishPending();
-            } else {
-                // Aplicado localmente pero sin publicación confirmada: queda
-                // marcado y el barrido periódico re-publica hasta confirmar.
-                // SIN rollback: revertir el catálogo pisaría la venta que el
-                // cajero escribió mientras se publicaba (semántica Fase 11: lo
-                // aplicado localmente es real; la nube se pone al día después).
-                markProductPublishPending(payload.commandId);
             }
             window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_products_v1', source: 'remote' } }));
 
@@ -275,6 +298,11 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 action: result.action,
                 productId: result.productId,
                 status: publish?.published ? 'applied' : 'applied_with_warnings',
+                // H4 (auditoría 2026-10-22): el aviso «se aplicó con reservas»
+                // ahora explica LA reserva en palabras.
+                ...(publish?.published ? {} : {
+                    warnings: ['Publicación a la nube sin confirmar; el barrido periódico la re-publicará'],
+                }),
             };
         };
 
@@ -313,6 +341,11 @@ export function useRemoteCommands(deviceId, enabled = true) {
                             stockBefore: applied.stockBefore,
                             stockAfter: applied.stockAfter,
                             status: 'applied',
+                            // H4 (auditoría 2026-10-22): la reserva se explica en
+                            // el propio ACK — es una confirmación temprana: el
+                            // estado local es durable, pero la publicación a la
+                            // nube la cierra el barrido de 30 s.
+                            warnings: ['Confirmación temprana: la publicación a la nube la cierra el barrido de 30 s'],
                         };
                         await rememberAppliedCommand(commandId, {
                             status: 'applied',
@@ -427,7 +460,9 @@ export function useRemoteCommands(deviceId, enabled = true) {
                             remote: true,
                         },
                     });
-                    await storageService.setItem('bodega_sales_v1', updated);
+                    // H1 (auditoría 2026-10-22): escritura CON relectura — una
+                    // escritura tragada jamás se confirma como aplicada.
+                    await writeVerifiedValue(storageService, 'bodega_sales_v1', updated);
                     const pushResult = await pushCloudSync('bodega_sales_v1', updated, true);
                     if (!pushResult.ok && !pushResult.skipped) throw new Error(pushResult.error);
                 } else {
@@ -440,7 +475,8 @@ export function useRemoteCommands(deviceId, enabled = true) {
                         .map(sale => String(sale.cierreId) === targetCierreId
                             ? { ...sale, cajaCerrada: false, cierreId: undefined, shiftId: undefined }
                             : sale);
-                    await storageService.setItem('bodega_sales_v1', updated);
+                    // H1 (auditoría 2026-10-22): escritura CON relectura.
+                    await writeVerifiedValue(storageService, 'bodega_sales_v1', updated);
                     const pushResult = await pushCloudSync('bodega_sales_v1', updated, true);
                     if (!pushResult.ok && !pushResult.skipped) throw new Error(pushResult.error);
                 }
@@ -749,6 +785,23 @@ export function useRemoteCommands(deviceId, enabled = true) {
 
         initialize();
 
+        // H3 (auditoría 2026-10-22): el journal de un lote interrumpido se
+        // recupera AL ARRANQUE del receptor y en cada barrido de re-publicación.
+        // Antes solo corría al llegar el SIGUIENTE lote: un corte a mitad de
+        // transacción dejaba el estado local mixto (stock sin movimiento) hasta
+        // que otro lote apareciera — o para siempre. La recuperación es
+        // idempotente y a prueba de escrituras intermedias (no pisa ventas).
+        const recoverInventoryJournal = async () => {
+            try {
+                await recoverSupervisorInventoryJournal(storageService);
+            } catch (recoverError) {
+                supervisorLog('Recuperación del journal de inventario pendiente', {
+                    error: recoverError?.message || recoverError,
+                });
+            }
+        };
+        void recoverInventoryJournal();
+
         // La publicación pendiente de un lote ya aplicado localmente no puede
         // depender de que llegue otro comando exitoso: si los reintentos nuevos
         // mueren en el guard de concurrencia (stock creído ≠ stock sincronizado),
@@ -756,6 +809,7 @@ export function useRemoteCommands(deviceId, enabled = true) {
         // siempre. Se reintenta al arrancar y periódicamente (sin trabajo cuando
         // no hay journal pendiente).
         const retryPendingPublish = async () => {
+            await recoverInventoryJournal();
             try {
                 await retryInventoryPublish({ storage: storageService, pushSync: pushCloudSync });
             } catch (publishError) {

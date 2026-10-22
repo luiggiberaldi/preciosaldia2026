@@ -63,6 +63,7 @@ vi.mock('../src/services/supervisorCommandService', async (importOriginal) => ({
 vi.mock('../src/services/supervisorInventoryCommand', () => ({
     applySupervisorInventoryBatchTransaction: vi.fn(),
     retryInventoryPublish: vi.fn(async () => ({ retried: false, ok: true })),
+    recoverSupervisorInventoryJournal: vi.fn(async () => ({ recovered: false, commandId: null, direction: null })),
 }));
 vi.mock('../src/services/supervisorUserCommand', () => ({ applySupervisorUserCommand: vi.fn() }));
 
@@ -168,6 +169,8 @@ describe('comandos de producto: "aplicado sin sincronizar" queda cubierto', () =
         expect(products[0].priceUsd).toBe(2.5);
         // …pero el ACK no puede decir "applied" liso: fue applied_with_warnings.
         expect(rememberedCommand('cmd-product-1')).toMatchObject({ status: 'applied_with_warnings' });
+        // H4: la reserva viaja explicada en el payload del ACK.
+        expect(rememberedCommand('cmd-product-1').ackPayload.warnings?.join(' ')).toMatch(/Publicación a la nube/);
         // Y queda la marca que activa la re-publicación del barrido.
         expect(readProductPublishPending()).toMatchObject({ commandId: 'cmd-product-1' });
     });
@@ -199,6 +202,8 @@ describe('comandos de producto: "aplicado sin sincronizar" queda cubierto', () =
 
         expect(rememberedCommand('cmd-product-1')).toMatchObject({ status: 'applied' });
         expect(readProductPublishPending()).toBeNull();
+        // H4: sin reserva confirmada no hay warnings inventadas.
+        expect(rememberedCommand('cmd-product-1').ackPayload.warnings).toBeUndefined();
     });
 
     it('un fallo real de publicación NO revierte el cambio local y deja la marca del barrido', async () => {
@@ -220,6 +225,8 @@ describe('comandos de producto: "aplicado sin sincronizar" queda cubierto', () =
         const products = h.state.storage.get('bodega_products_v1');
         expect(products[0].priceUsd).toBe(2.5);
         expect(rememberedCommand('cmd-product-1')).toMatchObject({ status: 'applied_with_warnings' });
+        // H4: la reserva explicada viaja en el ACK.
+        expect(rememberedCommand('cmd-product-1').ackPayload.warnings?.join(' ')).toMatch(/Publicación a la nube/);
         expect(readProductPublishPending()).toMatchObject({ commandId: 'cmd-product-1' });
     });
 });

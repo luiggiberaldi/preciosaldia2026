@@ -1,3 +1,5 @@
+import { writeVerifiedValue } from '../utils/verifiedWrite';
+
 const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const PIN_HASH_PATTERN = /^pbkdf2\$\d+\$[^$]+\$[^$]+$/;
 
@@ -89,11 +91,14 @@ export async function applySupervisorUserCommand(storage, payload = {}, { onUser
         throw new Error('La sesión de usuarios no está inicializada en la caja');
     }
 
-    await storage.setItem('abasto-auth-storage', {
+    // H1 (auditoría 2026-10-22): escrituras CON relectura. storageService.setItem
+    // traga errores (cuota llena) y una escritura perdida no puede confirmarse
+    // jamás como aplicada — eso era un falso positivo del ACK.
+    await writeVerifiedValue(storage, 'abasto-auth-storage', {
         ...savedAuth,
         state: { ...state, usuarios: nextUsers },
     });
-    await storage.setItem('bodega_users_catalog_v1', nextUsers.map(withoutPin));
+    await writeVerifiedValue(storage, 'bodega_users_catalog_v1', nextUsers.map(withoutPin));
     onUsersChanged?.(nextUsers);
 
     return {

@@ -15,6 +15,7 @@ import {
     getTrackedSupervisorCommands,
     resetSupervisorCommandTracker,
 } from '../src/services/supervisorCommandTracker';
+import { getLastCommandOutcome } from '../src/services/supervisorCommandDiagnostics';
 
 function makeDeps(overrides = {}) {
     return {
@@ -106,9 +107,9 @@ describe('aviso final por desenlace', () => {
         expect(record.state).toBe('applied');
     });
 
-    it('applied_with_warnings → aviso ámbar "con reservas"', async () => {
+    it('applied_with_warnings → aviso ámbar "con reservas" que EXPLICA la reserva (H4)', async () => {
         const deps = makeDeps({
-            ackPromise: Promise.resolve(terminal('applied_with_warnings', { ack: { warnings: ['stock bajo'] } })),
+            ackPromise: Promise.resolve(terminal('applied_with_warnings', { ack: { warnings: ['Publicación a la nube sin confirmar; el barrido periódico la re-publicará'] } })),
         });
         const record = trackSupervisorCommand({ commandId: 'cmd-1', type: 'supervisor.product.update', label: 'la edición de "Arroz"', ...deps });
         await record.promise;
@@ -117,6 +118,24 @@ describe('aviso final por desenlace', () => {
         expect(finals).toHaveLength(1);
         expect(finals[0][1]).toBe('warning');
         expect(finals[0][0]).toContain('con reservas');
+        // H4: la reserva llega en el payload del ACK y se muestra en palabras.
+        expect(finals[0][0]).toContain('Publicación a la nube sin confirmar');
+    });
+
+    it('H4: el aviso verde también muestra las reservas del ACK (confirmación temprana del lote)', async () => {
+        const deps = makeDeps({
+            ackPromise: Promise.resolve(terminal('applied', {
+                ack: { stockAfter: 15, warnings: ['Confirmación temprana: la publicación a la nube la cierra el barrido de 30 s'] },
+            })),
+        });
+        const record = trackSupervisorCommand({ commandId: 'cmd-1', type: 'supervisor.inventory.batch.adjust', label: 'el ajuste de stock', ...deps });
+        await record.promise;
+
+        const finals = deps.notify.mock.calls.filter(([, type]) => type !== 'info');
+        expect(finals).toHaveLength(1);
+        expect(finals[0][1]).toBe('success');
+        expect(finals[0][0]).toContain('aplicó tu cambio');
+        expect(finals[0][0]).toContain('Confirmación temprana');
     });
 
     it('rejected → aviso rojo con el motivo en palabras', async () => {
@@ -224,6 +243,32 @@ describe('timeout: no es un cierre definitivo', () => {
 
         const messages = deps.notify.mock.calls.map(([message, type]) => ({ message, type }));
         expect(messages.some(entry => String(entry.message).includes('Sigue esperando') && entry.type === 'warning')).toBe(true);
+    });
+
+    it('H5: el desenlace sin confirmación queda en la telemetría (diagnóstico), no solo en el aviso', async () => {
+        const deps = makeDeps({
+            ackPromise: Promise.resolve({ ok: false, status: 'timeout', error: 'La caja no confirmó la orden a tiempo' }),
+            inspectState: vi.fn().mockResolvedValue({ state: 'active', ack: null }),
+            followUpBudgetMs: 3,
+        });
+        const record = trackSupervisorCommand({
+            commandId: 'cmd-h5-unresolved',
+            type: 'supervisor.rate.set',
+            label: 'el cambio de tasa',
+            interactiveAck: false,
+            ...deps,
+        });
+        await record.promise;
+
+        // Antes este era el único camino que terminaba SIN reportar al
+        // diagnóstico: el «último comando» se quedaba pegado en «enviado».
+        const outcome = getLastCommandOutcome();
+        expect(outcome).toMatchObject({
+            commandId: 'cmd-h5-unresolved',
+            type: 'supervisor.rate.set',
+            status: 'unresolved',
+        });
+        expect(String(outcome.error)).toMatch(/Sin confirmación/);
     });
 });
 

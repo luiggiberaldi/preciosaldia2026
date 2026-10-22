@@ -203,6 +203,23 @@ export function applySupervisorProductCommand(currentProducts, payload = {}, opt
     }
 
     if (action === 'create' && existingIndex !== -1) {
+        const existing = products[existingIndex];
+        // H2 (auditoría 2026-10-22): reintento tras un corte — la creación ya
+        // quedó aplicada y solo se perdió el ACK. Si el producto actual ya
+        // refleja exactamente lo pedido, es un no-op aplicado, jamás un falso
+        // conflicto. Un producto con el mismo id y contenido distinto sigue
+        // rechazándose. (El stock no forma parte de la revisión: una venta
+        // posterior no convierte la reaplicación en conflicto.)
+        if (buildProductRevision(existing) === buildProductRevision(product)) {
+            return {
+                action,
+                productId: existing.id,
+                product: existing,
+                products,
+                changed: false,
+                alreadyApplied: true,
+            };
+        }
         throw new Error('El producto ya existe en la caja');
     }
 
@@ -234,6 +251,30 @@ export function applySupervisorProductCommand(currentProducts, payload = {}, opt
 
         const currentRevision = buildProductRevision(existing);
         if (currentRevision !== baseRevision) {
+            // H2 (auditoría 2026-10-22): si el producto actual YA refleja el
+            // patch, la orden se aplicó antes de un corte y solo se perdió el
+            // ACK: reaplicarla sería un no-op. Se responde «aplicado» en vez del
+            // falso conflicto «cambió mientras lo editabas» (falso negativo que
+            // empujaba al operador a reintentar a ciegas).
+            const patchProbe = extractEditableProductPatch(product);
+            const candidateProbe = { ...existing, ...patchProbe, id: existing.id };
+            if ('priceUsd' in patchProbe || 'priceUsdt' in patchProbe) {
+                const resolvedPrice = resolveEffectivePriceUsd(patchProbe);
+                if (resolvedPrice !== null) {
+                    candidateProbe.priceUsd = resolvedPrice;
+                    candidateProbe.priceUsdt = resolvedPrice;
+                }
+            }
+            if (buildProductRevision(candidateProbe) === currentRevision) {
+                return {
+                    action,
+                    productId: existing.id,
+                    product: existing,
+                    products,
+                    changed: false,
+                    alreadyApplied: true,
+                };
+            }
             throw new Error('El producto cambió mientras lo editabas; vuelve a cargarlo');
         }
     }

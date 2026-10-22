@@ -317,6 +317,68 @@ async function clearJournalVerified(storage, commandId) {
 }
 
 /**
+ * H3 (auditoría 2026-10-22): fusión sin pisar para la recuperación del journal.
+ *
+ * Cuando el estado actual de un documento coincide con uno de los extremos del
+ * journal la resolución es directa (escribir el extremo objetivo). Cuando
+ * coincide con NINGUNO, hubo trabajo posterior al corte y el snapshot NO puede
+ * escribirse a ciegas (borraría la venta intermedia del cajero):
+ *  - `bodega_sales_v1`: los movimientos del lote (los que están en `after` y no
+ *    en `before`, con id estable) se aseguran (roll-forward) o se retiran
+ *    (rollback) por id; todo lo demás del historial se conserva intacto. Es una
+ *    fusión precisa: jamás pierde ni duplica entradas del cajero.
+ *  - `bodega_products_v1`: el lote escribe productos ANTES que ventas, así que
+ *    la presencia de los movimientos del lote en el historial dice si el efecto
+ *    en stock ya se aplicó. Si está aplicado, el stock actual se conserva tal
+ *    cual (incluida cualquier venta posterior). Si la evidencia no alcanza
+ *    (movimientos ausentes con stock ya movido), cualquier elección sería una
+ *    mentira silenciosa: se ESCALA con un error 'recoverable' «se requiere
+ *    intervención» y el journal queda intacto, sin pisar nada.
+ */
+export function mergeRecoveredInventoryDoc(key, { current, before, after, direction, batchAppliedInLedger = false }) {
+    const currentList = Array.isArray(current) ? current : [];
+    const beforeList = Array.isArray(before) ? before : [];
+    const afterList = Array.isArray(after) ? after : [];
+    const targetList = direction === 'rollback' ? beforeList : afterList;
+
+    if (key === 'bodega_sales_v1') {
+        const beforeIds = new Set(beforeList.map(item => item?.id));
+        const batchItems = afterList.filter(item => item?.id != null && !beforeIds.has(item.id));
+        if (direction === 'rollback') {
+            const removeIds = new Set(batchItems.map(item => item.id));
+            return currentList.filter(item => !removeIds.has(item?.id));
+        }
+        const currentIds = new Set(currentList.map(item => item?.id));
+        return [...currentList, ...batchItems.filter(item => !currentIds.has(item.id))];
+    }
+
+    if (key === 'bodega_products_v1') {
+        const targetById = new Map(targetList.map(item => [String(item?.id), item]));
+        const otherList = direction === 'rollback' ? afterList : beforeList;
+        const otherById = new Map(otherList.map(item => [String(item?.id), item]));
+        return currentList.map(item => {
+            const target = targetById.get(String(item?.id));
+            const other = otherById.get(String(item?.id));
+            if (!target || !other || sameStoredValue(item, target)) return item;
+            // El lote no tocó este producto (ambos extremos idénticos): el
+            // trabajo posterior (una venta) se conserva tal cual.
+            if (sameStoredValue(target, other)) return item;
+            if (sameStoredValue(item, other)) return target;
+            // Producto afectado por el lote con un estado que no es ninguno de
+            // los dos extremos: solo se confía en el libro de ventas.
+            if (direction === 'rollforward' && batchAppliedInLedger) return item;
+            throw new InventoryStateError(
+                'Estado mixto tras el corte: el stock del producto no coincide con ningún extremo del lote y el historial no confirma el efecto; se requiere intervención',
+                { status: 'recoverable' },
+            );
+        });
+    }
+
+    // isValidInventoryJournal solo admite los dos documentos de inventario.
+    return targetList;
+}
+
+/**
  * Recuperación determinista e idempotente. Resuelve el journal pendiente según
  * su intención registrada ('pending' → after, 'rolling_back' → before) y lo
  * retira. Llamarla dos veces es inofensivo: sin journal no hace nada. Un
@@ -345,9 +407,55 @@ export async function recoverSupervisorInventoryJournal(storage) {
     const direction = journal.state === 'rolling_back' ? 'rollback' : 'rollforward';
     const targetField = direction === 'rollback' ? 'before' : 'after';
     try {
+        // Primero se RESUELVE todo (leyendo ambos documentos) y luego se escribe
+        // en el orden original del lote (productos y después ventas): la
+        // presencia de los movimientos en el historial sigue siendo una
+        // evidencia válida incluso si la propia recuperación se interrumpe.
+        const resolvedByKey = new Map();
+        // La evidencia del libro de ventas se calcula PRIMERO: el journal lista
+        // productos antes que ventas, y la resolución del catálogo la necesita.
+        let batchAppliedInLedger = false;
+        for (const doc of journal.docs) {
+            if (doc.key !== 'bodega_sales_v1') continue;
+            const beforeList = Array.isArray(await unpackJournalValue(doc.before)) ? await unpackJournalValue(doc.before) : [];
+            const afterList = Array.isArray(await unpackJournalValue(doc.after)) ? await unpackJournalValue(doc.after) : [];
+            const batchIds = afterList
+                .filter(item => item?.id != null && !beforeList.some(b => b?.id === item.id))
+                .map(item => item.id);
+            const currentList = await storage.getItem(doc.key, null);
+            const currentIds = new Set((Array.isArray(currentList) ? currentList : []).map(item => item?.id));
+            batchAppliedInLedger = batchIds.length > 0 && batchIds.every(id => currentIds.has(id));
+        }
         for (const doc of journal.docs) {
             const target = await unpackJournalValue(doc[targetField]);
-            await writeVerified(storage, doc.key, target, { commandId: journal.commandId });
+            const other = await unpackJournalValue(doc[targetField === 'after' ? 'before' : 'after']);
+            const before = await unpackJournalValue(doc.before);
+            const after = await unpackJournalValue(doc.after);
+            const current = await storage.getItem(doc.key, null);
+            let resolved = target;
+            if (!sameStoredValue(current ?? null, target ?? null)
+                && !sameStoredValue(current ?? null, other ?? null)) {
+                // H3 (auditoría 2026-10-22): el estado actual coincide con
+                // NINGUNO de los dos extremos del journal → hubo escrituras
+                // intermedias desde el corte (una venta del cajero). Escribir el
+                // snapshot a ciegas las borraría: se fusiona en su lugar (y si la
+                // fusión no puede decidirse con evidencia, se escala sin tocar
+                // nada en vez de inventar un resultado).
+                resolved = mergeRecoveredInventoryDoc(doc.key, {
+                    current,
+                    before,
+                    after,
+                    direction,
+                    batchAppliedInLedger,
+                });
+            }
+            resolvedByKey.set(doc.key, { current, resolved });
+        }
+        for (const doc of journal.docs) {
+            const { current, resolved } = resolvedByKey.get(doc.key);
+            if (!sameStoredValue(current ?? null, resolved ?? null)) {
+                await writeVerified(storage, doc.key, resolved, { commandId: journal.commandId });
+            }
         }
         await clearJournalVerified(storage, journal.commandId);
     } catch (error) {
@@ -385,6 +493,38 @@ export async function applySupervisorInventoryBatchTransaction({
 
     const currentProducts = (await storage.getItem('bodega_products_v1', [])) || [];
     const currentSales = (await storage.getItem('bodega_sales_v1', [])) || [];
+
+    // H2 (auditoría 2026-10-22): los movimientos del supervisor llevan el
+    // commandId. Si ya están en el historial, el lote se aplicó antes de un
+    // corte y solo se perdió el ACK: reaplicarlo duplicaría el ajuste, y la
+    // guarda de expectedStock lo rechazaría con un falso «failed». No-op
+    // aplicado que re-confirma sin tocar nada. (El historial se escribe en una
+    // sola escritura, así que movimientos parciales no son un caso real.)
+    const priorMovements = currentSales.filter(item => (
+        item && item.source === 'supervisor' && item.commandId === commandId
+    ));
+    if (priorMovements.length > 0) {
+        const alreadyApplied = {
+            lineResults: [],
+            unitsDelta: priorMovements.reduce((sum, item) => sum + Number(item.unitsDelta || 0), 0),
+            stockBefore: priorMovements[0].stockBefore,
+            stockAfter: priorMovements[priorMovements.length - 1].stockAfter,
+            updatedProducts: currentProducts,
+            updatedSales: currentSales,
+            alreadyApplied: true,
+        };
+        if (typeof onLocalApplied === 'function') {
+            try {
+                await onLocalApplied({ ...alreadyApplied, commandId });
+            } catch (error) {
+                console.warn('[SupervisorInventory] No se pudo confirmar el lote antes de publicar', {
+                    commandId,
+                    error: error?.message || error,
+                });
+            }
+        }
+        return { ...alreadyApplied, commandId, status: 'applied' };
+    }
 
     // 2. Validar el plan completo (todo-o-nada) antes de escribir nada.
     let result;

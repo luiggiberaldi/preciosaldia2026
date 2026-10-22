@@ -777,4 +777,206 @@ describe('Supervisor inventory batch command', () => {
             expect(storage.state[JOURNAL_KEY]).toBeUndefined();
         });
     });
+
+    describe('H2/H3 (auditoría 2026-10-22): reaplicación idempotente y recuperación sin pisar', () => {
+        const JOURNAL_KEY = 'bodega_supervisor_inventory_journal_v1';
+        const p1 = { id: 'product-1', name: 'Arroz', stock: 10, costPrice: 1 };
+        const p2 = { id: 'product-2', name: 'Aceite', stock: 5, costPrice: 2 };
+        const saleBase = { id: 'sale-1', tipo: 'VENTA' };
+        const batchPayload = {
+            direction: 'ingreso',
+            reason: 'Recepción',
+            lotReference: 'LOTE-10',
+            lines: [
+                { lineId: 'line-a', productId: 'product-1', quantityInput: 2, inputUnit: 'cajas', unitsPerPackage: 24, expectedStock: 10 },
+            ],
+        };
+        const pushOk = async () => ({ ok: true });
+
+        function makeStorage(initial = {}) {
+            const state = structuredClone(initial);
+            return {
+                state,
+                getItem: async (key, fallback) => (key in state ? state[key] : fallback),
+                setItem: async (key, value) => { state[key] = value; },
+                removeItem: async (key) => { delete state[key]; },
+            };
+        }
+
+        function journalFor({ commandId, state = 'pending', beforeProducts, afterProducts, beforeSales, afterSales }) {
+            return {
+                version: 1,
+                commandId,
+                state,
+                createdAt: '2026-10-22T10:00:00.000Z',
+                docs: [
+                    { key: 'bodega_products_v1', before: beforeProducts, after: afterProducts },
+                    { key: 'bodega_sales_v1', before: beforeSales, after: afterSales },
+                ],
+            };
+        }
+
+        it('H2: reaplicar el mismo commandId tras un corte es un no-op aplicado (sin movimiento duplicado)', async () => {
+            const storage = makeStorage({
+                bodega_products_v1: [p1, p2],
+                bodega_sales_v1: [saleBase],
+            });
+
+            const first = await applySupervisorInventoryBatchTransaction({
+                storage, pushSync: pushOk, payload: batchPayload, commandId: 'command-h2-1', deferPublish: true,
+            });
+            expect(first.status).toBe('applied');
+            const productsAfterFirst = structuredClone(storage.state.bodega_products_v1);
+            const salesAfterFirst = structuredClone(storage.state.bodega_sales_v1);
+
+            // El corte perdió el ACK: el mismo commandId se vuelve a entregar.
+            // Sin la detección por commandId esto fallaría con «El stock cambió
+            // antes de aplicar» (falso «failed») o duplicaría el ajuste.
+            const onLocalApplied = vi.fn();
+            const second = await applySupervisorInventoryBatchTransaction({
+                storage, pushSync: pushOk, payload: batchPayload, commandId: 'command-h2-1', deferPublish: true, onLocalApplied,
+            });
+
+            expect(second.alreadyApplied).toBe(true);
+            expect(second.status).toBe('applied');
+            expect(onLocalApplied).toHaveBeenCalledTimes(1);
+            expect(storage.state.bodega_products_v1).toEqual(productsAfterFirst);
+            expect(storage.state.bodega_sales_v1).toEqual(salesAfterFirst);
+            expect(storage.state.bodega_sales_v1.filter(item => item.commandId === 'command-h2-1')).toHaveLength(1);
+        });
+
+        it('H3: roll-forward conserva la venta intermedia del cajero y agrega el movimiento del lote', async () => {
+            const batchMovement = {
+                id: 'supervisor-command-merge-1-line-a',
+                movementId: 'supervisor-command-merge-1-line-a',
+                commandId: 'command-merge-1',
+                source: 'supervisor',
+                tipo: 'AJUSTE_ENTRADA',
+                unitsDelta: 48,
+                stockBefore: 10,
+                stockAfter: 58,
+                productId: 'product-1',
+            };
+            // Corte entre escrituras: productos ya escribió (58) pero ventas no.
+            // Antes de la recuperación, el cajero registró su venta (sale-cashier).
+            const storage = makeStorage({
+                bodega_products_v1: [{ ...p1, stock: 58 }, p2],
+                bodega_sales_v1: [saleBase, { id: 'sale-cashier', tipo: 'VENTA' }],
+                [JOURNAL_KEY]: journalFor({
+                    commandId: 'command-merge-1',
+                    beforeProducts: [p1, p2],
+                    afterProducts: [{ ...p1, stock: 58 }, p2],
+                    beforeSales: [saleBase],
+                    afterSales: [saleBase, batchMovement],
+                }),
+            });
+
+            const result = await recoverSupervisorInventoryJournal(storage);
+
+            expect(result).toMatchObject({ recovered: true, direction: 'rollforward' });
+            // El stock del lote se conserva (58) y la venta del cajero NO se pisa…
+            expect(storage.state.bodega_products_v1[0].stock).toBe(58);
+            const ids = storage.state.bodega_sales_v1.map(item => item.id);
+            expect(ids).toContain('sale-cashier');
+            // …y el movimiento del lote queda en el historial (una sola vez).
+            expect(ids.filter(id => id === 'supervisor-command-merge-1-line-a')).toHaveLength(1);
+            expect(storage.state[JOURNAL_KEY]).toBeUndefined();
+        });
+
+        it('H3: con evidencia ambigua (stock movido sin movimientos en el historial) escala sin pisar nada', async () => {
+            const batchMovement = {
+                id: 'supervisor-command-merge-2-line-a',
+                commandId: 'command-merge-2',
+                source: 'supervisor',
+                unitsDelta: 48,
+                stockBefore: 10,
+                stockAfter: 58,
+                productId: 'product-1',
+            };
+            // El stock derivó (56) y el historial NO confirma el efecto del lote:
+            // cualquier elección automática sería una mentira silenciosa.
+            const initial = {
+                bodega_products_v1: [{ ...p1, stock: 56 }, p2],
+                bodega_sales_v1: [saleBase, { id: 'sale-cashier', tipo: 'VENTA' }],
+                [JOURNAL_KEY]: journalFor({
+                    commandId: 'command-merge-2',
+                    beforeProducts: [p1, p2],
+                    afterProducts: [{ ...p1, stock: 58 }, p2],
+                    beforeSales: [saleBase],
+                    afterSales: [saleBase, batchMovement],
+                }),
+            };
+            const storage = makeStorage(initial);
+
+            await expect(recoverSupervisorInventoryJournal(storage)).rejects.toMatchObject({ status: 'recoverable' });
+
+            // Nada se escribió: el journal queda intacto para intervención.
+            expect(storage.state.bodega_products_v1[0].stock).toBe(56);
+            expect(storage.state.bodega_sales_v1).toHaveLength(2);
+            expect(storage.state[JOURNAL_KEY]).toBeTruthy();
+        });
+
+        it('H3: si el historial ya confirma el efecto del lote, el stock actual (con ventas posteriores) se conserva', async () => {
+            const batchMovement = {
+                id: 'supervisor-command-merge-3-line-a',
+                commandId: 'command-merge-3',
+                source: 'supervisor',
+                unitsDelta: 48,
+                stockBefore: 10,
+                stockAfter: 58,
+                productId: 'product-1',
+            };
+            const storage = makeStorage({
+                bodega_products_v1: [{ ...p1, stock: 56 }, p2],
+                bodega_sales_v1: [saleBase, batchMovement, { id: 'sale-cashier', tipo: 'VENTA' }],
+                [JOURNAL_KEY]: journalFor({
+                    commandId: 'command-merge-3',
+                    beforeProducts: [p1, p2],
+                    afterProducts: [{ ...p1, stock: 58 }, p2],
+                    beforeSales: [saleBase],
+                    afterSales: [saleBase, batchMovement],
+                }),
+            });
+
+            const result = await recoverSupervisorInventoryJournal(storage);
+
+            expect(result).toMatchObject({ recovered: true, direction: 'rollforward' });
+            // El efecto del lote ya estaba aplicado; la venta posterior (-2) se
+            // conserva tal cual: 56 es el stock correcto, no 58 ni 104.
+            expect(storage.state.bodega_products_v1[0].stock).toBe(56);
+            expect(storage.state.bodega_sales_v1.map(item => item.id)).toEqual(['sale-1', 'supervisor-command-merge-3-line-a', 'sale-cashier']);
+            expect(storage.state[JOURNAL_KEY]).toBeUndefined();
+        });
+
+        it('H3: el rollback retira SOLO los movimientos del lote y conserva los del cajero', async () => {
+            const batchMovement = {
+                id: 'supervisor-command-merge-4-line-a',
+                commandId: 'command-merge-4',
+                source: 'supervisor',
+                unitsDelta: 48,
+                stockBefore: 10,
+                stockAfter: 58,
+                productId: 'product-1',
+            };
+            const storage = makeStorage({
+                // El rollback de productos ya corrió (stock 10 = extremo 'before').
+                bodega_products_v1: [p1, p2],
+                bodega_sales_v1: [saleBase, batchMovement, { id: 'sale-cashier', tipo: 'VENTA' }],
+                [JOURNAL_KEY]: journalFor({
+                    commandId: 'command-merge-4',
+                    state: 'rolling_back',
+                    beforeProducts: [p1, p2],
+                    afterProducts: [{ ...p1, stock: 58 }, p2],
+                    beforeSales: [saleBase],
+                    afterSales: [saleBase, batchMovement],
+                }),
+            });
+
+            const result = await recoverSupervisorInventoryJournal(storage);
+
+            expect(result).toMatchObject({ recovered: true, direction: 'rollback' });
+            expect(storage.state.bodega_sales_v1.map(item => item.id)).toEqual(['sale-1', 'sale-cashier']);
+            expect(storage.state[JOURNAL_KEY]).toBeUndefined();
+        });
+    });
 });
