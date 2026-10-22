@@ -143,3 +143,15 @@ variable forzada a `'false'` en el proyecto Vercel.
 - Los tests que afirmaban "con Realtime conectado no se consulta" se reescribieron al nuevo contrato (barrido acotado, una consulta por intervalo, sin ráfagas): ese comportamiento era exactamente el bug. Casos nuevos: sesión caída al arrancar, barrido silencioso, eco aplicado por barrido y limpieza de timers.
 
 **QA:** lint 0 errores, `tsc` limpio, suite completa **143 archivos / 1542 tests en verde** (10 skipped preexistentes), build PWA OK; más el gate pre-push (e2e) y el CI de Actions en el push. p95 del ACK sin regresión (2.3 ms sobre un presupuesto de 60 ms).
+
+---
+
+## 2026-10-22 — release 2.0.4 a producción (el lote de inventario ya no re-publica el catálogo)
+
+**Contenido del release:**
+- **El lote de inventario del supervisor se desacopló de la publicación del catálogo.** Un ajuste de stock ya no vuelve a subir el catálogo completo (~1.3 MB) aunque solo cambien unas pocas líneas: el movimiento viaja dentro del historial de ventas (con su "antes/después" de stock embebido) y el monitor calcula el stock visible solo. Medido con el respaldo real de producción: un lote de 20 líneas pasó de subir 3 documentos / 2.00 MB a 2 / 0.68 MB, con cero bytes de catálogo.
+- **El historial de ventas se publica por meses** en vez de un bloque gigante, y el lote trae su diario de recuperación: si la caja se corta a mitad del ajuste, al reiniciar se termina el movimiento una sola vez, sin perder ni duplicar. Las escrituras locales que solo cambian stock (cobro, anulación, lote) ya no re-encolan la subida del catálogo, y la publicación a la nube queda fuera del bloqueo del cajero: el botón "Cobrar" no espera internet.
+- **Semántica unificada de bulto/unidad.** La venta congela el modo de venta por línea, así que recibos, ticket impreso, historial, PDF del cierre y comprobante de WhatsApp dicen "1 bulto · 12 uds" (o "1 ud" la suelta). La valorización canónica divide precio/costo por bulto (corrige la sobrevaluación ×unitsPerPackage en métricas e inventario), los "más vendidos" suman unidades canónicas y un solo umbral (`lowStockThreshold`) gobierna las alertas de stock bajo.
+- **Batería cerrada:** las 6 pruebas preexistentes en rojo quedaron alineadas con los contratos vigentes (panel plegable del bloqueo, "sin rollback" del fallo de publicación) y `DashboardCashControls` quedó blindado contra props ausentes.
+
+**QA:** lint 0 errores, `tsc` limpio, suite completa **160 archivos / 1724 tests en verde** (16 skipped), build PWA OK; más el gate pre-push (e2e) y el CI de Actions en el push.

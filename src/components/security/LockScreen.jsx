@@ -128,7 +128,7 @@ export default function LockScreen({ onOpenPairing, onOpenPairingIssuer = () => 
       <header className="w-full px-4 sm:px-6 pt-[max(0.875rem,env(safe-area-inset-top))] pb-2 flex items-center justify-between z-30 shrink-0">
         {/* Version Tag */}
         <div className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-900/5 dark:bg-slate-100/10 border border-slate-900/10 dark:border-slate-100/10 rounded-xl backdrop-blur-md">
-          <span className="text-[11px] font-black text-slate-500 dark:text-slate-400 tracking-wider">v2.0.3</span>
+          <span className="text-[11px] font-black text-slate-500 dark:text-slate-400 tracking-wider">v2.0.4</span>
         </div>
 
         {/* PWA Install Button */}
