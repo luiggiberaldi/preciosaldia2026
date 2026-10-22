@@ -10,6 +10,8 @@ const unpairCompatibilitySql = readFileSync('supabase/migrations/20261015_superv
 const backupLicenseSql = readFileSync('supabase/migrations/20261015_backup_permanent_license_rls.sql', 'utf8');
 const inventoryBatchV2Migration = readFileSync('supabase/migrations/20261016_supervisor_inventory_batch_v2.sql', 'utf8');
 const commandStateMachineMigration = readFileSync('supabase/migrations/20261016110000_supervisor_command_state_machine.sql', 'utf8');
+const activeTokenIndexMigration = readFileSync('supabase/migrations/20261022_device_pairings_active_token_index.sql', 'utf8');
+const triggerUserShiftMigration = readFileSync('supabase/migrations/20261022_supervisor_command_trigger_user_shift.sql', 'utf8');
 const commandReceiver = readFileSync('src/hooks/useRemoteCommands.js', 'utf8');
 
 describe('Supervisor SQL guardrails', () => {
@@ -283,5 +285,34 @@ describe('Reloj del dispositivo fuera del create (20261020)', () => {
     it('incluye la reversión literal de la definición previa', () => {
         expect(downBody).toContain("p_issued_at < now() - interval '2 minutes'");
         expect(downBody).toContain('p_issued_at, p_expires_at)');
+    });
+
+    it('delta 20261022: índice parcial aislado y ramas user/shift sin abrir la gestión de usuarios', () => {
+        // Ítem 1: SOLO el índice de tokens activos. Re-aplicar las funciones de
+        // 20261014 regresaría versiones ya superadas en producción.
+        expect(activeTokenIndexMigration).toContain('CREATE INDEX IF NOT EXISTS idx_device_pairings_token_hash_active');
+        expect(activeTokenIndexMigration).toContain('WHERE token_hash IS NOT NULL AND revoked_at IS NULL');
+        expect(activeTokenIndexMigration).not.toContain('CREATE OR REPLACE FUNCTION');
+        expect(activeTokenIndexMigration).not.toMatch(/DROP\s+TABLE/i);
+        expect(activeTokenIndexMigration).not.toMatch(/GRANT\s+[^;]*\bTO\s+anon\b/i);
+
+        // Ítem 2: conserva las validaciones de 20261018 y agrega las ramas
+        // faltantes. La gestión remota de usuarios sigue BLOQUEADA a propósito
+        // (decisión de 20261016_supervisor_inventory_batch_v2): el trigger la
+        // rechaza con el mismo mensaje que la RPC, no con el genérico.
+        expect(triggerUserShiftMigration).toContain("ELSIF NEW.command_type IN ('supervisor.shift.close', 'supervisor.shift.reopen') THEN");
+        expect(triggerUserShiftMigration).toContain("RAISE EXCEPTION 'Turno o cierre inválido'");
+        expect(triggerUserShiftMigration).toContain("ELSIF NEW.command_type LIKE 'supervisor.user.%' THEN");
+        expect(triggerUserShiftMigration).toContain("RAISE EXCEPTION 'Gestión remota de usuarios requiere un flujo de credencial segura'");
+        expect(triggerUserShiftMigration).toContain("RAISE EXCEPTION 'Tipo de orden Supervisor no permitido'");
+        expect(triggerUserShiftMigration).toContain('public.is_valid_supervisor_inventory_batch_payload(NEW.payload)');
+        expect(triggerUserShiftMigration).toContain('dp.monitor_auth_id_2 = NEW.actor_auth_id');
+        expect(triggerUserShiftMigration).toContain('REVOKE ALL ON FUNCTION public.enforce_supervisor_income_command() FROM PUBLIC, anon, authenticated');
+        expect(triggerUserShiftMigration).toContain('DROP TRIGGER IF EXISTS supervisor_income_pairing_guard');
+        expect(triggerUserShiftMigration).toContain('BEGIN;');
+        expect(triggerUserShiftMigration).toContain('COMMIT;');
+        expect(triggerUserShiftMigration).not.toMatch(/GRANT\s+[^;]*\bTO\s+anon\b/i);
+        expect(triggerUserShiftMigration).not.toMatch(/DROP\s+TABLE/i);
+        expect(triggerUserShiftMigration).not.toMatch(/UPDATE\s+public\.supervisor_commands/i);
     });
 });
