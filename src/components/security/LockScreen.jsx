@@ -123,45 +123,46 @@ export default function LockScreen({ onOpenPairing, onOpenPairingIssuer = () => 
         <div className="absolute -bottom-[30%] -right-[15%] w-[600px] h-[600px] bg-teal-400/10 rounded-full blur-[120px]" />
       </div>
 
-      {/* Top Bar with PWA Install Button */}
-      <div className="absolute top-4 right-4 z-30 flex items-center gap-2">
-        {isStandalone ? (
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[10px] font-extrabold uppercase tracking-wider rounded-xl shadow-sm">
-            <CheckCircle2 size={13} className="text-emerald-500" />
-            <span>App Instalada</span>
-          </div>
-        ) : (
-          <button
-            onClick={handleInstallClick}
-            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold rounded-2xl shadow-lg shadow-emerald-600/20 transition-all cursor-pointer animate-pulse"
-            title="Instalar como aplicación en este dispositivo"
-          >
-            <Download size={15} strokeWidth={2.5} />
-            <span>Instalar App</span>
-          </button>
-        )}
-      </div>
-
-      {/* Version Tag - Top Left */}
-      <div className="absolute top-4 left-4 z-30 flex items-center gap-2">
-        <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-900/5 dark:bg-slate-100/10 border border-slate-900/10 dark:border-slate-100/10 rounded-xl backdrop-blur-md">
+      {/* Top Bar semántica con Safe-Area (Evita colisión con el logo y el notch en móvil) */}
+      <header className="w-full px-4 sm:px-6 pt-[max(0.875rem,env(safe-area-inset-top))] pb-2 flex items-center justify-between z-30 shrink-0">
+        {/* Version Tag */}
+        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-900/5 dark:bg-slate-100/10 border border-slate-900/10 dark:border-slate-100/10 rounded-xl backdrop-blur-md">
           <span className="text-[11px] font-black text-slate-500 dark:text-slate-400 tracking-wider">v2.0.3</span>
         </div>
-      </div>
 
-      <div className="relative z-10 flex flex-col items-center justify-center flex-1 p-6">
+        {/* PWA Install Button */}
+        <div className="flex items-center gap-2">
+          {isStandalone ? (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[10px] font-extrabold uppercase tracking-wider rounded-xl shadow-sm">
+              <CheckCircle2 size={13} className="text-emerald-500" />
+              <span>App Instalada</span>
+            </div>
+          ) : (
+            <button
+              onClick={handleInstallClick}
+              className="flex items-center gap-2 px-3.5 py-1.5 sm:px-4 sm:py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold rounded-2xl shadow-lg shadow-emerald-600/20 transition-all cursor-pointer animate-pulse"
+              title="Instalar como aplicación en este dispositivo"
+            >
+              <Download size={14} strokeWidth={2.5} />
+              <span>Instalar App</span>
+            </button>
+          )}
+        </div>
+      </header>
+
+      <div className="relative z-10 flex flex-col items-center justify-center flex-1 px-4 sm:px-6 py-2 sm:py-6">
         {/* Header */}
-        <div className="text-center mb-14">
-          <div className="flex justify-center mb-6">
+        <div className="text-center mb-8 sm:mb-14">
+          <div className="flex justify-center mb-4 sm:mb-6">
             <img
               src="./logo.png"
               alt="Logo"
               onClick={handleLogoClick}
-              className="h-24 sm:h-32 w-auto object-contain drop-shadow-md cursor-pointer select-none active:scale-95 transition-transform"
+              className="h-16 sm:h-28 md:h-32 w-auto max-w-[270px] sm:max-w-none object-contain drop-shadow-md cursor-pointer select-none active:scale-95 transition-transform"
               title="Precios Al Día"
             />
           </div>
-          <h1 className="text-2xl sm:text-3xl font-light tracking-[0.15em] text-slate-600">
+          <h1 className="text-xl sm:text-3xl font-light tracking-[0.15em] text-slate-600">
             Quien esta{' '}
             <strong className="text-slate-900 font-bold">operando</strong>?
           </h1>
