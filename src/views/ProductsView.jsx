@@ -31,6 +31,7 @@ import Skeleton from '../components/Skeleton';
 import SwipeableItem from '../components/SwipeableItem';
 import { useInventoryVelocity } from '../hooks/useInventoryVelocity';
 import { useProductFiltering } from '../hooks/useProductFiltering';
+import { marginOverPricePercent } from '../utils/productCostFactor';
 import { useProductForm } from '../hooks/useProductForm';
 import { useProductSorting } from '../hooks/useProductSorting';
 import { buildProductPayload, deriveCostFactorUpdate } from '../utils/productProcessor';
@@ -873,7 +874,8 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                                     const valBs = p.priceUsdt * effectiveRate;
                                     const isLowStock = isLowStockProduct(p);
                                     const effectiveCostUsd = p.costUsd || (p.costBs && effectiveRate > 0 ? p.costBs / effectiveRate : 0);
-                                    const margin = effectiveCostUsd > 0 && p.priceUsdt > 0 ? ((p.priceUsdt - effectiveCostUsd) / effectiveCostUsd * 100) : null;
+                                    // Mismo criterio que el formulario y la ficha: margen sobre el precio de venta.
+                                    const margin = marginOverPricePercent(p.priceUsdt, effectiveCostUsd);
                                     const catInfo = categories.find(c => c.id === p.category);
                                     return (
                                         <div key={p.id} className={`grid grid-cols-[auto_1fr_auto] sm:grid-cols-[40px_1fr_100px_100px_70px_80px_110px] gap-2 px-4 py-3 items-center hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors ${selectedIds.has(p.id) ? 'bg-brand/5 dark:bg-brand/10' : ''} ${isLowStock ? 'bg-amber-50/50 dark:bg-amber-900/5' : ''}`}>

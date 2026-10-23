@@ -4,6 +4,7 @@ import { buildProductPayload, deriveCostFactorUpdate } from '../src/utils/produc
 import {
     costFactorFromMarginPercent,
     formatCostFactorAsMarginPercent,
+    marginOverPricePercent,
 } from '../src/utils/productCostFactor.js';
 
 const payloadFor = (formData) => buildProductPayload({
@@ -58,5 +59,25 @@ describe('factor costo de producto', () => {
         expect(payloadFor({ costFactor: '0' }).costFactor).toBe(0);
         expect(payloadFor({ costFactor: '' }).costFactor).toBeNull();
         expect(Object.hasOwn(payloadFor({}), 'costFactor')).toBe(false);
+    });
+});
+
+describe('margen sobre el precio de venta', () => {
+    it('usa el mismo criterio que el formulario (ganancia / precio)', () => {
+        // Costo $0.60 con precio $1.00 = 40% de margen (no el +67% de markup sobre costo).
+        expect(marginOverPricePercent(1, 0.6)).toBeCloseTo(40, 6);
+        expect(marginOverPricePercent(1.2, 0.9)).toBeCloseTo(25, 6);
+    });
+
+    it('marca pérdidas cuando el costo supera al precio', () => {
+        expect(marginOverPricePercent(1, 1.5)).toBeCloseTo(-50, 6);
+    });
+
+    it('devuelve null sin precio o sin costo (insignia oculta)', () => {
+        expect(marginOverPricePercent(1, 0)).toBeNull();
+        expect(marginOverPricePercent(0, 0.6)).toBeNull();
+        expect(marginOverPricePercent(undefined, 0.6)).toBeNull();
+        expect(marginOverPricePercent(1, null)).toBeNull();
+        expect(marginOverPricePercent('', '')).toBeNull();
     });
 });

@@ -5,6 +5,7 @@ import { formatUsd, formatBs, formatCop, smartCashRounding, getCop, getUsd } fro
 import { showToast } from '../Toast';
 import SmartImage from '../SmartImage';
 import { isGranelProduct, isLowStockProduct, granelUnitLabel, parseStockInput, formatStockDisplay, formatLowStockAlert } from '../../utils/granel'; // GRANEL-001
+import { marginOverPricePercent } from '../../utils/productCostFactor';
 
 export default function ProductCard({
     product: p,
@@ -48,7 +49,8 @@ export default function ProductCard({
     const valCop = getCop(p, tasaCop);
     const isLowStock = isLowStockProduct(p);
     const effectiveCostUsd = p.costUsd || (p.costBs && effectiveRate > 0 ? p.costBs / effectiveRate : 0);
-    const margin = effectiveCostUsd > 0 && effectiveUsd > 0 ? ((effectiveUsd - effectiveCostUsd) / effectiveCostUsd * 100) : null;
+    // Mismo criterio que el formulario y el dashboard: margen sobre el precio de venta.
+    const margin = marginOverPricePercent(effectiveUsd, effectiveCostUsd);
     const catInfo = categories.find(c => c.id === p.category);
     const unitInfo = UNITS.find(u => u.id === p.unit);
     const efectivoPrecio = streetRate > 0 ? `$${smartCashRounding(valBs / streetRate)}` : null;

@@ -1,6 +1,7 @@
 import { useMemo, useDeferredValue } from 'react';
 import { isLowStockProduct } from '../utils/granel';
 import { matchesSearch as matchesSearchFields } from '../utils/searchMatch';
+import { marginOverPricePercent } from '../utils/productCostFactor';
 
 export function useProductFiltering(products, searchTerm, activeCategory, sortField, sortDir, effectiveRate) {
     const deferredSearchTerm = useDeferredValue(searchTerm);
@@ -26,8 +27,8 @@ export function useProductFiltering(products, searchTerm, activeCategory, sortFi
                     case 'margin': {
                         const costA = a.costUsd || (a.costBs && effectiveRate > 0 ? a.costBs / effectiveRate : 0);
                         const costB = b.costUsd || (b.costBs && effectiveRate > 0 ? b.costBs / effectiveRate : 0);
-                        valA = costA > 0 && a.priceUsdt > 0 ? ((a.priceUsdt - costA) / costA * 100) : -999;
-                        valB = costB > 0 && b.priceUsdt > 0 ? ((b.priceUsdt - costB) / costB * 100) : -999;
+                        valA = marginOverPricePercent(a.priceUsdt, costA) ?? -999;
+                        valB = marginOverPricePercent(b.priceUsdt, costB) ?? -999;
                         break;
                     }
                     default: valA = 0; valB = 0;

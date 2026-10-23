@@ -2,11 +2,18 @@ import React, { useState } from 'react';
 import {
     costFactorFromMarginPercent,
     formatCostFactorAsMarginPercent,
+    getCostFactorMode,
+    setCostFactorMode,
+    COST_FACTOR_MODE_FACTOR,
+    COST_FACTOR_MODE_PERCENT,
 } from '../../utils/productCostFactor';
 
 export default function ProductCostFactorControl({ costFactor, onChange }) {
-    const [mode, setMode] = useState('factor');
+    // Preferencia persistida: de fábrica '%' (margen); si el usuario elige '0.7' (factor),
+    // se recuerda para las próximas aperturas del formulario.
+    const [mode, setMode] = useState(() => getCostFactorMode());
     const [inputValue, setInputValue] = useState(null);
+    const selectMode = (nextMode) => setMode(setCostFactorMode(nextMode));
     const displayValue = inputValue !== null
         ? inputValue
         : (mode === 'percent' ? formatCostFactorAsMarginPercent(costFactor) : (costFactor || ''));
@@ -18,14 +25,14 @@ export default function ProductCostFactorControl({ costFactor, onChange }) {
                 <div className="flex bg-slate-200 dark:bg-slate-700 rounded-lg p-0.5">
                     <button
                         type="button"
-                        onClick={() => { setMode('percent'); setInputValue(null); }}
+                        onClick={() => { selectMode(COST_FACTOR_MODE_PERCENT); setInputValue(null); }}
                         className={`px-2 py-0.5 text-[10px] font-black rounded-md transition-colors ${mode === 'percent' ? 'bg-white dark:bg-slate-800 text-slate-700 dark:text-white shadow' : 'text-slate-500'}`}
                     >
                         %
                     </button>
                     <button
                         type="button"
-                        onClick={() => { setMode('factor'); setInputValue(null); }}
+                        onClick={() => { selectMode(COST_FACTOR_MODE_FACTOR); setInputValue(null); }}
                         className={`px-2 py-0.5 text-[10px] font-black rounded-md transition-colors ${mode === 'factor' ? 'bg-white dark:bg-slate-800 text-slate-700 dark:text-white shadow' : 'text-slate-500'}`}
                     >
                         0.7
