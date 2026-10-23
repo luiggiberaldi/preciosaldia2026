@@ -68,6 +68,10 @@ export async function uploadProductImage(dataUri, opts = {}) {
         const { error } = await supabaseCloud.storage
             .from(BUCKET)
             .upload(path, blob, { contentType: blob.type, upsert: true });
+        // Un upload que responde con error NO produce objeto en Storage: sin esta
+        // comprobación, getPublicUrl devuelve igualmente una URL (se calcula local
+        // desde la ruta) y el caller sustituiría el base64 por un enlace muerto.
+        if (error) return null;
 
         const { data } = supabaseCloud.storage.from(BUCKET).getPublicUrl(path);
         if (!data?.publicUrl) return null;
@@ -127,4 +131,56 @@ export async function migrateProductImagesToStorage(products, saveFn) {
     }
 
     return { migrated, failed, total, products: out };
+}
+
+// Flag único del barrido de migración (compartido por ProductsView y el
+// arranque de useCloudSync): el catálogo entero ya no lleva base64 embebido.
+export const IMAGES_MIGRATED_FLAG = 'pda_images_migrated_v1';
+
+/**
+ * Barrido único del catálogo: migra las imágenes base64 restantes a Storage y
+ * fija `IMAGES_MIGRATED_FLAG` solo si migró TODO sin fallos (los uploads
+ * fallidos conservan su base64 y se reintentan en la próxima pasada).
+ *
+ * Un solo lugar define la semántica del flag (idempotente, solo online, nunca
+ * pierde imágenes) para que el arranque del POS y la pantalla de productos no
+ * la reimplementen distinto. `saveProducts(out, base)` persiste el catálogo
+ * migrado (el caller decide el merge: `persistCatalogLocked` 3-way para no pisar
+ * cambios concurrentes). Nunca lanza salvo que el persistidor lance.
+ *
+ * @param {{
+ *   readProducts: () => Promise<Array>,
+ *   saveProducts: (out: Array, base: Array) => Promise<void>,
+ *   force?: boolean,
+ * }} opts
+ * @returns {Promise<{ran: boolean, reason: string|null, migrated: number, failed: number, total: number, products: Array|null}>}
+ */
+export async function migrateCatalogImagesOnce({ readProducts, saveProducts, force = false } = {}) {
+    const idle = { ran: false, reason: null, migrated: 0, failed: 0, total: 0, products: null };
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return { ...idle, reason: 'offline' };
+    if (!force && localStorage.getItem(IMAGES_MIGRATED_FLAG) === 'true') return { ...idle, reason: 'ya migrado' };
+    if (typeof readProducts !== 'function' || typeof saveProducts !== 'function') return { ...idle, reason: 'sin persistidor' };
+
+    const current = await readProducts();
+    const hasBase64 = Array.isArray(current)
+        && current.some(p => typeof p?.image === 'string' && p.image.startsWith('data:'));
+    if (!hasBase64) {
+        localStorage.setItem(IMAGES_MIGRATED_FLAG, 'true');
+        return { ...idle, reason: 'sin base64', products: Array.isArray(current) ? current : null };
+    }
+
+    const res = await migrateProductImagesToStorage(current, async (out) => {
+        await saveProducts(out, current);
+    });
+    if (res.failed === 0) {
+        localStorage.setItem(IMAGES_MIGRATED_FLAG, 'true');
+    }
+    return {
+        ran: true,
+        reason: null,
+        migrated: res.migrated,
+        failed: res.failed,
+        total: res.total,
+        products: res.products,
+    };
 }

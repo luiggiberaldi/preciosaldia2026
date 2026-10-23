@@ -36,7 +36,7 @@ import { useProductForm } from '../hooks/useProductForm';
 import { useProductSorting } from '../hooks/useProductSorting';
 import { buildProductPayload, deriveCostFactorUpdate } from '../utils/productProcessor';
 import { isGranelProduct, isLowStockProduct, formatStockDisplay, getGranelUnitMode } from '../utils/granel'; // GRANEL-001 / GRANEL-DUAL
-import { uploadProductImage, migrateProductImagesToStorage } from '../utils/imageUpload';
+import { uploadProductImage, migrateCatalogImagesOnce } from '../utils/imageUpload';
 // useAuthStore removed - single-user app
 import { useAudit } from '../hooks/useAudit';
 
@@ -134,37 +134,24 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
 
     // ─── FASE 3 (Egress): migración única de imágenes base64 → Storage ───────
     // Las imágenes viejas viven como base64 dentro de bodega_products_v1 (el doc
-    // que se sincroniza por Realtime). Las subimos a Storage una sola vez y las
-    // reemplazamos por URLs, encogiendo el doc y cortando su re-emisión en cada
-    // cambio de stock/precio. Guardado por flag; solo online; en segundo plano.
-    // Seguro: si un upload falla, ese producto conserva su base64 y se reintenta
-    // en la próxima sesión (el flag solo se fija si migró todo sin fallos).
+    // que se sincroniza por Realtime). El barrido vive en migrateCatalogImagesOnce
+    // (compartido con el arranque de useCloudSync): sube cada base64 a Storage,
+    // lo reemplaza por URL y fija su flag solo si migró todo sin fallos. Guardado
+    // por flag; solo online; en segundo plano; nunca pierde imágenes.
     useEffect(() => {
-        if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
-        if (localStorage.getItem('pda_images_migrated_v1') === 'true') return;
-
         let cancelled = false;
         const timer = setTimeout(async () => {
             try {
-                const current = await storageService.getItem('bodega_products_v1', []);
-                const hasBase64 = Array.isArray(current)
-                    && current.some(p => typeof p?.image === 'string' && p.image.startsWith('data:'));
-                if (!hasBase64) {
-                    localStorage.setItem('pda_images_migrated_v1', 'true');
-                    return;
-                }
-
-                const res = await migrateProductImagesToStorage(current, async (out) => {
-                    // Cierre §4: la migración no pisa cambios concurrentes (ventas,
-                    // órdenes del supervisor): merge 3-way bajo pos_write_lock.
-                    const merged = await persistCatalogLocked({ local: out, base: current, storage: storageService });
-                    if (!cancelled) setProducts(merged);
+                const res = await migrateCatalogImagesOnce({
+                    readProducts: async () => (await storageService.getItem('bodega_products_v1', [])) || [],
+                    saveProducts: async (out, base) => {
+                        // Cierre §4: la migración no pisa cambios concurrentes (ventas,
+                        // órdenes del supervisor): merge 3-way bajo pos_write_lock.
+                        const merged = await persistCatalogLocked({ local: out, base, storage: storageService });
+                        if (!cancelled) setProducts(merged);
+                    },
                 });
-
-                if (res.failed === 0) {
-                    localStorage.setItem('pda_images_migrated_v1', 'true');
-                }
-                if (res.migrated > 0) {
+                if (!cancelled && res.migrated > 0) {
                     showToast(`${res.migrated} imágenes movidas a la nube`, 'success');
                 }
             } catch {

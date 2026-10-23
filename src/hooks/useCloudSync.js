@@ -9,6 +9,9 @@ import { showToast } from '../components/Toast';
 import { isPrimaryPairingActive, readPairingRow } from '../services/supervisorPairingState';
 import { mergeLedgerEntries, rebuildCustomersFromLedger } from '../utils/customerLedger';
 import { isGranelProduct, normalizeStockValue } from '../utils/granel';
+import { assessSyncDocBudget, SYNC_DOC_BUDGET_BYTES } from '../utils/syncDocBudget';
+import { migrateCatalogImagesOnce } from '../utils/imageUpload';
+import { persistCatalogLocked } from '../utils/catalogLock';
 import {
     buildSyncEnvelope,
     getSyncMetadataKey,
@@ -73,7 +76,8 @@ const LAST_PUSH_HASH_PREFIX = 'bodega_last_periodic_push_hash_';
 //     `ANULADA` viajan en el doc del periodo). `[]` limpia SOLO ese periodo.
 export const SALES_SYNC_BASE_KEY = 'bodega_sales_v1';
 // Cota de aceptación del plan: ningún documento de sync_documents pasa de ~500 KB.
-export const SALES_SYNC_MAX_DOC_BYTES = 500_000;
+// Misma constante que el techo general (utils/syncDocBudget): una sola fuente.
+export const SALES_SYNC_MAX_DOC_BYTES = SYNC_DOC_BUDGET_BYTES;
 // Presupuesto de empaquetado por shard (deja margen bajo la cota dura).
 export const SALES_SYNC_PACK_BUDGET_BYTES = 400_000;
 // Documentos publicados alguna vez por este equipo: el vaciado total debe
@@ -385,7 +389,7 @@ export const pushCloudSync = async (key, value, forceUnconditional = false, allo
 
     // Solo confirmar el hash después de que Supabase confirmó el upsert.
     localStorage.setItem(hashKey, currentHash);
-    return { ok: true, skipped: false, updatedAt: result.updatedAt, data: result.data ?? null };
+    return { ok: true, skipped: false, updatedAt: result.updatedAt, data: result.data ?? null, budget: result.budget ?? null };
 };
 
 /**
@@ -442,6 +446,18 @@ async function upsertSyncDocument(stampDeviceId, docId, value, { stockAsOf = nul
         updated_at: updatedAt,
     };
 
+    // Techo de 500 KB (REPORTE-CAUSA-RAIZ-EGRESS): medir TODO documento al
+    // publicarlo. Un doc sobre techo se publica igual (bloquearlo rompería la
+    // sincronización), pero queda advertido con su diagnóstico — la herramienta
+    // real para caber es la migración de imágenes base64 → Storage.
+    const budget = assessSyncDocBudget({ docId, envelope: document.data, payload: value });
+    if (budget.over) {
+        console.warn(
+            `[CloudSync] Documento sobre el techo de ${Math.round(budget.budgetBytes / 1000)} KB: ${docId} `
+            + `(${budget.bytes} bytes; ${budget.inlineBase64Images} imágenes base64 embebidas)`,
+        );
+    }
+
     try {
         const result = await withSyncRetry(async () => {
             const response = await supabaseCloud
@@ -450,10 +466,10 @@ async function upsertSyncDocument(stampDeviceId, docId, value, { stockAsOf = nul
             if (response.error) throw response.error;
             return response;
         });
-        return { ok: true, updatedAt, data: result.data ?? null };
+        return { ok: true, updatedAt, data: result.data ?? null, budget };
     } catch (error) {
         console.warn('[CloudSync] No se pudo confirmar el push:', error?.message ?? error);
-        return { ok: false, error: error?.message || 'Error de sincronización' };
+        return { ok: false, error: error?.message || 'Error de sincronización', budget };
     }
 }
 
@@ -507,6 +523,31 @@ export const forceSyncAllPOSData = async (overrideDeviceId, forceUnconditional =
 
     try {
         const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
+
+        // Nivel B (egress): antes de publicar, terminar la migración de imágenes
+        // base64 → Storage sobre el catálogo (mismo barrido que ProductsView, con
+        // merge 3-way bajo pos_write_lock). Un doc de productos sin base64 cabe
+        // bajo el techo de 500 KB y deja de re-emitir imágenes por Realtime.
+        // Best-effort: un fallo no bloquea el snapshot (se reintenta en el próximo
+        // arranque); nunca se pierde una imagen.
+        try {
+            await migrateCatalogImagesOnce({
+                readProducts: async () => (await lf.getItem('bodega_products_v1')) || [],
+                saveProducts: async (out, base) => {
+                    await persistCatalogLocked({
+                        local: out,
+                        base,
+                        storage: {
+                            getItem: async (key, fallback = null) => (await lf.getItem(key)) ?? fallback,
+                            setItem: (key, value) => lf.setItem(key, value),
+                        },
+                    });
+                },
+            });
+        } catch {
+            // La migración es best-effort; el snapshot crítico no la espera.
+        }
+
         const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_customer_ledger_v1', 'bodega_accounts_v2'];
         let pushed = 0;
         for (const key of criticalKeys) {
