@@ -14,6 +14,8 @@ import {
     MONITOR_CONNECTED_SWEEP_INTERVAL_MS,
     shouldRunMonitorConnectedSweep,
     getChangedSyncDocumentIds,
+    shouldPullFullSync,
+    MONITOR_FULL_SYNC_AT_KEY,
     isOversizeRealtimePayload,
     createSyncDiagnosticsState,
     updateSyncDiagnostics,
@@ -51,6 +53,18 @@ const RECONNECT_DELAYS_MS = [1000, 3000, 10000, 30000];
 // Un solo pull de respaldo cubre una ráfaga de eventos 413 (la caja empuja
 // productos y ventas juntos) sin montar una tormenta de selects.
 const OVERSIZE_PULL_THROTTLE_MS = 3000;
+
+// Marca del último pull completo (la política vive en shouldPullFullSync).
+const readLastFullSyncAt = () => {
+    const raw = localStorage.getItem(MONITOR_FULL_SYNC_AT_KEY);
+    if (!raw) return null;
+    const parsed = Date.parse(raw);
+    return Number.isNaN(parsed) ? null : parsed;
+};
+
+const markFullSyncAt = (date) => {
+    localStorage.setItem(MONITOR_FULL_SYNC_AT_KEY, date.toISOString());
+};
 
 export function useMonitorSync(pairedDeviceId) {
     const [isConnected, setIsConnected] = useState(false);
@@ -449,6 +463,9 @@ export function useMonitorSync(pairedDeviceId) {
                 );
 
                 if (targetDocIds.length === 0) {
+                    recordDiagnostics({
+                        type: 'pull', at: new Date().toISOString(), source, docs: 0, bytes: 0, full,
+                    });
                     return { ok: true, applied: 0, rejected: 0, skipped: true, reason: 'Sin cambios remotos' };
                 }
             }
@@ -464,6 +481,21 @@ export function useMonitorSync(pairedDeviceId) {
                 if (error) throw error;
                 docs = data || [];
             }
+
+            // Telemetría de egress: bytes del payload real bajado en este pull
+            // (el panel los pinta: completo ~MB vs incremental ~0 B).
+            const pulledBytes = docs.reduce((sum, doc) => {
+                const raw = doc?.data == null ? '' : JSON.stringify(doc.data);
+                return sum + raw.length;
+            }, 0);
+            recordDiagnostics({
+                type: 'pull',
+                at: new Date().toISOString(),
+                source,
+                docs: docs.length,
+                bytes: pulledBytes,
+                full,
+            });
 
             const batch = await applyBatch(docs, lifecycleId, { source });
             if (!isActiveLifecycle(lifecycleId)) return { ok: false, skipped: true, error: 'Ciclo de sincronización obsoleto' };
@@ -575,7 +607,15 @@ export function useMonitorSync(pairedDeviceId) {
                 if (!isActiveLifecycle(lifecycleId)) return { ok: false, error: 'Ciclo de sincronización obsoleto' };
 
                 setSyncState(SUPERVISOR_SYNC_STATES.PULLING);
-                const batch = await pullDocuments(lifecycleId, { full: true });
+                // Fix egress: solo la primera carga (o el resync periódico) baja
+                // el paquete completo; una reconexión o remontaje con historial
+                // local usa el pull incremental por watermark.
+                const wantsFullPull = shouldPullFullSync({
+                    hasLocalHistory: Boolean(lastSyncRef.current),
+                    lastFullSyncAt: readLastFullSyncAt(),
+                });
+                const batch = await pullDocuments(lifecycleId, { full: wantsFullPull });
+                if (batch.ok && wantsFullPull) markFullSyncAt(new Date());
                 if (!batch.ok) return batch;
 
                 const realtime = await subscribeToRealtime(lifecycleId);

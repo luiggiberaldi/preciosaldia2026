@@ -8,6 +8,14 @@ function formatWhen(iso) {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
+function formatBytes(bytes) {
+    if (!Number.isFinite(bytes)) return '—';
+    if (bytes <= 0) return '0 B';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
 function echoSourceLabel(source) {
     if (source === 'realtime') return 'Realtime';
     if (source === 'pull-413') return 'Pull de respaldo (413)';
@@ -18,9 +26,10 @@ function echoSourceLabel(source) {
 /**
  * Panel de diagnóstico de sincronización del supervisor: el último eco recibido
  * con su watermark, y los eventos Realtime sin cuerpo (413) con los pulls de
- * respaldo que los resolvieron. Los datos llegan puros desde useMonitorSync
- * (updateSyncDiagnostics); el panel solo los pinta. Gemelo visual de
- * SupervisorCommandDiagnosticsPanel.
+ * respaldo que los resolvieron. Además pinta los bytes del último pull
+ * (telemetría de egress: completo ~MB vs incremental ~0 B). Los datos llegan
+ * puros desde useMonitorSync (updateSyncDiagnostics); el panel solo los pinta.
+ * Gemelo visual de SupervisorCommandDiagnosticsPanel.
  */
 export default function SupervisorSyncDiagnosticsPanel({ isOpen, onClose, diagnostics, statusLabel, lastSync }) {
     if (!isOpen) return null;
@@ -33,6 +42,7 @@ export default function SupervisorSyncDiagnosticsPanel({ isOpen, onClose, diagno
         { label: 'Eventos 413', value: String(diagnostics?.oversizeEvents ?? 0), testId: 'sync-diag-oversize-events' },
         { label: 'Pulls de respaldo', value: String(diagnostics?.oversizePulls ?? 0), testId: 'sync-diag-oversize-pulls' },
         { label: 'Último pull 413', value: formatWhen(diagnostics?.lastOversizePullAt), testId: 'sync-diag-last-oversize-pull' },
+        { label: 'Bytes del pull', value: formatBytes(diagnostics?.lastPull?.bytes), testId: 'sync-diag-last-pull-bytes' },
     ];
 
     return (
@@ -45,7 +55,7 @@ export default function SupervisorSyncDiagnosticsPanel({ isOpen, onClose, diagno
                         </div>
                         <div>
                             <h2 id="supervisor-sync-diagnostics-title" className="text-lg font-black text-slate-900 dark:text-white">Diagnóstico de sincronización</h2>
-                            <p className="mt-1 text-xs font-medium text-slate-500">Último eco recibido, watermark y pulls de respaldo por 413.</p>
+                            <p className="mt-1 text-xs font-medium text-slate-500">Último eco, watermark, pulls de respaldo 413 y bytes descargados por pull.</p>
                         </div>
                     </div>
                     <button type="button" aria-label="Cerrar" onClick={onClose} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-white">
@@ -85,6 +95,12 @@ export default function SupervisorSyncDiagnosticsPanel({ isOpen, onClose, diagno
                             <Clock size={24} className="mx-auto mb-2 opacity-50" />
                             Sin ecos recibidos todavía. Aquí aparecerá cada documento aplicado con su watermark.
                         </div>
+                    )}
+
+                    {diagnostics?.lastPull && (
+                        <p data-testid="sync-diag-last-pull-detail" className="text-[10px] font-bold text-slate-400">
+                            Último pull: {formatWhen(diagnostics.lastPull.at)} · {diagnostics.lastPull.docs} docs · {diagnostics.lastPull.full ? 'completo' : 'incremental'} ({diagnostics.lastPull.source}).
+                        </p>
                     )}
 
                     {lastSync && (

@@ -122,6 +122,32 @@ export function getChangedSyncDocumentIds(metadata = [], getPreviousUpdatedAt = 
         .map((doc) => doc.doc_id))];
 }
 
+// ── Política de pull completo vs incremental ─────────────────────────────────
+// El pull completo (`full: true`) descarga la columna `data` de TODOS los
+// documentos permitidos y fue el mayor componente del egress de PostgREST
+// (238 pulls ≈ 295 MB el 2026-10-23; ver REPORTE-CAUSA-RAIZ-EGRESS). Solo se
+// justifica cuando el cliente no tiene historial local (primera carga) y como
+// resync periódico: el watermark incremental no detecta borrados remotos (no
+// hay tombstones). Las reconexiones y remontajes usan el pull incremental.
+
+export const MONITOR_FULL_SYNC_AT_KEY = 'monitor_last_full_sync';
+export const FULL_SYNC_INTERVAL_MS = 24 * 60 * 60_000;
+
+export function shouldPullFullSync({
+    hasLocalHistory = false,
+    lastFullSyncAt = null,
+    now = Date.now(),
+    intervalMs = FULL_SYNC_INTERVAL_MS,
+} = {}) {
+    // Primera carga: sin historial local el paquete completo es el único arranque.
+    if (!hasLocalHistory) return true;
+    // Historial pero sin marca de full (clientes anteriores a esta política):
+    // un full de adopción, para no heredar paquetes incompletos.
+    if (!Number.isFinite(lastFullSyncAt) || lastFullSyncAt <= 0) return true;
+    // Resync periódico: cubre los borrados remotos que el watermark no ve.
+    return now - lastFullSyncAt >= intervalMs;
+}
+
 /**
  * Realtime entrega el registro VACÍO (y `payload.errors` con "Error 413: Payload
  * Too Large") cuando `sync_documents.data` supera `max_record_bytes` (~1 MB).
@@ -147,6 +173,7 @@ export function createSyncDiagnosticsState() {
         oversizePulls: 0,
         lastOversizeAt: null,
         lastOversizePullAt: null,
+        lastPull: null,
     };
 }
 
@@ -176,6 +203,19 @@ export function updateSyncDiagnostics(state, event) {
                 ...current,
                 oversizePulls: current.oversizePulls + 1,
                 lastOversizePullAt: event.at ?? null,
+            };
+        case 'pull':
+            // Telemetría de egress: bytes del payload bajado en el último pull,
+            // para ver de un vistazo si fue completo (~MB) o incremental (~0).
+            return {
+                ...current,
+                lastPull: {
+                    at: event.at ?? null,
+                    source: event.source ?? 'pull',
+                    docs: event.docs ?? 0,
+                    bytes: event.bytes ?? 0,
+                    full: Boolean(event.full),
+                },
             };
         default:
             return current;
@@ -225,6 +265,9 @@ export default {
     MONITOR_CONNECTED_SWEEP_INTERVAL_MS,
     shouldRunMonitorConnectedSweep,
     getChangedSyncDocumentIds,
+    MONITOR_FULL_SYNC_AT_KEY,
+    FULL_SYNC_INTERVAL_MS,
+    shouldPullFullSync,
     buildSupervisorRealtimeChannelName,
     withSyncRetry,
 };

@@ -17,6 +17,7 @@ describe('updateSyncDiagnostics', () => {
             oversizePulls: 0,
             lastOversizeAt: null,
             lastOversizePullAt: null,
+            lastPull: null,
         });
     });
 
@@ -75,6 +76,24 @@ describe('updateSyncDiagnostics', () => {
         });
         expect(state.lastEcho.applied).toBe(false);
         expect(state.lastEcho.error).toBe('Documento antiguo o repetido');
+    });
+
+    it('registra el último pull con sus bytes, docs y modo (telemetría de egress)', () => {
+        const state = updateSyncDiagnostics(createSyncDiagnosticsState(), {
+            type: 'pull',
+            at: '2026-10-23T12:00:00.000Z',
+            source: 'sweep',
+            docs: 3,
+            bytes: 128_000,
+            full: false,
+        });
+        expect(state.lastPull).toEqual({
+            at: '2026-10-23T12:00:00.000Z',
+            source: 'sweep',
+            docs: 3,
+            bytes: 128_000,
+            full: false,
+        });
     });
 
     it('un evento desconocido devuelve la MISMA referencia (sin re-renders)', () => {

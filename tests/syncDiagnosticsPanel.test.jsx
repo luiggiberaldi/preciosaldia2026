@@ -96,4 +96,17 @@ describe('SupervisorSyncDiagnosticsPanel', () => {
         await renderPanel({ statusLabel: 'Desconectado', diagnostics: createSyncDiagnosticsState() });
         expect(container.querySelector('[data-testid="sync-diag-empty"]')).not.toBeNull();
     });
+
+    it('muestra los bytes del último pull y si fue completo o incremental', async () => {
+        await renderPanel({
+            statusLabel: 'En Vivo',
+            diagnostics: {
+                ...createSyncDiagnosticsState(),
+                lastPull: { at: '2026-10-23T12:00:00.000Z', source: 'pull', docs: 7, bytes: 1_258_291, full: true },
+            },
+        });
+        expect(container.querySelector('[data-testid="sync-diag-last-pull-bytes"] p:last-child').textContent).toBe('1.20 MB');
+        expect(container.querySelector('[data-testid="sync-diag-last-pull-detail"]').textContent).toContain('completo');
+        expect(container.querySelector('[data-testid="sync-diag-last-pull-detail"]').textContent).toContain('7 docs');
+    });
 });
