@@ -87,8 +87,8 @@ describe('formatPresentationLabel — badge de presentación', () => {
         expect(formatPresentationLabel({ unit: 'paquete', unitsPerPackage: 12 })).toBe('Bulto · 12 uds');
     });
 
-    it('d13: línea de unidad suelta aclara que viene de un bulto de N uds', () => {
-        expect(formatPresentationLabel({ ...bultoItem, _mode: 'unit', qty: 1 })).toBe('Unidad suelta · bulto de 12 uds');
+    it('d13: línea de unidad suelta no muestra badge redundante (solo aplica cuando es bulto)', () => {
+        expect(formatPresentationLabel({ ...bultoItem, _mode: 'unit', qty: 1 })).toBeNull();
     });
 
     it('d14: granel, suelto y factor desconocido no llevan badge', () => {

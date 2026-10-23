@@ -388,18 +388,17 @@ export const formatSaleItemQuantity = (item, mode = getGranelUnitMode(), { short
 
 /**
  * BULTOS-001: etiqueta de presentación para tarjetas y búsquedas.
- * "Bulto · 12 uds" para productos de bulto; para una línea de unidad suelta
- * aclara "Unidad suelta · bulto de 12 uds". null cuando no aplica (granel,
- * suelto o factor desconocido).
+ * "Bulto · 12 uds" para productos de bulto cerrado. Para ventas por unidad suelta
+ * devuelve null para evitar etiquetas redundantes en cesta ("solo debe aparecer cuando es un bulto").
+ * null cuando no aplica (unidad suelta, granel, suelto o factor desconocido).
  * @param {object} item Producto del catálogo o línea de venta.
  */
 export const formatPresentationLabel = (item) => {
     const uPP = Number(item?._unitsPerPackage ?? item?.unitsPerPackage);
     if (!((item?.packagingType === 'lote' || item?.unit === 'paquete') && Number.isFinite(uPP) && uPP > 1)) return null;
     const saleMode = item?._mode ?? (String(item?.id ?? '').endsWith('_unit') ? 'unit' : 'package');
-    return saleMode === 'unit'
-        ? `Unidad suelta · bulto de ${uPP} uds`
-        : `Bulto · ${uPP} uds`;
+    if (saleMode === 'unit') return null;
+    return `Bulto · ${uPP} uds`;
 };
 
 /**

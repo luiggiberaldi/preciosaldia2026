@@ -300,23 +300,44 @@ export default function CategoryBar({
                             const isOut = (p.stock ?? 0) <= 0;
                             const isDisabled = isOut && !allowNegativeStock;
                             const CatIcon = CATEGORY_ICONS[p.category] || Package;
+                            const hasDualPrice = Boolean(p.sellByUnit && p.unitPriceUsd > 0 && (p.unitsPerPackage || 1) > 1);
+                            const packageUsd = getUsd(p, tasaCop);
+                            const unitUsd = parseFloat(p.unitPriceUsd) || 0;
+                            const unitBs = unitUsd * (effectiveRate || 0);
+
                             return (
-                                <button
+                                <div
                                     key={p.id}
                                     onClick={() => { triggerHaptic && triggerHaptic(); addToCart(p); }}
-                                    disabled={isDisabled}
-                                    className={`group relative isolate flex flex-col justify-between p-3 bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-md transition-all text-left active:scale-[0.98] ${isDisabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+                                    role="button"
+                                    tabIndex={0}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                            e.preventDefault();
+                                            triggerHaptic && triggerHaptic();
+                                            addToCart(p);
+                                        }
+                                    }}
+                                    className={`group relative isolate flex flex-col justify-between p-2.5 sm:p-3 bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-md transition-all text-left cursor-pointer active:scale-[0.98] select-none ${isDisabled ? 'opacity-40 pointer-events-none' : ''}`}
                                 >
-                                    {/* Stock Badge flotante en la esquina superior derecha de la tarjeta (Pill) */}
-                                    <span className={`absolute top-2.5 right-2.5 text-[9px] font-extrabold px-2 py-0.5 rounded-full z-10 border shadow-2xs ${
+                                    {/* Stock Badge flotante en la esquina superior derecha */}
+                                    <span className={`absolute top-2.5 right-2.5 text-[8.5px] sm:text-[9px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full z-10 border shadow-2xs ${
                                         isOut
                                             ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border-rose-200'
                                             : 'bg-emerald-100/90 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border-emerald-200/60'
                                     }`}>
-                                        {isOut ? 'AGOTADO' : `${p.isWeight ? (p.stock ?? 0).toFixed(2) : (p.stock ?? 0)} ${p.isWeight ? 'KG' : 'UNDS'}`}
+                                        {isOut ? 'AGOTADO' : `${p.isWeight ? (p.stock ?? 0).toFixed(2) : (p.stock ?? 0)} ${p.isWeight ? 'KG' : 'U'}`}
                                     </span>
 
-                                    {/* Contenedor de la Imagen con padding superior para no tapar la pill de stock */}
+                                    {/* Badge Superior Izquierdo: Icono Vectorial SVG nítido */}
+                                    {hasDualPrice && (
+                                        <span className="absolute top-2.5 left-2.5 flex items-center gap-1 text-[8.5px] sm:text-[9px] font-black px-1.5 py-0.5 rounded-lg bg-amber-50/90 dark:bg-amber-950/70 text-amber-900 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/60 z-10 shadow-2xs backdrop-blur-xs font-mono">
+                                            <Package size={11} strokeWidth={2.4} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                                            <span>x{p.unitsPerPackage}</span>
+                                        </span>
+                                    )}
+
+                                    {/* Contenedor de la Imagen */}
                                     <div className="w-full aspect-square bg-transparent flex items-center justify-center overflow-hidden pt-3 pb-1 mb-1 relative group-hover:scale-[1.03] transition-transform">
                                         <SmartImage
                                             src={p.image}
@@ -328,35 +349,90 @@ export default function CategoryBar({
                                     </div>
 
                                     {/* Nombre: izquierda, 2 líneas */}
-                                    <p className="text-[12px] font-bold text-slate-800 dark:text-slate-100 leading-snug line-clamp-2 mt-1 mb-2 min-h-[2.4em]">{p.name}</p>
+                                    <p className="text-[11px] sm:text-[12px] font-bold text-slate-800 dark:text-slate-100 leading-snug line-clamp-2 mt-0.5 mb-1.5 min-h-[2.3em]">{p.name}</p>
 
-                                    {/* Sección de precios */}
-                                    <div className="mt-auto">
-                                        {/* Precio USD: grande con badge si es dual */}
-                                        <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-                                            <p className="text-base font-black text-slate-900 dark:text-white leading-none">
-                                                ${getUsd(p, tasaCop).toFixed(2)}
-                                            </p>
-                                            {p.pricingMode === 'dual_usd' && parseFloat(p.priceBsUsdRef) > 0 && (
-                                                <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 px-1.5 py-0.5 rounded-md border border-emerald-200/60 leading-none">
-                                                    ${formatUsd(p.priceBsUsdRef)} Ref
+                                    {/* Sección de precios: Dual o Estándar */}
+                                    {hasDualPrice ? (
+                                        <div className="mt-auto space-y-1 w-full pt-0.5">
+                                            {/* Botón Bulto Rápido: Brand Teal institucional #006A71 */}
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    triggerHaptic && triggerHaptic();
+                                                    addToCart(p, null, 'package');
+                                                }}
+                                                disabled={isDisabled}
+                                                className="w-full flex items-center justify-between px-1.5 sm:px-2 py-1 bg-[#006A71] hover:bg-[#005B61] active:scale-95 text-white rounded-xl transition-all shadow-xs group cursor-pointer"
+                                                title={`Agregar 1 Bulto (${p.unitsPerPackage} unidades) al carrito`}
+                                            >
+                                                <span className="text-[8px] sm:text-[8.5px] font-black text-teal-950 bg-white px-1.5 py-0.5 rounded uppercase leading-none shadow-2xs">
+                                                    Bto x{p.unitsPerPackage}
                                                 </span>
-                                            )}
-                                        </div>
+                                                <span className="text-[11px] sm:text-xs font-black leading-none text-white">
+                                                    {copEnabled && copPrimary && tasaCop > 0
+                                                        ? `${formatCop(getCop(p, tasaCop))}`
+                                                        : `$${packageUsd.toFixed(2)}`}
+                                                </span>
+                                            </button>
 
-                                        {/* Precio Bs: pequeño, color teal / brand */}
-                                        <p className="text-[11px] font-bold text-teal-600 dark:text-teal-400 leading-none mt-0.5">
-                                            Bs {formatBs(
-                                                p.pricingMode === 'dual_usd' && parseFloat(p.priceBsUsdRef) > 0
-                                                    ? parseFloat(p.priceBsUsdRef) * (effectiveRate || 0)
-                                                    : getUsd(p, tasaCop) * (effectiveRate || 0)
-                                            )}
-                                            {p.pricingMode === 'dual_usd' && parseFloat(p.priceBsUsdRef) > 0 && (
-                                                <span className="text-[9px] text-slate-400 font-medium ml-0.5">(en Bs)</span>
-                                            )}
-                                        </p>
-                                    </div>
-                                </button>
+                                            {/* Botón Unidad Rápida */}
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    triggerHaptic && triggerHaptic();
+                                                    addToCart(p, null, 'unit');
+                                                }}
+                                                disabled={isDisabled}
+                                                className="w-full flex items-center justify-between px-1.5 sm:px-2 py-1 bg-emerald-50 hover:bg-emerald-100/90 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-950 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/60 rounded-xl active:scale-95 transition-all shadow-2xs cursor-pointer"
+                                                title="Agregar 1 Unidad suelta al carrito"
+                                            >
+                                                <span className="text-[8px] sm:text-[8.5px] font-black text-emerald-700 dark:text-emerald-400 uppercase leading-none">
+                                                    Ud
+                                                </span>
+                                                <span className="text-[11px] sm:text-xs font-black leading-none text-emerald-800 dark:text-emerald-300">
+                                                    {copEnabled && copPrimary && tasaCop > 0
+                                                        ? `${formatCop(p.unitPriceCop || Math.round(unitUsd * tasaCop))}`
+                                                        : `$${unitUsd.toFixed(2)}`}
+                                                </span>
+                                            </button>
+
+                                            {/* Referencia Bs /ud al pie */}
+                                            <div className="text-center pt-0.5 leading-none">
+                                                <span className="text-[9px] sm:text-[10px] font-bold text-teal-600 dark:text-teal-400 truncate block">
+                                                    Bs {formatBs(unitBs)} <span className="text-[7.5px] sm:text-[8px] text-slate-400 font-normal">/ud</span>
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="mt-auto">
+                                            {/* Precio USD: grande con badge si es dual */}
+                                            <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                                                <p className="text-base font-black text-slate-900 dark:text-white leading-none">
+                                                    ${packageUsd.toFixed(2)}
+                                                </p>
+                                                {p.pricingMode === 'dual_usd' && parseFloat(p.priceBsUsdRef) > 0 && (
+                                                    <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 px-1.5 py-0.5 rounded-md border border-emerald-200/60 leading-none">
+                                                        ${formatUsd(p.priceBsUsdRef)} Ref
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {/* Precio Bs: pequeño, color teal / brand */}
+                                            <p className="text-[11px] font-bold text-teal-600 dark:text-teal-400 leading-none mt-0.5">
+                                                Bs {formatBs(
+                                                    p.pricingMode === 'dual_usd' && parseFloat(p.priceBsUsdRef) > 0
+                                                        ? parseFloat(p.priceBsUsdRef) * (effectiveRate || 0)
+                                                        : packageUsd * (effectiveRate || 0)
+                                                )}
+                                                {p.pricingMode === 'dual_usd' && parseFloat(p.priceBsUsdRef) > 0 && (
+                                                    <span className="text-[9px] text-slate-400 font-medium ml-0.5">(en Bs)</span>
+                                                )}
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
                             );
                         })}
                     </div>
