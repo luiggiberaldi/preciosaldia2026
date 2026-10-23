@@ -15,7 +15,7 @@ import CierreCajaWizard from '../components/Dashboard/CierreCajaWizard';
 import CierreCajaSummaryModal from '../components/Dashboard/CierreCajaSummaryModal';
 import { generateTicketPDF, printThermalTicket } from '../utils/ticketGenerator';
 import { shareSaleWhatsApp } from '../utils/dashboardActions';
-import { generateDailyClosePDF } from '../utils/dailyCloseGenerator';
+import { generateDailyClosePDF, printThermalDailyClose } from '../utils/dailyCloseGenerator';
 import { useNotifications } from '../hooks/useNotifications';
 import SyncStatus from '../components/SyncStatus';
 import { useProductContext } from '../context/ProductContext';
@@ -965,7 +965,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 onClose={() => setShowCierreSummary(false)}
                 summaryData={cierreSummaryData}
                 onPrint={() => {
-                    generateDailyClosePDF({ ...cierreSummaryData, action: 'print' });
+                    printThermalDailyClose(cierreSummaryData);
                 }}
                 onDownload={() => {
                     generateDailyClosePDF({ ...cierreSummaryData, action: 'download' });

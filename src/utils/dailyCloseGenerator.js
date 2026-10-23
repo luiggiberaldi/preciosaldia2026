@@ -4,6 +4,9 @@ import { getPaymentLabel, toTitleCase } from '../config/paymentMethods';
 import { round2, mulR, divR } from './dinero';
 import { buildCloseDaySummary } from './closeDaySummary';
 import { formatSaleItemQuantity } from './granel';
+import { getPaperConfig } from './ticketConstants';
+import { openPrintWindow } from './printerUtils';
+import { buildDailyCloseHtml } from './dailyCloseHtmlTemplate';
 
 /**
  * FIA-DETALLE-001: formatea un bucket del desglose respetando su moneda real.
@@ -1262,4 +1265,29 @@ export async function generateDailyClosePDF({
             doc.save(filename);
         }
     }
+}
+
+/**
+ * printThermalDailyClose
+ *
+ * Imprime el cierre de caja como HTML nativo (sin jsPDF) usando openPrintWindow.
+ * Produce salida nítida, negro puro sobre blanco, adaptada al ancho de papel
+ * configurado por el usuario (58mm o 80mm).
+ *
+ * Reemplaza la ruta action:'print' de generateDailyClosePDF que usaba jsPDF →
+ * blob → iframe → Chrome PDF viewer (producía salida opaca y desalineada).
+ *
+ * @param {object} cierreData - Misma forma de datos que generateDailyClosePDF recibe.
+ */
+export function printThermalDailyClose(cierreData) {
+    const paperWidth = (typeof localStorage !== 'undefined' ? localStorage.getItem('printer_paper_width') : null) || '58';
+    const paperConfig = getPaperConfig(paperWidth);
+    const settings = {
+        name: (typeof localStorage !== 'undefined' ? localStorage.getItem('business_name') : null) || '',
+        rif: (typeof localStorage !== 'undefined' ? localStorage.getItem('business_rif') : null) || '',
+        address: (typeof localStorage !== 'undefined' ? localStorage.getItem('business_address') : null) || '',
+        phone: (typeof localStorage !== 'undefined' ? localStorage.getItem('business_phone') : null) || '',
+    };
+    const html = buildDailyCloseHtml(cierreData, paperConfig, settings);
+    openPrintWindow(html);
 }

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ChevronDown, ChevronUp, LockIcon, Printer, DollarSign, Clock, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
 import { formatBs, formatCop } from '../../utils/calculatorUtils';
 import { getPaymentLabel, getPaymentIcon, toTitleCase, PAYMENT_ICONS } from '../../config/paymentMethods';
-import { generateDailyClosePDF } from '../../utils/dailyCloseGenerator';
+import { generateDailyClosePDF, printThermalDailyClose } from '../../utils/dailyCloseGenerator';
 import { printerSerial } from '../../services/PrinterSerial';
 import { showToast } from '../Toast';
 import { isGranelProduct, calculateItemStockDeduction } from '../../utils/granel'; // BULTOS-001
@@ -53,7 +53,7 @@ export default function CierreHistoryCard({ cierre, correlativo, bcvRate, produc
         });
         const todayTopProducts = Object.values(todayProductMap).sort((a, b) => b.qty - a.qty).slice(0, 10);
 
-        generateDailyClosePDF({
+        const cierrePayload = {
             sales: cierre.salesForCashFlow.filter(s => s.tipo !== 'APERTURA_CAJA'),
             allSales: cierre.salesForStats,
             bcvRate,
@@ -66,10 +66,16 @@ export default function CierreHistoryCard({ cierre, correlativo, bcvRate, produc
             reconData: null,
             apertura: cierre.apertura,
             isReprint: true,
+            cierreNumber: cierre.cierreNumber,
             copEnabled,
             tasaCop,
-            action: actionType
-        });
+        };
+
+        if (actionType === 'print') {
+            printThermalDailyClose(cierrePayload);
+        } else {
+            generateDailyClosePDF({ ...cierrePayload, action: actionType });
+        }
     };
 
     const hasApertura = !!cierre.apertura;
