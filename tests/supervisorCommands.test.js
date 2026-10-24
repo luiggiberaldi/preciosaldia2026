@@ -4,6 +4,7 @@ import {
   buildInventoryBatchV2Payload,
   INVENTORY_BATCH_MAX_LINES,
   INVENTORY_LOT_REFERENCE_MAX_LENGTH,
+  INVENTORY_MAX_EXPECTED_STOCK,
   INVENTORY_REASON_MAX_LENGTH,
   validateSupervisorCommand,
 } from '../src/services/supervisorContracts';
@@ -289,7 +290,8 @@ describe("Supervisor command contract", () => {
         line({ quantityInput: "2" }),
         line({ inputUnit: "kg", quantityInput: 5000.001 }),
         line({ expectedStock: undefined }),
-        line({ expectedStock: -1 }),
+        line({ expectedStock: -INVENTORY_MAX_EXPECTED_STOCK - 1 }),
+        line({ expectedStock: INVENTORY_MAX_EXPECTED_STOCK + 1 }),
         line({ expectedStock: Number.NaN }),
         line({ inputUnit: "cajas", unitsPerPackage: 0 }),
         line({ inputUnit: "cajas", unitsPerPackage: 1.5 }),
@@ -298,6 +300,16 @@ describe("Supervisor command contract", () => {
       ];
       for (const badLine of bad)
         expect(isValid(v2({ lines: [badLine] }))).toBe(false);
+    });
+    it("acepta expectedStock negativo: el saldo negativo es una base legítima", () => {
+      // Regresión: el contrato rechazaba expectedStock < 0 y los productos en
+      // saldo negativo no eran ajustables remotamente desde el supervisor.
+      // expectedStock describe la base real de la caja, no un objetivo.
+      expect(isValid(v2({ lines: [line({ expectedStock: -1 })] }))).toBe(true);
+      expect(isValid(v2({ lines: [line({ expectedStock: -2.5 })] }))).toBe(true);
+      expect(
+        isValid(v2({ lines: [line({ expectedStock: -INVENTORY_MAX_EXPECTED_STOCK })] })),
+      ).toBe(true);
     });
     it("rechaza líneas duplicadas o con estado base inconsistente", () => {
       expect(isValid(v2({ lines: [line(), line({ lineId: "line-2" })] }))).toBe(

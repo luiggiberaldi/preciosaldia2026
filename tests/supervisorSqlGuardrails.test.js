@@ -316,3 +316,34 @@ describe('Reloj del dispositivo fuera del create (20261020)', () => {
         expect(triggerUserShiftMigration).not.toMatch(/UPDATE\s+public\.supervisor_commands/i);
     });
 });
+
+describe('expectedStock negativo en inventario (20261023)', () => {
+    const negativeStockSql = readFileSync('supabase/migrations/20261023_supervisor_inventory_negative_expected_stock.sql', 'utf8');
+    const contracts = readFileSync('src/services/supervisorContracts.js', 'utf8');
+
+    it('acepta bases negativas con la misma cota simétrica del contrato cliente', () => {
+        // v2: la cota simétrica sustituye al rechazo de v_stock < 0.
+        expect(negativeStockSql).toContain('v_stock < -10000000 OR v_stock > 10000000');
+        // v1: expectedStock admite signo, pero quantityInput/unitsPerPackage no.
+        expect(negativeStockSql).toContain("coalesce(p_payload->>'expectedStock', '') !~ '^-?[0-9]+([.][0-9]+)?$'");
+        expect(negativeStockSql).toContain("coalesce((p_payload->>'expectedStock')::numeric, 0) NOT BETWEEN -10000000 AND 10000000");
+        expect(negativeStockSql).toContain("coalesce(p_payload->>'quantityInput', '') !~ '^[0-9]+([.][0-9]+)?$'");
+        expect(negativeStockSql).toContain("coalesce(p_payload->>'unitsPerPackage', '') !~ '^[0-9]+([.][0-9]+)?$'");
+        // La cota del contrato cliente no puede divergir en silencio del SQL.
+        expect(contracts).toContain('INVENTORY_MAX_EXPECTED_STOCK = 10_000_000');
+    });
+
+    it('es un delta mínimo: solo la validación, sin abrir permisos ni redefinir RPC/trigger', () => {
+        expect(negativeStockSql).toContain('CREATE OR REPLACE FUNCTION public.is_valid_supervisor_inventory_batch_payload(p_payload jsonb)');
+        expect(negativeStockSql).not.toContain('CREATE OR REPLACE FUNCTION public.create_supervisor_command');
+        expect(negativeStockSql).not.toContain('CREATE OR REPLACE FUNCTION public.enforce_supervisor_income_command');
+        expect(negativeStockSql).not.toContain('CREATE TRIGGER');
+        expect(negativeStockSql).toContain('REVOKE ALL ON FUNCTION public.is_valid_supervisor_inventory_batch_payload(jsonb) FROM PUBLIC, anon, authenticated');
+        expect(negativeStockSql.match(/SET search_path = public, extensions/g)).toHaveLength(1);
+        expect(negativeStockSql).toContain('BEGIN;');
+        expect(negativeStockSql).toContain('COMMIT;');
+        expect(negativeStockSql).not.toMatch(/GRANT\s+[^;]*\bTO\s+anon\b/i);
+        expect(negativeStockSql).not.toMatch(/DROP\s+TABLE/i);
+        expect(negativeStockSql).not.toMatch(/UPDATE\s+public\.(supervisor_commands|sync_documents|cloud_backups)/i);
+    });
+});

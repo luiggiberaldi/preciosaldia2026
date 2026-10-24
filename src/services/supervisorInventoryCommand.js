@@ -1,5 +1,6 @@
 import { isGranelProduct, normalizeStockValue } from '../utils/granel'; // GRANEL-001
 import { INVENTORY_INPUT_UNITS, resolveInventoryUnitConversion } from './supervisorInventoryDraft';
+import { INVENTORY_MAX_EXPECTED_STOCK } from './supervisorContracts';
 
 const INPUT_UNITS = new Set(INVENTORY_INPUT_UNITS);
 const EGRESS_REASONS = new Set(['merma', 'danio', 'vencimiento', 'autoconsumo', 'devolucion', 'ajuste']);
@@ -24,7 +25,9 @@ export function calculateSupervisorInventoryBatchAdjustment(product = {}, payloa
     if (!INPUT_UNITS.has(payload.inputUnit)
         || !Number.isFinite(quantityInput) || quantityInput <= 0
         || !Number.isFinite(unitsPerPackage) || unitsPerPackage <= 0
-        || !Number.isFinite(expectedStock) || expectedStock < 0
+        // expectedStock describe la base real de la caja y puede ser negativa
+        // (saldo negativo legítimo); se acota simétricamente contra basura.
+        || !Number.isFinite(expectedStock) || Math.abs(expectedStock) > INVENTORY_MAX_EXPECTED_STOCK
         || typeof payload.reason !== 'string' || payload.reason.trim().length === 0) {
         throw new Error('Payload de ingreso por lote inválido');
     }
@@ -46,7 +49,10 @@ export function calculateSupervisorInventoryBatchAdjustment(product = {}, payloa
     if (!conversion.ok) throw new Error(conversion.error);
     const { unitsDelta } = conversion;
     const stockAfter = normalizeStockValue(stockBefore + (isEgress ? -unitsDelta : unitsDelta), isGranel);
-    if (stockAfter < 0) throw new Error('Stock insuficiente para el egreso');
+    // El piso en 0 protege los EGRESOS (no se despacha lo que no hay). Un
+    // ingreso desde saldo negativo que sigue en negativo es una corrección
+    // legítima hacia arriba y no debe bloquearse.
+    if (isEgress && stockAfter < 0) throw new Error('Stock insuficiente para el egreso');
     const stableMovementId = movementId || `supervisor-${commandId}`;
     const movement = {
         id: stableMovementId,

@@ -394,6 +394,38 @@ describe('reintento idempotente y base estampada (regresión: "aplicado" sin cam
         expect(sendCommand.mock.calls[0][0].payload.lines[0].expectedStock).toBe(22);
     });
 
+    it('envía líneas de productos en saldo negativo (expectedStock negativo pasa el contrato)', async () => {
+        // Regresión: el contrato batch v2 rechazaba expectedStock < 0 con
+        // "El lote no cumple el contrato batch v2" y el ajuste jamás se enviaba.
+        const sendCommand = vi.fn().mockResolvedValue({
+            ok: true,
+            status: 'pending',
+            commandId: COMMAND_ID,
+            ackPromise: Promise.resolve(terminalAck('applied', { ack: { stockAfter: 0 } })),
+        });
+        let draft = createInventoryDraft('ingreso', { reason: 'Ajuste de stock' });
+        draft = addInventoryDraftLine(draft, {
+            productId: 'a',
+            inputUnit: 'unidades',
+            quantityInput: 2,
+            unitsPerPackage: 1,
+            baseStock: -2,
+        }).draft;
+
+        const result = await sendSupervisorInventoryBatch({
+            draft,
+            products: [{ id: 'a', stock: -2 }],
+            targetDeviceId: 'device-1',
+            sendCommand,
+            commandStore: makeStore(),
+            commandIdFactory: () => COMMAND_ID,
+        });
+
+        expect(result.status).not.toBe('invalid');
+        expect(sendCommand).toHaveBeenCalledTimes(1);
+        expect(sendCommand.mock.calls[0][0].payload.lines[0].expectedStock).toBe(-2);
+    });
+
     it('un reintento ciego del mismo lote ya aplicado devuelve el ACK guardado sin crear otro comando', async () => {
         const store = makeStore();
         const sendCommand = appliedSendMock();

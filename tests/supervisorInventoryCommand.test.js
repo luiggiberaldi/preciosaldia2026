@@ -149,6 +149,58 @@ describe('Supervisor inventory batch command', () => {
         })).toThrow(/stock cambió/i);
     });
 
+    it('ajusta un producto en saldo negativo (expectedStock negativo)', () => {
+        const negative = { id: 'product-neg', name: 'Malta Polar', stock: -2 };
+        const toZero = calculateSupervisorInventoryBatchAdjustment(negative, {
+            ...payload,
+            productId: 'product-neg',
+            expectedStock: -2,
+            quantityInput: 2,
+            inputUnit: 'unidades',
+            unitsPerPackage: 1,
+        }, { commandId: 'command-neg-1' });
+        expect(toZero).toMatchObject({ unitsDelta: 2, stockBefore: -2, stockAfter: 0 });
+
+        // Corrección que sigue en negativo: un ingreso hacia arriba, no un egreso.
+        const toMinusOne = calculateSupervisorInventoryBatchAdjustment(negative, {
+            ...payload,
+            productId: 'product-neg',
+            expectedStock: -2,
+            quantityInput: 1,
+            inputUnit: 'unidades',
+            unitsPerPackage: 1,
+        }, { commandId: 'command-neg-2' });
+        expect(toMinusOne).toMatchObject({ stockBefore: -2, stockAfter: -1 });
+    });
+
+    it('el plan batch v2 aplica líneas sobre productos en saldo negativo', () => {
+        const result = calculateSupervisorInventoryBatchPlan(
+            [{ id: 'p-neg', name: 'Malta Polar', stock: -2 }],
+            [],
+            {
+                direction: 'ingreso',
+                reason: 'Ajuste de stock',
+                lines: [{ lineId: 'l1', productId: 'p-neg', inputUnit: 'unidades', quantityInput: 5, expectedStock: -2 }],
+            },
+            { commandId: 'command-neg-plan' },
+        );
+        expect(result.updatedProducts[0].stock).toBe(3);
+    });
+
+    it('sigue bloqueando egresos que saldrían del piso en 0', () => {
+        const negative = { id: 'product-neg', name: 'Malta Polar', stock: -2 };
+        expect(() => calculateSupervisorInventoryBatchAdjustment(negative, {
+            ...payload,
+            productId: 'product-neg',
+            expectedStock: -2,
+            direction: 'egreso',
+            reasonCategory: 'merma',
+            quantityInput: 1,
+            inputUnit: 'unidades',
+            unitsPerPackage: 1,
+        }, { commandId: 'command-neg-3' })).toThrow(/stock insuficiente/i);
+    });
+
     it('aplica un egreso con categoría y rechaza superar el stock', () => {
         const result = calculateSupervisorInventoryBatchAdjustment(product, {
             ...payload,

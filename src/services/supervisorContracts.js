@@ -176,7 +176,10 @@ function isValidInventoryBatchLineV2(line) {
         && line.quantityInput > 0
         && line.quantityInput <= maxQuantity
         && isFiniteNumber(line.expectedStock)
-        && line.expectedStock >= 0
+        // expectedStock describe la BASE real de la caja, no un objetivo: puede
+        // ser negativa (saldo negativo legítimo con allow_negative_stock). Se
+        // acota simétricamente para descartar basura sin penalizar negativos.
+        && line.expectedStock >= -INVENTORY_MAX_EXPECTED_STOCK
         && line.expectedStock <= INVENTORY_MAX_EXPECTED_STOCK
         && isBoundedString(line.baseRevision, INVENTORY_REVISION_MAX_LENGTH, { required: false })
         && (line.unitsPerPackage === undefined
@@ -276,7 +279,7 @@ function validateCommandPayload(type, payload) {
                 && Number.isFinite(Number(payload.unitsPerPackage))
                 && Number(payload.unitsPerPackage) > 0
                 && Number.isFinite(Number(payload.expectedStock))
-                && Number(payload.expectedStock) >= 0
+                && Math.abs(Number(payload.expectedStock)) <= INVENTORY_MAX_EXPECTED_STOCK
                 && typeof payload.reason === 'string'
                 && payload.reason.trim().length > 0
                 && payload.reason.length <= 240;
