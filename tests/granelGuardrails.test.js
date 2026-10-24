@@ -33,10 +33,12 @@ describe('granel detector', () => {
         expect(isGranelProduct({ unit: 'paquete' })).toBe(false);
     });
 
-    it('detects granel by flags and granelUnit', () => {
+    it('detects granel by flags, but granelUnit alone is no longer a clue (FIX-EMPAQUE-001)', () => {
         expect(isGranelProduct({ isWeight: true })).toBe(true);
         expect(isGranelProduct({ soldByWeight: true })).toBe(true);
-        expect(isGranelProduct({ granelUnit: 'kg' })).toBe(true);
+        // El campo granelUnit viene 'kg' por defecto en los formularios; contar como
+        // pista congelaba productos normales como granel. Ahora solo el empaque manda.
+        expect(isGranelProduct({ granelUnit: 'kg' })).toBe(false);
     });
 
     it('returns false for null/undefined/empty', () => {

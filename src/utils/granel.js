@@ -92,10 +92,61 @@ export function useGranelUnitMode() {
     return [mode, updateMode];
 }
 
+export const PACKAGING_TYPE_SUELTO = 'suelto';
+export const PACKAGING_TYPE_LOTE = 'lote';
+export const PACKAGING_TYPE_GRANEL = 'granel';
+export const PACKAGING_TYPES_VALID = Object.freeze([PACKAGING_TYPE_SUELTO, PACKAGING_TYPE_LOTE, PACKAGING_TYPE_GRANEL]);
+
+// FIX-EMPAQUE-001: traductor de vocabulario ajeno (importaciones, Estación Maestra,
+// datos legacy) a los 3 tipos de empaque válidos del sistema.
+// NOTA R2: 'unidad'/'unit'/'individual' NO se traducen a ciegas a 'suelto' — son
+// ambiguos y se derivan por evidencia de peso (ver normalizePackagingType), para
+// no arruinar productos que SÍ se venden por peso (granola, esencias, frutos secos).
+const PACKAGING_SYNONYMS = Object.freeze({
+    suelto: PACKAGING_TYPE_SUELTO,
+    lote: PACKAGING_TYPE_LOTE,
+    bulto: PACKAGING_TYPE_LOTE,
+    paquete: PACKAGING_TYPE_LOTE,
+    caja: PACKAGING_TYPE_LOTE,
+    box: PACKAGING_TYPE_LOTE,
+    granel: PACKAGING_TYPE_GRANEL,
+    peso: PACKAGING_TYPE_GRANEL,
+    por_kg: PACKAGING_TYPE_GRANEL,
+    kg: PACKAGING_TYPE_GRANEL,
+    litro: PACKAGING_TYPE_GRANEL,
+});
+
+/**
+ * FIX-EMPAQUE-001 / R2: traduce cualquier tipo de empaque (ajeno, con mayúsculas,
+ * con espacios o vacío) a uno de los 3 válidos: 'suelto' | 'lote' | 'granel'.
+ * Vacío o ambiguo ('unidad', 'unit', 'individual', desconocidos) se deriva de la
+ * evidencia de peso del producto (unidad de peso/volumen o banderas de peso):
+ * si hoy se vende por peso, SIGUE vendiéndose por peso. El campo `granelUnit`
+ * NUNCA cuenta como pista porque los formularios lo dejan en 'kg' por defecto.
+ * @param {object|string|null} p Producto completo o valor crudo de empaque.
+ * @returns {'suelto'|'lote'|'granel'}
+ */
+export const normalizePackagingType = (p) => {
+    const raw = typeof p === 'string' ? p : p?.packagingType;
+    const key = String(raw ?? '').toLowerCase().trim();
+    const mapped = PACKAGING_SYNONYMS[key];
+    if (mapped) return mapped;
+    if (p && typeof p === 'object') {
+        const unit = String(p.unit || '').toLowerCase().trim();
+        if (GRANEL_LEGACY_UNITS.includes(unit) || p.isWeight || p.soldByWeight) {
+            return PACKAGING_TYPE_GRANEL;
+        }
+    }
+    return PACKAGING_TYPE_SUELTO;
+};
+
 /**
  * Detector canónico de producto a granel.
  * Acepta el objeto producto (o un item de venta/cart con los campos mínimos).
- * @param {object|null} p
+ * FIX-EMPAQUE-001: el empaque manda. Solo es granel si el empaque normalizado
+ * dice 'granel'; 'suelto' y 'lote' jamás lo son. La adivinanza por unidad de
+ * peso solo aplica a productos legacy SIN empaque guardado.
+ * @param {object|string|null} p
  * @returns {boolean}
  */
 export const isGranelProduct = (p) => {
@@ -103,11 +154,19 @@ export const isGranelProduct = (p) => {
     if (typeof p === 'string') {
         return GRANEL_LEGACY_UNITS.includes(p.toLowerCase().trim());
     }
+    return normalizePackagingType(p) === PACKAGING_TYPE_GRANEL;
+};
+
+/**
+ * Clasificación ANTERIOR al fix (adivinadora), solo para el informe dry-run:
+ * sirve para saber si un producto "dejaba de ser granel" y su stock decimal
+ * quedó heredado y necesita revisión humana. No debe usarse para operar.
+ */
+function legacyGranelClassification(p) {
+    if (!p) return false;
     const unit = String(p.unit || '').toLowerCase().trim();
     const pkgType = String(p.packagingType || '').toLowerCase().trim();
-    if (pkgType === 'suelto' || pkgType === 'lote') {
-        return false;
-    }
+    if (pkgType === 'suelto' || pkgType === 'lote') return false;
     return (
         pkgType === 'granel' ||
         GRANEL_LEGACY_UNITS.includes(unit) ||
@@ -115,7 +174,88 @@ export const isGranelProduct = (p) => {
         Boolean(p.soldByWeight) ||
         Boolean(p.granelUnit)
     );
-};
+}
+
+/**
+ * FIX-EMPAQUE-001 — Modo diagnóstico (dry-run): lista los cambios de empaque que
+ * se aplicarían al catálogo SIN escribir nada. Solo propone los campos
+ * `packagingType`, `granelUnit` y `unit`; jamás propone tocar stock, precios,
+ * ventas ni ningún otro dato del negocio.
+ * @param {Array<object>} products Catálogo actual.
+ * @returns {Array<{id, name, antes, despues, campos, stockDecimalPendiente}>}
+ */
+export function planCatalogPackagingFix(products = []) {
+    const cambios = [];
+    for (const p of products) {
+        if (!p || typeof p !== 'object') continue;
+        const nuevoPackaging = normalizePackagingType(p);
+        const esGranel = nuevoPackaging === PACKAGING_TYPE_GRANEL;
+        const nuevoGranelUnit = esGranel ? (isLiquidProduct(p) ? 'litro' : 'kg') : null;
+        const antes = {
+            packagingType: p.packagingType ?? null,
+            granelUnit: p.granelUnit ?? null,
+        };
+        // R2: `unit` NO se toca (el informe real mostró que meterle mano añade ruido
+        // con paquetes y unidades basura de la importación).
+        const despues = { packagingType: nuevoPackaging, granelUnit: nuevoGranelUnit };
+        const campos = Object.keys(despues).filter(k => String(antes[k] ?? '') !== String(despues[k] ?? ''));
+        if (campos.length === 0) continue;
+        const dejaDeSerGranel = legacyGranelClassification(p) && !esGranel;
+        const stock = Number(p.stock ?? 0);
+        const stockDecimalPendiente = dejaDeSerGranel && Number.isFinite(stock) && !Number.isInteger(stock);
+        cambios.push({
+            id: p.id ?? null,
+            name: p.name ?? '(sin nombre)',
+            antes,
+            despues,
+            campos,
+            stockDecimalPendiente,
+        });
+    }
+    return cambios;
+}
+
+/**
+ * FIX-EMPAQUE-001 — Aplicador del barrido de empaque: devuelve una copia del
+ * catálogo con SOLO los campos `packagingType`/`granelUnit`/`unit` corregidos.
+ * Nunca escribe stock ni precios, y devuelve la bitácora con los valores
+ * anteriores para poder revertir el barrido completo.
+ * @param {Array<object>} products
+ * @returns {{productos: Array<object>, bitacora: Array<{id, name, antes, despues}>}}
+ */
+export function applyCatalogPackagingFix(products = []) {
+    const plan = planCatalogPackagingFix(products);
+    const porId = new Map(plan.filter(c => c.id !== null).map(c => [c.id, c]));
+    const productos = products.map(p => {
+        const cambio = p && typeof p === 'object' ? porId.get(p.id) : undefined;
+        if (!cambio) return p;
+        return {
+            ...p,
+            packagingType: cambio.despues.packagingType,
+            granelUnit: cambio.despues.granelUnit,
+        };
+    });
+    return {
+        productos,
+        bitacora: plan.map(({ id, name, antes, despues }) => ({ id, name, antes, despues })),
+    };
+}
+
+/**
+ * FIX-EMPAQUE-001 — Informe legible del dry-run para mostrar en pantalla o
+ * descargar como archivo. No escribe nada.
+ * @param {Array<object>} cambios Resultado de planCatalogPackagingFix.
+ * @returns {string}
+ */
+export function formatPackagingFixReport(cambios = []) {
+    if (cambios.length === 0) return 'Sin cambios pendientes: todo el catálogo ya tiene un empaque válido.';
+    const lineas = cambios.map((c, i) => {
+        const campos = c.campos.map(k => `${k}: ${c.antes[k] ?? '(vacío)'} → ${c.despues[k] ?? '(limpio)'}`).join(' | ');
+        const aviso = c.stockDecimalPendiente ? ' | ⚠ STOCK CON DECIMALES: revisar cantidad (no se redondea sola)' : '';
+        return `${i + 1}. ${c.name}${c.id ? ` [${c.id}]` : ''}\n   ${campos}${aviso}`;
+    });
+    return `Diagnóstico de empaque — ${cambios.length} producto(s) con cambios propuestos (NADA escrito aún):\n\n${lineas.join('\n')}\n`;
+}
 
 /**
  * Determina si el producto granel es líquido/volumen (litros/ml).

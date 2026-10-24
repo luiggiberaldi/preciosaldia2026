@@ -4,7 +4,7 @@
 import { round2, divR, mulR, round0 } from './dinero.js';
 import { CurrencyService } from '../services/CurrencyService.js'; // FIN-017-pattern: safeParse en vez de parseFloat.
 import {
-    isGranelProduct,
+    normalizePackagingType,
     isLiquidProduct,
     parseStockInput,
     getGranelUnitMode,
@@ -72,12 +72,22 @@ export function buildProductPayload(formData, effectiveRate) {
     // COP es entero por convención; redondeamos a entero con round2 (no hay decimales).
     const finalPriceCop = priceCop && CurrencyService.safeParse(priceCop) > 0 ? round2(CurrencyService.safeParse(priceCop)) : null;
 
+    // FIX-EMPAQUE-001: el empaque normalizado manda, sin adivinanzas. Valores ajenos
+    // ('unidad', 'bulto'...) o vacíos se traducen a los 3 válidos ANTES de decidir nada,
+    // y el campo granelUnit nunca cuenta como pista (viene 'kg' por defecto del formulario).
+    const normalizedPackaging = normalizePackagingType({
+        packagingType,
+        unit: formData.unit,
+        isWeight: formData.isWeight,
+        soldByWeight: formData.soldByWeight,
+    });
+
     // Map packagingType → unit legacy
     let legacyUnit = 'unidad';
-    if (packagingType === 'lote') legacyUnit = 'paquete';
-    else if (packagingType === 'granel') legacyUnit = isLiquidProduct(granelUnit) ? 'litro' : 'kg';
+    if (normalizedPackaging === 'lote') legacyUnit = 'paquete';
+    else if (normalizedPackaging === 'granel') legacyUnit = isLiquidProduct(granelUnit) ? 'litro' : 'kg';
 
-    const isLote = packagingType === 'lote';
+    const isLote = normalizedPackaging === 'lote';
     // Para productos de tipo Suelto o Granel, también guardamos unitsPerPackage si fue
     // configurado voluntariamente (permite ajuste por bulto en StockBatchModal).
     const parsedUnitsPerPkg = unitsPerPackage ? Math.max(1, parseInt(unitsPerPackage) || 1) : 1;
@@ -94,9 +104,7 @@ export function buildProductPayload(formData, effectiveRate) {
     // GRANEL-001 / GRANEL-DUAL: Solo los productos a granel aceptan decimales en stock (hasta 3).
     // En modo gr_ml, las entradas en gramos o mililitros se convierten canónicamente a kg / Litros.
     // Todo lo demás (unidad, paquete, lote, suelto) permanece estrictamente entero.
-    const isGranel = packagingType
-        ? packagingType === 'granel'
-        : isGranelProduct({ packagingType, granelUnit, unit: legacyUnit });
+    const isGranel = normalizedPackaging === 'granel';
     let finalStock = 0;
     if (isLote && stockInLotes && parsedUnitsPerPkg > 0) {
         finalStock = round0((Number(stockInLotes) || 0) * parsedUnitsPerPkg);
@@ -162,7 +170,7 @@ export function buildProductPayload(formData, effectiveRate) {
         } : {}),
         stock: finalStock,
         unit: legacyUnit,
-        packagingType: packagingType,
+        packagingType: normalizedPackaging,
         granelUnit: isGranel ? (isLiquidProduct(granelUnit) ? 'litro' : 'kg') : null,
         unitsPerPackage: parsedUnitsPerPkg,
         sellByUnit: isLote ? sellByUnit : false,

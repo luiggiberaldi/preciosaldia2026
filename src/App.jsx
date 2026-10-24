@@ -32,6 +32,8 @@ import { useAutoLock } from './hooks/useAutoLock';
 import { useAuthStore } from './hooks/store/useAuthStore';
 import { LogOut } from 'lucide-react';
 import { purgeOldEntries } from './services/auditService';
+import { showToast } from './components/Toast';
+import { maybeRunPackagingFixMigration } from './utils/packagingFixMigration';
 import { UpdateBanner } from './components/UpdateBanner';
 import { useCloudSync } from './hooks/useCloudSync';
 import { ImagePrecacheRunner } from './hooks/useImagePrecache';
@@ -177,6 +179,17 @@ export default function App() {
 
   // Purge old audit log entries on startup
   useEffect(() => { purgeOldEntries(); }, []);
+
+  // FIX-EMPAQUE-002: corrección automática de empaque al abrir la app (una sola vez,
+  // con backup automático previo y botón "Deshacer" en Ajustes → Sistema).
+  useEffect(() => {
+    const deviceId = typeof localStorage !== 'undefined' ? localStorage.getItem('pda_device_id') : null;
+    maybeRunPackagingFixMigration({ deviceId }).then(res => {
+      if (res.ran) {
+        showToast(`Catálogo actualizado automáticamente: ${res.corregidos} producto(s) corregido(s). Puedes deshacerlo en Ajustes → Sistema.`, 'success');
+      }
+    }).catch(() => {});
+  }, []);
 
   // Cache rates whenever they update
   useEffect(() => { if (rates) cacheRates(rates); }, [rates, cacheRates]);

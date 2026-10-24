@@ -5,6 +5,7 @@ import {
     GRANEL_MODE_GR_ML,
     isGranelProduct,
     isLiquidProduct,
+    normalizePackagingType,
     kgToGrams,
     formatStockDisplay,
 } from '../utils/granel';
@@ -74,13 +75,8 @@ export function prepareProductFormState(product, effectiveRate, granelMode = get
     const currentCostBs = currentCostUsd > 0 && effectiveRate > 0 ? (currentCostUsd * effectiveRate) : (product.costBs || 0);
 
     const u = product.unit || 'unidad';
-    const isGranel = product.packagingType === 'granel' ||
-        (product.packagingType !== 'suelto' && product.packagingType !== 'lote' && (
-            isGranelProduct(product) ||
-            u === 'kg' || u === 'litro' ||
-            Boolean(product.isWeight) ||
-            Boolean(product.granelUnit)
-        ));
+    // FIX-EMPAQUE-001: el empaque manda (sin adivinanzas por granelUnit).
+    const isGranel = isGranelProduct(product);
 
     let initialStock = product.stock ?? '';
     if (isGranel && product.stock !== undefined && product.stock !== null && product.stock !== '') {
@@ -122,16 +118,10 @@ export function prepareProductFormState(product, effectiveRate, granelMode = get
         ivaMode: product.ivaRate === 0 ? 'exento' : '',
     };
 
-    // Derive packagingType from legacy unit
-    if (product.packagingType) {
-        patch.packagingType = product.packagingType;
-    } else if (u === 'paquete') {
-        patch.packagingType = 'lote';
-    } else if (isGranel) {
-        patch.packagingType = 'granel';
-    } else {
-        patch.packagingType = 'suelto';
-    }
+    // FIX-EMPAQUE-001: el empaque se normaliza al cargar — traduce valores ajenos
+    // ('unidad', 'bulto'...) y deriva los vacíos — para que el botón correcto
+    // aparezca marcado en el formulario en vez de dejar todo sin selección.
+    patch.packagingType = normalizePackagingType(product);
 
     if (isGranel || patch.packagingType === 'granel') {
         patch.granelUnit = isLiquidProduct(product) ? 'litro' : 'kg';

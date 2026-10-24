@@ -328,6 +328,11 @@ export default function ProductFormWizard({
                                 );
                             })}
                         </div>
+                        {!PACKAGING_TYPES.some(pt => pt.id === packagingType) && (
+                            <p className="mt-1.5 ml-1 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                                Sin empaque = se vende por unidad
+                            </p>
+                        )}
                     </div>
 
                     {/* IVA por producto: General (tasa de Ajustes) o Exento (0%) */}

@@ -12,6 +12,11 @@ import ConfirmModal from '../../ConfirmModal';
 import QRCode from 'qrcode';
 import { resetPOSDataToEmpty } from '../../../hooks/useCloudSync';
 import { useSecurity } from '../../../hooks/useSecurity';
+import { Modal } from '../../Modal';
+import { storageService } from '../../../utils/storageService';
+import { PRODUCTS_KEY } from '../../../utils/catalogLock';
+import { planCatalogPackagingFix, formatPackagingFixReport } from '../../../utils/granel';
+import { hasPackagingFixUndo, undoPackagingFixMigration } from '../../../utils/packagingFixMigration';
 
 export default function SettingsTabSistema({
     theme, toggleTheme,
@@ -36,6 +41,64 @@ export default function SettingsTabSistema({
     const { fixDuplicateDeviceId } = useSecurity();
     
     const qrCanvasRef = useRef(null);
+
+    // FIX-EMPAQUE-001: modo diagnóstico (dry-run) de empaque. Lee el catálogo,
+    // calcula los cambios que se aplicarían y NO escribe absolutamente nada.
+    const [packDiag, setPackDiag] = useState(null);
+    const [packDiagOpen, setPackDiagOpen] = useState(false);
+    const [packDiagLoading, setPackDiagLoading] = useState(false);
+
+    const handlePackDiag = async () => {
+        if (packDiagLoading) return;
+        triggerHaptic?.();
+        setPackDiagLoading(true);
+        try {
+            const products = (await storageService.getItem(PRODUCTS_KEY, [])) || [];
+            const cambios = planCatalogPackagingFix(products);
+            setPackDiag({ cambios, total: products.length });
+            setPackDiagOpen(true);
+        } catch (err) {
+            console.warn('[SettingsTabSistema] No se pudo generar el diagnóstico de empaque:', err);
+            showToast('No se pudo generar el diagnóstico de empaque', 'error');
+        } finally {
+            setPackDiagLoading(false);
+        }
+    };
+
+    const handlePackDiagDownload = () => {
+        if (!packDiag) return;
+        const blob = new Blob([formatPackagingFixReport(packDiag.cambios)], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `diagnostico_empaque_${new Date().toISOString().slice(0, 10)}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    // FIX-EMPAQUE-002: botón de reversión de la corrección automática de empaque.
+    // Solo aparece si hay una corrección aplicada con bitácora que deshacer.
+    const [canUndoPackFix, setCanUndoPackFix] = useState(false);
+    useEffect(() => {
+        let alive = true;
+        hasPackagingFixUndo().then(ok => { if (alive) setCanUndoPackFix(ok); }).catch(() => {});
+        return () => { alive = false; };
+    }, []);
+
+    const handleUndoPackFix = async () => {
+        const ok = window.confirm('Se devolverán los productos corregidos a su empaque anterior (solo etiquetas de empaque; stock y precios NO cambian). ¿Continuar?');
+        if (!ok) return;
+        triggerHaptic?.();
+        const result = await undoPackagingFixMigration();
+        if (result.undone > 0) {
+            setCanUndoPackFix(false);
+            showToast(`Corrección de empaque deshecha (${result.undone} producto(s))`, 'success');
+        } else {
+            showToast('No se pudo deshacer la corrección de empaque', 'error');
+        }
+    };
 
     // Corrige dos equipos que comparten el mismo ID: esta estación obtiene uno
     // propio y único, conserva sus datos y registra la licencia desde el ID nuevo.
@@ -148,6 +211,26 @@ export default function SettingsTabSistema({
                         </div>
                         <ChevronRight size={16} className="text-slate-300" />
                     </button>
+
+                    <button onClick={handlePackDiag} className="w-full flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors group active:scale-[0.98]">
+                        <div className="p-2 bg-amber-50 dark:bg-amber-900/30 rounded-lg"><FileText size={18} className="text-amber-500" /></div>
+                        <div className="text-left flex-1">
+                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Diagnóstico de Empaque</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Ver qué se corregiría. No escribe nada</p>
+                        </div>
+                        <ChevronRight size={16} className="text-slate-300" />
+                    </button>
+
+                    {canUndoPackFix && (
+                        <button onClick={handleUndoPackFix} className="w-full flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors group active:scale-[0.98]">
+                            <div className="p-2 bg-rose-50 dark:bg-rose-900/30 rounded-lg"><RotateCcw size={18} className="text-rose-500" /></div>
+                            <div className="text-left flex-1">
+                                <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Deshacer corrección de empaque</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">Devuelve los productos a su empaque anterior</p>
+                            </div>
+                            <ChevronRight size={16} className="text-slate-300" />
+                        </button>
+                    )}
                 </div>
 
                     <button
@@ -383,6 +466,39 @@ export default function SettingsTabSistema({
                     </SectionCard>
                 </div>
             )}
+
+            {/* FIX-EMPAQUE-001: diagnóstico de empaque (dry-run) */}
+            <Modal isOpen={packDiagOpen} onClose={() => setPackDiagOpen(false)} title="Diagnóstico de Empaque" size="max-w-lg">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mb-3 leading-relaxed">
+                    Modo diagnóstico: esto <strong>NO escribe nada</strong> en tus datos. Muestra lo que se corregiría al aplicar el fix de empaque (solo las etiquetas de empaque, unidad y granelUnit; nunca stock ni precios).
+                </p>
+                {packDiag && packDiag.cambios.length === 0 ? (
+                    <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">Sin cambios pendientes: todo el catálogo ya tiene un empaque válido.</p>
+                ) : (
+                    <>
+                        <p className="text-xs font-bold text-slate-600 dark:text-slate-300 mb-2">
+                            {packDiag?.cambios.length ?? 0} de {packDiag?.total ?? 0} producto(s) con cambios propuestos:
+                        </p>
+                        <div className="space-y-2 max-h-[45vh] overflow-y-auto custom-scrollbar pr-1">
+                            {packDiag?.cambios.map((c, i) => (
+                                <div key={c.id ?? i} className="p-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 rounded-xl">
+                                    <p className="text-xs font-black text-slate-700 dark:text-slate-200">{c.name}</p>
+                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                        {c.campos.map(k => `${k}: ${c.antes[k] ?? '(vacío)'} → ${c.despues[k] ?? '(limpio)'}`).join(' · ')}
+                                    </p>
+                                    {c.stockDecimalPendiente && (
+                                        <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400 mt-1">⚠ Stock con decimales: revisa la cantidad (no se redondea sola)</p>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </>
+                )}
+                <div className="flex gap-2 mt-4">
+                    <button onClick={handlePackDiagDownload} className="flex-1 py-2.5 rounded-xl bg-brand text-white font-bold text-sm active:scale-[0.98]">Descargar informe</button>
+                    <button onClick={() => setPackDiagOpen(false)} className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-sm active:scale-[0.98]">Cerrar</button>
+                </div>
+            </Modal>
         </div>
     );
 }
