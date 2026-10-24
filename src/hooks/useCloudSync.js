@@ -356,6 +356,25 @@ function stockAsOfFor(key, capturedAt) {
     return capturedAt || new Date().toISOString();
 }
 
+// ─── Proyección de sincronización del audit log ─────────────────────────────
+// La copia LOCAL de `abasto_audit_log_v1` conserva MAX_ENTRIES (15.000) y la
+// retención fiscal de 5 años de auditService; la copia SINCRONIZADA solo
+// publica las entradas más recientes (el log está ordenado «más reciente
+// primero», así que slice(0, N) son las N frescas). Medido en producción el
+// 2026-10-24: 5.743 entradas ≈ 1,78 MB — sobre el límite de ~1 MB de Realtime
+// (eventos 413) y el techo de 500 KB de syncDocBudget. Con 1.200 la copia
+// publicada queda en ~370 KB. El historial completo viaja en los respaldos
+// (cloud_backups / backup local), que no pasan por sync_documents.
+export const AUDIT_SYNC_MAX_ENTRIES = 1_200;
+
+/** Proyección por clave del payload PUBLICADO (no del valor local). */
+export function projectSyncPayload(key, value) {
+    if (key === 'abasto_audit_log_v1' && Array.isArray(value)) {
+        return value.slice(0, AUDIT_SYNC_MAX_ENTRIES);
+    }
+    return value;
+}
+
 export const pushCloudSync = async (key, value, forceUnconditional = false, allowBeforePairing = false, deviceIdOverride = null, capturedAt = null) => {
     if (!supabaseCloud) return { ok: false, skipped: true, error: 'Supabase no disponible' };
     if (isSyncingFromCloud) return { ok: false, skipped: true, error: 'Cambio remoto en aplicación' };
@@ -373,8 +392,13 @@ export const pushCloudSync = async (key, value, forceUnconditional = false, allo
     // SEC-002: jamás empujar `abasto-auth-storage` aunque accidentalmente lo pidan.
     if (key === 'abasto-auth-storage') return { ok: false, skipped: true, error: 'Documento de autenticación bloqueado' };
 
+    // Proyección por clave (audit log): el hash y el upsert ven la copia
+    // PUBLICADA, no el valor local completo — hashear el completo haría que
+    // cualquier escritura local re-publicara siempre el mismo payload recortado.
+    const syncValue = projectSyncPayload(key, value);
+
     const hashKey = LAST_PUSH_HASH_PREFIX + key;
-    const currentHash = quickHash(value);
+    const currentHash = quickHash(syncValue);
     if (!forceUnconditional && localStorage.getItem(hashKey) === currentHash) {
         return { ok: true, skipped: true, reason: 'Sin cambios' };
     }
@@ -384,7 +408,7 @@ export const pushCloudSync = async (key, value, forceUnconditional = false, allo
         return pushSalesFamilySync(value, { stampDeviceId, forceUnconditional, hashKey, currentHash });
     }
 
-    const result = await upsertSyncDocument(stampDeviceId, key, value, { stockAsOf: stockAsOfFor(key, capturedAt) });
+    const result = await upsertSyncDocument(stampDeviceId, key, syncValue, { stockAsOf: stockAsOfFor(key, capturedAt) });
     if (!result.ok) return { ok: false, skipped: false, error: result.error };
 
     // Solo confirmar el hash después de que Supabase confirmó el upsert.
@@ -432,7 +456,62 @@ async function pushSalesFamilySync(value, { stampDeviceId, forceUnconditional, h
     }
     rememberSalesSyncTrackedIds(published);
     localStorage.setItem(hashKey, currentHash);
+    // Migración perezosa completada: una vez que los shards cubren el
+    // historial, la fila legacy se retira (best-effort; nunca rompe el push).
+    await retireLegacySalesDoc(stampDeviceId);
     return { ok: true, skipped: false, updatedAt, published };
+}
+
+// Retiro del doc legacy `bodega_sales_v1` (migración perezosa completada).
+// Tras partir el historial en shards, la fila legacy queda como peso muerto:
+// ningún escritor moderno la vuelve a tocar y solo genera eventos 413 y
+// egress (en producción: 5,29 MB / 3.345 ventas). Como el plan de shards se
+// reconstruye desde la lista local COMPLETA, la unión de los docs publicados
+// cubre todo lo que la fila legacy contiene (verificado contra producción el
+// 2026-10-24: 3.345/3.345 ids presentes, 0 faltantes), así que la fila se
+// BORRA una sola vez por dispositivo. No se usa `[]`: cualquier lector lo
+// interpretaría como «vaciar todas las ventas» (semántica F3 del vaciado
+// total). Requiere la política `device_delete_own_sync_doc` (migración
+// 20261024); sin ella RLS filtra el delete y se reintenta más tarde.
+const LEGACY_RETIRED_FLAG = 'pda_sales_legacy_retired_v1';
+const LEGACY_RETIRED_LAST_TRY_KEY = 'pda_sales_legacy_retire_try_v1';
+const LEGACY_RETIRED_RETRY_MS = 24 * 60 * 60 * 1000;
+
+async function retireLegacySalesDoc(stampDeviceId) {
+    try {
+        if (localStorage.getItem(LEGACY_RETIRED_FLAG)) return;
+        const lastTry = Date.parse(localStorage.getItem(LEGACY_RETIRED_LAST_TRY_KEY) || '') || 0;
+        if (lastTry && Date.now() - lastTry < LEGACY_RETIRED_RETRY_MS) return;
+        localStorage.setItem(LEGACY_RETIRED_LAST_TRY_KEY, new Date().toISOString());
+
+        const table = supabaseCloud?.from?.('sync_documents');
+        if (typeof table?.delete !== 'function') return;
+        const { data: deleted, error } = await table
+            .delete()
+            .eq('device_id', stampDeviceId)
+            .eq('doc_id', SALES_SYNC_BASE_KEY)
+            .select('id');
+        if (error) {
+            console.warn('[CloudSync] No se pudo retirar el doc legacy de ventas:', error.message || error);
+            return;
+        }
+        if (Array.isArray(deleted) && deleted.length > 0) {
+            localStorage.setItem(LEGACY_RETIRED_FLAG, '1');
+            return;
+        }
+        // 0 filas borradas: o la fila ya no existe (retirada por otro camino) o
+        // RLS la filtró. Confirmar la ausencia antes de dar el retiro por bueno;
+        // si sigue ahí, el reintento vence en 24 h.
+        if (typeof table?.select !== 'function') return;
+        const chain = table.select('id').eq('device_id', stampDeviceId).eq('doc_id', SALES_SYNC_BASE_KEY);
+        const { data: remaining, error: readError } = await (chain.limit ? chain.limit(1) : chain);
+        if (!readError && Array.isArray(remaining) && remaining.length === 0) {
+            localStorage.setItem(LEGACY_RETIRED_FLAG, '1');
+        }
+    } catch (error) {
+        // Best-effort: el retiro nunca rompe la publicación de ventas.
+        console.warn('[CloudSync] No se pudo retirar el doc legacy de ventas:', error?.message || error);
+    }
 }
 
 async function upsertSyncDocument(stampDeviceId, docId, value, { stockAsOf = null } = {}) {

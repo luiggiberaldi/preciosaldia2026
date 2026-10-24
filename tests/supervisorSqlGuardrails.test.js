@@ -12,9 +12,20 @@ const inventoryBatchV2Migration = readFileSync('supabase/migrations/20261016_sup
 const commandStateMachineMigration = readFileSync('supabase/migrations/20261016110000_supervisor_command_state_machine.sql', 'utf8');
 const activeTokenIndexMigration = readFileSync('supabase/migrations/20261022_device_pairings_active_token_index.sql', 'utf8');
 const triggerUserShiftMigration = readFileSync('supabase/migrations/20261022_supervisor_command_trigger_user_shift.sql', 'utf8');
+const deviceDeletePolicyMigration = readFileSync('supabase/migrations/20261024_sync_documents_device_delete_policy.sql', 'utf8');
 const commandReceiver = readFileSync('src/hooks/useRemoteCommands.js', 'utf8');
 
 describe('Supervisor SQL guardrails', () => {
+    it('el retiro del doc legacy de ventas borra solo filas propias del dispositivo', () => {
+        expect(deviceDeletePolicyMigration).toContain('CREATE POLICY "device_delete_own_sync_doc"');
+        expect(deviceDeletePolicyMigration).toContain('FOR DELETE');
+        expect(deviceDeletePolicyMigration).toContain('is_own_device_row(device_id)');
+        expect(deviceDeletePolicyMigration).not.toMatch(/GRANT\s+[^;]*\bTO\s+anon\b/i);
+        expect(deviceDeletePolicyMigration).not.toMatch(/USING\s*\(\s*true\s*\)/i);
+        // Nunca un delete ciego de la tabla completa.
+        expect(deviceDeletePolicyMigration).not.toMatch(/DELETE\s+FROM\s+public\.sync_documents\s*;/i);
+    });
+
     it('no concede acceso directo a anon sobre datos del Supervisor', () => {
         expect(sql).not.toMatch(/GRANT\s+[^;]*\bTO\s+anon\b/i);
         expect(sql).toMatch(/REVOKE\s+ALL\s+ON\s+TABLE\s+public\.device_pairings\s+FROM\s+anon/i);

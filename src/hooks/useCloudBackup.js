@@ -5,6 +5,7 @@ import { runWithoutEco } from '../utils/syncFlags';
 import { compressString, isCompressionSupported } from '../utils/compression';
 import { describeCloudError, isRlsBlockedError } from '../utils/cloudError';
 import { buildCloudBackupsRow, buildSyncDocumentRow } from '../config/cloudSchema';
+import { SALES_SYNC_BASE_KEY, buildSalesSyncPlan, projectSyncPayload } from './useCloudSync';
 import { ensureDeviceSessionRegistered } from '../utils/deviceIdentity';
 import { ensureSupervisorSession } from '../services/supervisorAuth';
 import { relayUploadBackup, relayFetchBackup } from '../utils/backupRelay';
@@ -119,11 +120,26 @@ export function useCloudBackup({
         try {
             const syncPayloads = [];
             for (const [key, value] of Object.entries(backupData.data.idb || {})) {
+                // Misma política que el push normal: la familia de ventas entra
+                // por shards (el doc base monolítico de 5+ MB supera el límite
+                // de Realtime y dispara eventos 413) y el audit log por su
+                // proyección recortada (copia local completa intacta).
+                if (key === SALES_SYNC_BASE_KEY) {
+                    for (const slice of buildSalesSyncPlan(value)) {
+                        syncPayloads.push(buildSyncDocumentRow({
+                            deviceId,
+                            collection: 'store',
+                            docId: slice.docId,
+                            data: { payload: slice.records },
+                        }));
+                    }
+                    continue;
+                }
                 syncPayloads.push(buildSyncDocumentRow({
                     deviceId,
                     collection: 'store',
                     docId: key,
-                    data: { payload: value },
+                    data: { payload: projectSyncPayload(key, value) },
                 }));
             }
             for (const [key, value] of Object.entries(backupData.data.ls || {})) {
