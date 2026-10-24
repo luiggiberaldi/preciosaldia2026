@@ -12,6 +12,7 @@ import {
     getSupervisorRecoveryIntervalMs,
     shouldRunSupervisorRecovery,
     MONITOR_CONNECTED_SWEEP_INTERVAL_MS,
+    getMonitorReconnectDelayMs,
     shouldRunMonitorConnectedSweep,
     getChangedSyncDocumentIds,
     shouldPullFullSync,
@@ -49,7 +50,9 @@ import { isMonitorPairingActive, readPairingRow } from '../services/supervisorPa
 localforage.config({ name: 'BodegaApp', storeName: 'bodega_app_data' });
 
 const SUBSCRIBE_TIMEOUT_MS = 8000;
-const RECONNECT_DELAYS_MS = [1000, 3000, 10000, 30000];
+// Fase 2 (egress): los delays del reconnect ya no son la tabla fija
+// [1s, 3s, 10s, 30s]; el backoff exponencial con jitter vive en
+// getMonitorReconnectDelayMs (supervisorSyncService).
 // Un solo pull de respaldo cubre una ráfaga de eventos 413 (la caja empuja
 // productos y ventas juntos) sin montar una tormenta de selects.
 const OVERSIZE_PULL_THROTTLE_MS = 3000;
@@ -129,8 +132,7 @@ export function useMonitorSync(pairedDeviceId) {
 
     const scheduleReconnect = (lifecycleId = lifecycleRef.current) => {
         if (!isActiveLifecycle(lifecycleId) || !pairedDeviceId || reconnectTimerRef.current) return;
-        const attempt = Math.min(reconnectAttemptRef.current, RECONNECT_DELAYS_MS.length - 1);
-        const delay = RECONNECT_DELAYS_MS[attempt];
+        const delay = getMonitorReconnectDelayMs(reconnectAttemptRef.current);
         reconnectAttemptRef.current += 1;
         reconnectTimerRef.current = setTimeout(() => {
             reconnectTimerRef.current = null;
@@ -558,6 +560,7 @@ export function useMonitorSync(pairedDeviceId) {
         if (!shouldRunMonitorConnectedSweep({
             realtimeConnected: Boolean(subscriptionRef.current),
             pullInFlight: Boolean(recoveryPullInFlightRef.current),
+            documentVisible: document.visibilityState === 'visible',
         })) return;
         const sweep = pullDocumentsRef.current?.(lifecycleId, { source: 'sweep' });
         if (sweep?.catch) {

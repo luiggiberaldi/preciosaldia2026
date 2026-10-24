@@ -12,6 +12,9 @@ import {
     getSupervisorRecoveryIntervalMs,
     shouldRunSupervisorRecovery,
     MONITOR_CONNECTED_SWEEP_INTERVAL_MS,
+    MONITOR_RECONNECT_BASE_DELAY_MS,
+    MONITOR_RECONNECT_MAX_DELAY_MS,
+    getMonitorReconnectDelayMs,
     shouldRunMonitorConnectedSweep,
     getChangedSyncDocumentIds,
     withSyncRetry,
@@ -94,16 +97,43 @@ describe('Supervisor sync contract', () => {
         expect(shouldRunSupervisorRecovery({ recoveryInFlight: true, now: 600_000 })).toBe(false);
     });
 
-    it('el barrido conectado solo corre con Realtime vivo y sin pull en vuelo', () => {
+    it('el barrido conectado solo corre con Realtime vivo, sin pull en vuelo y con la pestaña visible', () => {
         expect(shouldRunMonitorConnectedSweep({ realtimeConnected: true })).toBe(true);
         expect(shouldRunMonitorConnectedSweep({ realtimeConnected: true, pullInFlight: true })).toBe(false);
         expect(shouldRunMonitorConnectedSweep({ realtimeConnected: false })).toBe(false);
         expect(shouldRunMonitorConnectedSweep({})).toBe(false);
+        // Fase 2 (egress): la pestaña oculta suspende el barrido por completo.
+        expect(shouldRunMonitorConnectedSweep({ realtimeConnected: true, documentVisible: false })).toBe(false);
+        expect(shouldRunMonitorConnectedSweep({ realtimeConnected: true, pullInFlight: true, documentVisible: false })).toBe(false);
     });
 
     it('el barrido conectado es más frecuente que la recuperación degradada y distinto del barrido de publicación (30 s)', () => {
-        expect(MONITOR_CONNECTED_SWEEP_INTERVAL_MS).toBe(45_000);
+        // Fase 3 (egress): espaciado de 45 s a 90 s.
+        expect(MONITOR_CONNECTED_SWEEP_INTERVAL_MS).toBe(90_000);
         expect(MONITOR_CONNECTED_SWEEP_INTERVAL_MS).toBeLessThan(getSupervisorRecoveryIntervalMs());
+        expect(MONITOR_CONNECTED_SWEEP_INTERVAL_MS).not.toBe(30_000);
+    });
+
+    it('el reconnect del monitor usa backoff exponencial con jitter acotado', () => {
+        // Sin jitter: crecimiento exponencial desde la base hasta el máximo.
+        const noJitter = [0, 1, 2, 3, 4, 5, 6].map(a => getMonitorReconnectDelayMs(a, () => 0));
+        expect(noJitter).toEqual([5_000, 10_000, 20_000, 40_000, 60_000, 60_000, 60_000]);
+        expect(Math.max(...noJitter)).toBe(MONITOR_RECONNECT_MAX_DELAY_MS);
+
+        // Con jitter: nunca supera el máximo ni baja de la base, y el jitter
+        // crece con el intento (desincroniza reintentos tras un corte).
+        for (const attempt of [0, 1, 2, 4, 8]) {
+            const low = getMonitorReconnectDelayMs(attempt, () => 0);
+            const high = getMonitorReconnectDelayMs(attempt, () => 0.999999);
+            expect(low).toBeGreaterThanOrEqual(MONITOR_RECONNECT_BASE_DELAY_MS);
+            expect(high).toBeLessThanOrEqual(MONITOR_RECONNECT_MAX_DELAY_MS);
+            expect(high).toBeGreaterThanOrEqual(low);
+        }
+        expect(getMonitorReconnectDelayMs(0, () => 0.999999)).toBeLessThan(2 * MONITOR_RECONNECT_BASE_DELAY_MS);
+
+        // Un intento negativo o inválido se trata como el primer intento.
+        expect(getMonitorReconnectDelayMs(-3, () => 0)).toBe(MONITOR_RECONNECT_BASE_DELAY_MS);
+        expect(getMonitorReconnectDelayMs('x', () => 0)).toBe(MONITOR_RECONNECT_BASE_DELAY_MS);
     });
 
     it('solo recupera cuando el intervalo de fallback ya venció', () => {

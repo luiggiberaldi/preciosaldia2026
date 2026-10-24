@@ -76,6 +76,28 @@ export function getSupervisorRecoveryIntervalMs() {
     return 5 * 60_000;
 }
 
+// Fase 2 del plan de egress: el reconnect del monitor pasó de la tabla fija
+// [1s, 3s, 10s, 30s] a backoff exponencial con jitter (la fórmula del plan, con
+// la forma de getRecoveryDelayMs: el total jamás supera el máximo ni baja de la
+// base). El jitter desincroniza los reintentos de varios monitores tras un
+// mismo corte (sin tormenta coordinada de reconexiones). Base 5 s y tope 60 s
+// según el plan; la recuperación instantánea por red/visibilidad no usa este
+// backoff (handleOnline/handleVisibilityChange reinician el intento).
+export const MONITOR_RECONNECT_BASE_DELAY_MS = 5_000;
+export const MONITOR_RECONNECT_MAX_DELAY_MS = 60_000;
+
+/**
+ * Delay exponencial con jitter completo para el reconnect del monitor.
+ * `random` es inyectable para tests. attempt 0 → [base, 1.5·base); crece hasta
+ * el máximo. Nunca baja de la base ni supera el máximo.
+ */
+export function getMonitorReconnectDelayMs(attempt, random = Math.random) {
+    const safeAttempt = Math.max(0, Math.floor(Number(attempt) || 0));
+    const exp = Math.min(MONITOR_RECONNECT_MAX_DELAY_MS, MONITOR_RECONNECT_BASE_DELAY_MS * (2 ** safeAttempt));
+    const jitter = Math.floor(random() * exp * 0.5);
+    return Math.min(MONITOR_RECONNECT_MAX_DELAY_MS, exp + jitter);
+}
+
 /**
  * Barrido de respaldo del monitor con Realtime "conectado" — el hueco
  * simétrico al del receptor de la caja: un canal que dice SUBSCRIBED pero no
@@ -85,9 +107,10 @@ export function getSupervisorRecoveryIntervalMs() {
  * pide únicamente para documentos realmente nuevos), así que con el eco al día
  * la consulta queda vacía. Más frecuente que la recuperación degradada (5 min)
  * y distinto del barrido de publicación de la caja (30 s) para no confundir
- * contratos de timer.
+ * contratos de timer. Fase 3 del plan de egress: espaciado a 90 s (antes 45 s) —
+ * Realtime ya entrega en vivo y el barrido es solo red de seguridad.
  */
-export const MONITOR_CONNECTED_SWEEP_INTERVAL_MS = 45_000;
+export const MONITOR_CONNECTED_SWEEP_INTERVAL_MS = 90_000;
 
 /**
  * El barrido conectado solo corre con Realtime vivo y sin un pull ya en vuelo:
@@ -97,8 +120,12 @@ export const MONITOR_CONNECTED_SWEEP_INTERVAL_MS = 45_000;
 export function shouldRunMonitorConnectedSweep({
     realtimeConnected,
     pullInFlight = false,
+    documentVisible = true,
 } = {}) {
-    return Boolean(realtimeConnected) && !pullInFlight;
+    // Fase 2 (egress): con la pestaña oculta el barrido se suspende por
+    // completo; al volver a la vista el hook barre al instante, así que los
+    // eventos de un corte se recuperan sin dejar consultas corriendo de más.
+    return Boolean(realtimeConnected) && !pullInFlight && documentVisible !== false;
 }
 
 export function shouldRunSupervisorRecovery({
@@ -264,6 +291,9 @@ export default {
     shouldRunSupervisorRecovery,
     MONITOR_CONNECTED_SWEEP_INTERVAL_MS,
     shouldRunMonitorConnectedSweep,
+    MONITOR_RECONNECT_BASE_DELAY_MS,
+    MONITOR_RECONNECT_MAX_DELAY_MS,
+    getMonitorReconnectDelayMs,
     getChangedSyncDocumentIds,
     MONITOR_FULL_SYNC_AT_KEY,
     FULL_SYNC_INTERVAL_MS,

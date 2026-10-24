@@ -847,7 +847,10 @@ export function useRemoteCommands(deviceId, enabled = true) {
         // vacía); Realtime sigue siendo la entrega inmediata.
         let sweepInFlight = false;
         const sweepTimer = setInterval(() => {
-            if (disposed || sweepInFlight || recoveryInFlight || !channel || channelStatus !== 'SUBSCRIBED') return;
+            // Fase 2 (egress): con la pestaña oculta el barrido se suspende por
+            // completo; al volver, handleVisibilityChange barre al instante.
+            if (disposed || sweepInFlight || recoveryInFlight || document.visibilityState !== 'visible'
+                || !channel || channelStatus !== 'SUBSCRIBED') return;
             sweepInFlight = true;
             loadPendingCommands()
                 .catch(() => {})

@@ -337,10 +337,11 @@ export const RECOVERY_MAX_DELAY_MS = 20_000;
 // restringida, eventos perdidos durante un corte) no puede dejar órdenes del
 // supervisor aplicándose solo tras recargar la caja. Una consulta ligera de
 // órdenes pendientes por intervalo (normalmente vacía) acota la espera sin
-// tocar el camino rápido: Realtime sigue siendo la entrega inmediata. Con el
-// TTL extendido de inventario/productos en 5 min, un barrido de 15 s jamás
-// deja una orden vencer sin aplicar.
-export const RECEIVER_SWEEP_INTERVAL_MS = 15_000;
+// tocar el camino rápido: Realtime sigue siendo la entrega inmediata. Fase 3
+// del plan de egress: espaciado a 60 s (antes 15 s) — con Realtime SUBSCRIBED
+// el barrido es solo red de seguridad, y 60 s sigue muy por debajo del TTL de
+// 5 min de inventario/productos (ninguna orden vence sin aplicar).
+export const RECEIVER_SWEEP_INTERVAL_MS = 60_000;
 
 /**
  * Delay exponencial con jitter completo. `random` es inyectable para tests.

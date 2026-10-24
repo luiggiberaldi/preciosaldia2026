@@ -101,6 +101,7 @@ describe('useMonitorSync · barrido de respaldo con Realtime conectado', () => {
     afterEach(async () => {
         await act(async () => root?.unmount());
         container?.remove();
+        delete document.visibilityState;
         vi.useRealTimers();
     });
 
@@ -167,6 +168,23 @@ describe('useMonitorSync · barrido de respaldo con Realtime conectado', () => {
         await flush();
         expect(h.selectCalls.length).toBe(selectsAfterMount);
 
+        Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+        await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+        await flush();
+        expect(h.selectCalls.length).toBe(selectsAfterMount + 1);
+    });
+
+    it('con la pestaña oculta el barrido periódico se suspende (Fase 2 egress)', async () => {
+        await mountMonitor();
+        const selectsAfterMount = h.selectCalls.length;
+
+        Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+        await act(async () => { vi.advanceTimersByTime(MONITOR_CONNECTED_SWEEP_INTERVAL_MS * 2); });
+        await flush();
+        // Ni una consulta mientras la pestaña está en segundo plano…
+        expect(h.selectCalls.length).toBe(selectsAfterMount);
+
+        // …y al volver a la vista se barre al instante (no se pierde nada).
         Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
         await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
         await flush();

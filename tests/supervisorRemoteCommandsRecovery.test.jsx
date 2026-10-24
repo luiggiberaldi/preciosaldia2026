@@ -125,6 +125,25 @@ describe('useRemoteCommands: recuperacion con Realtime degradado', () => {
         expect(h.state.fetchCalls).toBe(baseline + 2);
     });
 
+    it('con la pestaña oculta el barrido de respaldo se suspende (Fase 2 egress)', async () => {
+        await mount();
+        await setStatus('SUBSCRIBED');
+        const baseline = h.state.fetchCalls;
+
+        Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+        await act(async () => { vi.advanceTimersByTime(RECEIVER_SWEEP_INTERVAL_MS * 2); });
+        await flush();
+        // Ni una consulta mientras la pestaña está en segundo plano; al volver
+        // a la vista, handleVisibilityChange barre al instante (test aparte).
+        expect(h.state.fetchCalls).toBe(baseline);
+    });
+
+    it('el barrido del receptor está espaciado a 60 s (Fase 3 egress)', () => {
+        // Pin de contrato de timer: 15 s → 60 s. Sigue por debajo del TTL de
+        // 5 min de inventario/productos, así ninguna orden vence sin aplicar.
+        expect(RECEIVER_SWEEP_INTERVAL_MS).toBe(60_000);
+    });
+
     it('CHANNEL_ERROR programa una consulta de recuperacion y no se duplica', async () => {
         await mount();
         const baseline = h.state.fetchCalls;
