@@ -408,6 +408,12 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 stockAfter: adjustment.stockAfter,
                 acknowledgedEarly,
                 status: publishOk ? 'applied' : 'applied_with_warnings',
+                // H4 (auditoría 2026-10-22): todo ACK «applied_with_warnings»
+                // del lote explica LA reserva en su payload — nunca un ámbar
+                // mudo. Sin confirmación de publicación, el barrido la resuelve.
+                ...(publishOk ? {} : {
+                    warnings: ['Publicación a la nube pendiente; el barrido la resolverá'],
+                }),
             };
         };
 

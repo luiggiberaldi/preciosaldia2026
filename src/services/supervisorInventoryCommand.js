@@ -658,6 +658,9 @@ export async function applySupervisorInventoryBatchTransaction({
             ...result,
             commandId,
             status: 'applied_with_warnings',
+            // H4 (auditoría 2026-10-22): el ACK «con reservas» del lote lleva la
+            // reserva explicada en su payload, igual que el del producto.
+            warnings: ['Publicación a la nube pendiente; el barrido la resolverá'],
             pendingPublish: { commandId, keys: pushed.failedKeys, error: pushed.error },
         };
     }

@@ -77,7 +77,7 @@ vi.mock('../src/services/supervisorUserCommand', () => ({ applySupervisorUserCom
 
 import { useRemoteCommands } from '../src/hooks/useRemoteCommands';
 import { buildProductRevision } from '../src/services/supervisorProductCommand';
-import { applySupervisorInventoryBatchTransaction } from '../src/services/supervisorInventoryCommand';
+import { applySupervisorInventoryBatchTransaction, retryInventoryPublish } from '../src/services/supervisorInventoryCommand';
 
 function Harness({ deviceId = 'device-12345678' }) {
     useRemoteCommands(deviceId, true);
@@ -297,5 +297,37 @@ describe('Regresión auditoría: el ACK nunca miente (H1/H2/H3)', () => {
         expect(remembered).toMatchObject({ status: 'applied' });
         // La reserva explicada viaja en el payload del ACK.
         expect(remembered.ackPayload.warnings?.join(' ')).toMatch(/Confirmación temprana/);
+    });
+
+    it('H4: el ACK final del lote con publicación fallida explica la reserva (nunca un ámbar mudo)', async () => {
+        // Sin confirmación temprana, el resultado final del lote es el que viaja:
+        // un fallo de publicación deja «applied_with_warnings» CON la reserva
+        // explicada en el payload del ACK — el mismo contrato que el producto.
+        applySupervisorInventoryBatchTransaction.mockImplementation(async () => ({
+            unitsDelta: 5, stockBefore: 10, stockAfter: 15, status: 'applied',
+        }));
+        retryInventoryPublish.mockImplementation(async () => ({ retried: false, ok: false }));
+
+        await mountHarness();
+        const insert = h.state.commandHandlers.find(handler => handler);
+        await act(async () => {
+            insert({
+                new: {
+                    command_id: 'cmd-batch-2',
+                    command_type: 'supervisor.inventory.batch.adjust',
+                    target_device_id: 'device-12345678',
+                    actor_auth_id: 'auth-1',
+                    status: 'received',
+                    issued_at: new Date().toISOString(),
+                    expires_at: new Date(Date.now() + 60000).toISOString(),
+                    payload: { direction: 'ingreso', lines: [] },
+                },
+            });
+        });
+        await flush();
+
+        const remembered = rememberedCommand('cmd-batch-2');
+        expect(remembered).toMatchObject({ status: 'applied_with_warnings' });
+        expect(remembered.ackPayload.warnings?.join(' ')).toMatch(/Publicación a la nube pendiente/);
     });
 });

@@ -85,9 +85,9 @@ Plan completo: [2026-10-20-plan-fix-incidente-senales-y-codigo-vinculacion.md](.
 
 | Fase | Corrige | Estado |
 |---|---|---|
-| 1 | Código de vinculación sin esperar la subida pesada | Pendiente |
-| 2 | Ningún error del servidor en silencio | Pendiente |
-| 3 | Pantalla de Salud + desfase de reloj | Pendiente |
+| 1 | Código de vinculación sin esperar la subida pesada | ✅ Cerrada (2026-10-24) — `createPairingToken` emite el token tras el RPC y el snapshot pesado corre después en background con reintento ([supervisorPairingService.js](../../src/services/supervisorPairingService.js) `publishSnapshotInBackground`; sellado en [supervisorPairing.test.js](../../tests/supervisorPairing.test.js) y [supervisorLifecycle.test.js](../../tests/supervisorLifecycle.test.js)) |
+| 2 | Ningún error del servidor en silencio | ✅ Cerrada (2026-10-24) — toda respuesta `ok:false` y todo ACK terminal triste muestra el texto crudo del servidor, con «último comando → estado (error)» en el diagnóstico ([supervisorCommandDiagnostics.js](../../src/services/supervisorCommandDiagnostics.js); regla y call-sites sellados en [supervisorOutcomeNotices.test.jsx](../../tests/supervisorOutcomeNotices.test.jsx)) |
+| 3 | Pantalla de Salud + desfase de reloj | ✅ Cerrada (2026-10-24) — sección «Salud del sistema» en Ajustes con semáforo de desfase (verde <30 s, ámbar 30 s–2 min, rojo >2 min con acción) sobre 3 lecturas medianas, sin RPC nuevas ([SystemHealthPanel.jsx](../../src/components/Settings/SystemHealthPanel.jsx), [systemHealthService.js](../../src/services/systemHealthService.js); [systemHealth.test.jsx](../../tests/systemHealth.test.jsx)) |
 | 4 | Adelgazar documentos (4.5 MB → por periodos) | Pendiente |
 | 5 | Contrato único de payload + códigos de error | Pendiente |
 | 6 | Identidad visible + candados en `device_pairings` | Pendiente |

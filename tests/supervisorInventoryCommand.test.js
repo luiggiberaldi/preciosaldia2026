@@ -315,6 +315,8 @@ describe('Supervisor inventory batch command', () => {
 
         expect(result.status).toBe('applied_with_warnings');
         expect(result.commandId).toBe('command-rollback-1');
+        // H4: el «con reservas» del lote explica la reserva en su payload.
+        expect(result.warnings?.join(' ')).toMatch(/Publicación a la nube pendiente/);
         expect(state.bodega_products_v1[0].stock).toBe(58);
         expect(state.bodega_sales_v1).toHaveLength(2);
         expect(result.pendingPublish).toEqual(expect.objectContaining({
