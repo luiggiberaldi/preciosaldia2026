@@ -33,7 +33,9 @@ REVOKE INSERT, UPDATE ON public.notifications FROM service_role;
 --   {postgres=arwdDxtm/postgres, anon=arwdDxtm/postgres,
 --    authenticated=arwdDxtm/postgres, service_role=arwdDxtm/postgres}
 
-GRANT INSERT, UPDATE ON public.notifications TO service_role;
+-- GRANT INSERT, UPDATE ON public.notifications TO service_role;
+-- (Comentado a propósito: descomentar SOLO al revertir. Este archivo debe poder
+--  ejecutarse entero sin restaurar la escritura.)
 
 -- Verificación del revert (deben devolver true/true):
 --   SELECT has_table_privilege('service_role', 'public.notifications', 'INSERT') AS ins,
