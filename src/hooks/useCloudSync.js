@@ -214,6 +214,222 @@ function rememberSalesSyncTrackedIds(ids) {
     localStorage.setItem(SALES_SYNC_TRACKING_KEY, JSON.stringify([...merged]));
 }
 
+// ─── Fase 5: familia bodega_products_v1 por buckets de hash ─────────────────
+// docs/plans/2026-10-21-plan-adelgazar-bodega-products-por-shards.md: el doc
+// monolítico de productos (~1.32 MB en el backup del 2026-10-19) se publica
+// partido en 32 buckets fijos por hash del `id` (inmutable → derivable en
+// cualquier dispositivo; NO por categoría, que es un campo mutable):
+//   `bodega_products_v1:b<2 hex>` (`:b00` … `:b1f`).
+// Un doc = una franja COMPLETA del bucket, en orden canónico por id. La
+// semántica del lector es REEMPLAZO DE FRANJA (no unión como ventas): los
+// datos son entidades mutables y borrables y el borrado debe propagarse. El
+// legacy `bodega_products_v1` se congela (migración perezosa M1: no se
+// reescribe más que para tumbas de vaciado) y se mergea con unión "lo local
+// gana"; `[]` en el legacy limpia TODO, `[]` en un bucket limpia esa franja.
+export const PRODUCTS_SYNC_BASE_KEY = 'bodega_products_v1';
+// Cota dura por bucket (gate del escritor): un bucket sobre techo significa que
+// la partición 32 se quedó corta y toca re-bucketizar (§2/§7 del plan), no
+// publicar un doc que volvería a romper Realtime (413).
+export const PRODUCTS_SYNC_MAX_DOC_BYTES = SYNC_DOC_BUDGET_BYTES;
+// Documentos de productos publicados alguna vez por este equipo: el vaciado
+// total debe tumbearlos a todos (espejo de SALES_SYNC_TRACKING_KEY).
+export const PRODUCTS_SYNC_TRACKING_KEY = 'pda_products_sync_docs_v1';
+export const PRODUCTS_SYNC_BUCKET_COUNT = 32;
+
+// fnv1a32: hash estable de 32 bits, idéntico en escritor y lector (el bucket de
+// un producto debe derivarse igual en cualquier dispositivo, sin estado).
+function fnv1a32(str) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < str.length; i += 1) {
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 0x01000193);
+    }
+    return h >>> 0;
+}
+
+/** Bucket fijo (0-31) de un producto, derivado SOLO de su `id`. */
+export function productBucketOf(id) {
+    return fnv1a32(String(id)) & (PRODUCTS_SYNC_BUCKET_COUNT - 1);
+}
+
+/** Doc id del bucket (`bodega_products_v1:b00` … `:b1f`). */
+export function productsDocIdFor(bucket) {
+    return `${PRODUCTS_SYNC_BASE_KEY}:b${Number(bucket).toString(16).padStart(2, '0')}`;
+}
+
+export function isProductsSyncDocId(docId) {
+    return docId === PRODUCTS_SYNC_BASE_KEY
+        || (typeof docId === 'string' && docId.startsWith(`${PRODUCTS_SYNC_BASE_KEY}:`));
+}
+
+/** Bucket de un doc de la familia; null si no es un doc de bucket (`:bNN`). */
+export function parseProductsSyncDocId(docId) {
+    if (typeof docId !== 'string' || docId === PRODUCTS_SYNC_BASE_KEY) return null;
+    const rest = docId.slice(PRODUCTS_SYNC_BASE_KEY.length + 1);
+    const match = rest.match(/^b([0-9a-f]{2})$/);
+    if (!match) return null;
+    const bucket = Number.parseInt(match[1], 16);
+    return bucket < PRODUCTS_SYNC_BUCKET_COUNT ? bucket : null;
+}
+
+function compareProductsById(a, b) {
+    const ia = String(a?.id ?? '');
+    const ib = String(b?.id ?? '');
+    return ia < ib ? -1 : ia > ib ? 1 : 0;
+}
+
+/**
+ * Parte el catálogo en documentos por bucket de hash. Un doc = la franja
+ * completa del bucket, en orden canónico por id (round-trip sin pérdidas ni
+ * duplicados: cada producto cae exactamente en un bucket).
+ */
+export function buildProductsSyncPlan(products) {
+    const list = Array.isArray(products) ? products : [];
+    const byBucket = new Map();
+    for (const record of list) {
+        const bucket = productBucketOf(record?.id);
+        if (!byBucket.has(bucket)) byBucket.set(bucket, []);
+        byBucket.get(bucket).push(record);
+    }
+    return [...byBucket.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([bucket, records]) => {
+            const sorted = [...records].sort(compareProductsById);
+            return {
+                docId: productsDocIdFor(bucket),
+                bucket,
+                records: sorted,
+                bytes: JSON.stringify(sorted).length + 1,
+            };
+        });
+}
+
+/**
+ * Merge de un documento de la familia de productos en el catálogo local.
+ *  - doc legacy: unión con "lo local gana" (histórico congelado; nunca pisa).
+ *    `skipBuckets` (franjas con doc de bucket aplicado) se excluyen de la
+ *    unión: el bucket es la autoridad de SU franja y el legacy congelado no
+ *    puede resucitar un producto borrado que su bucket ya no trae. `[]` limpia
+ *    TODO (semántica F3 del snapshot vacío publicable).
+ *  - doc de bucket: REEMPLAZO DE FRANJA — sustituye exactamente los ids del
+ *    bucket por el payload entrante, así el borrado se propaga. `[]` limpia
+ *    SOLO esa franja (tombstone del bucket).
+ * Payload no-arreglo → no-op (devuelve el local tal cual).
+ */
+export function mergeProductsSyncDoc(localProducts, docId, payload, { skipBuckets = [] } = {}) {
+    const local = Array.isArray(localProducts) ? localProducts : [];
+    if (!Array.isArray(payload)) return local;
+
+    if (docId === PRODUCTS_SYNC_BASE_KEY) {
+        if (payload.length === 0) return [];
+        const skip = new Set(skipBuckets);
+        const localIds = new Set(local.map((p) => p?.id));
+        return [
+            ...local,
+            ...payload.filter((p) => !localIds.has(p?.id) && !skip.has(productBucketOf(p?.id))),
+        ];
+    }
+
+    const bucket = parseProductsSyncDocId(docId);
+    if (bucket === null) return local;
+
+    const withoutStripe = local.filter((p) => productBucketOf(p?.id) !== bucket);
+    return payload.length === 0 ? withoutStripe : [...withoutStripe, ...payload];
+}
+
+function readProductsSyncTrackedIds() {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(PRODUCTS_SYNC_TRACKING_KEY) || '[]');
+        return Array.isArray(parsed) ? parsed.filter((id) => isProductsSyncDocId(id)) : [];
+    } catch {
+        return [];
+    }
+}
+
+function rememberProductsSyncTrackedIds(ids) {
+    const merged = new Set([...readProductsSyncTrackedIds(), ...ids.filter((id) => isProductsSyncDocId(id))]);
+    localStorage.setItem(PRODUCTS_SYNC_TRACKING_KEY, JSON.stringify([...merged]));
+}
+
+/**
+ * Franjas cuyo doc de bucket YA se aplicó en este equipo (su watermark
+ * persiste). El legacy congelado no debe re-añadir sus ids: el bucket es la
+ * autoridad de SU franja y así el borrado se propaga sin importar el orden de
+ * aplicación de los docs en un pull inicial.
+ */
+function readAppliedProductsStripeBuckets() {
+    const buckets = [];
+    for (let bucket = 0; bucket < PRODUCTS_SYNC_BUCKET_COUNT; bucket += 1) {
+        const docId = productsDocIdFor(bucket);
+        if (localStorage.getItem(getSyncMetadataKey(docId)) != null) buckets.push(bucket);
+    }
+    return buckets;
+}
+
+/**
+ * Baseline del catálogo (plan de stock delta, Fase 5) por franjas: cada bucket
+ * guarda SU `stockAsOf` en `stripeAsOf` y el legacy el suyo en `stockAsOf`.
+ * Al aplicar un doc de la familia, el bucket es la autoridad de SU franja
+ * (reemplazo, también con `[]` = franja vacía) y queda registrado para que el
+ * legacy congelado no resucite sus ids. `[]` en el legacy limpia TODO.
+ */
+export function applyProductsDocToBaseline(baseline, docId, payload, { stockAsOf = null } = {}) {
+    const current = baseline && typeof baseline === 'object' && Array.isArray(baseline.products)
+        ? baseline
+        : { products: [], stockAsOf: null, stripeAsOf: {} };
+    if (!Array.isArray(payload)) return current;
+    const stripeAsOf = { ...(current.stripeAsOf || {}) };
+
+    if (docId === PRODUCTS_SYNC_BASE_KEY) {
+        if (payload.length === 0) return { products: [], stockAsOf: null, stripeAsOf: {} };
+        const skipBuckets = Object.keys(stripeAsOf)
+            .map((key) => parseProductsSyncDocId(key))
+            .filter((bucket) => bucket !== null);
+        return {
+            products: mergeProductsSyncDoc(current.products, docId, payload, { skipBuckets }),
+            stockAsOf: stockAsOf ?? null,
+            stripeAsOf,
+        };
+    }
+
+    const bucket = parseProductsSyncDocId(docId);
+    if (bucket === null) return current;
+    stripeAsOf[docId] = stockAsOf ?? null;
+    return {
+        products: mergeProductsSyncDoc(current.products, docId, payload),
+        stockAsOf: current.stockAsOf ?? null,
+        stripeAsOf,
+    };
+}
+
+/**
+ * Vista derivada del catálogo: baseline por franjas + efectos de la familia de
+ * ventas que el baseline todavía no incluye. Cada producto pliega los efectos
+ * posteriores al cutoff de SU franja (los grupos por cutoff se pliegan con la
+ * misma `reconcileStockFromEffects` de siempre).
+ */
+export function deriveProductsFromBaseline(baseline, sales) {
+    const products = Array.isArray(baseline?.products) ? baseline.products : [];
+    const stripeAsOf = baseline?.stripeAsOf && typeof baseline.stripeAsOf === 'object'
+        ? baseline.stripeAsOf
+        : {};
+    const legacyCutoff = baseline?.stockAsOf ?? null;
+    const groups = new Map();
+    for (const product of products) {
+        const docId = productsDocIdFor(productBucketOf(product?.id));
+        const cutoff = Object.prototype.hasOwnProperty.call(stripeAsOf, docId)
+            ? stripeAsOf[docId]
+            : legacyCutoff;
+        if (!groups.has(cutoff)) groups.set(cutoff, []);
+        groups.get(cutoff).push(product);
+    }
+    const derived = [];
+    for (const [cutoff, group] of groups) {
+        derived.push(...reconcileStockFromEffects(group, sales, cutoff));
+    }
+    return derived;
+}
+
 // ─── Fase 1 del plan de stock delta ──────────────────────────────────────────
 // docs/plans/2026-10-21-plan-stock-delta-en-doc-de-venta.md: el movimiento de
 // stock de cada cobro/anulación viaja embebido en el registro de la familia de
@@ -408,6 +624,11 @@ export const pushCloudSync = async (key, value, forceUnconditional = false, allo
         return pushSalesFamilySync(value, { stampDeviceId, forceUnconditional, hashKey, currentHash });
     }
 
+    // Fase 5: la familia de productos se publica por buckets de hash.
+    if (key === PRODUCTS_SYNC_BASE_KEY) {
+        return pushProductsFamilySync(value, { stampDeviceId, hashKey, currentHash, capturedAt });
+    }
+
     const result = await upsertSyncDocument(stampDeviceId, key, syncValue, { stockAsOf: stockAsOfFor(key, capturedAt) });
     if (!result.ok) return { ok: false, skipped: false, error: result.error };
 
@@ -415,6 +636,21 @@ export const pushCloudSync = async (key, value, forceUnconditional = false, allo
     localStorage.setItem(hashKey, currentHash);
     return { ok: true, skipped: false, updatedAt: result.updatedAt, data: result.data ?? null, budget: result.budget ?? null };
 };
+
+/**
+ * Tumbas de un vaciado total (F3): `[]` publicable en el legacy más todos los
+ * docs de la familia publicados alguna vez por este equipo. Compartida por las
+ * familias de ventas y productos (Fase 5).
+ */
+async function publishFamilyTombstones(stampDeviceId, baseKey, trackedIds) {
+    const tombstones = [...new Set([baseKey, ...trackedIds])];
+    for (const docId of tombstones) {
+        const result = await upsertSyncDocument(stampDeviceId, docId, []);
+        if (!result.ok) return { ok: false, error: result.error, published: tombstones };
+        localStorage.setItem(LAST_PUSH_HASH_PREFIX + docId, quickHash([]));
+    }
+    return { ok: true, published: tombstones };
+}
 
 /**
  * Fase 4: publica `bodega_sales_v1` partido por periodos.
@@ -433,14 +669,10 @@ async function pushSalesFamilySync(value, { stampDeviceId, forceUnconditional, h
     const updatedAt = new Date().toISOString();
 
     if (list.length === 0) {
-        const tombstones = [...new Set([SALES_SYNC_BASE_KEY, ...readSalesSyncTrackedIds()])];
-        for (const docId of tombstones) {
-            const result = await upsertSyncDocument(stampDeviceId, docId, []);
-            if (!result.ok) return { ok: false, skipped: false, error: result.error };
-            localStorage.setItem(LAST_PUSH_HASH_PREFIX + docId, quickHash([]));
-        }
+        const tombstoned = await publishFamilyTombstones(stampDeviceId, SALES_SYNC_BASE_KEY, readSalesSyncTrackedIds());
+        if (!tombstoned.ok) return { ok: false, skipped: false, error: tombstoned.error };
         localStorage.setItem(hashKey, currentHash);
-        return { ok: true, skipped: false, updatedAt, published: tombstones };
+        return { ok: true, skipped: false, updatedAt, published: tombstoned.published };
     }
 
     const plan = buildSalesSyncPlan(list);
@@ -512,6 +744,71 @@ async function retireLegacySalesDoc(stampDeviceId) {
         // Best-effort: el retiro nunca rompe la publicación de ventas.
         console.warn('[CloudSync] No se pudo retirar el doc legacy de ventas:', error?.message || error);
     }
+}
+
+/**
+ * Fase 5: publica `bodega_products_v1` por buckets de hash (32 fijos).
+ *  - Solo reescribe los buckets cuyo contenido cambió (hash por documento):
+ *    un edit de producto toca SU doc de ~40 KB, no el monolito de 1.32 MB.
+ *    El diff por hash es SIEMPRE el mecanismo (también con forceUnconditional):
+ *    los llamadores legacy (comandos, cloudPublishQueue, forceSyncAllPOSData)
+ *    siguen mandando force, pero eso ya no puede re-mandar el catálogo entero —
+ *    sería volver al monolito que esta fase elimina (gate: edit → ~40 KB).
+ *  - El legacy NO se reescribe (migración perezosa M1: queda congelado como
+ *    histórico que los lectores mergean con los buckets); solo se tumba con un
+ *    vaciado total. El retiro del legacy es una decisión aparte (M2).
+ *  - Con el arreglo vacío (vaciado confirmado) se tumba el legacy y todos los
+ *    buckets publicados: snapshot vacío publicable, sin fantasmas.
+ *  - Un bucket sobre PRODUCTS_SYNC_MAX_DOC_BYTES NO bloquea la publicación
+ *    (política sellada de syncDocBudget: «medir y avisar, nunca bloquear» —
+ *    bloquear rompería la sincronización de catálogos con productos gigantes),
+ *    pero queda advertido con SU bucket señalado: significa que la partición 32
+ *    se quedó corta y toca re-bucketizar (§2/§7 del plan), antes de que esos
+ *    docs vuelvan a degradar Realtime con eventos 413.
+ */
+async function pushProductsFamilySync(value, { stampDeviceId, hashKey, currentHash, capturedAt = null }) {
+    const list = Array.isArray(value) ? value : null;
+    if (!list) return { ok: false, skipped: false, error: 'Documento de productos inválido' };
+
+    const updatedAt = new Date().toISOString();
+
+    if (list.length === 0) {
+        const tombstoned = await publishFamilyTombstones(stampDeviceId, PRODUCTS_SYNC_BASE_KEY, readProductsSyncTrackedIds());
+        if (!tombstoned.ok) return { ok: false, skipped: false, error: tombstoned.error };
+        localStorage.setItem(hashKey, currentHash);
+        return { ok: true, skipped: false, updatedAt, published: tombstoned.published };
+    }
+
+    const plan = buildProductsSyncPlan(list);
+    // Mismo baseline de stock para todos los buckets de este push: el lector
+    // pliega por franja los efectos posteriores a este instante (plan de stock
+    // delta), igual que hace con el doc de catálogo completo.
+    const stockAsOf = stockAsOfFor(PRODUCTS_SYNC_BASE_KEY, capturedAt);
+    const published = [];
+    let worstBudget = null;
+    for (const slice of plan) {
+        if (slice.bytes > PRODUCTS_SYNC_MAX_DOC_BYTES) {
+            // Nunca bloquear (política sellada): publicar igual, pero dejar la
+            // señal explícita de que la partición se quedó corta.
+            console.warn(
+                `[CloudSync] Bucket sobre el techo: ${slice.docId} (${slice.bytes} bytes) `
+                + '— publicado igual, pero toca re-bucketizar la familia de productos',
+            );
+        }
+        const sliceHash = quickHash(slice.records);
+        const sliceHashKey = LAST_PUSH_HASH_PREFIX + slice.docId;
+        // Hash por doc SIEMPRE (el force ya no re-emite buckets intactos): un
+        // bucket sin hash (nunca publicado) sale siempre; uno intacto se salta.
+        if (localStorage.getItem(sliceHashKey) === sliceHash) continue;
+        const result = await upsertSyncDocument(stampDeviceId, slice.docId, slice.records, { stockAsOf });
+        if (!result.ok) return { ok: false, skipped: false, error: result.error, published, budget: worstBudget };
+        if (result.budget && (!worstBudget || result.budget.bytes > worstBudget.bytes)) worstBudget = result.budget;
+        localStorage.setItem(sliceHashKey, sliceHash);
+        published.push(slice.docId);
+    }
+    rememberProductsSyncTrackedIds(published);
+    localStorage.setItem(hashKey, currentHash);
+    return { ok: true, skipped: false, updatedAt, published, budget: worstBudget };
 }
 
 async function upsertSyncDocument(stampDeviceId, docId, value, { stockAsOf = null } = {}) {
@@ -682,7 +979,9 @@ const STORE_SCHEMAS = {
  * Aplica un documento recibido de la nube al almacenamiento local.
  * Garantiza que isSyncingFromCloud esté activo durante toda la operación.
  */
-async function _applyFromCloud(docId, collection, data) {
+// Exportada para las pruebas del lector (familias de ventas y productos): la
+// semántica de merge/watermark/hashes se sella conduciendo esta función real.
+export async function _applyFromCloud(docId, collection, data) {
     isSyncingFromCloud = true;
     try {
         if (!['store', 'local'].includes(collection)) return false;
@@ -694,6 +993,11 @@ async function _applyFromCloud(docId, collection, data) {
 
         const { payload } = envelope;
         let payloadToStore = payload;
+        // Fase 5: el hash del doc de la familia refleja SU contenido tal como
+        // quedó tras su transformación (merge/fold) — coincide con el slice que
+        // el escritor volvería a calcular, así el push periódico lo salta sin
+        // re-subirlo. Se declara aquí porque se sella al final del apply.
+        let familyDocHashValue = null;
         if (docId === 'abasto-auth-storage') return false;
 
         const metadataKey = getSyncMetadataKey(docId);
@@ -708,10 +1012,13 @@ async function _applyFromCloud(docId, collection, data) {
             return false;
         }
 
-        // Fase 4: los docs por periodo de la familia de ventas se validan como
-        // su clave base (el contrato conoce `bodega_sales_v1`, no los periodos).
+        // Fase 4/5: los docs de las familias de ventas y productos se validan
+        // como su clave base (el contrato conoce `bodega_sales_v1` /
+        // `bodega_products_v1`, no los periodos ni los buckets).
         const isSalesFamily = isSalesSyncDocId(docId);
-        const contractKey = isSalesFamily ? SALES_SYNC_BASE_KEY : docId;
+        const isProductsFamily = isProductsSyncDocId(docId);
+        const contractKey = isSalesFamily ? SALES_SYNC_BASE_KEY
+            : isProductsFamily ? PRODUCTS_SYNC_BASE_KEY : docId;
 
         // Contrato común del supervisor: incluso el primary debe rechazar
         // documentos no allowlisted antes de aplicarlos localmente.
@@ -762,13 +1069,25 @@ async function _applyFromCloud(docId, collection, data) {
                 writeKey = SALES_SYNC_BASE_KEY;
                 const localSales = await lf.getItem(SALES_SYNC_BASE_KEY);
                 payloadToStore = mergeSalesSyncDoc(localSales, docId, payload);
-            } else if (docId === 'bodega_products_v1') {
-                // Plan de stock delta: el payload del catálogo es el baseline (su
-                // `stock` ya incluye los efectos con at <= stockAsOf); el stock
+                familyDocHashValue = payload;
+            } else if (isProductsFamily) {
+                // Fase 5: merge por franja en el lector — los buckets (y el
+                // legacy congelado) se fusionan en la clave local única.
+                writeKey = PRODUCTS_SYNC_BASE_KEY;
+                // Plan de stock delta: el payload es el baseline de SU franja
+                // (su `stock` incluye los efectos con at <= stockAsOf); el stock
                 // visible pliega los efectos posteriores de la familia de ventas.
-                // Sin stockAsOf válido se usa tal cual (compatibilidad).
                 const localSales = await lf.getItem(SALES_SYNC_BASE_KEY);
-                payloadToStore = reconcileStockFromEffects(payload, localSales, envelope.stockAsOf ?? null);
+                const folded = reconcileStockFromEffects(payload, localSales, envelope.stockAsOf ?? null);
+                const localProducts = await lf.getItem(PRODUCTS_SYNC_BASE_KEY);
+                // El legacy congelado no puede resucitar productos de franjas
+                // cuyo bucket ya se aplicó: el bucket es la autoridad de SU
+                // franja (y así el borrado se propaga sin importar el orden).
+                const skipBuckets = docId === PRODUCTS_SYNC_BASE_KEY
+                    ? readAppliedProductsStripeBuckets()
+                    : [];
+                payloadToStore = mergeProductsSyncDoc(localProducts, docId, folded, { skipBuckets });
+                familyDocHashValue = folded;
             }
             await lf.setItem(writeKey, payloadToStore);
             if (docId === 'bodega_customer_ledger_v1') {
@@ -785,11 +1104,14 @@ async function _applyFromCloud(docId, collection, data) {
 
         // Update local hash to prevent periodic push from re-uploading what we just downloaded
         const hashKey = LAST_PUSH_HASH_PREFIX + docId;
-        // Fase 4: el hash del doc de periodo refleja SU payload (el escritor lo
-        // salta sin re-subir); el de la clave base refleja el arreglo fusionado.
-        localStorage.setItem(hashKey, quickHash(isSalesFamily ? payload : payloadToStore));
-        if (isSalesFamily) {
-            localStorage.setItem(LAST_PUSH_HASH_PREFIX + SALES_SYNC_BASE_KEY, quickHash(payloadToStore));
+        // Fase 4/5: el hash del doc de la familia refleja SU contenido (el
+        // escritor lo salta sin re-subir); el de la clave base refleja el
+        // arreglo fusionado.
+        const familyBaseKey = isSalesFamily ? SALES_SYNC_BASE_KEY
+            : isProductsFamily ? PRODUCTS_SYNC_BASE_KEY : null;
+        localStorage.setItem(hashKey, quickHash(familyDocHashValue ?? payloadToStore));
+        if (familyBaseKey) {
+            localStorage.setItem(LAST_PUSH_HASH_PREFIX + familyBaseKey, quickHash(payloadToStore));
         }
         if (envelope.updatedAt) localStorage.setItem(metadataKey, envelope.updatedAt);
         return true;

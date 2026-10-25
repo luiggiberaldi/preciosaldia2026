@@ -5,7 +5,13 @@ import { runWithoutEco } from '../utils/syncFlags';
 import { compressString, isCompressionSupported } from '../utils/compression';
 import { describeCloudError, isRlsBlockedError } from '../utils/cloudError';
 import { buildCloudBackupsRow, buildSyncDocumentRow } from '../config/cloudSchema';
-import { SALES_SYNC_BASE_KEY, buildSalesSyncPlan, projectSyncPayload } from './useCloudSync';
+import {
+    PRODUCTS_SYNC_BASE_KEY,
+    SALES_SYNC_BASE_KEY,
+    buildProductsSyncPlan,
+    buildSalesSyncPlan,
+    projectSyncPayload,
+} from './useCloudSync';
 import { ensureDeviceSessionRegistered } from '../utils/deviceIdentity';
 import { ensureSupervisorSession } from '../services/supervisorAuth';
 import { relayUploadBackup, relayFetchBackup } from '../utils/backupRelay';
@@ -126,6 +132,20 @@ export function useCloudBackup({
                 // proyección recortada (copia local completa intacta).
                 if (key === SALES_SYNC_BASE_KEY) {
                     for (const slice of buildSalesSyncPlan(value)) {
+                        syncPayloads.push(buildSyncDocumentRow({
+                            deviceId,
+                            collection: 'store',
+                            docId: slice.docId,
+                            data: { payload: slice.records },
+                        }));
+                    }
+                    continue;
+                }
+                // Fase 5: el catálogo también entra por buckets de hash (el doc
+                // monolítico de 1.3+ MB supera el límite de Realtime y dispara
+                // eventos 413); el legacy queda como histórico congelado.
+                if (key === PRODUCTS_SYNC_BASE_KEY) {
+                    for (const slice of buildProductsSyncPlan(value)) {
                         syncPayloads.push(buildSyncDocumentRow({
                             deviceId,
                             collection: 'store',

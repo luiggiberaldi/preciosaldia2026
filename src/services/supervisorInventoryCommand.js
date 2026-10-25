@@ -689,7 +689,10 @@ export async function applySupervisorInventoryBatchTransaction({
  */
 async function publishInventoryDocs(pushSync, updatedProducts, updatedSales, keys = INVENTORY_LOCAL_KEYS) {
     const allDocs = [
-        { key: 'bodega_products_v1', value: updatedProducts, force: true },
+        // Fase 5 (shards de productos): el catálogo ya publica por buckets con
+        // hash por doc, así que la justificación del force ("ser monolítico")
+        // desaparece — solo se reescriben los buckets que cambiaron.
+        { key: 'bodega_products_v1', value: updatedProducts, force: false },
         { key: 'bodega_sales_v1', value: updatedSales, force: false },
     ];
     const docs = allDocs.filter(doc => keys.includes(doc.key));

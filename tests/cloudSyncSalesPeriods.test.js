@@ -32,6 +32,8 @@ import {
     getSalesSyncPeriodOf,
     isSalesSyncDocId,
     mergeSalesSyncDoc,
+    productBucketOf,
+    productsDocIdFor,
     pushCloudSync,
 } from '../src/hooks/useCloudSync';
 import {
@@ -528,7 +530,10 @@ describe('(e) el lote de inventario publica la familia de ventas incrementalment
         expect(retry).toEqual({ retried: true, ok: true, commandId: 'cmd-legacy-1' });
 
         const docs = upserts.map((d) => d.doc_id);
-        expect(docs).toContain('bodega_products_v1'); // el journal legacy sí la debía
+        // Fase 5 (shards de productos): el catálogo ya no se publica como
+        // monolito — el journal legacy liquida su pendingKey publicando la
+        // familia por buckets de hash.
+        expect(docs).toContain(productsDocIdFor(productBucketOf('p-1')));
         expect(docs.some((id) => id.startsWith('bodega_sales_v1:2026-07'))).toBe(true);
         expect(storage.state[JOURNAL]).toBeUndefined();
     });

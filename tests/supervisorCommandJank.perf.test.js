@@ -160,7 +160,7 @@ function makeStorage(initial = {}) {
 const DEVICE_ID = 'PDA-V2-PERF';
 
 describe.skipIf(!run)('costo real de un comando del supervisor en la caja (backup 2026-10-19)', () => {
-    it('edit de producto: serializa y sube el catálogo COMPLETO por un cambio', async () => {
+    it('edit de producto: solo sube SU bucket (~40 KB), no el monolito de 1.32 MB', async () => {
         const { products, sales } = loadBackup();
         const target = products.find((p) => !isGranelProduct(p) && Number.isFinite(Number(p.stock)));
         expect(target).toBeTruthy();
@@ -170,6 +170,18 @@ describe.skipIf(!run)('costo real de un comando del supervisor en la caja (backu
             bodega_sales_v1: sales,
         });
 
+        upsertMock.onUpsert = (document, bytes) => {
+            stats.uploadBytes += bytes;
+            stats.uploadDocs += 1;
+        };
+
+        // Primera publicación (estado fresco): los 32 buckets — la referencia
+        // del monolito que la Fase 5 debe reducir por cambio.
+        const prime = await pushCloudSync('bodega_products_v1', products, true, true, DEVICE_ID);
+        expect(prime.ok).toBe(true);
+        const primeDocs = stats.uploadDocs;
+        const primeBytes = stats.uploadBytes;
+
         const currentProducts = await storage.getItem('bodega_products_v1', []);
         const payload = {
             action: 'edit',
@@ -177,16 +189,14 @@ describe.skipIf(!run)('costo real de un comando del supervisor en la caja (backu
             baseRevision: buildProductRevision(target),
         };
 
-        upsertMock.onUpsert = (document, bytes) => {
-            stats.uploadBytes += bytes;
-            stats.uploadDocs += 1;
-        };
-        instrumentStart();
+        instrumentStart(); // resetea los contadores: mide SOLO el edit
         const t0 = performance.now();
 
         const result = applySupervisorProductCommand(currentProducts, payload);
         await storage.setItem('bodega_products_v1', result.products);
-        // El push del comando es forceUnconditional: el hash no puede saltarlo.
+        // El push del comando es forceUnconditional (producción: comandos y
+        // cloudPublishQueue), pero el diff por hash es SIEMPRE el mecanismo:
+        // solo el bucket del producto editado sale por la red.
         const pushResult = await pushCloudSync('bodega_products_v1', result.products, true, true, DEVICE_ID);
 
         const ms = performance.now() - t0;
@@ -197,9 +207,13 @@ describe.skipIf(!run)('costo real de un comando del supervisor en la caja (backu
         console.info(
             `[PERF] edit de producto → ${ms.toFixed(0)} ms bloqueando; `
             + `${counters.stringifyCalls} stringify (${(counters.stringifyChars / 1e6).toFixed(1)} M chars), `
-            + `${counters.cloneCalls} clones; sube ${stats.uploadDocs} doc / ${(stats.uploadBytes / 1e6).toFixed(2)} MB`,
+            + `${counters.cloneCalls} clones; primera publicación ${primeDocs} docs / ${(primeBytes / 1e6).toFixed(2)} MB `
+            + `→ el edit sube ${stats.uploadDocs} doc / ${stats.uploadBytes} B`,
         );
-        expect(stats.uploadBytes).toBeGreaterThan(1_000_000); // catálogo completo, no el diff
+        // Gate de la Fase 5 (§8.6 del plan): el edit sube SU bucket (~40 KB),
+        // no el catálogo completo. Falla si el diff por hash se revierte.
+        expect(stats.uploadDocs).toBe(1);
+        expect(stats.uploadBytes).toBeLessThan(100_000);
     }, 120_000);
 
     it('lote de inventario de 20 líneas: journal + escrituras verificadas + publicación', async () => {
@@ -279,16 +293,23 @@ describe.skipIf(!run)('costo real de un comando del supervisor en la caja (backu
         // publicada y el dedup por hash se saltó el push diferido.
         expect(stats.uploadDocs).toBe(docsBeforeDrain);
 
-        // Control positivo: el mismo drenaje SÍ ve el catálogo cuando la
-        // escritura es legacy (sin skipSyncPush). Si este control falla, el 0 de
-        // arriba sería vacío y el gate no probaría nada.
+        // Control positivo: con los hashes del catálogo al día, una escritura
+        // legacy (sin skipSyncPush) que CAMBIA un producto sube exactamente SU
+        // bucket. Si este control falla, el 0 de arriba sería vacío y el gate
+        // no probaría nada: el detector debe ver los bytes que el gate dice
+        // que no hay.
+        await pushCloudSync('bodega_products_v1', await storage.getItem('bodega_products_v1', []), false, true, DEVICE_ID);
+        upsertMock.docIds.length = 0;
         const docsBeforeControl = stats.uploadDocs;
-        await storage.setItem('bodega_products_v1', await storage.getItem('bodega_products_v1', []));
+        const catalog = await storage.getItem('bodega_products_v1', []);
+        const edited = catalog.map((p, i) => (i === 0 ? { ...p, priceCop: Number(p.priceCop || 0) + 1 } : p));
+        await storage.setItem('bodega_products_v1', edited);
         await storage.drainAutoEnqueue();
         expect(stats.uploadDocs).toBe(docsBeforeControl + 1);
-        expect(upsertMock.docIds).toContain('bodega_products_v1');
+        expect(upsertMock.docIds).toHaveLength(1);
+        expect(upsertMock.docIds[0]).toMatch(/^bodega_products_v1:b[0-9a-f]{2}$/);
         console.info(
-            `[PERF] control positivo (escritura legacy del catálogo) → 1 doc de catálogo más — `
+            `[PERF] control positivo (escritura legacy que cambia 1 producto) → 1 bucket más (${upsertMock.docIds[0]}) — `
             + `el detector ve los bytes que el gate dice que no hay`,
         );
     }, 120_000);

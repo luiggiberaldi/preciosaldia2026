@@ -25,7 +25,15 @@ import {
 import { clearMonitorCache } from '../services/monitorUnpair';
 // Fase 4: los docs por periodo de `bodega_sales_v1` se mergean en la clave
 // local única; la familia no está en la allowlist de claves y se lee por prefijo.
-import { SALES_SYNC_BASE_KEY, isSalesSyncDocId, mergeSalesSyncDoc, reconcileStockFromEffects } from './useCloudSync';
+import {
+    PRODUCTS_SYNC_BASE_KEY,
+    SALES_SYNC_BASE_KEY,
+    applyProductsDocToBaseline,
+    deriveProductsFromBaseline,
+    isProductsSyncDocId,
+    isSalesSyncDocId,
+    mergeSalesSyncDoc,
+} from './useCloudSync';
 
 // Plan de stock delta: el catálogo del monitor es una VISTA derivada — el
 // baseline del último doc de productos (con su `stockAsOf`) más los efectos de
@@ -37,7 +45,9 @@ async function rederiveProductsFromBaseline(mergedSales) {
     try {
         const baseline = await localforage.getItem(PRODUCTS_STOCK_BASELINE_KEY);
         if (!baseline || !Array.isArray(baseline.products)) return;
-        const derived = reconcileStockFromEffects(baseline.products, mergedSales, baseline.stockAsOf ?? null);
+        // Fase 5: el baseline es por franjas (cada bucket con SU stockAsOf) y
+        // cada producto pliega los efectos posteriores al cutoff de su franja.
+        const derived = deriveProductsFromBaseline(baseline, mergedSales);
         await localforage.setItem(PRODUCTS_KEY, derived);
         window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: PRODUCTS_KEY, source: 'remote' } }));
     } catch (error) {
@@ -152,10 +162,13 @@ export function useMonitorSync(pairedDeviceId) {
             return { applied: false, rejected: true, error: envelope.error };
         }
 
-        // Fase 4: los docs por periodo de la familia de ventas se validan como
-        // su clave base (el contrato conoce `bodega_sales_v1`, no los periodos).
+        // Fase 4/5: los docs de las familias de ventas y productos se validan
+        // como su clave base (el contrato conoce `bodega_sales_v1` /
+        // `bodega_products_v1`, no los periodos ni los buckets).
         const isSalesFamily = isSalesSyncDocId(docId);
-        const contractKey = isSalesFamily ? SALES_SYNC_BASE_KEY : docId;
+        const isProductsFamily = isProductsSyncDocId(docId);
+        const contractKey = isSalesFamily ? SALES_SYNC_BASE_KEY
+            : isProductsFamily ? PRODUCTS_SYNC_BASE_KEY : docId;
         const validation = validateSupervisorSyncDocument(contractKey, envelope.payload);
         if (!validation.valid) {
             return { applied: false, rejected: true, error: validation.error };
@@ -201,16 +214,23 @@ export function useMonitorSync(pairedDeviceId) {
                     // Plan de stock delta: los efectos de stock viajan en la venta;
                     // el stock del catálogo se re-deriva desde el baseline guardado.
                     await rederiveProductsFromBaseline(mergedSales);
-                } else if (docId === PRODUCTS_KEY) {
-                    // Plan de stock delta: el payload del catálogo es el baseline
-                    // (su `stock` ya incluye los efectos con at <= stockAsOf); la
-                    // vista pliega sobre él los efectos posteriores.
+                } else if (isProductsFamily) {
+                    // Fase 5: el payload del doc es el baseline de SU franja (su
+                    // `stock` ya incluye los efectos con at <= stockAsOf) y el
+                    // baseline se guarda por franjas; la vista derivada pliega
+                    // los efectos posteriores por franja. El bucket es la
+                    // autoridad de SU franja (reemplazo; `[]` = franja vacía) y
+                    // el legacy congelado no resucita sus ids.
+                    writeKey = PRODUCTS_KEY;
                     const localSales = await localforage.getItem(SALES_SYNC_BASE_KEY);
-                    await localforage.setItem(PRODUCTS_STOCK_BASELINE_KEY, {
-                        products: envelope.payload,
-                        stockAsOf: envelope.stockAsOf ?? null,
-                    });
-                    await localforage.setItem(writeKey, reconcileStockFromEffects(envelope.payload, localSales, envelope.stockAsOf ?? null));
+                    const baseline = applyProductsDocToBaseline(
+                        await localforage.getItem(PRODUCTS_STOCK_BASELINE_KEY),
+                        docId,
+                        envelope.payload,
+                        { stockAsOf: envelope.stockAsOf ?? null },
+                    );
+                    await localforage.setItem(PRODUCTS_STOCK_BASELINE_KEY, baseline);
+                    await localforage.setItem(writeKey, deriveProductsFromBaseline(baseline, localSales));
                 } else {
                     await localforage.setItem(docId, envelope.payload);
                 }
@@ -451,7 +471,9 @@ export function useMonitorSync(pairedDeviceId) {
             if (metadataError) throw metadataError;
 
             const allowedDocs = (metadata || []).filter((doc) =>
-                SUPERVISOR_SYNC_KEYS.includes(doc.doc_id) || isSalesSyncDocId(doc.doc_id));
+                SUPERVISOR_SYNC_KEYS.includes(doc.doc_id)
+                || isSalesSyncDocId(doc.doc_id)
+                || isProductsSyncDocId(doc.doc_id));
 
             let targetDocIds;
             if (full) {
