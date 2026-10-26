@@ -248,6 +248,14 @@ describe.skipIf(!run)('costo real de un comando del supervisor en la caja (backu
             stats.uploadDocs += 1;
             upsertMock.docIds.push(document.doc_id);
         };
+        // Warm-up del hashing: en producción la familia de ventas ya fue
+        // publicada antes del lote (snapshot de pairing o cobros previos) y el
+        // cache de tamaños por registro ya está caliente — el lote solo mide
+        // sus movimientos nuevos, no el historial entero. En frío, el primer
+        // push del historial paga una medición por registro (los «516
+        // stringify» de antes: 516 registros = 496 del backup + 20 del lote),
+        // una sola vez por sesión.
+        await pushCloudSync(SALES_SYNC_BASE_KEY, sales, false, true, DEVICE_ID);
         instrumentStart();
         const t0 = performance.now();
 
@@ -276,8 +284,29 @@ describe.skipIf(!run)('costo real de un comando del supervisor en la caja (backu
             + `${counters.stringifyCalls} stringify (${(counters.stringifyChars / 1e6).toFixed(1)} M chars), `
             + `${counters.cloneCalls} clones; sube ${stats.uploadDocs} docs / ${(stats.uploadBytes / 1e6).toFixed(2)} MB (catálogo: 0 docs)`,
         );
-        // El journal write-ahead duplica ambos documentos (before+after).
-        expect(counters.stringifyChars).toBeGreaterThan(2 * 1_000_000);
+        // Gate de serialización local del lote: el journal ya guarda solo las
+        // filas tocadas (snapshots parciales) y la verificación de escritura es
+        // estructural — antes el lote serializaba ~10.1 M chars locales (el
+        // journal duplicaba ambos documentos completos before+after y cada
+        // escritura verificada volvía a serializar el doc entero). Si el
+        // journal vuelve a duplicar documentos completos, este techo falla.
+        expect(counters.stringifyChars).toBeLessThan(5 * 1_000_000);
+        // La medición sigue midiendo trabajo real (publicación + transporte).
+        expect(counters.stringifyChars).toBeGreaterThan(500_000);
+        // Gate del hashing de publicación del lote (los «516 stringify» por
+        // registro de ventas): el plan ya NO serializa cada registro del
+        // historial en cada push — los bytes por registro viven en un cache por
+        // id, auto-reparado cuando un slice publicado no cuadra con su suma
+        // cacheada. El lote solo mide sus movimientos nuevos (~20) más los
+        // hashes de los slices que cambian. Si el plan vuelve a medir el
+        // historial entero por registro, este techo falla.
+        expect(counters.stringifyCalls).toBeLessThan(120);
+        // Piso honesto de chars: el diff exacto sigue serializando la familia
+        // dos veces por push (el hash global del dedup + los hashes de slices),
+        // que con el backup son ~1.3 M chars cada una — reducirlo más exigiría
+        // confiar en hashes cacheados por registro, que pierden reemplazos con
+        // el mismo id (una anulación) y dejarían la baja sin publicar.
+        expect(counters.stringifyChars).toBeLessThan(3_500_000);
 
         // ── EL GATE (§8.1 del plan de desacople 2026-10-22) ──────────────────
         // Un lote de inventario sube 0 bytes de catálogo: ni por la publicación

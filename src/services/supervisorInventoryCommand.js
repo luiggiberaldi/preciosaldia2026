@@ -217,6 +217,29 @@ function packJournalJson(json) {
     return `${JOURNAL_SNAPSHOT_PREFIX}${json}`;
 }
 
+/**
+ * Snapshot parcial del catálogo: solo los productos que el lote tocó (diff por
+ * identidad — las filas intactas del plan conservan la referencia). Las filas
+ * ausentes significan "sin tocar" para el merge de recuperación, igual que los
+ * extremos idénticos de un snapshot completo. Si por un refactor futuro las
+ * listas dejaran de estar alineadas, se degrada al snapshot COMPLETO
+ * (semántica legacy, siempre segura) en vez de registrar un journal incompleto.
+ */
+function buildTouchedProductsSnapshot(currentProducts, updatedProducts) {
+    if (currentProducts.length !== updatedProducts.length) {
+        return { before: currentProducts, after: updatedProducts, partial: false };
+    }
+    const before = [];
+    const after = [];
+    for (let i = 0; i < updatedProducts.length; i += 1) {
+        if (updatedProducts[i] !== currentProducts[i]) {
+            before.push(currentProducts[i]);
+            after.push(updatedProducts[i]);
+        }
+    }
+    return { before, after, partial: true };
+}
+
 function unpackJournalValue(raw) {
     if (typeof raw !== 'string') return raw; // journal legacy: valores en claro
     if (raw.startsWith(JOURNAL_SNAPSHOT_PREFIX)) {
@@ -287,12 +310,17 @@ function isValidInventoryJournal(journal) {
  *    costura que usan checkout/void para el stock puro). La lectura de vuelta
  *    y la comparación no cambian.
  */
-async function writeVerified(storage, key, value, { commandId = null, expectedJson, compare = 'json', skipSyncPush = false } = {}) {
+async function writeVerified(storage, key, value, { commandId = null, skipSyncPush = false } = {}) {
     await storage.setItem(key, value, skipSyncPush ? { skipSyncPush: true } : undefined);
     const readBack = await storage.getItem(key, null);
-    const confirmed = compare === 'deep'
-        ? sameStoredValue(readBack ?? null, value ?? null)
-        : JSON.stringify(readBack ?? null) === (expectedJson !== undefined ? expectedJson : JSON.stringify(value ?? null));
+    // Igualdad estructural primero: cero serializaciones en el camino feliz
+    // (antes cada escritura verificada serializaba el documento completo de
+    // vuelta, ~2 M chars por lote con el catálogo real). La comparación por
+    // JSON queda como árbitro cuando el storage normaliza el valor (el fallback
+    // a localStorage elimina claves `undefined` y convierte NaN en null): la
+    // estrictidad final es la misma que antes, sin serializar en el caso sano.
+    const confirmed = sameStoredValue(readBack ?? null, value ?? null)
+        || JSON.stringify(readBack ?? null) === JSON.stringify(value ?? null);
     if (!confirmed) {
         throw new InventoryStateError(`La escritura de ${key} no se confirmó en el almacenamiento local`, { commandId });
     }
@@ -555,14 +583,14 @@ export async function applySupervisorInventoryBatchTransaction({
     }
     const { updatedProducts, updatedSales } = result;
 
-    // 3. Journal write-ahead con snapshots antes/después. Fase 4: cada
-    //    snapshot viaja como un string marcado; la serialización del "after" se
-    //    reutiliza después como comprobación de la escritura verificada, así
-    //    cada documento se serializa una sola vez.
-    const beforeProductsJson = JSON.stringify(currentProducts ?? null);
-    const afterProductsJson = JSON.stringify(updatedProducts ?? null);
-    const beforeSalesJson = JSON.stringify(currentSales ?? null);
-    const afterSalesJson = JSON.stringify(updatedSales ?? null);
+    // 3. Journal write-ahead con snapshots PARCIALES: solo las filas que el
+    //    lote toca. El merge de recuperación trabaja por id sobre los extremos
+    //    before/after y las filas ausentes significan "sin tocar", así que la
+    //    semántica es idéntica a la del snapshot completo (los journals legacy
+    //    con listas completas siguen siendo legibles) con ~1/100 del trabajo de
+    //    serialización: el catálogo entero deja de duplicarse por lote.
+    const appendedMovements = updatedSales.slice(currentSales.length);
+    const productsSnapshot = buildTouchedProductsSnapshot(currentProducts, updatedProducts);
     const journal = {
         version: 1,
         commandId,
@@ -571,38 +599,39 @@ export async function applySupervisorInventoryBatchTransaction({
         docs: [
             {
                 key: 'bodega_products_v1',
-                before: packJournalJson(beforeProductsJson),
-                after: packJournalJson(afterProductsJson),
+                before: packJournalJson(JSON.stringify(productsSnapshot.before)),
+                after: packJournalJson(JSON.stringify(productsSnapshot.after)),
+                partial: productsSnapshot.partial,
             },
             {
                 key: 'bodega_sales_v1',
-                before: packJournalJson(beforeSalesJson),
-                after: packJournalJson(afterSalesJson),
+                before: packJournalJson('[]'),
+                after: packJournalJson(JSON.stringify(appendedMovements)),
+                partial: true,
             },
         ],
     };
-    await writeVerified(storage, SUPERVISOR_INVENTORY_JOURNAL_KEY, journal, { commandId, compare: 'deep' });
+    await writeVerified(storage, SUPERVISOR_INVENTORY_JOURNAL_KEY, journal, { commandId });
 
     // 4. Aplicar los dos documentos con escritura verificada. Los valores van
     //    en claro (los snapshots del journal son respaldo, no la fuente de la
-    //    escritura) y su serialización "after" ya está calculada.
+    //    escritura) y la verificación es estructural: sin serializaciones.
     const targetsByKey = {
         // Productos CON skipSyncPush: el lote es stock-puro y ese cambio ya
         // viaja como efecto en los movimientos de la familia de ventas; sin la
         // bandera el interceptor vuelve a subir el catálogo entero en el
         // debounce (~1.3 MB por lote) y el desacople no entrega nada medible.
-        bodega_products_v1: { value: updatedProducts, json: afterProductsJson, skipSyncPush: true },
+        bodega_products_v1: { value: updatedProducts, skipSyncPush: true },
         // Ventas SIN la bandera: su auto-enqueue queda como red de seguridad
         // (§3.1.6 del plan de desacople) y el dedup por hash evita el segundo
         // viaje cuando la publicación del journal ya subió la familia.
-        bodega_sales_v1: { value: updatedSales, json: afterSalesJson, skipSyncPush: false },
+        bodega_sales_v1: { value: updatedSales, skipSyncPush: false },
     };
     try {
         for (const doc of journal.docs) {
             const target = targetsByKey[doc.key];
             await writeVerified(storage, doc.key, target.value, {
                 commandId,
-                expectedJson: target.json,
                 skipSyncPush: target.skipSyncPush,
             });
         }
@@ -640,7 +669,7 @@ export async function applySupervisorInventoryBatchTransaction({
             storage,
             SUPERVISOR_INVENTORY_JOURNAL_KEY,
             { ...journal, state: 'published_pending', pendingKeys: [...INVENTORY_PUBLISH_KEYS] },
-            { commandId, compare: 'deep' },
+            { commandId },
         );
         return {
             ...result,
@@ -653,7 +682,7 @@ export async function applySupervisorInventoryBatchTransaction({
 
     const pushed = await publishInventoryDocs(pushSync, updatedProducts, updatedSales, INVENTORY_PUBLISH_KEYS);
     if (!pushed.ok) {
-        await writeVerified(storage, SUPERVISOR_INVENTORY_JOURNAL_KEY, { ...journal, state: 'published_pending', pendingKeys: pushed.failedKeys }, { commandId, compare: 'deep' });
+        await writeVerified(storage, SUPERVISOR_INVENTORY_JOURNAL_KEY, { ...journal, state: 'published_pending', pendingKeys: pushed.failedKeys }, { commandId });
         return {
             ...result,
             commandId,
@@ -728,13 +757,25 @@ export async function retryInventoryPublish({ storage, pushSync }) {
     // El retry publica el estado ACTUAL del storage, no los snapshots 'after'
     // del journal: si el cajero escribió después (una venta), empujar el
     // snapshot viejo la borraría en la nube (last-write-wins). El snapshot solo
-    // es fallback si la clave desapareció del storage.
+    // es fallback si la clave desapareció del storage — y solo si es un
+    // snapshot COMPLETO (journals legacy): un snapshot parcial (solo las filas
+    // del lote) no reconstruye el documento entero, y publicarlo como doc
+    // completo corrompería la familia en la nube (reemplazaría el historial por
+    // los movimientos del lote). Esa clave queda pendiente sin fabricar estado.
     const currentByKey = {};
+    const unavailableKeys = [];
     for (const doc of journal.docs) {
         const fresh = await storage.getItem(doc.key, null);
-        // El snapshot 'after' (en claro o comprimido) solo es fallback si la
-        // clave desapareció del storage.
-        currentByKey[doc.key] = Array.isArray(fresh) ? fresh : await unpackJournalValue(doc.after);
+        if (Array.isArray(fresh)) {
+            currentByKey[doc.key] = fresh;
+            continue;
+        }
+        if (doc.partial === true) {
+            unavailableKeys.push(doc.key);
+            continue;
+        }
+        // Snapshot 'after' completo (en claro o comprimido): fallback legacy.
+        currentByKey[doc.key] = await unpackJournalValue(doc.after);
     }
     // pendingKeys manda (migración perezosa §4): un journal nuevo solo debe la
     // familia de ventas; un journal legacy con ambas claves (o sin pendingKeys)
@@ -742,18 +783,20 @@ export async function retryInventoryPublish({ storage, pushSync }) {
     const keys = Array.isArray(journal.pendingKeys) && journal.pendingKeys.length
         ? journal.pendingKeys
         : INVENTORY_LOCAL_KEYS;
+    const publishableKeys = keys.filter(key => !unavailableKeys.includes(key));
     const pushed = await publishInventoryDocs(
         (key, value, force) => pushSync(key, value, force),
         currentByKey.bodega_products_v1,
         currentByKey.bodega_sales_v1,
-        keys,
+        publishableKeys,
     );
-    if (!pushed.ok) {
+    const failedKeys = [...pushed.failedKeys, ...unavailableKeys.filter(key => keys.includes(key))];
+    if (failedKeys.length > 0) {
         // Ownership: solo actualiza el journal si sigue siendo de este comando.
         if (await journalOwnedBy(storage, journal.commandId)) {
-            await writeVerified(storage, SUPERVISOR_INVENTORY_JOURNAL_KEY, { ...journal, pendingKeys: pushed.failedKeys }, { commandId: journal.commandId, compare: 'deep' });
+            await writeVerified(storage, SUPERVISOR_INVENTORY_JOURNAL_KEY, { ...journal, pendingKeys: failedKeys }, { commandId: journal.commandId });
         }
-        return { retried: true, ok: false, commandId: journal.commandId, failedKeys: pushed.failedKeys };
+        return { retried: true, ok: false, commandId: journal.commandId, failedKeys };
     }
     await clearJournalVerified(storage, journal.commandId);
     return { retried: true, ok: true, commandId: journal.commandId };

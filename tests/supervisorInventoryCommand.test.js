@@ -695,17 +695,14 @@ describe('Supervisor inventory batch command', () => {
             expect(storage.state.bodega_products_v1).toEqual(baseState.bodega_products_v1);
         });
 
-        it('Fase 4: el reintento de publicación cae al snapshot comprimido si el storage quedó vacío', async () => {
+        it('Fase de serialización: el reintento no fabrica estado desde un snapshot parcial', async () => {
             const storage = createFailingStorage(baseState);
             await applySupervisorInventoryBatchTransaction({
                 storage, pushSync: pushFail, payload, commandId: 'cmd-pack-retry-1',
             });
             expect(storage.state[JOURNAL_KEY]).toMatchObject({ state: 'published_pending' });
 
-            // Journal legacy (pre-desacople): aún debía ambos documentos, así el
-            // fallback al snapshot 'after' se sella para los dos; los journals
-            // nuevos solo deben la familia de ventas.
-            storage.state[JOURNAL_KEY].pendingKeys = ['bodega_products_v1', 'bodega_sales_v1'];
+            expect(storage.state[JOURNAL_KEY].docs.every(doc => doc.partial === true)).toBe(true);
 
             // Corte total: las claves desaparecen del storage y solo queda el journal.
             delete storage.state.bodega_products_v1;
@@ -716,13 +713,59 @@ describe('Supervisor inventory batch command', () => {
                 storage,
                 pushSync: async (key, value) => { pushes.push({ key, value }); return { ok: true }; },
             });
-            expect(retry).toMatchObject({ retried: true, ok: true, commandId: 'cmd-pack-retry-1' });
+            // Los snapshots son PARCIALES (solo las filas del lote): publicarlos
+            // como doc completo corrompería la familia en la nube (reemplazaría
+            // el historial por los movimientos del lote). Nada se fabrica: la
+            // clave queda pendiente y el journal intacto.
+            expect(pushes).toEqual([]);
+            expect(retry).toMatchObject({
+                retried: true,
+                ok: false,
+                commandId: 'cmd-pack-retry-1',
+                failedKeys: ['bodega_sales_v1'],
+            });
+            expect(storage.state[JOURNAL_KEY]).toMatchObject({ state: 'published_pending', commandId: 'cmd-pack-retry-1' });
+        });
+
+        it('Fase de serialización: el fallback al snapshot completo sigue sirviendo a los journals legacy', async () => {
+            const storage = createFailingStorage({
+                ...baseState,
+                [JOURNAL_KEY]: {
+                    version: 1,
+                    commandId: 'cmd-pack-retry-legacy',
+                    state: 'published_pending',
+                    createdAt: '2026-10-21T12:00:00.000Z',
+                    pendingKeys: ['bodega_products_v1', 'bodega_sales_v1'],
+                    docs: [
+                        {
+                            key: 'bodega_products_v1',
+                            before: baseState.bodega_products_v1,
+                            after: [{ ...product, stock: 58 }, baseState.bodega_products_v1[1]],
+                        },
+                        {
+                            key: 'bodega_sales_v1',
+                            before: baseState.bodega_sales_v1,
+                            after: [...baseState.bodega_sales_v1, { movementId: 'supervisor-cmd-pack-retry-legacy' }],
+                        },
+                    ],
+                },
+            });
+            // Corte total: las claves desaparecen del storage y solo queda el journal.
+            delete storage.state.bodega_products_v1;
+            delete storage.state.bodega_sales_v1;
+
+            const pushes = [];
+            const retry = await retryInventoryPublish({
+                storage,
+                pushSync: async (key, value) => { pushes.push({ key, value }); return { ok: true }; },
+            });
+            expect(retry).toMatchObject({ retried: true, ok: true, commandId: 'cmd-pack-retry-legacy' });
 
             const productsPush = pushes.find(item => item.key === 'bodega_products_v1');
             const salesPush = pushes.find(item => item.key === 'bodega_sales_v1');
             expect(productsPush.value[0].stock).toBe(58);
             expect(salesPush.value).toHaveLength(2);
-            expect(salesPush.value[1].movementId).toBe('supervisor-cmd-pack-retry-1');
+            expect(salesPush.value[1].movementId).toBe('supervisor-cmd-pack-retry-legacy');
         });
 
         it('un journal corrupto no autoriza escrituras sobre otras claves', async () => {

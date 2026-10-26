@@ -35,6 +35,8 @@ import {
     productBucketOf,
     productsDocIdFor,
     pushCloudSync,
+    resetSalesRecordBytesCache,
+    salesRecordBytesCacheView,
 } from '../src/hooks/useCloudSync';
 import {
     SUPERVISOR_INVENTORY_JOURNAL_KEY,
@@ -138,6 +140,10 @@ function setupUpsertMock() {
 beforeEach(() => {
     localStorage.clear();
     supabaseMock.from.mockReset();
+    // El cache de tamaños por registro vive en el módulo (entre pushes): se
+    // limpia por test para que un id reutilizado con otro contenido no arrastre
+    // bytes viejos al empaquetado de shards.
+    resetSalesRecordBytesCache();
 });
 
 describe('periodo de una venta', () => {
@@ -561,5 +567,61 @@ describe('(e) el lote de inventario publica la familia de ventas incrementalment
         const echo = await realPush('bodega_sales_v1', salesAfter, false);
         expect(echo).toEqual({ ok: true, skipped: true, reason: 'Sin cambios' });
         expect(upserts).toHaveLength(afterPublish);
+    });
+});
+
+describe('cache de tamaños por registro (hashing de publicación del lote)', () => {
+    it('mide cada registro UNA vez y reproduce exactamente los bytes del camino sin cache', () => {
+        const sales = makeSalesInMonth('2026-08', 40);
+        const cache = new Map();
+        const cached = buildSalesSyncPlan(sales, { recordBytes: cache });
+        const reference = buildSalesSyncPlan(sales);
+        expect(cached.map((s) => ({ docId: s.docId, bytes: s.bytes })))
+            .toEqual(reference.map((s) => ({ docId: s.docId, bytes: s.bytes })));
+        expect(cache.size).toBe(40);
+
+        // Con el cache caliente, re-armar el plan NO serializa ni un registro.
+        const realStringify = JSON.stringify;
+        let calls = 0;
+        JSON.stringify = (value, ...rest) => {
+            calls += 1;
+            return realStringify(value, ...rest);
+        };
+        try {
+            buildSalesSyncPlan(sales, { recordBytes: cache });
+        } finally {
+            JSON.stringify = realStringify;
+        }
+        expect(calls).toBe(0);
+    });
+
+    it('auto-reparación: publicar un slice con registro de otro tamaño invalida sus entradas', async () => {
+        const upserts = setupUpsertMock();
+        const cache = salesRecordBytesCacheView();
+        const sales = makeSalesInMonth('2026-08', 5);
+        const seeded = await pushCloudSync(SALES_SYNC_BASE_KEY, sales, false, true, 'PDA-V2-TEST');
+        expect(seeded.ok).toBe(true);
+        expect(cache.size).toBe(5);
+
+        // Anulación realista: el mismo id con contenido de OTRO tamaño (el
+        // cache por id quedaría viejo si no se auto-reparara).
+        const target = sales[2];
+        const replaced = sales.map((r) => (r.id === target.id
+            ? { ...r, status: 'ANULADA', notas: 'x'.repeat(200) }
+            : r));
+        upserts.length = 0;
+        const push = await pushCloudSync(SALES_SYNC_BASE_KEY, replaced, false, true, 'PDA-V2-TEST');
+        expect(push.ok).toBe(true);
+        expect(upserts).toHaveLength(1); // el slice cambió y se re-publicó
+
+        // La suma cacheada ya no cuadra con el JSON real del slice → las
+        // entradas de ese slice se invalidaron para que el plan las re-mida.
+        expect(cache.has(target.id)).toBe(false);
+
+        // Y el plan siguiente vuelve a medir exacto (misma partición que sin cache).
+        const repaired = buildSalesSyncPlan(replaced, { recordBytes: cache });
+        const reference = buildSalesSyncPlan(replaced);
+        expect(repaired.map((s) => ({ docId: s.docId, bytes: s.bytes })))
+            .toEqual(reference.map((s) => ({ docId: s.docId, bytes: s.bytes })));
     });
 });

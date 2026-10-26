@@ -119,13 +119,55 @@ function compareSalesRecords(a, b) {
     return ia < ib ? -1 : ia > ib ? 1 : 0;
 }
 
+// ─── Cache de tamaños por registro (hashing de publicación) ──────────────────
+// El empaquetado de shards necesita los bytes del JSON de CADA registro, y
+// medirlos serializaba el historial completo en cada publicación: con el backup
+// real (496 ventas) eran ~496 stringify solo para el plan — «los 516» del lote,
+// con los hashes de slices encima. Los bytes son solo insumo de EMPAQUETADO
+// (la cota es advisory: «medir y avisar, nunca bloquear»), así que se cachean
+// por id. El cache se auto-repara: cuando un slice se publica, la longitud real
+// de su JSON (que `quickHash` devuelve como primer campo de su hash) se compara
+// con la suma cacheada; si no cuadra —un registro reemplazado cambió de
+// tamaño— las entradas de ese slice se invalidan y el siguiente plan las
+// re-mide. La corrección del DIFF jamás depende del cache: los hashes de
+// slices siempre salen del contenido real.
+const salesRecordBytesCache = new Map(); // id → bytes del JSON del registro
+const SALES_RECORD_BYTES_CACHE_MAX = 100_000;
+
+/** Limpia el cache de tamaños (tests; también apto tras importaciones masivas). */
+export function resetSalesRecordBytesCache() {
+    salesRecordBytesCache.clear();
+}
+
+/** Cache de tamaños vivo (solo tests: observar llenado y auto-reparación). */
+export function salesRecordBytesCacheView() {
+    return salesRecordBytesCache;
+}
+
+function salesRecordBytes(record, cache) {
+    const id = record?.id;
+    if (!cache || id == null) return JSON.stringify(record).length + 1;
+    const key = String(id);
+    const cached = cache.get(key);
+    if (cached != null) return cached;
+    const bytes = JSON.stringify(record).length + 1;
+    if (cache.size >= SALES_RECORD_BYTES_CACHE_MAX) cache.clear();
+    cache.set(key, bytes);
+    return bytes;
+}
+
 /**
  * Parte las ventas en documentos por periodo (con shards por presupuesto de
  * bytes). El orden es canónico (fecha, id), así que un append al final del
  * periodo solo reescribe el último shard: la escritura incremental toca el
  * periodo y el shard tocados, nunca el historial completo.
+ *
+ * `recordBytes` es un cache opcional id → bytes del JSON del registro (ver
+ * `salesRecordBytesCache`): sin él se mide serializando cada registro (camino
+ * exacto de tests y respaldos); con él, los registros ya vistos no se vuelven
+ * a serializar. Los valores son idénticos cuando las entradas están frescas.
  */
-export function buildSalesSyncPlan(sales) {
+export function buildSalesSyncPlan(sales, { recordBytes } = {}) {
     const list = Array.isArray(sales) ? sales : [];
     const byPeriod = new Map();
     for (const record of list) {
@@ -156,7 +198,7 @@ export function buildSalesSyncPlan(sales) {
             shardBytes = 0;
         };
         for (const record of sorted) {
-            const bytes = JSON.stringify(record).length + 1;
+            const bytes = salesRecordBytes(record, recordBytes);
             if (shard.length > 0 && shardBytes + bytes > SALES_SYNC_PACK_BUDGET_BYTES) flush();
             shard.push(record);
             shardBytes += bytes;
@@ -675,7 +717,7 @@ async function pushSalesFamilySync(value, { stampDeviceId, forceUnconditional, h
         return { ok: true, skipped: false, updatedAt, published: tombstoned.published };
     }
 
-    const plan = buildSalesSyncPlan(list);
+    const plan = buildSalesSyncPlan(list, { recordBytes: salesRecordBytesCache });
     const published = [];
     for (const slice of plan) {
         const sliceHash = quickHash(slice.records);
@@ -683,6 +725,19 @@ async function pushSalesFamilySync(value, { stampDeviceId, forceUnconditional, h
         if (!forceUnconditional && localStorage.getItem(sliceHashKey) === sliceHash) continue;
         const result = await upsertSyncDocument(stampDeviceId, slice.docId, slice.records);
         if (!result.ok) return { ok: false, skipped: false, error: result.error, published };
+        // Auto-reparación del cache de tamaños: `quickHash` devuelve
+        // `"<len>_<hash>"` y `len` es la longitud REAL del JSON del slice
+        // (nunca cacheada). Si no cuadra con la suma cacheada (`len − 1`), algún
+        // registro de este slice fue reemplazado con otro tamaño (una
+        // anulación, una importación): sus entradas quedan inválidas y el
+        // siguiente plan las re-mide. El diff no depende del cache: este hash
+        // salió del contenido real del slice.
+        const realJsonLength = Number(sliceHash.slice(0, sliceHash.indexOf('_')));
+        if (realJsonLength !== slice.bytes + 1) {
+            for (const record of slice.records) {
+                if (record?.id != null) salesRecordBytesCache.delete(String(record.id));
+            }
+        }
         localStorage.setItem(sliceHashKey, sliceHash);
         published.push(slice.docId);
     }
