@@ -21,7 +21,9 @@
 //
 // Control positivo: al final, la escritura LEGACY del catálogo (sin
 // `skipSyncPush`, como hacía el call-site antes de la Fase 1) sí publica el
-// catálogo completo — el detector no está ciego, el 0 es por la bandera.
+// catálogo — el detector no está ciego, el 0 es por la bandera. Era Fase 5
+// (buckets): sale exactamente la franja de los productos que los cobros
+// cambiaron, y el gate de arriba cubre TODA la familia (legacy y buckets).
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -85,7 +87,13 @@ vi.mock('../src/hooks/store/useAuthStore', () => ({
 }));
 vi.mock('../src/services/auditService', () => ({ logEvent: vi.fn(() => Promise.resolve()) }));
 
-import { useCloudSync, isSalesSyncDocId } from '../src/hooks/useCloudSync';
+import {
+    useCloudSync,
+    isSalesSyncDocId,
+    isProductsSyncDocId,
+    productBucketOf,
+    productsDocIdFor,
+} from '../src/hooks/useCloudSync';
 import { storageService } from '../src/utils/storageService';
 import { processSaleTransaction } from '../src/utils/checkoutProcessor';
 
@@ -216,7 +224,10 @@ describe('stock delta · N cobros publican 0 bytes de catálogo (cadena real)', 
         }
 
         // ── 4. La medición. ──
-        const catalogUpserts = h.upserts.filter((u) => u.doc_id === PRODUCTS_KEY);
+        // Toda la familia de productos (legacy + buckets): el gate es «0 bytes
+        // de catálogo», no «0 bytes del doc monolítico» — en era Fase 5 un
+        // catálogo que se escape publicaría buckets, y eso también debe verse.
+        const catalogUpserts = h.upserts.filter((u) => isProductsSyncDocId(u.doc_id));
         const catalogBytes = catalogUpserts.reduce((sum, u) => sum + u.bytes, 0);
         const salesUpserts = h.upserts.filter((u) => isSalesSyncDocId(u.doc_id));
         const salesBytes = salesUpserts.reduce((sum, u) => sum + u.bytes, 0);
@@ -250,17 +261,28 @@ describe('stock delta · N cobros publican 0 bytes de catálogo (cadena real)', 
 
         // ── 5. Control positivo: el detector no está ciego. La escritura LEGACY
         //    del catálogo (sin skipSyncPush — el call-site de antes de la Fase 1)
-        //    sí publica el catálogo completo. Si este control falla, el 0 de arriba
-        //    sería vacío y el gate no probaría nada. ──
+        //    sí publica el catálogo. Era Fase 5: el diff por hash manda y salen
+        //    exactamente los buckets de los productos que los cobros cambiaron
+        //    (el gate del plan: edit → 1 bucket, no el monolito). Si este control
+        //    falla, el 0 de arriba sería vacío y el gate no probaría nada. ──
         await storageService.setItem(PRODUCTS_KEY, after); // SIN opciones = se encola (el catálogo cambió vs el hash del warm-up)
         await act(async () => { await sleep(DEBOUNCE_FLUSH_MS); });
 
-        const controlUpserts = h.upserts.filter((u) => u.doc_id === PRODUCTS_KEY);
-        expect(controlUpserts).toHaveLength(1);
-        expect(controlUpserts[0].bytes).toBeGreaterThan(50_000);
+        const controlUpserts = h.upserts.filter((u) => isProductsSyncDocId(u.doc_id));
+        const changedBuckets = [...new Set(cartProducts.map((p) => productBucketOf(p.id)))];
+        expect(controlUpserts).toHaveLength(changedBuckets.length);
+        expect(new Set(controlUpserts.map((u) => u.doc_id))).toEqual(new Set(changedBuckets.map(productsDocIdFor)));
+        // Cada doc lleva la franja COMPLETA de su bucket (no un stub): el
+        // detector ve los bytes reales que el gate dice que no hay.
+        for (const bucket of changedBuckets) {
+            const stripeBytes = JSON.stringify(after.filter((p) => productBucketOf(p.id) === bucket)).length;
+            const upsert = controlUpserts.find((u) => u.doc_id === productsDocIdFor(bucket));
+            expect(upsert.bytes).toBeGreaterThan(stripeBytes);
+        }
+        const controlBytes = controlUpserts.reduce((sum, u) => sum + u.bytes, 0);
         console.log(
             `[PERF] control positivo (escritura legacy del catálogo) → `
-            + `${controlUpserts.length} doc / ${controlUpserts[0].bytes} bytes — el detector ve los bytes que el gate dice que no hay`,
+            + `${controlUpserts.length} bucket(s) / ${controlBytes} bytes — el detector ve los bytes que el gate dice que no hay`,
         );
     }, 90_000);
 });
