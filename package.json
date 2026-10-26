@@ -25,6 +25,7 @@
     "test:e2e:auditoria": "playwright test tests/e2e/auditoria-flujos.e2e.spec.js",
     "test:e2e:inventario-recovery": "playwright test tests/e2e/supervisor-inventory-recovery.e2e.spec.js",
     "test:e2e:stock-delta": "playwright test tests/e2e/stock-delta-flow.e2e.spec.js",
+    "test:e2e:producto-acciones": "playwright test tests/e2e/supervisor-product-actions.e2e.spec.js",
     "test:supervisor-echo": "vitest run tests/supervisorSyncEcho.test.jsx",
     "hooks:install": "git config core.hooksPath githooks",
     "prepare": "git config core.hooksPath githooks || exit 0",
