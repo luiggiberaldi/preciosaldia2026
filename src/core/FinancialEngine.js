@@ -598,7 +598,13 @@ export class FinancialEngine {
             if (isBsPayment && item.pricingMode === 'dual_usd' && Number(item.priceBsUsdRef) > 0) {
                 return mulR(mulR(item.priceBsUsdRef, item.qty), bcvRate);
             }
-            if (item.exactBs != null && !isBsPayment) {
+            // exactBs = precio FIJADO en Bs (avance de efectivo con comisión,
+            // venta libre en Bs): manda en AMBOS modos de pago. La guarda
+            // `!isBsPayment` anterior degradaba la línea a USD×tasa cuando el
+            // pago era en Bs (p. ej. avance de 1100 Bs → 1.24 × 885 = 1097.40
+            // en el auto-relleno del POS). El USD sigue flotando (redondeo);
+            // el Bs es exacto.
+            if (item.exactBs != null && Number(item.qty) > 0) {
                 return mulR(item.exactBs, item.qty);
             }
             return mulR(lineItemsUsd[idx], bcvRate);

@@ -28,7 +28,8 @@ vi.mock('../src/hooks/store/useAuthStore', () => ({
 }));
 
 import { processSaleTransaction } from '../src/utils/checkoutProcessor';
-import { calculateChangeRemainder } from '../src/utils/dinero';
+import { calculateChangeRemainder, divR, mulR, round2 } from '../src/utils/dinero';
+import { FinancialEngine } from '../src/core/FinancialEngine';
 import { shouldShowWalletSection } from '../src/components/Sales/CheckoutModalPOS/components/WalletSection';
 import { storageService } from '../src/utils/storageService';
 import { logEvent } from '../src/services/auditService';
@@ -505,5 +506,68 @@ describe('Visibilidad inteligente de saldo a favor', () => {
 
     it('mantiene el bloque si ya había saldo aplicado para poder editarlo', () => {
         expect(shouldShowWalletSection({ saldoDisponible: 2.76, faltaSinSaldo: 0, saldoAplicado: 1 })).toBe(true);
+    });
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// FIN-022 — Guarda de drift USD/Bs con ítems exactBs (tasas altas)
+// ════════════════════════════════════════════════════════════════════════
+describe('FIN-022: guarda de drift USD/Bs con ítems exactBs', () => {
+    // Ítem exactBs tal como lo construye la UI: precio fijado en Bs, USD
+    // derivado a centavos (round2(exactBs / tasa)) y totales del motor.
+    function exactBsOpts({ exactBs, qty = 1, rate, inflateBs = 0 }) {
+        const priceUsd = round2(divR(exactBs, rate));
+        const cart = [{ id: 'p1', name: 'Avance', qty, priceUsd, exactBs, costUsd: 1, isWeight: false }];
+        const totals = FinancialEngine.buildCartTotals(cart, null, rate, 0);
+        return baseOpts({
+            cart,
+            cartTotalUsd: totals.totalUsd,
+            cartTotalBs: totals.totalBs + inflateBs,
+            cartSubtotalUsd: totals.totalUsd,
+            payments: [{ amountUsd: totals.totalUsd, amountBs: 0, currency: 'USD', methodId: 'efectivo_usd', methodLabel: 'Efectivo $' }],
+            products: [{ id: 'p1', name: 'Avance', stock: 50, costUsd: 1 }],
+            effectiveRate: rate,
+        });
+    }
+
+    it('tasa 1200: el redondeo del USD derivado (drift de 6 Bs) NO rechaza la venta', async () => {
+        // 3798 Bs / 1200 = 3.165 → USD derivado 3.16 o 3.17; la reconversión
+        // USD × tasa se desvía 6 Bs, por encima de la tolerancia fija de 5.
+        const opts = exactBsOpts({ exactBs: 3798, rate: 1200 });
+        expect(Math.abs(opts.cartTotalBs - mulR(opts.cartTotalUsd, 1200))).toBeGreaterThan(5);
+
+        const result = await processSaleTransaction(opts);
+        expect(result.success).toBe(true);
+    });
+
+    it('qty 3 a tasa 885: el drift legítimo acumulado (7,8 Bs) tampoco rechaza', async () => {
+        // 1100 Bs fijados × 3 = 3300 Bs; USD derivado 1.24 × 3 = 3.72 →
+        // 3.72 × 885 = 3292.2 → drift de 7,8 Bs por puro redondeo.
+        const opts = exactBsOpts({ exactBs: 1100, qty: 3, rate: 885 });
+        expect(Math.abs(opts.cartTotalBs - mulR(opts.cartTotalUsd, 885))).toBeGreaterThan(5);
+
+        const result = await processSaleTransaction(opts);
+        expect(result.success).toBe(true);
+    });
+
+    it('una inconsistencia REAL con exactBs sigue rechazándose (FIN-022 no se relaja)', async () => {
+        const opts = exactBsOpts({ exactBs: 3798, rate: 1200, inflateBs: 60 });
+        const result = await processSaleTransaction(opts);
+        expect(result.success).toBe(false);
+        expect(result.error).toMatch(/inconsistencia/i);
+    });
+
+    it('sin ítems exactBs la tolerancia sigue fija: 6 Bs de drift a tasa 1200 se rechazan', async () => {
+        const result = await processSaleTransaction(baseOpts({
+            cart: [{ id: 'p1', name: 'Harina', qty: 1, priceUsd: 10, costUsd: 4, isWeight: false }],
+            cartTotalUsd: 10,
+            cartTotalBs: 12006, // 10 × 1200 = 12000 → drift de 6 Bs
+            cartSubtotalUsd: 10,
+            payments: [{ amountUsd: 10, amountBs: 0, currency: 'USD', methodId: 'efectivo_usd', methodLabel: 'Efectivo $' }],
+            products: [{ id: 'p1', name: 'Harina', stock: 50, costUsd: 4 }],
+            effectiveRate: 1200,
+        }));
+        expect(result.success).toBe(false);
+        expect(result.error).toMatch(/inconsistencia/i);
     });
 });

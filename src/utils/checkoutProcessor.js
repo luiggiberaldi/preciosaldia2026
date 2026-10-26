@@ -83,9 +83,28 @@ export async function processSaleTransaction({
     if (!effectiveRate || effectiveRate <= 0) {
         return { success: false, error: 'Tasa de cambio BCV inválida (<= 0). Configura la tasa antes de cobrar.' };
     }
+    // La tolerancia fija de 5 Bs se queda corta para ítems exactBs: su precio
+    // está fijado en Bs y el USD deriva redondeado a centavos (round2(exactBs /
+    // tasa)), así que la reconversión USD × tasa se desplaza hasta media
+    // centava USD por unidad = 0,005 × tasa Bs. A tasa 1200 son ~6 Bs con UNA
+    // unidad (la venta legítima se rechazaba como «Inconsistencia»), y la
+    // holgura se acumula por cantidad y por ítem (qty 3 a tasa 885 ya da 7,8
+    // Bs de drift REAL sin nada raro). La holgura legítima crece con la tasa y
+    // con las unidades exactBs (+1 por ítem por el redondeo de la línea); los
+    // ítems sin exactBs siguen bajo la tolerancia fija (su conversión solo
+    // redondea centavos de Bs), y una inconsistencia de verdad —totales
+    // desfasados o manipulados— se desvía por bolívares enteros y sigue
+    // cayendo (FIN-022 no se relaja).
+    const exactBsRoundingUnits = sumR(cart
+        .filter(item => item && item.exactBs != null && Number(item.qty) > 0)
+        .map(item => Number(item.qty) + 1));
+    const bsTolerance = sumR([
+        FINANCIAL_EPSILON.CASH_RECONCILE_TOLERANCE_BS,
+        mulR(mulR(0.005, effectiveRate), exactBsRoundingUnits),
+    ]);
     const expectedBs = mulR(activeCartTotalUsd, effectiveRate);
     const bsDrift = Math.abs(subR(activeCartTotalBs, expectedBs));
-    if (bsDrift > FINANCIAL_EPSILON.CASH_RECONCILE_TOLERANCE_BS) {
+    if (bsDrift > bsTolerance) {
         return { success: false, error: `Inconsistencia USD/Bs: drift de ${round2(bsDrift)} Bs (tasa ${effectiveRate}).` };
     }
 

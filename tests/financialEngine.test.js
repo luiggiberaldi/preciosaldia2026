@@ -327,6 +327,48 @@ describe('FinancialEngine.buildCartTotals — FIN-010 unificación round2/divR',
 });
 
 // ════════════════════════════════════════════════════════════════════════
+// 3.bis buildCartTotals · exactBs — el Bs fijado se cobra EXACTO con pago en Bs
+// ════════════════════════════════════════════════════════════════════════
+describe('FinancialEngine.buildCartTotals — exactBs (precio fijado en Bs)', () => {
+    // Caso real (reporte 2026-10-26): Avance Efectivo de 1000 Bs + 10% comisión
+    // = 1100 Bs exactos. priceUsd se deriva (1100 / 885 = 1.2429…) y el USD
+    // flota; el total en Bs NUNCA debe degradarse a USD×tasa — eso auto-rellenaba
+    // 1.24 × 885 = 1097.40 en el POS y cobraba Bs 2.60 de menos.
+    const avance = {
+        priceUsd: 1100 / 885,
+        qty: 1,
+        exactBs: 1100,
+        isCashAdvance: true,
+        currency: 'BS',
+    };
+    const tasa = 885;
+
+    it('con pago en Bs (isBsPayment=true) el total sigue siendo 1100 exactos', () => {
+        const t = FinancialEngine.buildCartTotals([avance], null, tasa, 0, true);
+        expect(t.totalBs).toBe(1100);
+    });
+
+    it('sin pago en Bs el total también es 1100 exactos y el USD flota (round2)', () => {
+        const t = FinancialEngine.buildCartTotals([avance], null, tasa, 0, false);
+        expect(t.totalBs).toBe(1100);
+        expect(t.totalUsd).toBe(round2(1100 / 885)); // 1.24 — derivado, no exacto
+    });
+
+    it('exactBs se multiplica por cantidad', () => {
+        const t = FinancialEngine.buildCartTotals([{ ...avance, qty: 3 }], null, tasa, 0, true);
+        expect(t.totalBs).toBe(3300);
+    });
+
+    it('Doble Precio (dual_usd) sigue re-precificando con pago en Bs', () => {
+        // AVISO-REPRECIO documentado: con pago en Bs gana priceBsUsdRef.
+        const dual = { priceUsd: 10, qty: 1, pricingMode: 'dual_usd', priceBsUsdRef: 8 };
+        const t = FinancialEngine.buildCartTotals([dual], null, 36.4, 0, true);
+        expect(t.totalUsd).toBe(8);
+        expect(t.totalBs).toBe(mulR(8, 36.4));
+    });
+});
+
+// ════════════════════════════════════════════════════════════════════════
 // 4. voidSaleProcessor revirtiendo COBRO_DEUDA (FIN-001)
 // ════════════════════════════════════════════════════════════════════════
 describe('processVoidSale — FIN-001 revierte COBRO_DEUDA', () => {
