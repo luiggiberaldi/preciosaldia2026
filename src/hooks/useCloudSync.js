@@ -759,6 +759,11 @@ async function retireLegacySalesDoc(stampDeviceId) {
  *    vaciado total. El retiro del legacy es una decisión aparte (M2).
  *  - Con el arreglo vacío (vaciado confirmado) se tumba el legacy y todos los
  *    buckets publicados: snapshot vacío publicable, sin fantasmas.
+ *  - Una baja que vacía SU bucket tumba ese doc con `[]`: sin la tumba, la
+ *    franja vieja del doc sobrevive en la nube y el monitor conserva el
+ *    producto fantasma (regresión de Fase 5, 2026-10-26). La tumba solo sale
+ *    con evidencia de que este equipo publicó ese doc antes (hash por doc o
+ *    tracking): un doc nunca publicado no tiene franja que limpiar.
  *  - Un bucket sobre PRODUCTS_SYNC_MAX_DOC_BYTES NO bloquea la publicación
  *    (política sellada de syncDocBudget: «medir y avisar, nunca bloquear» —
  *    bloquear rompería la sincronización de catálogos con productos gigantes),
@@ -805,6 +810,29 @@ async function pushProductsFamilySync(value, { stampDeviceId, hashKey, currentHa
         if (result.budget && (!worstBudget || result.budget.bytes > worstBudget.bytes)) worstBudget = result.budget;
         localStorage.setItem(sliceHashKey, sliceHash);
         published.push(slice.docId);
+    }
+    // Tumba de buckets que la baja dejó VACÍOS: `buildProductsSyncPlan` solo
+    // emite buckets con productos, así que un doc cuya franja se vació por
+    // completo desaparece del plan — sin la tumba `[]` su fila en la nube
+    // conserva los productos borrados y el monitor no ve la baja. Solo se
+    // tumba con evidencia de publicación previa de este equipo (hash por doc o
+    // tracking); un doc nunca publicado no puede tener franja vieja que
+    // limpiar, y un doc ya tumbado (hash = quickHash([])) no se re-emite.
+    const plannedBuckets = new Set(plan.map((slice) => slice.bucket));
+    const trackedIds = new Set(readProductsSyncTrackedIds());
+    const emptyHash = quickHash([]);
+    for (let bucket = 0; bucket < PRODUCTS_SYNC_BUCKET_COUNT; bucket += 1) {
+        if (plannedBuckets.has(bucket)) continue;
+        const docId = productsDocIdFor(bucket);
+        const sliceHashKey = LAST_PUSH_HASH_PREFIX + docId;
+        const previousHash = localStorage.getItem(sliceHashKey);
+        if (previousHash == null && !trackedIds.has(docId)) continue;
+        if (previousHash === emptyHash) continue;
+        const result = await upsertSyncDocument(stampDeviceId, docId, [], { stockAsOf });
+        if (!result.ok) return { ok: false, skipped: false, error: result.error, published, budget: worstBudget };
+        if (result.budget && (!worstBudget || result.budget.bytes > worstBudget.bytes)) worstBudget = result.budget;
+        localStorage.setItem(sliceHashKey, emptyHash);
+        published.push(docId);
     }
     rememberProductsSyncTrackedIds(published);
     localStorage.setItem(hashKey, currentHash);

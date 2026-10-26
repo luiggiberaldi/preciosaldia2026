@@ -317,6 +317,60 @@ describe('(4) fail-first: un cambio de producto reescribe SOLO su bucket', () =>
         }
         expect(docs.length).toBe(tracked.length + 1);
     });
+
+    it('la baja que vacía SU bucket tumba su doc con `[]` (el borrado llega al monitor)', async () => {
+        const upserts = setupUpsertMock();
+        // Producto SOLO en su bucket — el caso que rompía: al darlo de baja,
+        // buildProductsSyncPlan ya no trae su bucket y, sin la tumba `[]`, la
+        // franja vieja del doc sobrevive en la nube y el monitor nunca ve la
+        // baja (regresión de Fase 5).
+        const lone = makeProduct('lone-baja');
+        const loneBucket = productBucketOf(lone.id);
+        const others = [];
+        const seenBuckets = new Set([loneBucket]);
+        let i = 0;
+        while (others.length < 3 && i < 10000) {
+            const id = `o-${i}`;
+            const bucket = productBucketOf(id);
+            if (!seenBuckets.has(bucket)) {
+                seenBuckets.add(bucket);
+                others.push(makeProduct(id));
+            }
+            i += 1;
+        }
+        const products = [lone, ...others];
+        const seeded = await pushCloudSync(PRODUCTS_SYNC_BASE_KEY, products, false, true, 'PDA-V2-TEST');
+        expect(seeded.ok).toBe(true);
+        upserts.length = 0;
+
+        // La baja (con force, como el eco real del comando de producto)…
+        const afterDelete = products.filter((p) => p.id !== lone.id);
+        const result = await pushCloudSync(PRODUCTS_SYNC_BASE_KEY, afterDelete, true, true, 'PDA-V2-TEST');
+        expect(result.ok).toBe(true);
+        expect(result.published).toContain(productsDocIdFor(loneBucket));
+
+        // …tumba exactamente SU franja con `[]` y no toca los demás buckets.
+        expect(upserts).toHaveLength(1);
+        expect(upserts[0].doc_id).toBe(productsDocIdFor(loneBucket));
+        expect(upserts[0].data.payload).toEqual([]);
+
+        // Y la tumba no se re-emite: el hash por doc la sella.
+        upserts.length = 0;
+        const again = await pushCloudSync(PRODUCTS_SYNC_BASE_KEY, afterDelete, true, true, 'PDA-V2-TEST');
+        expect(again.ok).toBe(true);
+        expect(upserts).toHaveLength(0);
+    });
+
+    it('un bucket vacío SIN publicación previa no inventa docs (el primer push solo sube franjas con productos)', async () => {
+        const upserts = setupUpsertMock();
+        const lone = makeProduct('lone-inicial');
+        const result = await pushCloudSync(PRODUCTS_SYNC_BASE_KEY, [lone], false, true, 'PDA-V2-TEST');
+        expect(result.ok).toBe(true);
+        // Solo el bucket del producto: los otros 31 vacíos no tienen franja
+        // vieja que limpiar y no se convierten en docs `[]` innecesarios.
+        expect(upserts).toHaveLength(1);
+        expect(upserts[0].doc_id).toBe(productsDocIdFor(productBucketOf(lone.id)));
+    });
 });
 
 describe('(gate) un bucket sobre el techo se advierte con SU bucket señalado', () => {
