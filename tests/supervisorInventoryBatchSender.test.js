@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createInventoryDraft, addInventoryDraftLine } from '../src/services/supervisorInventoryDraft';
 import { createBatchCommandStore, sendSupervisorInventoryBatch } from '../src/services/supervisorInventoryBatchSender';
+import { classifyStockOpResult } from '../src/services/supervisorStockOps';
 
 const COMMAND_ID = 'cmd-fijo-0001';
 
@@ -43,6 +44,54 @@ function terminalAck(status, { error = null, ack = { stockAfter: 12 } } = {}) {
 }
 
 const TIMEOUT_ACK = { ok: false, status: 'timeout', error: 'La caja no confirmó la orden a tiempo' };
+
+describe('rechazo del create: cierto ≠ incierto (el badge se resuelve en segundos)', () => {
+    it('un rechazo CIERTO del servidor (validación) es conclusión: failed, jamás uncertain', async () => {
+        const sendCommand = vi.fn().mockResolvedValue({
+            ok: false,
+            status: 'rejected',
+            error: 'Ventana temporal inválida',
+        });
+
+        const result = await sendSupervisorInventoryBatch({
+            draft: makeDraft(),
+            products: PRODUCTS,
+            targetDeviceId: 'device-1',
+            sendCommand,
+            commandStore: makeStore(),
+            commandIdFactory: () => COMMAND_ID,
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.status).toBe('failed');
+        expect(result.uncertain).toBe(false);
+        expect(result.error).toBe('Ventana temporal inválida');
+        // classifyStockOpResult → 'failed' (franja de reintento visible),
+        // jamás 'pending' (que dejaría «ESPERANDO A LA CAJA» hasta el TTL).
+        expect(classifyStockOpResult(result)).toBe('failed');
+    });
+
+    it('un fallo de TRANSPORTE agotado sigue siendo incierto: reconcilia, no reenvía', async () => {
+        const sendCommand = vi.fn().mockResolvedValue({
+            ok: false,
+            status: 'failed',
+            error: 'Failed to fetch',
+        });
+
+        const result = await sendSupervisorInventoryBatch({
+            draft: makeDraft(),
+            products: PRODUCTS,
+            targetDeviceId: 'device-1',
+            sendCommand,
+            commandStore: makeStore(),
+            commandIdFactory: () => COMMAND_ID,
+        });
+
+        expect(result.status).toBe('timeout');
+        expect(result.uncertain).toBe(true);
+        expect(classifyStockOpResult(result)).toBe('pending');
+    });
+});
 
 describe('sendSupervisorInventoryBatch (contrato batch v2: un comando + ACK global)', () => {
     it('envía TODO el lote como UN solo comando batch v2 con expectedStock del cálculo del draft', async () => {

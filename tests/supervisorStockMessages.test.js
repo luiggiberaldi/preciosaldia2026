@@ -91,6 +91,7 @@ describe('catálogo compartido de mensajes de stock (fila y lote)', () => {
             'REVIEW_LINES',
             'ACK_TIMEOUT',
             'ORDER_EXPIRED',
+            'ORDER_NOT_CREATED',
             'BATCH_REJECTED',
             'BATCH_UNCONFIRMED',
             'PENDING_LINES',

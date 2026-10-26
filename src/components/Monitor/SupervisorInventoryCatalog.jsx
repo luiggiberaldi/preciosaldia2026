@@ -24,12 +24,15 @@ import { getTrackedSupervisorCommands, subscribeSupervisorCommandTracker } from 
 
 // Fuentes del badge por producto (propuesta 4): qué está en vuelo según el
 // tracker de comandos. La prioridad entre estados la decide productQueueState.
-function trackedStateByProduct() {
+export function trackedStateByProduct() {
     const map = {};
     getTrackedSupervisorCommands().forEach(record => {
         productIdsOf(record.type, record.payload).forEach(id => {
             const current = map[id] || { inFlight: false, appliedAt: null };
-            if (!record.finalNotified) current.inFlight = true;
+            // «unresolved» (presupuesto de seguimiento agotado) ya no cuenta
+            // como en vuelo: el badge se libera aunque el desenlace siga
+            // desconocido — nunca «ESPERANDO A LA CAJA» para siempre.
+            if (!record.finalNotified && record.state !== 'unresolved') current.inFlight = true;
             else if (record.state === 'applied' || record.state === 'applied_with_warnings') {
                 current.appliedAt = new Date(record.sentAt).toISOString();
             }

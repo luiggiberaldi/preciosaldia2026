@@ -212,7 +212,13 @@ describe('supervisorStockOps · reconciliación', () => {
         expect(nextStockOpAfterInspection(op, { state: 'expired' }))
             .toEqual({ ...op, state: 'failed', error: 'La orden expiró en la caja sin aplicarse' });
         expect(nextStockOpAfterInspection(op, { state: 'active' })).toBe(null);
-        expect(nextStockOpAfterInspection(op, { state: 'absent' })).toBe(null);
+        // 'absent': la orden NUNCA llegó a crearse — resuelve fallido en
+        // segundos en vez de dejar el badge esperar el TTL por un comando
+        // inexistente (y el reintento puede reutilizar el mismo commandId).
+        expect(nextStockOpAfterInspection(op, { state: 'absent' }))
+            .toEqual({ ...op, state: 'failed', error: 'La orden no llegó a la caja y no se aplicó' });
+        // 'unknown': no se pudo consultar — nada se concluye.
+        expect(nextStockOpAfterInspection(op, { state: 'unknown' })).toBe(null);
     });
 });
 

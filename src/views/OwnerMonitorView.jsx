@@ -37,6 +37,7 @@ import {
     saveStockOpMap,
     classifyStockOpResult,
     clearStockOp as clearStockOpMap,
+    ensureProductPresent,
     isStockAdjustBlocked,
     nextStockOpAfterInspection,
     patchProductStock,
@@ -395,9 +396,15 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
             // expectedStock debe describir la base contra la que se calculó el
             // movimiento: si el stock local aún no refleja un ajuste confirmado, se
             // usa el valor creído para que la caja valide la concurrencia correcta.
-            const baseProducts = Math.abs(current - Number(product.stock || 0)) < 1e-9
-                ? products
-                : patchProductStock(products, productId, current);
+            // Si la fila es optimista (alta en vuelo sin eco de la caja aún), el
+            // producto todavía no está en `products`: se inyecta para que el
+            // resumen no lo marque como «Producto no encontrado» y pida revisar
+            // las líneas con un ajuste que sí es válido.
+            const baseProducts = patchProductStock(
+                ensureProductPresent(products, product),
+                productId,
+                current,
+            );
             let trackedCommandId = null;
             const senderPromise = sendSupervisorInventoryBatch({
                 draft: result.draft,
@@ -476,7 +483,8 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                         });
                         setStockOp(id, next);
                     }
-                    // 'active' / 'absent': sigue pendiente; se re-consulta en el próximo tick.
+                    // 'active' / 'unknown': sigue pendiente; se re-consulta en el
+                    // próximo tick. ('absent' ya resolvió arriba como fallido.)
                 } catch {
                     // Sin conexión en este momento: se reintenta en el próximo tick.
                 }

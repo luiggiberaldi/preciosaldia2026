@@ -243,6 +243,12 @@ describe('timeout: no es un cierre definitivo', () => {
 
         const messages = deps.notify.mock.calls.map(([message, type]) => ({ message, type }));
         expect(messages.some(entry => String(entry.message).includes('Sigue esperando') && entry.type === 'warning')).toBe(true);
+
+        // El registro queda «unresolved» — SIN cerrar (un desenlace tardío puede
+        // seguir mandando) — para que el badge del producto se libere en vez de
+        // quedar «ESPERANDO A LA CAJA» pegado tras agotar el presupuesto.
+        expect(record.state).toBe('unresolved');
+        expect(record.finalNotified).toBe(false);
     });
 
     it('H5: el desenlace sin confirmación queda en la telemetría (diagnóstico), no solo en el aviso', async () => {

@@ -230,7 +230,8 @@ function hasNewerSync(op, productsUpdatedAt) {
 }
 
 // Traduce la inspección del comando en el siguiente estado del op, o null si
-// sigue sin resolverse ('active' / 'absent': la caja puede seguir aplicándolo).
+// sigue sin resolverse ('active': la caja puede seguir aplicándolo; 'unknown':
+// no se pudo consultar, nada se concluye).
 export function nextStockOpAfterInspection(op, inspection) {
     if (inspection?.state === 'terminal') {
         const ok = inspection?.ack?.status === 'applied'
@@ -241,6 +242,13 @@ export function nextStockOpAfterInspection(op, inspection) {
     }
     if (inspection?.state === 'expired') {
         return { ...op, state: 'failed', error: stockMessage('ORDER_EXPIRED') };
+    }
+    // 'absent': la orden NUNCA llegó a crearse (o ya no existe) — no habrá ACK
+    // ni aplicación posible. Resolver en segundos en vez de dejar el badge
+    // «ESPERANDO A LA CAJA» esperar el TTL (o quedar pegado) por un comando
+    // que no existe; el reintento puede reutilizar el mismo commandId.
+    if (inspection?.state === 'absent') {
+        return { ...op, state: 'failed', error: stockMessage('ORDER_NOT_CREATED') };
     }
     return null;
 }
@@ -277,6 +285,17 @@ export function patchProductStock(products = [], productId, stock) {
     return products.map(item => (String(item.id) === String(productId) ? { ...item, stock } : item));
 }
 
+// Garantiza que el producto objetivo esté en el catálogo que ve el lote: una
+// fila optimista (alta en vuelo aún sin eco de la caja) existe en la vista pero
+// no todavía en `products`, y el resumen la marcaría como «Producto no
+// encontrado» (→ «Revisa las líneas marcadas antes de enviar») aunque el
+// ajuste sea válido. Solo al reintentar, cuando el eco ya llegó, funcionaba.
+export function ensureProductPresent(products = [], product) {
+    const list = Array.isArray(products) ? products : [];
+    if (!product || list.some(item => String(item.id) === String(product.id))) return list;
+    return [...list, product];
+}
+
 export default {
     STOCK_OP_IN_FLIGHT_STATES,
     STOCK_OP_STORAGE_KEY,
@@ -297,4 +316,5 @@ export default {
     nextStockOpAfterInspection,
     buildInventoryBatchTargets,
     patchProductStock,
+    ensureProductPresent,
 };

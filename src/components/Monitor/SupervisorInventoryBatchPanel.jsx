@@ -223,8 +223,8 @@ export default function SupervisorInventoryBatchPanel({
                 const inspection = await inspectSupervisorCommandState(commandId);
                 if (cancelled) return;
                 const next = nextStockOpAfterInspection({ state: 'pending' }, inspection);
-                // 'active' / 'absent': la caja puede seguir aplicándolo; se
-                // re-consulta en el próximo tick.
+                // 'active' / 'unknown': la caja puede seguir aplicándolo (o no se
+                // pudo consultar); se re-consulta en el próximo tick.
                 if (!next) return;
                 const ack = inspection?.ack || null;
                 const applied = next.state === 'applied';
@@ -235,7 +235,11 @@ export default function SupervisorInventoryBatchPanel({
                 const messageParams = applied
                     ? { count: totalLines }
                     : {
-                        reason: status === 'expired' ? stockMessage('ORDER_EXPIRED') : (ack?.error || stockMessage('BATCH_REJECTED')),
+                        reason: status === 'expired'
+                            ? stockMessage('ORDER_EXPIRED')
+                            : (inspection?.state === 'absent'
+                                ? stockMessage('ORDER_NOT_CREATED')
+                                : (ack?.error || stockMessage('BATCH_REJECTED'))),
                         count: totalLines,
                     };
                 const message = stockMessage(messageKey, messageParams);

@@ -19,6 +19,7 @@ import {
     withSupervisorCommandLock,
 } from '../services/supervisorCommandService';
 import { applySupervisorInventoryBatchTransaction, recoverSupervisorInventoryJournal, retryInventoryPublish } from '../services/supervisorInventoryCommand';
+import { cancelSupervisorCommand } from '../services/supervisorControlService';
 import { writeVerifiedValue } from '../utils/verifiedWrite';
 import { publishKeyNow } from '../services/cloudPublishQueue';
 import { finishAckTelemetry, markAckTelemetry } from '../services/supervisorAckTelemetry';
@@ -112,6 +113,66 @@ async function rememberAppliedCommand(commandId, entry) {
     activeEntries[commandId] = entry;
     const limitedEntries = Object.fromEntries(Object.entries(activeEntries).slice(-1000));
     await storageService.setItem(APPLIED_COMMANDS_KEY, limitedEntries);
+}
+
+const sleepMs = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Un ACK perdido no debe dejar la orden abierta para siempre: el badge del
+// monitor quedaría en «ESPERANDO A LA CAJA» hasta el TTL (o pegado). El
+// recordatorio local guarda el desenlace, así que tras un fallo del ACK se
+// reintenta con backoff leyéndolo — el RPC de ACK es idempotente para filas ya
+// terminales — y el barrido del receptor re-confirma cualquier orden abierta
+// ya procesada (ver processCommand).
+const ACK_RETRY_DELAYS_MS = [2_000, 5_000];
+
+async function reackRememberedCommand(commandId) {
+    try {
+        const remembered = await readAppliedCommand(commandId);
+        if (!remembered) return;
+        await ackCommand(commandId, remembered.status, remembered.ackPayload, remembered.errorMessage);
+    } catch {
+        scheduleAckRetry(commandId);
+    }
+}
+
+function scheduleAckRetry(commandId) {
+    ACK_RETRY_DELAYS_MS.forEach((delay) => {
+        setTimeout(() => {
+            reackRememberedCommand(commandId);
+        }, delay);
+    });
+}
+
+// El claim se reintenta SOLO ante fallos de transporte (retryable: true); un
+// rechazo definitivo del servidor jamás se repite, y un resultado sin marca de
+// reintentabilidad (mocks / servicios parcializados) conserva el
+// comportamiento de un solo intento.
+const CLAIM_RETRY_DELAYS_MS = [500, 1_500];
+
+async function claimWithRetry(commandId, targetDeviceId) {
+    for (let attempt = 0; ; attempt += 1) {
+        const claim = await claimSupervisorCommand({ commandId, targetDeviceId });
+        if (claim?.ok || claim?.retryable !== true || attempt >= CLAIM_RETRY_DELAYS_MS.length) return claim;
+        await sleepMs(CLAIM_RETRY_DELAYS_MS[attempt]);
+    }
+}
+
+// Rechazo DEFINITIVO de la caja al reclamar (permisos, comando desconocido):
+// la orden nunca se aplicará. Se terminaliza como cancelada — el RPC de cancel
+// lo permite al dueño sobre filas aún no reclamadas — para que el monitor
+// resuelva el badge en segundos con motivo honesto, en vez de esperar el TTL.
+async function refusePendingCommand(commandId) {
+    try {
+        await cancelSupervisorCommand({
+            commandId,
+            reason: 'La caja no pudo reclamar la orden',
+        });
+    } catch (cancelError) {
+        supervisorLog('No se pudo anular la orden no reclamada', {
+            commandId: shortSupervisorId(commandId),
+            error: cancelError?.message || cancelError,
+        });
+    }
 }
 
 export function useRemoteCommands(deviceId, enabled = true) {
@@ -374,6 +435,7 @@ export function useRemoteCommands(deviceId, enabled = true) {
                         commandId: shortSupervisorId(commandId),
                         error: ackError?.message || ackError,
                     });
+                    scheduleAckRetry(commandId);
                 }
             }
 
@@ -513,7 +575,14 @@ export function useRemoteCommands(deviceId, enabled = true) {
             });
             return withSupervisorCommandLock(row.command_id, async () => {
                 try {
-                    if (disposed || appliedCommands.has(row.command_id)) return;
+                    if (disposed) return;
+                    if (appliedCommands.has(row.command_id)) {
+                        // Ya procesada en esta sesión: si la fila sigue abierta es que
+                        // su ACK se perdió — re-confirmar desde el recordatorio en vez
+                        // de tragarse el reintento silenciosamente.
+                        await reackRememberedCommand(row.command_id);
+                        return;
+                    }
                     await processCommandLocked(row);
                 } finally {
                     // Cierra la entrada con las métricas y el log [AckLatency].
@@ -525,15 +594,13 @@ export function useRemoteCommands(deviceId, enabled = true) {
         const processCommandLocked = async (row) => {
             if (disposed || !row || !['pending', 'received'].includes(row.status)) return;
 
-            const claim = await claimSupervisorCommand({
-                commandId: row.command_id,
-                targetDeviceId: deviceId,
-            });
+            const claim = await claimWithRetry(row.command_id, deviceId);
             if (!claim.ok) {
                 supervisorLog('No se pudo reclamar la orden', {
                     commandId: shortSupervisorId(row.command_id),
                     error: claim.error,
                 });
+                if (claim?.retryable === false) await refusePendingCommand(row.command_id);
                 return;
             }
             if (!claim.claimed || claim.status !== 'received') {
@@ -568,7 +635,7 @@ export function useRemoteCommands(deviceId, enabled = true) {
                     : Date.now(),
             });
             if (remembered) {
-                await ackCommand(row.command_id, remembered.status, remembered.ackPayload, remembered.errorMessage);
+                await reackRememberedCommand(row.command_id);
                 return;
             }
             if (!validation.valid) {
@@ -586,6 +653,7 @@ export function useRemoteCommands(deviceId, enabled = true) {
                         commandId: shortSupervisorId(row.command_id),
                         error: ackError?.message || ackError,
                     });
+                    scheduleAckRetry(row.command_id);
                 }
                 return;
             }
@@ -670,6 +738,7 @@ export function useRemoteCommands(deviceId, enabled = true) {
                         commandId: shortSupervisorId(row.command_id),
                         error: ackError?.message || ackError,
                     });
+                    scheduleAckRetry(row.command_id);
                     return;
                 }
                 supervisorLog('ACK enviado', {
@@ -696,6 +765,7 @@ export function useRemoteCommands(deviceId, enabled = true) {
                         commandId: shortSupervisorId(row.command_id),
                         error: ackError?.message || ackError,
                     });
+                    scheduleAckRetry(row.command_id);
                 }
                 console.error('[RemoteCommands] Comando rechazado:', error);
             }

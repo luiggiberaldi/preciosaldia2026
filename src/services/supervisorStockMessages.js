@@ -89,6 +89,10 @@ const STOCK_MESSAGES = {
         text: 'La orden expiró en la caja sin aplicarse',
         type: 'error',
     },
+    ORDER_NOT_CREATED: {
+        text: 'La orden no llegó a la caja y no se aplicó',
+        type: 'error',
+    },
 
     // ── Validación de líneas (compartida por fila y lote) ───────────────────
     PRODUCT_REQUIRED: {

@@ -20,7 +20,7 @@ const h = vi.hoisted(() => ({
     toast: vi.fn(),
     triggerRefresh: vi.fn(),
     // La inspección del comando se controla por test (por defecto: sin resolver).
-    inspectImpl: async () => ({ state: 'absent' }),
+    inspectImpl: async () => ({ state: 'unknown' }),
 }));
 
 vi.mock('../src/config/supabaseCloud', () => ({
@@ -120,7 +120,7 @@ describe('OwnerMonitorView · ajuste de fila unificado con supervisorStockOps', 
         h.planSpy.mockClear();
         h.toast.mockClear();
         h.triggerRefresh.mockClear();
-        h.inspectImpl = async () => ({ state: 'absent' });
+        h.inspectImpl = async () => ({ state: 'unknown' });
         await clearCommandDiagnostics();
         resetSupervisorCommandQueue();
         localStorage.clear();
@@ -281,7 +281,7 @@ describe('OwnerMonitorView · diagnóstico de comandos y reconciliación de fila
         h.sendBatch.mockReset();
         h.toast.mockClear();
         h.triggerRefresh.mockClear();
-        h.inspectImpl = async () => ({ state: 'absent' });
+        h.inspectImpl = async () => ({ state: 'unknown' });
         await clearCommandDiagnostics();
         localStorage.clear();
         localStorage.setItem('pda_paired_device_id', 'device-12345678');

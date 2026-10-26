@@ -20,7 +20,7 @@ const h = vi.hoisted(() => ({
     planSpy: vi.fn(),
     toast: vi.fn(),
     triggerRefresh: vi.fn(),
-    inspectImpl: async () => ({ state: 'absent' }),
+    inspectImpl: async () => ({ state: 'unknown' }),
 }));
 
 vi.mock('../src/config/supabaseCloud', () => ({

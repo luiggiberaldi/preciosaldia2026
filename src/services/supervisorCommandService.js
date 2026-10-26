@@ -77,12 +77,23 @@ export async function claimSupervisorCommand({ client = supabaseCloud, commandId
         p_command_id: commandId,
         p_target_device_id: targetDeviceId,
     });
-    if (error) return { ok: false, status: 'failed', error: error.message || 'No se pudo reclamar la orden' };
+    if (error) {
+        // `retryable` distingue un corte de transporte (se reintenta) de un
+        // rechazo DEFINITIVO del servidor (permisos, comando desconocido…): con
+        // este segundo el receptor terminaliza la orden en vez de dejarla
+        // esperando su TTL. Usa la misma taxonomía que los reintentos del create.
+        return {
+            ok: false,
+            status: 'failed',
+            error: error.message || 'No se pudo reclamar la orden',
+            retryable: isRetryableCreateError(error),
+        };
+    }
 
     const result = Array.isArray(data) ? data[0] : data;
     const allowedStates = ['received', 'pending', ...SUPERVISOR_TERMINAL_COMMAND_STATUSES];
     if (!result || result.command_id !== commandId || !allowedStates.includes(result.status)) {
-        return { ok: false, status: 'failed', error: 'Respuesta inválida al reclamar la orden' };
+        return { ok: false, status: 'failed', error: 'Respuesta inválida al reclamar la orden', retryable: false };
     }
 
     return {
@@ -116,10 +127,13 @@ export async function readSupervisorCommandAck(client, commandId) {
  *  - 'active'   : pending vigente o received (Fase 7: received nunca expira) →
  *                 la caja puede seguir aplicándolo; NO crear otro.
  *  - 'expired'  : pending con expires_at vencido → derivado, jamás se aplicará.
+ *  - 'unknown'  : no se pudo consultar (sin cliente / id inválido) → NADA se
+ *                 concluye. Se distingue de 'absent' para que la reconciliación
+ *                 no declare «la orden no existe» por un problema local.
  */
 export async function inspectSupervisorCommandState(commandId, { client = supabaseCloud, now = Date.now() } = {}) {
     if (!client || typeof commandId !== 'string' || !commandId.trim()) {
-        return { state: 'absent', commandId: commandId || null, ack: null, row: null };
+        return { state: 'unknown', commandId: commandId || null, ack: null, row: null };
     }
     const { data, error } = await client
         .from('supervisor_commands')
@@ -455,7 +469,18 @@ export async function sendSupervisorCommand({
     }
 
     if (createError) {
-        return { ok: false, status: 'failed', error: createError.message || 'No se pudo crear la orden' };
+        // Un error NO reintentable es un rechazo CIERTO del servidor (validación
+        // de la ventana, payload, permisos…): la orden NUNCA llegó a crearse y
+        // jamás se aplicará. Solo el transporte agotado deja el resultado
+        // incierto ('failed': la RPC pudo crear la fila y perderse la respuesta).
+        // El vocabulario lo fija tests/supervisorCommands.test.js: 'rejected'
+        // jamás puede venir de un fallo de transporte.
+        const certain = !isRetryableCreateError(createError);
+        return {
+            ok: false,
+            status: certain ? 'rejected' : 'failed',
+            error: createError.message || 'No se pudo crear la orden',
+        };
     }
 
     if (!created?.command_id) {

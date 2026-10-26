@@ -14,6 +14,7 @@ import {
   claimSupervisorCommand,
   fetchSupervisorCommandsForRecovery,
   getCommandTtlMs,
+  inspectSupervisorCommandState,
   sendSupervisorCommand,
   shouldAwaitSupervisorAck,
   SUPERVISOR_COMMAND_TTL_MS,
@@ -918,7 +919,10 @@ describe("sendSupervisorCommand — reintentos de transporte del create (Fase 1)
 
       const result = await send(client);
 
-      expect(result).toMatchObject({ ok: false, status: "failed" });
+      // Rechazo CIERTO del servidor: la orden nunca se creó ni se aplicará.
+      // 'rejected' (no 'failed') es lo que permite al batch tratarlo como
+      // conclusión — el badge del producto se resuelve en segundos.
+      expect(result).toMatchObject({ ok: false, status: "rejected" });
       expect(result.error).toBe(error.message);
       expect(calls).toHaveLength(1);
     }
@@ -975,6 +979,45 @@ describe("sendSupervisorCommand — reintentos de transporte del create (Fase 1)
     expect(result.error).toBe("Failed to fetch");
     expect(calls).toHaveLength(3);
     expect(delays).toEqual([1000, 2000]);
+  });
+});
+
+describe("inspectSupervisorCommandState — 'absent' jamás se confunde con 'unknown'", () => {
+  it("sin cliente consultable no concluye nada ('unknown'); sin fila es 'absent' (la orden nunca se creó)", async () => {
+    expect(await inspectSupervisorCommandState("cmd-1", { client: null })).toMatchObject({ state: "unknown" });
+    expect(await inspectSupervisorCommandState("", { client: {} })).toMatchObject({ state: "unknown" });
+
+    const client = {
+      from: () => ({
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
+      }),
+    };
+    expect(await inspectSupervisorCommandState("cmd-1", { client })).toMatchObject({ state: "absent", ack: null });
+  });
+});
+
+describe("claimSupervisorCommand — distingue corte de red de rechazo definitivo", () => {
+  it("un rechazo del servidor viene marcado como NO reintentable; un corte de red sí lo es", async () => {
+    const definitiveClient = {
+      rpc: async () => ({
+        data: null,
+        error: { message: "Comando no encontrado o caja no autorizada", code: "P0001" },
+      }),
+    };
+    expect(await claimSupervisorCommand({
+      client: definitiveClient,
+      commandId: "cmd-1",
+      targetDeviceId: "device-1",
+    })).toMatchObject({ ok: false, retryable: false });
+
+    const transportClient = {
+      rpc: async () => ({ data: null, error: new TypeError("Failed to fetch") }),
+    };
+    expect(await claimSupervisorCommand({
+      client: transportClient,
+      commandId: "cmd-1",
+      targetDeviceId: "device-1",
+    })).toMatchObject({ ok: false, retryable: true });
   });
 });
 

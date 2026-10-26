@@ -292,7 +292,12 @@ async function run(record, deps) {
         status: 'unresolved',
         error: 'Sin confirmación de la caja tras el presupuesto de reconciliación',
     });
+    // El registro queda «unresolved» — SIN cerrar (finalNotified intacto: un
+    // desenlace tardío sigue pudiendo mandar) — para que el badge del producto
+    // no quede en «ESPERANDO A LA CAJA» pegado tras agotar el presupuesto.
+    record.state = 'unresolved';
     if (!record.finalNotified) announceWaiting(record, notify);
+    emitChange();
 }
 
 /**

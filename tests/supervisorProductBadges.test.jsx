@@ -8,12 +8,47 @@
 import React from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { APPLIED_BADGE_MS, productQueueState } from '../src/services/supervisorCommandQueue';
+import { resetSupervisorCommandTracker, trackSupervisorCommand } from '../src/services/supervisorCommandTracker';
 import ProductStateBadge from '../src/components/Monitor/ProductStateBadge';
+import { trackedStateByProduct } from '../src/components/Monitor/SupervisorInventoryCatalog';
 
 const NOW = Date.parse('2026-10-18T12:00:00.000Z');
 const queueEntryFor = (productId) => ({ id: 'q1', productIds: [productId] });
+
+describe('trackedStateByProduct: el tracker alimenta el badge', () => {
+    beforeEach(() => resetSupervisorCommandTracker());
+
+    it('un comando en vuelo marca el producto; uno «unresolved» lo libera (nunca ESPERANDO para siempre)', async () => {
+        trackSupervisorCommand({
+            commandId: 'cmd-badge-wait',
+            type: 'supervisor.inventory.batch.adjust',
+            payload: { direction: 'ingreso', lines: [{ productId: 'p1' }] },
+            ackPromise: new Promise(() => {}),
+            notify: () => {},
+            announceSent: false,
+        });
+        expect(trackedStateByProduct().p1).toMatchObject({ inFlight: true });
+
+        const unresolved = trackSupervisorCommand({
+            commandId: 'cmd-badge-unresolved',
+            type: 'supervisor.inventory.batch.adjust',
+            payload: { direction: 'ingreso', lines: [{ productId: 'p2' }] },
+            ackPromise: Promise.resolve({ ok: false, status: 'timeout', error: 'sin confirmación' }),
+            inspectState: vi.fn().mockResolvedValue({ state: 'active', ack: null }),
+            followUpIntervalMs: 1,
+            followUpBudgetMs: 1,
+            sleep: async () => {},
+            notify: () => {},
+            announceSent: false,
+        });
+        await unresolved.promise;
+
+        expect(unresolved.state).toBe('unresolved');
+        expect(trackedStateByProduct().p2).toMatchObject({ inFlight: false });
+    });
+});
 
 describe('productQueueState: el badge sale del estado real', () => {
     it('cambio sin enviar → EN COLA', () => {
