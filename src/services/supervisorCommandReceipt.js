@@ -84,6 +84,18 @@ function typeLabelOf(payload = {}, type) {
             return 'CIERRE DE TURNO';
         case 'supervisor.shift.reopen':
             return 'REAPERTURA DE TURNO';
+        case 'supervisor.supplier.create':
+            return 'ALTA DE PROVEEDOR';
+        case 'supervisor.supplier.update':
+            return 'EDICIÓN DE PROVEEDOR';
+        case 'supervisor.supplier.delete':
+            return 'BAJA DE PROVEEDOR';
+        case 'supervisor.invoice.create':
+            return 'REGISTRO DE FACTURA';
+        case 'supervisor.invoice.update':
+            return 'EDICIÓN DE FACTURA';
+        case 'supervisor.invoice.delete':
+            return 'BAJA DE FACTURA';
         default:
             return 'ORDEN DEL SUPERVISOR';
     }
@@ -117,6 +129,20 @@ function titleOf(command, payload, resolveName) {
             return payload.nombre || payload.patch?.nombre || `Usuario ${shortId(payload.userId)}`;
         case 'supervisor.user.delete':
             return payload.nombre || `Usuario ${shortId(payload.userId)}`;
+        case 'supervisor.supplier.create':
+            return payload.supplier?.name || `Proveedor ${shortId(payload.supplier?.id)}`;
+        case 'supervisor.supplier.update':
+        case 'supervisor.supplier.delete':
+            return payload.supplierName || payload.patch?.name || `Proveedor ${shortId(payload.supplierId)}`;
+        case 'supervisor.invoice.create':
+            return payload.invoice?.invoiceNumber
+                ? `Factura #${payload.invoice.invoiceNumber}`
+                : `Factura ${shortId(payload.invoice?.id)}`;
+        case 'supervisor.invoice.update':
+        case 'supervisor.invoice.delete':
+            return payload.invoiceNumber
+                ? `Factura #${payload.invoiceNumber}`
+                : `Factura ${shortId(payload.invoiceId)}`;
         case 'supervisor.rate.set':
             return 'Tasa de la caja';
         case 'supervisor.shift.close':
@@ -171,6 +197,22 @@ function detailLinesOf(payload = {}, type) {
                 .filter(([key, value]) => !ignored.has(key) && value != null)
                 .slice(0, 4)
                 .forEach(([key, value]) => chips.push(`${key}: ${String(value)}`));
+            return chips;
+        }
+        case 'supervisor.supplier.create':
+        case 'supervisor.supplier.update': {
+            const phone = payload.supplier?.phone ?? payload.patch?.phone;
+            if (phone) chips.push(`Tel: ${phone}`);
+            return chips;
+        }
+        case 'supervisor.invoice.create': {
+            const inv = payload.invoice || {};
+            if (inv.amountUsd != null) chips.push(`Monto: ${formatAmount(inv.amountUsd)}`);
+            if (inv.dueDate) chips.push(`Vence: ${inv.dueDate}`);
+            return chips;
+        }
+        case 'supervisor.invoice.update': {
+            if (payload.patch?.amountUsd != null) chips.push(`Monto: ${formatAmount(payload.patch.amountUsd)}`);
             return chips;
         }
         default:

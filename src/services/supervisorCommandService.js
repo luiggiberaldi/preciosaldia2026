@@ -5,6 +5,7 @@ import {
     SUPERVISOR_REMOTE_INCOME_ENABLED,
     SUPERVISOR_REMOTE_RATE_ENABLED,
     SUPERVISOR_REMOTE_EGRESS_ENABLED,
+    SUPERVISOR_REMOTE_SUPPLIERS_ENABLED,
     SUPERVISOR_EXTENDED_TTL_ENABLED,
 } from '../config/supervisorPolicy';
 import { ensureSupervisorSession } from './supervisorAuth';
@@ -163,12 +164,15 @@ export function isSupervisorCommandEnabled(type, payload = {}) {
     const isIncomeBatch = type === 'supervisor.inventory.batch.adjust' && payload?.direction === 'ingreso';
     const isEgressBatch = type === 'supervisor.inventory.batch.adjust' && payload?.direction === 'egreso';
     const isRateChange = type === 'supervisor.rate.set';
+    const isSupplierChange = type.startsWith('supervisor.supplier.');
+    const isInvoiceChange = type.startsWith('supervisor.invoice.');
 
     return SUPERVISOR_REMOTE_MUTATIONS_ENABLED
         || (isProductChange && SUPERVISOR_REMOTE_PRODUCTS_ENABLED)
         || (isIncomeBatch && SUPERVISOR_REMOTE_INCOME_ENABLED)
         || (isEgressBatch && SUPERVISOR_REMOTE_EGRESS_ENABLED)
-        || (isRateChange && SUPERVISOR_REMOTE_RATE_ENABLED);
+        || (isRateChange && SUPERVISOR_REMOTE_RATE_ENABLED)
+        || ((isSupplierChange || isInvoiceChange) && SUPERVISOR_REMOTE_SUPPLIERS_ENABLED);
 }
 
 export function generateSupervisorCommandId() {

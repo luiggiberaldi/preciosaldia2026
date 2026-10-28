@@ -52,6 +52,12 @@ export const COMMAND_TYPE_LABELS = Object.freeze({
     'supervisor.shift.close': 'Cerrar turno',
     'supervisor.shift.reopen': 'Reabrir turno',
     'supervisor.inventory.batch.adjust': 'Movimiento de inventario',
+    'supervisor.supplier.create': 'Crear proveedor',
+    'supervisor.supplier.update': 'Editar proveedor',
+    'supervisor.supplier.delete': 'Eliminar proveedor',
+    'supervisor.invoice.create': 'Registrar factura',
+    'supervisor.invoice.update': 'Editar factura',
+    'supervisor.invoice.delete': 'Eliminar factura',
 });
 
 function isWarningCommand(command) {
@@ -116,6 +122,11 @@ export function getCommandDetails(command = {}) {
     }
     if (payload.reason) details.push(payload.reason);
     if (payload.rateMode) details.push(`Modo: ${payload.rateMode}`);
+    const supplierName = payload.supplier?.name || payload.supplierName;
+    if (supplierName) details.push(supplierName);
+    const invoiceNumber = payload.invoice?.invoiceNumber || payload.invoiceNumber;
+    if (invoiceNumber) details.push(`Factura #${invoiceNumber}`);
+    if (payload.invoice?.amountUsd != null) details.push(`USD ${Number(payload.invoice.amountUsd).toFixed(2)}`);
     return details;
 }
 

@@ -47,6 +47,10 @@ describe('resetPOSDataToEmpty (F3: snapshot vacío publicable)', () => {
             'bodega_customers_v1',
             'bodega_customer_ledger_v1',
             'bodega_accounts_v2',
+            // Fase 6: el vaciado total también tumba el estado de cuenta de
+            // proveedores (sin esto, el monitor conserva facturas fantasma).
+            'bodega_suppliers_v1',
+            'bodega_supplier_invoices_v1',
         ]);
         expect(idbStore.entries.size).toBe(EMPTY_SNAPSHOT_KEYS.length);
     });

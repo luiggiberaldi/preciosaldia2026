@@ -50,14 +50,16 @@ describe('Supervisor lifecycle guardrails', () => {
         // La misma guarda vive ahora en dos piezas: la selección de claves en
         // cliente y el fetch de payloads SOLO por ids explícitos permitidos
         // (SEC-002: nunca se descarga un doc fuera de contrato).
-        // Fase 5: la selección de cliente es una allowlist de TRES cláusulas —
-        // la lista fija más las DOS familias por prefijo (`bodega_sales_v1:…`
-        // y `bodega_products_v1:bNN`, cuyos docs no caben en
+        // Fase 5/6: la selección de cliente es una allowlist de CUATRO
+        // cláusulas — la lista fija más las TRES familias por prefijo
+        // (`bodega_sales_v1:…`, `bodega_products_v1:bNN` y
+        // `bodega_supplier_invoices_v1:<año>`, cuyos docs no caben en
         // SUPERVISOR_SYNC_KEYS). Si una cláusula se cae, el monitor deja de
-        // descargar esa familia entera sin aviso (ventas o productos).
+        // descargar esa familia entera sin aviso (ventas, productos o facturas).
         expect(monitorSync).toContain(`SUPERVISOR_SYNC_KEYS.includes(doc.doc_id)
                 || isSalesSyncDocId(doc.doc_id)
-                || isProductsSyncDocId(doc.doc_id)`);
+                || isProductsSyncDocId(doc.doc_id)
+                || isSupplierInvoicesSyncDocId(doc.doc_id)`);
         expect(monitorSync).toContain(".in('doc_id', targetDocIds)");
         expect(monitorSync).not.toContain(".in('doc_id', SUPERVISOR_SYNC_KEYS)");
         expect(cloudSync).toContain('forceSyncAllPOSData(deviceId, false)');

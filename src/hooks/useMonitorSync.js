@@ -28,11 +28,14 @@ import { clearMonitorCache } from '../services/monitorUnpair';
 import {
     PRODUCTS_SYNC_BASE_KEY,
     SALES_SYNC_BASE_KEY,
+    SUPPLIER_INVOICES_SYNC_BASE_KEY,
     applyProductsDocToBaseline,
     deriveProductsFromBaseline,
     isProductsSyncDocId,
     isSalesSyncDocId,
+    isSupplierInvoicesSyncDocId,
     mergeSalesSyncDoc,
+    mergeSupplierInvoicesSyncDoc,
 } from './useCloudSync';
 
 // Plan de stock delta: el catálogo del monitor es una VISTA derivada — el
@@ -167,8 +170,10 @@ export function useMonitorSync(pairedDeviceId) {
         // `bodega_products_v1`, no los periodos ni los buckets).
         const isSalesFamily = isSalesSyncDocId(docId);
         const isProductsFamily = isProductsSyncDocId(docId);
+        const isSupplierInvoicesFamily = isSupplierInvoicesSyncDocId(docId);
         const contractKey = isSalesFamily ? SALES_SYNC_BASE_KEY
-            : isProductsFamily ? PRODUCTS_SYNC_BASE_KEY : docId;
+            : isProductsFamily ? PRODUCTS_SYNC_BASE_KEY
+            : isSupplierInvoicesFamily ? SUPPLIER_INVOICES_SYNC_BASE_KEY : docId;
         const validation = validateSupervisorSyncDocument(contractKey, envelope.payload);
         if (!validation.valid) {
             return { applied: false, rejected: true, error: validation.error };
@@ -231,6 +236,14 @@ export function useMonitorSync(pairedDeviceId) {
                     );
                     await localforage.setItem(PRODUCTS_STOCK_BASELINE_KEY, baseline);
                     await localforage.setItem(writeKey, deriveProductsFromBaseline(baseline, localSales));
+                } else if (isSupplierInvoicesFamily) {
+                    // Fase 6: reemplazo de franja por año en la clave local
+                    // única que leen las vistas: la edición y el borrado de
+                    // facturas se propagan (una tumba `[]` vacía SU año).
+                    writeKey = SUPPLIER_INVOICES_SYNC_BASE_KEY;
+                    const localInvoices = await localforage.getItem(SUPPLIER_INVOICES_SYNC_BASE_KEY);
+                    const mergedInvoices = mergeSupplierInvoicesSyncDoc(localInvoices, docId, envelope.payload);
+                    await localforage.setItem(writeKey, mergedInvoices);
                 } else {
                     await localforage.setItem(docId, envelope.payload);
                 }
@@ -473,7 +486,8 @@ export function useMonitorSync(pairedDeviceId) {
             const allowedDocs = (metadata || []).filter((doc) =>
                 SUPERVISOR_SYNC_KEYS.includes(doc.doc_id)
                 || isSalesSyncDocId(doc.doc_id)
-                || isProductsSyncDocId(doc.doc_id));
+                || isProductsSyncDocId(doc.doc_id)
+                || isSupplierInvoicesSyncDocId(doc.doc_id));
 
             let targetDocIds;
             if (full) {

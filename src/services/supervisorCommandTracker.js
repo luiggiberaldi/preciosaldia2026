@@ -65,6 +65,12 @@ const DEFAULT_LABELS = {
     'supervisor.shift.close': 'el cierre de turno',
     'supervisor.shift.reopen': 'la reapertura de turno',
     'supervisor.inventory.batch.adjust': 'el ajuste de inventario',
+    'supervisor.supplier.create': 'el alta de proveedor',
+    'supervisor.supplier.update': 'la edición del proveedor',
+    'supervisor.supplier.delete': 'la baja del proveedor',
+    'supervisor.invoice.create': 'el registro de factura',
+    'supervisor.invoice.update': 'la edición de la factura',
+    'supervisor.invoice.delete': 'la baja de la factura',
 };
 
 /** Descripción llana del cambio: nombra qué se pidió, nunca un genérico vacío. */
@@ -90,6 +96,22 @@ export function describeSupervisorCommand(type, payload = {}) {
             return `la edición de "${payload.nombre || 'usuario'}"`;
         case 'supervisor.user.delete':
             return payload.nombre ? `la baja de "${payload.nombre}"` : 'la baja de usuario';
+        case 'supervisor.supplier.create':
+            return `el alta de "${payload.supplier?.name || 'proveedor'}"`;
+        case 'supervisor.supplier.update':
+            return payload.patch?.name
+                ? `la edición de "${payload.patch.name}"`
+                : 'la edición del proveedor';
+        case 'supervisor.supplier.delete':
+            return payload.supplierName
+                ? `la baja de "${payload.supplierName}"`
+                : 'la baja del proveedor';
+        case 'supervisor.invoice.create':
+            return `el registro de factura${payload.invoice?.invoiceNumber ? ` #${payload.invoice.invoiceNumber}` : ''}`;
+        case 'supervisor.invoice.update':
+            return `la edición de la factura${payload.invoiceNumber ? ` #${payload.invoiceNumber}` : ''}`;
+        case 'supervisor.invoice.delete':
+            return `la baja de la factura${payload.invoiceNumber ? ` #${payload.invoiceNumber}` : ''}`;
         case 'supervisor.inventory.batch.adjust': {
             const lines = Array.isArray(payload.lines) ? payload.lines.length : (payload.productId ? 1 : 0);
             const base = DEFAULT_LABELS[type];

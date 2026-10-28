@@ -11,7 +11,7 @@ import {
     RefreshCw, Wifi, WifiOff, Clock, FileText, DollarSign,
     Wallet, CreditCard, Smartphone, Banknote, ArrowDownRight, ArrowDownToLine, ArrowUpFromLine,
     ShieldCheck, Hash, AlertTriangle, ChevronLeft, ChevronRight,
-    Plus, Minus, Check, X, Pencil, Trash2, Activity, Radio
+    Plus, Minus, Check, X, Pencil, Trash2, Activity, Radio, Truck
 } from 'lucide-react';
 import { formatBs, formatCop } from '../utils/calculatorUtils';
 import { getLocalISODate, getDateRange } from '../utils/dateHelpers';
@@ -19,6 +19,7 @@ import { toTitleCase } from '../config/paymentMethods';
 import SupervisorRateModal from '../components/Monitor/SupervisorRateModal';
 import RemoteProductFormModal from '../components/Monitor/RemoteProductFormModal';
 import SupervisorInventoryBatchPanel from '../components/Monitor/SupervisorInventoryBatchPanel';
+import SupplierLedgerPanel from '../components/Monitor/SupplierLedgerPanel';
 import SupervisorCommandDiagnosticsPanel from '../components/Monitor/SupervisorCommandDiagnosticsPanel';
 import SupervisorSyncDiagnosticsPanel from '../components/Monitor/SupervisorSyncDiagnosticsPanel';
 import { useSupervisorTeamNotices } from '../hooks/useSupervisorTeamNotices';
@@ -117,7 +118,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
     const [disconnectError, setDisconnectError] = useState('');
     const [disconnectServerRevoked, setDisconnectServerRevoked] = useState(false);
     const disconnectingRef = useRef(false);
-    const [viewTab, setViewTab] = useState('activo'); // 'activo', 'cierres', 'inventario' o 'control'
+    const [viewTab, setViewTab] = useState('activo'); // 'activo', 'cierres', 'inventario', 'proveedores' o 'control'
     // Propuesta 8: los cambios de OTROS supervisores avisan aunque la pestaña
     // Control esté cerrada. El canal lo mantiene useSupervisorControl (canal
     // único) y reenvía cada comando a este hook por onCommandRow.
@@ -1252,6 +1253,17 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                         <span>Inventario</span>
                     </button>
                     <button
+                        onClick={() => { triggerHaptic?.(); setViewTab('proveedores'); }}
+                        className={`shrink-0 min-h-12 sm:min-h-11 flex-1 py-1.5 sm:py-2 px-2 sm:px-3 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap active:scale-95 ${
+                            viewTab === 'proveedores'
+                                ? 'bg-white dark:bg-slate-800 text-slate-850 dark:text-white shadow-sm'
+                                : 'text-slate-400 hover:text-slate-650 dark:hover:text-slate-200'
+                        }`}
+                    >
+                        <Truck size={17} className={viewTab === 'proveedores' ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400'} />
+                        <span>Proveedores</span>
+                    </button>
+                    <button
                         onClick={() => { triggerHaptic?.(); setViewTab('control'); }}
                         className={`shrink-0 min-h-12 sm:min-h-11 flex-1 py-1.5 sm:py-2 px-2 sm:px-3 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 text-[10px] sm:text-xs font-black rounded-xl transition-all whitespace-nowrap active:scale-95 ${
                             viewTab === 'control'
@@ -1263,6 +1275,10 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                         <span>Control</span>
                     </button>
                 </div>
+
+                {viewTab === 'proveedores' && (
+                    <SupplierLedgerPanel targetDeviceId={pairedDeviceId || null} />
+                )}
 
                 {viewTab === 'control' && (
                     <SupervisorControlPanel

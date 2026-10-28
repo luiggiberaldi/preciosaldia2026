@@ -8,8 +8,10 @@ import { buildCloudBackupsRow, buildSyncDocumentRow } from '../config/cloudSchem
 import {
     PRODUCTS_SYNC_BASE_KEY,
     SALES_SYNC_BASE_KEY,
+    SUPPLIER_INVOICES_SYNC_BASE_KEY,
     buildProductsSyncPlan,
     buildSalesSyncPlan,
+    buildSupplierInvoicesSyncPlan,
     projectSyncPayload,
 } from './useCloudSync';
 import { ensureDeviceSessionRegistered } from '../utils/deviceIdentity';
@@ -146,6 +148,19 @@ export function useCloudBackup({
                 // eventos 413); el legacy queda como histórico congelado.
                 if (key === PRODUCTS_SYNC_BASE_KEY) {
                     for (const slice of buildProductsSyncPlan(value)) {
+                        syncPayloads.push(buildSyncDocumentRow({
+                            deviceId,
+                            collection: 'store',
+                            docId: slice.docId,
+                            data: { payload: slice.records },
+                        }));
+                    }
+                    continue;
+                }
+                // Fase 6: las facturas de proveedores también entran por su
+                // familia (un doc por año; nunca el doc base monolítico).
+                if (key === SUPPLIER_INVOICES_SYNC_BASE_KEY) {
+                    for (const slice of buildSupplierInvoicesSyncPlan(value)) {
                         syncPayloads.push(buildSyncDocumentRow({
                             deviceId,
                             collection: 'store',

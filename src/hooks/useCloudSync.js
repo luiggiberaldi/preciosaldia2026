@@ -393,6 +393,118 @@ function rememberProductsSyncTrackedIds(ids) {
     localStorage.setItem(PRODUCTS_SYNC_TRACKING_KEY, JSON.stringify([...merged]));
 }
 
+// ─── Fase 6: familia bodega_supplier_invoices_v1 por año ────────────────────
+// Visibilidad de proveedores/facturas en el supervisor (Fase 1, solo lectura).
+// Las facturas son entidades mutables y borrables (los montos se editan; las
+// sin pagos se eliminan), así que la semántica del lector es REEMPLAZO DE
+// FRANJA (igual que productos): un doc = TODAS las facturas de SU año, en
+// orden canónico por (fecha, id). El año es el periodo natural del estado de
+// cuenta y ningún año se acerca al techo (un año de facturas de bodega son
+// decenas de KB; el histórico entero viaja en los respaldos). A diferencia de
+// ventas y productos, esta familia NACE partida: nunca se publicó un doc
+// legacy `bodega_supplier_invoices_v1`, y el doc base solo se admite
+// defensivamente (unión con «lo entrante gana», nunca limpia).
+export const SUPPLIER_INVOICES_SYNC_BASE_KEY = 'bodega_supplier_invoices_v1';
+// Docs de la familia publicados alguna vez por este equipo: el vaciado total y
+// el borrado de un año completo deben tumbearlos (espejo de ventas/productos).
+export const SUPPLIER_INVOICES_SYNC_TRACKING_KEY = 'pda_supplier_invoices_sync_docs_v1';
+
+export function isSupplierInvoicesSyncDocId(docId) {
+    return docId === SUPPLIER_INVOICES_SYNC_BASE_KEY
+        || (typeof docId === 'string' && docId.startsWith(`${SUPPLIER_INVOICES_SYNC_BASE_KEY}:`));
+}
+
+/** Periodo de una factura: `YYYY` de su fecha; sin fecha válida → `recent`. */
+export function getSupplierInvoicesSyncPeriodOf(record) {
+    const value = record?.date || record?.timestamp;
+    const year = typeof value === 'string' ? value.slice(0, 4) : '';
+    return /^\d{4}$/.test(year) ? year : 'recent';
+}
+
+/** Periodo de un doc de la familia; null si no es `<base>:<periodo>`. */
+export function parseSupplierInvoicesSyncDocId(docId) {
+    if (!isSupplierInvoicesSyncDocId(docId) || docId === SUPPLIER_INVOICES_SYNC_BASE_KEY) return null;
+    const period = docId.slice(SUPPLIER_INVOICES_SYNC_BASE_KEY.length + 1);
+    return /^\d{4}$/.test(period) || period === 'recent' ? period : null;
+}
+
+function compareSupplierInvoiceRecords(a, b) {
+    const ta = a?.date || a?.timestamp || '';
+    const tb = b?.date || b?.timestamp || '';
+    if (ta !== tb) return ta < tb ? -1 : 1;
+    const ia = String(a?.id ?? '');
+    const ib = String(b?.id ?? '');
+    return ia < ib ? -1 : ia > ib ? 1 : 0;
+}
+
+/**
+ * Parte las facturas en documentos por año. Un doc = el año COMPLETO, en
+ * orden canónico: editar una factura reescribe solo su año, nunca el histórico.
+ */
+export function buildSupplierInvoicesSyncPlan(invoices) {
+    const list = Array.isArray(invoices) ? invoices : [];
+    const byPeriod = new Map();
+    for (const record of list) {
+        const period = getSupplierInvoicesSyncPeriodOf(record);
+        if (!byPeriod.has(period)) byPeriod.set(period, []);
+        byPeriod.get(period).push(record);
+    }
+    return [...byPeriod.entries()]
+        .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+        .map(([period, records]) => {
+            const sorted = [...records].sort(compareSupplierInvoiceRecords);
+            return {
+                docId: `${SUPPLIER_INVOICES_SYNC_BASE_KEY}:${period}`,
+                period,
+                records: sorted,
+                bytes: JSON.stringify(sorted).length + 1,
+            };
+        });
+}
+
+/**
+ * Merge de un documento de la familia de facturas en la lista local.
+ *  - doc de año: REEMPLAZO DE FRANJA — sustituye exactamente las facturas de
+ *    ese año por el payload entrante, así la edición y el borrado se propagan.
+ *    `[]` vacía SOLO ese año (tombstone).
+ *  - doc base (defensivo): unión con «lo entrante gana»; nunca limpia.
+ * Payload no-arreglo → no-op (devuelve el local tal cual).
+ */
+export function mergeSupplierInvoicesSyncDoc(localInvoices, docId, payload) {
+    const local = Array.isArray(localInvoices) ? localInvoices : [];
+    if (!Array.isArray(payload)) return local;
+
+    const period = parseSupplierInvoicesSyncDocId(docId);
+    if (period !== null) {
+        const withoutPeriod = local.filter((r) => getSupplierInvoicesSyncPeriodOf(r) !== period);
+        return payload.length === 0 ? withoutPeriod : [...withoutPeriod, ...payload];
+    }
+
+    if (docId !== SUPPLIER_INVOICES_SYNC_BASE_KEY || payload.length === 0) return local;
+    const incomingIds = new Set(payload.map((r) => r?.id));
+    const incomingById = new Map(payload.map((r) => [r?.id, r]));
+    const merged = local.map((r) => (incomingIds.has(r?.id) ? incomingById.get(r?.id) : r));
+    const localIds = new Set(local.map((r) => r?.id));
+    for (const record of payload) {
+        if (!localIds.has(record?.id)) merged.push(record);
+    }
+    return merged;
+}
+
+function readSupplierInvoicesSyncTrackedIds() {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(SUPPLIER_INVOICES_SYNC_TRACKING_KEY) || '[]');
+        return Array.isArray(parsed) ? parsed.filter((id) => isSupplierInvoicesSyncDocId(id)) : [];
+    } catch {
+        return [];
+    }
+}
+
+function rememberSupplierInvoicesSyncTrackedIds(ids) {
+    const merged = new Set([...readSupplierInvoicesSyncTrackedIds(), ...ids.filter((id) => isSupplierInvoicesSyncDocId(id))]);
+    localStorage.setItem(SUPPLIER_INVOICES_SYNC_TRACKING_KEY, JSON.stringify([...merged]));
+}
+
 /**
  * Franjas cuyo doc de bucket YA se aplicó en este equipo (su watermark
  * persiste). El legacy congelado no debe re-añadir sus ids: el bucket es la
@@ -558,7 +670,7 @@ function hasPriorSyncEvidence() {
 // Fase F3: claves del snapshot crítico. `[]` es un estado PUBLICABLE (vacío
 // confirmado); `null` (clave ausente) NO se publica. Esa distinción es la que
 // permite purgar el estado fantasma desde un POS vacío.
-export const EMPTY_SNAPSHOT_KEYS = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_customer_ledger_v1', 'bodega_accounts_v2'];
+export const EMPTY_SNAPSHOT_KEYS = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_customer_ledger_v1', 'bodega_accounts_v2', 'bodega_suppliers_v1', 'bodega_supplier_invoices_v1'];
 
 // ─── Estado Global del Motor ───────────────────────────────────────────────
 let globalSubscription = null;
@@ -584,7 +696,7 @@ let isCloudSyncActive = false;   // Evita empujar a la nube si el dispositivo no
 const originalSetItem = localStorage.setItem.bind(localStorage);
 
 // Keys pesadas (arrays grandes con imágenes) usan debounce más largo para agrupar ediciones
-const HEAVY_KEYS = ['bodega_products_v1', 'bodega_sales_v1', 'bodega_customers_v1', 'bodega_customer_ledger_v1', 'abasto_audit_log_v1'];
+const HEAVY_KEYS = ['bodega_products_v1', 'bodega_sales_v1', 'bodega_customers_v1', 'bodega_customer_ledger_v1', 'bodega_supplier_invoices_v1', 'abasto_audit_log_v1'];
 const DEBOUNCE_LIGHT_MS = 300;
 const DEBOUNCE_HEAVY_MS = 3000;
 
@@ -669,6 +781,11 @@ export const pushCloudSync = async (key, value, forceUnconditional = false, allo
     // Fase 5: la familia de productos se publica por buckets de hash.
     if (key === PRODUCTS_SYNC_BASE_KEY) {
         return pushProductsFamilySync(value, { stampDeviceId, hashKey, currentHash, capturedAt });
+    }
+
+    // Fase 6: la familia de facturas de proveedores se publica por año.
+    if (key === SUPPLIER_INVOICES_SYNC_BASE_KEY) {
+        return pushSupplierInvoicesFamilySync(value, { stampDeviceId, hashKey, currentHash });
     }
 
     const result = await upsertSyncDocument(stampDeviceId, key, syncValue, { stockAsOf: stockAsOfFor(key, capturedAt) });
@@ -894,6 +1011,55 @@ async function pushProductsFamilySync(value, { stampDeviceId, hashKey, currentHa
     return { ok: true, skipped: false, updatedAt, published, budget: worstBudget };
 }
 
+/**
+ * Fase 6: publica `bodega_supplier_invoices_v1` por año (reemplazo de franja).
+ *  - Solo reescribe los años cuyo contenido cambió (hash por doc): el diff por
+ *    hash es SIEMPRE el mecanismo (igual que productos), así un force no puede
+ *    re-mandar el histórico entero.
+ *  - Un año que se vacía (todas sus facturas borradas o movidas a otro año) se
+ *    tumba con `[]`: sin la tumba, la franja vieja sobrevive en la nube y el
+ *    monitor conserva facturas fantasma (misma regresión que Fase 5 en
+ *    productos). La tumba solo sale con evidencia de publicación previa por
+ *    este equipo (tracking): un doc nunca publicado no tiene franja que limpiar
+ *    y una tumba ya emitida (hash = quickHash([])) no se re-emite.
+ *  - Con la lista vacía el mismo recorrido tumba todos los docs publicados:
+ *    el snapshot vacío es publicable (F3).
+ */
+async function pushSupplierInvoicesFamilySync(value, { stampDeviceId, hashKey, currentHash }) {
+    const list = Array.isArray(value) ? value : null;
+    if (!list) return { ok: false, skipped: false, error: 'Documento de facturas inválido' };
+
+    const updatedAt = new Date().toISOString();
+    const plan = buildSupplierInvoicesSyncPlan(list);
+    const published = [];
+    const plannedIds = new Set(plan.map((slice) => slice.docId));
+
+    for (const slice of plan) {
+        const sliceHash = quickHash(slice.records);
+        const sliceHashKey = LAST_PUSH_HASH_PREFIX + slice.docId;
+        if (localStorage.getItem(sliceHashKey) === sliceHash) continue;
+        const result = await upsertSyncDocument(stampDeviceId, slice.docId, slice.records);
+        if (!result.ok) return { ok: false, skipped: false, error: result.error, published };
+        localStorage.setItem(sliceHashKey, sliceHash);
+        published.push(slice.docId);
+    }
+
+    const emptyHash = quickHash([]);
+    for (const docId of readSupplierInvoicesSyncTrackedIds()) {
+        if (plannedIds.has(docId)) continue;
+        const sliceHashKey = LAST_PUSH_HASH_PREFIX + docId;
+        if (localStorage.getItem(sliceHashKey) === emptyHash) continue;
+        const result = await upsertSyncDocument(stampDeviceId, docId, []);
+        if (!result.ok) return { ok: false, skipped: false, error: result.error, published };
+        localStorage.setItem(sliceHashKey, emptyHash);
+        published.push(docId);
+    }
+
+    rememberSupplierInvoicesSyncTrackedIds(published);
+    localStorage.setItem(hashKey, currentHash);
+    return { ok: true, skipped: false, updatedAt, published };
+}
+
 async function upsertSyncDocument(stampDeviceId, docId, value, { stockAsOf = null } = {}) {
     const collectionType = LOCAL_KEYS.includes(docId) ? 'local' : 'store';
     const updatedAt = new Date().toISOString();
@@ -1007,7 +1173,9 @@ export const forceSyncAllPOSData = async (overrideDeviceId, forceUnconditional =
             // La migración es best-effort; el snapshot crítico no la espera.
         }
 
-        const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_customer_ledger_v1', 'bodega_accounts_v2'];
+        // Proveedores y facturas entran en el snapshot: el estado de cuenta del
+        // supervisor debe existir desde el primer pull, no desde la 1ª factura.
+        const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_customer_ledger_v1', 'bodega_accounts_v2', 'bodega_suppliers_v1', 'bodega_supplier_invoices_v1'];
         let pushed = 0;
         for (const key of criticalKeys) {
             const val = await lf.getItem(key);
@@ -1052,6 +1220,8 @@ const STORE_SCHEMAS = {
         && ['CREDIT', 'DEBIT'].includes(movement?.direction)),
     'bodega_payment_methods_v1': (data) => Array.isArray(data),
     'bodega_accounts_v2': (data) => Array.isArray(data),
+    'bodega_suppliers_v1': (data) => Array.isArray(data),
+    'bodega_supplier_invoices_v1': (data) => Array.isArray(data),
     'bodega_categories_v1': (data) => Array.isArray(data),
     'monitor_rates_v12': (data) => typeof data === 'object' && data !== null,
     'abasto_audit_log_v1': (data) => Array.isArray(data),
@@ -1100,8 +1270,10 @@ export async function _applyFromCloud(docId, collection, data) {
         // `bodega_products_v1`, no los periodos ni los buckets).
         const isSalesFamily = isSalesSyncDocId(docId);
         const isProductsFamily = isProductsSyncDocId(docId);
+        const isSupplierInvoicesFamily = isSupplierInvoicesSyncDocId(docId);
         const contractKey = isSalesFamily ? SALES_SYNC_BASE_KEY
-            : isProductsFamily ? PRODUCTS_SYNC_BASE_KEY : docId;
+            : isProductsFamily ? PRODUCTS_SYNC_BASE_KEY
+            : isSupplierInvoicesFamily ? SUPPLIER_INVOICES_SYNC_BASE_KEY : docId;
 
         // Contrato común del supervisor: incluso el primary debe rechazar
         // documentos no allowlisted antes de aplicarlos localmente.
@@ -1171,6 +1343,14 @@ export async function _applyFromCloud(docId, collection, data) {
                     : [];
                 payloadToStore = mergeProductsSyncDoc(localProducts, docId, folded, { skipBuckets });
                 familyDocHashValue = folded;
+            } else if (isSupplierInvoicesFamily) {
+                // Fase 6: reemplazo de franja por año en la clave local única.
+                // El payload entrante YA es el contenido exacto del doc (el
+                // mismo arreglo que el escritor hasheó), así que sella tal cual.
+                writeKey = SUPPLIER_INVOICES_SYNC_BASE_KEY;
+                const localInvoices = await lf.getItem(SUPPLIER_INVOICES_SYNC_BASE_KEY);
+                payloadToStore = mergeSupplierInvoicesSyncDoc(localInvoices, docId, payload);
+                familyDocHashValue = payload;
             }
             await lf.setItem(writeKey, payloadToStore);
             if (docId === 'bodega_customer_ledger_v1') {
@@ -1191,7 +1371,8 @@ export async function _applyFromCloud(docId, collection, data) {
         // escritor lo salta sin re-subir); el de la clave base refleja el
         // arreglo fusionado.
         const familyBaseKey = isSalesFamily ? SALES_SYNC_BASE_KEY
-            : isProductsFamily ? PRODUCTS_SYNC_BASE_KEY : null;
+            : isProductsFamily ? PRODUCTS_SYNC_BASE_KEY
+            : isSupplierInvoicesFamily ? SUPPLIER_INVOICES_SYNC_BASE_KEY : null;
         localStorage.setItem(hashKey, quickHash(familyDocHashValue ?? payloadToStore));
         if (familyBaseKey) {
             localStorage.setItem(LAST_PUSH_HASH_PREFIX + familyBaseKey, quickHash(payloadToStore));
@@ -1359,7 +1540,9 @@ export function useCloudSync(deviceId) {
                     console.log('[CloudSync] Detectado backup importado localmente. Subiendo incondicionalmente a la nube...');
                     isCloudSyncActive = true;
                     const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
-                    const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_customer_ledger_v1', 'bodega_accounts_v2'];
+                    // Proveedores y facturas entran en el snapshot: el estado de cuenta del
+                    // supervisor debe existir desde el primer pull, no desde la 1ª factura.
+                    const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_customer_ledger_v1', 'bodega_accounts_v2', 'bodega_suppliers_v1', 'bodega_supplier_invoices_v1'];
                     for (const key of criticalKeys) {
                         const localValue = await lf.getItem(key);
                         if (localValue !== null) {
@@ -1441,7 +1624,9 @@ export function useCloudSync(deviceId) {
                 // ── Auto-recuperación: Purgar/subir datos locales que no llegaron a enviarse debido al bug anterior ──
                 try {
                     const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
-                    const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_customer_ledger_v1', 'bodega_accounts_v2'];
+                    // Proveedores y facturas entran en el snapshot: el estado de cuenta del
+                    // supervisor debe existir desde el primer pull, no desde la 1ª factura.
+                    const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_customer_ledger_v1', 'bodega_accounts_v2', 'bodega_suppliers_v1', 'bodega_supplier_invoices_v1'];
                     const existingCloudKeys = new Set((docs || []).map(d => d.doc_id));
 
                     for (const key of criticalKeys) {
@@ -1513,7 +1698,9 @@ export function useCloudSync(deviceId) {
             if (isSyncingFromCloud || !deviceId) return;
             try {
                 const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
-                const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_customer_ledger_v1', 'bodega_accounts_v2'];
+                // Proveedores y facturas entran en el snapshot: el estado de cuenta del
+                // supervisor debe existir desde el primer pull, no desde la 1ª factura.
+                const criticalKeys = ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1', 'bodega_customer_ledger_v1', 'bodega_accounts_v2', 'bodega_suppliers_v1', 'bodega_supplier_invoices_v1'];
                 for (const key of criticalKeys) {
                     const localValue = await lf.getItem(key);
                     if (!localValue) continue;

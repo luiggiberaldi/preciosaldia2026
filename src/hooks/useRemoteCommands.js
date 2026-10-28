@@ -31,6 +31,10 @@ import {
     readProductPublishPending,
 } from '../services/supervisorProductCommand';
 import { applySupervisorUserCommand } from '../services/supervisorUserCommand';
+import {
+    applySupervisorInvoiceCommand,
+    applySupervisorSupplierCommand,
+} from '../services/supervisorSupplierCommand';
 
 function rowToCommand(row, deviceId) {
     const issuedAt = new Date(row.issued_at).getTime();
@@ -367,6 +371,69 @@ export function useRemoteCommands(deviceId, enabled = true) {
             };
         };
 
+        // Fase 2: proveedores y facturas. Los docs son pequeños (no el catálogo
+        // de 1.3 MB): misma semántica que productos — escritura CON relectura
+        // bajo pos_write_lock, publicación con valor fresco después, y un ACK
+        // que nunca miente: un rechazo de regla de negocio (factura con pagos,
+        // monto por debajo de lo pagado) es 'rejected' CIERTO, no 'failed'.
+        const applySupplierInvoiceRemote = async (payload) => {
+            let result;
+            await withLock('pos_write_lock', async () => {
+                const suppliers = (await storageService.getItem('bodega_suppliers_v1', [])) || [];
+                const invoices = (await storageService.getItem('bodega_supplier_invoices_v1', [])) || [];
+                const sales = (await storageService.getItem('bodega_sales_v1', [])) || [];
+                result = payload.entity === 'invoice'
+                    ? applySupervisorInvoiceCommand({ invoices, suppliers, sales }, payload)
+                    : applySupervisorSupplierCommand(suppliers, payload);
+                if (result.status === 'rejected') return;
+                // H1 (auditoría 2026-10-22): escritura CON relectura. Un cambio
+                // perdido no puede confirmarse jamás como aplicado.
+                await writeVerifiedValue(storageService, 'bodega_suppliers_v1', result.suppliers);
+                if (result.invoices) {
+                    await writeVerifiedValue(storageService, 'bodega_supplier_invoices_v1', result.invoices);
+                }
+                window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_suppliers_v1', source: 'remote' } }));
+                if (result.invoices) {
+                    window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_supplier_invoices_v1', source: 'remote' } }));
+                }
+                markAckTelemetry(payload.commandId, 'local_applied');
+            });
+
+            if (result.status === 'rejected') {
+                // Nada se escribió: la orden queda rechazada con el motivo real.
+                return { commandId: payload.commandId, status: 'rejected', error: result.error };
+            }
+
+            const changedKeys = result.invoices
+                ? ['bodega_suppliers_v1', 'bodega_supplier_invoices_v1']
+                : ['bodega_suppliers_v1'];
+            let published = true;
+            for (const key of changedKeys) {
+                try {
+                    const pushResult = await publishKeyNow(key);
+                    if (!classifyProductPublishResult(pushResult).published) published = false;
+                } catch {
+                    // Un fallo de publicación NUNCA convierte un cambio local ya
+                    // aplicado en «failed»: se degrada a la advertencia y el
+                    // barrido periódico re-publica (misma semántica que productos).
+                    published = false;
+                } finally {
+                    markAckTelemetry(payload.commandId, 'publish_end');
+                }
+            }
+            return {
+                commandId: payload.commandId,
+                entity: payload.entity,
+                action: result.action,
+                ...(result.supplierId != null ? { supplierId: result.supplierId } : {}),
+                ...(result.invoiceId != null ? { invoiceId: result.invoiceId } : {}),
+                status: published ? 'applied' : 'applied_with_warnings',
+                ...(published ? {} : {
+                    warnings: ['Publicación a la nube sin confirmar; el barrido periódico la re-publicará'],
+                }),
+            };
+        };
+
         const applyInventoryBatchCommand = async (payload, commandId) => {
             let adjustment;
             let acknowledgedEarly = false;
@@ -687,6 +754,30 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 } else if (command.type === 'supervisor.product.delete') {
                     appliedPayload = await applyProductCommand({ action: 'delete', productId: command.payload.productId, commandId: row.command_id });
                     showToast('📦 Producto eliminado por el Supervisor', 'success');
+                } else if (command.type === 'supervisor.supplier.create') {
+                    appliedPayload = await applySupplierInvoiceRemote({ entity: 'supplier', action: 'create', supplier: command.payload.supplier, commandId: row.command_id });
+                    if (appliedPayload.status === 'rejected') showToast(`⚠️ Orden del Supervisor rechazada: ${appliedPayload.error}`, 'warning');
+                    else showToast('🏭 Proveedor creado por el Supervisor', 'success');
+                } else if (command.type === 'supervisor.supplier.update') {
+                    appliedPayload = await applySupplierInvoiceRemote({ entity: 'supplier', action: 'edit', supplierId: command.payload.supplierId, patch: command.payload.patch, commandId: row.command_id });
+                    if (appliedPayload.status === 'rejected') showToast(`⚠️ Orden del Supervisor rechazada: ${appliedPayload.error}`, 'warning');
+                    else showToast('🏭 Proveedor actualizado por el Supervisor', 'success');
+                } else if (command.type === 'supervisor.supplier.delete') {
+                    appliedPayload = await applySupplierInvoiceRemote({ entity: 'supplier', action: 'delete', supplierId: command.payload.supplierId, commandId: row.command_id });
+                    if (appliedPayload.status === 'rejected') showToast(`⚠️ Orden del Supervisor rechazada: ${appliedPayload.error}`, 'warning');
+                    else showToast('🏭 Proveedor eliminado por el Supervisor', 'success');
+                } else if (command.type === 'supervisor.invoice.create') {
+                    appliedPayload = await applySupplierInvoiceRemote({ entity: 'invoice', action: 'create', invoice: command.payload.invoice, commandId: row.command_id });
+                    if (appliedPayload.status === 'rejected') showToast(`⚠️ Orden del Supervisor rechazada: ${appliedPayload.error}`, 'warning');
+                    else showToast('🧾 Factura registrada por el Supervisor', 'success');
+                } else if (command.type === 'supervisor.invoice.update') {
+                    appliedPayload = await applySupplierInvoiceRemote({ entity: 'invoice', action: 'edit', invoiceId: command.payload.invoiceId, patch: command.payload.patch, commandId: row.command_id });
+                    if (appliedPayload.status === 'rejected') showToast(`⚠️ Orden del Supervisor rechazada: ${appliedPayload.error}`, 'warning');
+                    else showToast('🧾 Factura actualizada por el Supervisor', 'success');
+                } else if (command.type === 'supervisor.invoice.delete') {
+                    appliedPayload = await applySupplierInvoiceRemote({ entity: 'invoice', action: 'delete', invoiceId: command.payload.invoiceId, commandId: row.command_id });
+                    if (appliedPayload.status === 'rejected') showToast(`⚠️ Orden del Supervisor rechazada: ${appliedPayload.error}`, 'warning');
+                    else showToast('🧾 Factura eliminada por el Supervisor', 'success');
                 } else if (command.type === 'supervisor.inventory.batch.adjust') {
                     appliedPayload = await applyInventoryBatchCommand(command.payload, row.command_id);
                 } else if (command.type === 'supervisor.shift.close' || command.type === 'supervisor.shift.reopen') {
@@ -723,16 +814,19 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 }
                 // Guardar primero el resultado local evita repetir la operación
                 // si el ACK se pierde. El siguiente intento solo confirma.
-                const ackStatus = appliedPayload?.status === 'applied_with_warnings' ? 'applied_with_warnings' : 'applied';
+                // Fase 2: un rechazo cierto de regla de negocio se confirma como
+                // 'rejected' (con su motivo), nunca como éxito ni como 'failed'.
+                const ackStatus = appliedPayload?.status === 'rejected' ? 'rejected'
+                    : appliedPayload?.status === 'applied_with_warnings' ? 'applied_with_warnings' : 'applied';
                 await rememberAppliedCommand(row.command_id, {
                     status: ackStatus,
                     ackPayload: appliedPayload,
-                    errorMessage: null,
+                    errorMessage: appliedPayload?.error || null,
                     expiresAt: Number.MAX_SAFE_INTEGER,
                 });
                 appliedCommands.accept(row.command_id, Number.MAX_SAFE_INTEGER);
                 try {
-                    await ackCommand(row.command_id, ackStatus, appliedPayload);
+                    await ackCommand(row.command_id, ackStatus, appliedPayload, appliedPayload?.error || null);
                 } catch (ackError) {
                     supervisorLog('ACK aplicado pendiente de reintento', {
                         commandId: shortSupervisorId(row.command_id),

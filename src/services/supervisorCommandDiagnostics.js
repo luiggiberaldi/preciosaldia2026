@@ -162,6 +162,12 @@ export function commandTypeLabel(type) {
         case 'supervisor.rate.set': return 'Tasa';
         case 'supervisor.shift.close': return 'Cierre de turno';
         case 'supervisor.shift.reopen': return 'Reapertura de turno';
+        case 'supervisor.supplier.create': return 'Proveedor · alta';
+        case 'supervisor.supplier.update': return 'Proveedor · edición';
+        case 'supervisor.supplier.delete': return 'Proveedor · baja';
+        case 'supervisor.invoice.create': return 'Factura · registro';
+        case 'supervisor.invoice.update': return 'Factura · edición';
+        case 'supervisor.invoice.delete': return 'Factura · baja';
         default: return type ? String(type).replace('supervisor.', '') : 'Sin tipo';
     }
 }

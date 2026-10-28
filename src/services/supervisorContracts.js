@@ -50,6 +50,10 @@ const SYNC_VALIDATORS = Object.freeze({
     bodega_sales_v1: Array.isArray,
     bodega_payment_methods_v1: Array.isArray,
     bodega_accounts_v2: Array.isArray,
+    // Proveedores y facturas (visibilidad del supervisor, Fase 1): snapshot y
+    // familia `bodega_supplier_invoices_v1:<año>` validada por su clave base.
+    bodega_suppliers_v1: Array.isArray,
+    bodega_supplier_invoices_v1: Array.isArray,
     abasto_audit_log_v1: Array.isArray,
     monitor_rates_v12: isPlainObject,
     bodega_custom_rate: (value) => {
@@ -100,6 +104,14 @@ export const SUPERVISOR_COMMAND_TYPES = Object.freeze([
     'supervisor.shift.close',
     'supervisor.shift.reopen',
     'supervisor.inventory.batch.adjust',
+    // Fase 2: gestión remota de proveedores y facturas (el PIN y los pagos a
+    // proveedores NO viajan por este canal: pagos tocan caja y son Fase 3).
+    'supervisor.supplier.create',
+    'supervisor.supplier.update',
+    'supervisor.supplier.delete',
+    'supervisor.invoice.create',
+    'supervisor.invoice.update',
+    'supervisor.invoice.delete',
 ]);
 
 // Campos de PIN que jamás deben viajar en una edición de usuario remota.
@@ -128,6 +140,13 @@ export const COMMAND_EXTENDED_TTL_TYPES = Object.freeze([
     'supervisor.user.pin.change',
     'supervisor.user.update',
     'supervisor.user.delete',
+    // Fase 2: proveedores y facturas son catálogo (5 min, sobreviven cortes).
+    'supervisor.supplier.create',
+    'supervisor.supplier.update',
+    'supervisor.supplier.delete',
+    'supervisor.invoice.create',
+    'supervisor.invoice.update',
+    'supervisor.invoice.delete',
 ]);
 
 export function getCommandMaxTtlMs(type) {
@@ -245,6 +264,37 @@ function validateCommandPayload(type, payload) {
                     || (typeof payload.baseUpdatedAt === 'string' && !Number.isNaN(Date.parse(payload.baseUpdatedAt))));
         case 'supervisor.product.delete':
             return typeof payload.productId === 'string';
+        case 'supervisor.supplier.create':
+            return isPlainObject(payload.supplier)
+                && typeof payload.supplier.id === 'string'
+                && payload.supplier.id.trim().length > 0
+                && typeof payload.supplier.name === 'string'
+                && payload.supplier.name.trim().length > 0;
+        case 'supervisor.supplier.update':
+            return typeof payload.supplierId === 'string'
+                && payload.supplierId.trim().length > 0
+                && isPlainObject(payload.patch);
+        case 'supervisor.supplier.delete':
+            return typeof payload.supplierId === 'string'
+                && payload.supplierId.trim().length > 0;
+        case 'supervisor.invoice.create':
+            return isPlainObject(payload.invoice)
+                && typeof payload.invoice.id === 'string'
+                && payload.invoice.id.trim().length > 0
+                && typeof payload.invoice.supplierId === 'string'
+                && payload.invoice.supplierId.trim().length > 0
+                && isFiniteNumber(Number(payload.invoice.amountUsd))
+                && Number(payload.invoice.amountUsd) > 0;
+        case 'supervisor.invoice.update':
+            return typeof payload.invoiceId === 'string'
+                && payload.invoiceId.trim().length > 0
+                && isPlainObject(payload.patch)
+                && (payload.patch.amountUsd === undefined
+                    || (isFiniteNumber(Number(payload.patch.amountUsd))
+                        && Number(payload.patch.amountUsd) > 0));
+        case 'supervisor.invoice.delete':
+            return typeof payload.invoiceId === 'string'
+                && payload.invoiceId.trim().length > 0;
         case 'supervisor.user.create':
             return typeof payload.nombre === 'string'
                 && ['CAJERO', 'ADMIN'].includes(payload.rol)
