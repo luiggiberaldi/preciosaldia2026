@@ -71,7 +71,7 @@ export default function ProductCostFactorControl({ costFactor, onChange }) {
                 </span>
             </div>
             <p className="text-[9px] text-slate-400 mt-1 ml-1">
-                {mode === 'percent' ? 'Margen de ganancia en %' : 'Costo = Precio × factor'} • Los 2 últimos valores calculan el tercero
+                {mode === 'percent' ? 'Margen de ganancia en %' : 'Costo = Precio × factor'} • El costo se respeta: el % recalcula el precio y el precio recalcula el %
             </p>
         </div>
     );

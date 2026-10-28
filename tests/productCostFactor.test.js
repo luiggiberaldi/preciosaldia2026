@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { prepareProductFormState } from '../src/hooks/useProductForm.js';
-import { buildProductPayload, deriveCostFactorUpdate } from '../src/utils/productProcessor.js';
+import { actualCostFactor, buildProductPayload, derivePricingFromEdit } from '../src/utils/productProcessor.js';
 import {
     costFactorFromMarginPercent,
     formatCostFactorAsMarginPercent,
@@ -24,41 +24,89 @@ describe('factor costo de producto', () => {
         expect(formatCostFactorAsMarginPercent('1')).toBe('0');
     });
 
-    it('derives cost factor from the last-edited cost and price', () => {
-        const result = deriveCostFactorUpdate(['cost'], 'price', { cost: 7, price: 10, factor: 0 });
-        expect(result).toEqual({ editOrder: ['cost', 'price'], field: 'factor', value: 0.7 });
-    });
-
-    it('derives price from cost and factor', () => {
-        const result = deriveCostFactorUpdate(['cost'], 'factor', { cost: 5, price: 3, factor: 0.5 });
-        expect(result).toEqual({ editOrder: ['cost', 'factor'], field: 'price', value: 10 });
-    });
-
-    it('derives cost from price and factor', () => {
-        const result = deriveCostFactorUpdate(['price'], 'factor', { cost: 4, price: 10, factor: 0.4 });
-        expect(result).toEqual({ editOrder: ['price', 'factor'], field: 'cost', value: 4 });
-    });
-
-    it('does not let zero or empty values contaminate the edit order', () => {
-        const afterClearing = ['cost', 'factor'].filter(field => field !== 'factor');
-        const result = deriveCostFactorUpdate(afterClearing, 'price', { cost: 5, price: 3.02, factor: 0 });
-        expect(result.field).toBe('factor');
-        expect(result.value).toBeCloseTo(1.655629, 5);
-    });
-
-    it('loads stored factors and derives one for legacy products', () => {
-        const saved = prepareProductFormState({ id: 'p1', name: 'Producto', priceUsd: 10, costUsd: 7, costFactor: 0.65 }, 40);
+    it('al abrir un producto con costo y precio muestra el factor REAL, no uno guardado desfasado', () => {
+        const stale = prepareProductFormState({ id: 'p1', name: 'Producto', priceUsd: 10, costUsd: 7, costFactor: 0.65 }, 40);
         const legacy = prepareProductFormState({ id: 'p2', name: 'Producto', priceUsd: 10, costUsd: 7 }, 40);
-        expect(saved.costFactor).toBe('0.65');
+        const noCost = prepareProductFormState({ id: 'p3', name: 'Sin costo', priceUsd: 10, costFactor: 0.6 }, 40);
+        expect(stale.costFactor).toBe('0.700');
         expect(legacy.costFactor).toBe('0.700');
-        expect(prepareProductFormState({ id: 'p3', name: 'Sin costo', priceUsd: 10 }, 40).costFactor).toBe('0');
+        expect(noCost.costFactor).toBe('0.6');
+        expect(prepareProductFormState({ id: 'p4', name: 'Sin costo', priceUsd: 10 }, 40).costFactor).toBe('0');
     });
 
-    it('persists numeric factors (including zero) and leaves remote callers without a factor field unchanged', () => {
-        expect(payloadFor({ costFactor: '0.700' }).costFactor).toBe(0.7);
-        expect(payloadFor({ costFactor: '0' }).costFactor).toBe(0);
-        expect(payloadFor({ costFactor: '' }).costFactor).toBeNull();
+    it('al guardar con costo y precio persiste el factor real; sin uno de los dos, el escrito', () => {
+        expect(payloadFor({ costFactor: '0.650' }).costFactor).toBe(0.7);
+        expect(payloadFor({ costFactor: '' }).costFactor).toBe(0.7);
+        expect(payloadFor({ costUsd: '', costFactor: '0.6' }).costFactor).toBe(0.6);
+        expect(payloadFor({ costUsd: '', costFactor: '' }).costFactor).toBeNull();
         expect(Object.hasOwn(payloadFor({}), 'costFactor')).toBe(false);
+    });
+
+    it('actualCostFactor redondea a 3 decimales y exige costo y precio', () => {
+        expect(actualCostFactor(0.6, 1)).toBe(0.6);
+        expect(actualCostFactor(2, 3)).toBe(0.667);
+        expect(actualCostFactor(0, 1)).toBeNull();
+        expect(actualCostFactor(1, 0)).toBeNull();
+    });
+});
+
+// Simula el formulario: cada edición aplica la regla y redondea como la UI
+// (precio y costo a 2 decimales, factor a 3). Sin estado entre ediciones.
+const editSequence = (start, edits) => {
+    const s = { ...start };
+    for (const [field, value] of edits) {
+        s[field] = value;
+        const r = derivePricingFromEdit(field, s);
+        if (r.field) s[r.field] = Number(r.value.toFixed(r.field === 'factor' ? 3 : 2));
+    }
+    return s;
+};
+const CAPI = { cost: 0.6, price: 1, factor: 0.6 }; // Cigarro Capi: 0.60 / 1.00 / 40%
+const EMPTY = { cost: 0, price: 0, factor: 0 };
+
+describe('regla costo fijo (auditoría 2026-10-28, casos A–L)', () => {
+    it('A/J: cambiar el margen recalcula el precio y nunca el costo', () => {
+        expect(editSequence(CAPI, [['factor', 0.5]])).toEqual({ cost: 0.6, price: 1.2, factor: 0.5 });
+    });
+
+    it('B/K: cambiar el precio recalcula el margen y nunca el costo', () => {
+        expect(editSequence(CAPI, [['price', 1.2]])).toEqual({ cost: 0.6, price: 1.2, factor: 0.5 });
+    });
+
+    it('C/L: cambiar el costo mantiene el margen y recalcula el precio', () => {
+        expect(editSequence(CAPI, [['cost', 0.7]])).toEqual({ cost: 0.7, price: 1.17, factor: 0.6 });
+    });
+
+    it('D: producto sin margen guardado → poner margen recalcula el precio', () => {
+        expect(editSequence({ cost: 0.6, price: 1, factor: 0 }, [['factor', 0.5]]))
+            .toEqual({ cost: 0.6, price: 1.2, factor: 0.5 });
+    });
+
+    it('E: producto nuevo, costo + margen → precio', () => {
+        expect(editSequence(EMPTY, [['cost', 0.6], ['factor', 0.6]])).toEqual({ cost: 0.6, price: 1, factor: 0.6 });
+    });
+
+    it('F: producto nuevo, costo + precio → margen', () => {
+        expect(editSequence(EMPTY, [['cost', 0.6], ['price', 1]])).toEqual({ cost: 0.6, price: 1, factor: 0.6 });
+    });
+
+    it('G/H/I: el orden de edición ya no cambia el resultado: el costo se respeta', () => {
+        expect(editSequence(EMPTY, [['cost', 0.6], ['factor', 0.6], ['factor', 0.7]]).cost).toBe(0.6);
+        expect(editSequence(EMPTY, [['cost', 0.6], ['price', 1], ['factor', 0.7]]))
+            .toEqual({ cost: 0.6, price: 0.86, factor: 0.7 });
+        expect(editSequence(EMPTY, [['cost', 0.6], ['factor', 0.6], ['price', 1.2], ['factor', 0.7]]))
+            .toEqual({ cost: 0.6, price: 0.86, factor: 0.7 });
+    });
+
+    it('sin costo cargado, precio + margen sí derivan el costo (no hay nada que proteger)', () => {
+        expect(editSequence(EMPTY, [['price', 1], ['factor', 0.6]])).toEqual({ cost: 0.6, price: 1, factor: 0.6 });
+        expect(editSequence({ cost: 0, price: 0, factor: 0.6 }, [['price', 1]])).toEqual({ cost: 0.6, price: 1, factor: 0.6 });
+    });
+
+    it('valores vacíos o cero no derivan nada', () => {
+        expect(derivePricingFromEdit('factor', { cost: 0.6, price: 1, factor: 0 })).toEqual({ field: null, value: null });
+        expect(derivePricingFromEdit('price', { cost: 0, price: 1, factor: 0 })).toEqual({ field: null, value: null });
+        expect(derivePricingFromEdit('cost', { cost: 0.6, price: 0, factor: 0 })).toEqual({ field: null, value: null });
     });
 });
 

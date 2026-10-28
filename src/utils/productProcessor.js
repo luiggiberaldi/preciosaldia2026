@@ -1,7 +1,7 @@
 // FIN-017: Reemplaza Math.round(raw/safeRate*100)/100 por divR + round2 de dinero.js.
 // FIN-030: Mantiene `priceUsdt` (typo histórico) pero añade alias `priceUsd` (mismo valor)
 //          para migración gradual hacia el nombre canónico.
-import { round2, divR, mulR, round0 } from './dinero.js';
+import { round2, round3, divR, mulR, round0 } from './dinero.js';
 import { CurrencyService } from '../services/CurrencyService.js'; // FIN-017-pattern: safeParse en vez de parseFloat.
 import {
     normalizePackagingType,
@@ -13,22 +13,42 @@ import {
     parseGranelThreshold,
 } from './granel.js'; // GRANEL-001 / GRANEL-DUAL: decimales SOLO para productos a granel y conversión dual.
 
-export function deriveCostFactorUpdate(editOrder, editedField, { cost, price, factor }) {
-    const nextOrder = [...(editOrder || []).filter(field => field !== editedField), editedField].slice(-2);
-    const [first, second] = nextOrder;
-    if (!first || !second) return { editOrder: nextOrder, field: null, value: null };
+/**
+ * Trío costo / precio / factor costo (factor = costo ÷ precio = 1 − margen).
+ * El COSTO es el dato fijo (lo que se pagó); precio y margen son decisiones:
+ *   - cambia el factor → recalcula el precio
+ *   - cambia el precio → recalcula el factor
+ *   - cambia el costo  → mantiene el margen y recalcula el precio
+ *                        (sin factor, recalcula el factor con el precio)
+ * Solo sin costo cargado se deriva el costo (precio × factor): no hay nada
+ * que proteger. Sin estado: el resultado no depende del orden de edición.
+ * @returns {{ field: 'cost'|'price'|'factor'|null, value: number|null }}
+ */
+export function derivePricingFromEdit(editedField, { cost, price, factor }) {
+    const hasCost = cost > 0;
+    const hasPrice = price > 0;
+    const hasFactor = factor > 0;
+    if (editedField === 'factor' && hasFactor) {
+        if (hasCost) return { field: 'price', value: cost / factor };
+        if (hasPrice) return { field: 'cost', value: price * factor };
+    }
+    if (editedField === 'price' && hasPrice) {
+        if (hasCost) return { field: 'factor', value: cost / price };
+        if (hasFactor) return { field: 'cost', value: price * factor };
+    }
+    if (editedField === 'cost' && hasCost) {
+        if (hasFactor) return { field: 'price', value: cost / factor };
+        if (hasPrice) return { field: 'factor', value: cost / price };
+    }
+    return { field: null, value: null };
+}
 
-    const derivedField = ['cost', 'price', 'factor'].find(field => field !== first && field !== second);
-    if (derivedField === 'factor' && price > 0 && cost > 0) {
-        return { editOrder: nextOrder, field: 'factor', value: cost / price };
-    }
-    if (derivedField === 'price' && factor > 0 && cost > 0) {
-        return { editOrder: nextOrder, field: 'price', value: cost / factor };
-    }
-    if (derivedField === 'cost' && price > 0 && factor > 0) {
-        return { editOrder: nextOrder, field: 'cost', value: price * factor };
-    }
-    return { editOrder: nextOrder, field: null, value: null };
+/** Factor real (costo ÷ precio, 3 decimales) o null si falta precio o costo. */
+export function actualCostFactor(costUsd, priceUsd) {
+    const cost = Number(costUsd);
+    const price = Number(priceUsd);
+    if (!(cost > 0) || !(price > 0)) return null;
+    return round3(cost / price);
 }
 
 export function buildProductPayload(formData, effectiveRate) {
@@ -163,10 +183,13 @@ export function buildProductPayload(formData, effectiveRate) {
         priceCop: finalPriceCop,
         costUsd: finalCostUsd,
         costBs: finalCostBs,
+        // Con costo y precio, el factor guardado es SIEMPRE el real: así el %
+        // del formulario nunca contradice la insignia de margen de la ficha.
         ...(formData.costFactor !== undefined ? {
-            costFactor: formData.costFactor !== null && formData.costFactor !== '' && Number.isFinite(Number(formData.costFactor))
-                ? Number(formData.costFactor)
-                : null,
+            costFactor: actualCostFactor(finalCostUsd, finalPriceUsd)
+                ?? (formData.costFactor !== null && formData.costFactor !== '' && Number.isFinite(Number(formData.costFactor))
+                    ? Number(formData.costFactor)
+                    : null),
         } : {}),
         stock: finalStock,
         unit: legacyUnit,

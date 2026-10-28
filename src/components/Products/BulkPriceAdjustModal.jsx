@@ -6,6 +6,7 @@ import { storageService } from '../../utils/storageService';
 // Cierre FIX-VENTAS-STOCK-SUPERVISOR §4: escritos del catálogo bajo pos_write_lock.
 import { mutateCatalogLocked } from '../../utils/catalogLock';
 import { round2 } from '../../utils/dinero';
+import { actualCostFactor } from '../../utils/productProcessor';
 import { formatUsd, formatBs, formatCop } from '../../utils/calculatorUtils';
 import CustomSelect from '../CustomSelect';
 
@@ -204,6 +205,7 @@ export default function BulkPriceAdjustModal({
                     priceBsUsdRef: p.priceBsUsdRef,
                     unitPriceUsd: p.unitPriceUsd,
                     unitPriceCop: p.unitPriceCop,
+                    costFactor: p.costFactor,
                 }))
             };
             await storageService.setItem('last_bulk_price_snapshot', snapshot);
@@ -221,6 +223,12 @@ export default function BulkPriceAdjustModal({
                     priceUsdt: newPriceUsd,
                     priceUsd: newPriceUsd,
                 };
+
+                // El margen cambia con el precio: el factor guardado sigue al real
+                // (costo ÷ precio) para que el formulario no muestre un % viejo.
+                const costUsd = p.costUsd || (p.costBs && effectiveRate > 0 ? p.costBs / effectiveRate : 0);
+                const newFactor = actualCostFactor(costUsd, newPriceUsd);
+                if (newFactor !== null) updated.costFactor = newFactor;
 
                 // Escalar priceCop en enteros
                 if (p.priceCop && p.priceCop > 0) {
@@ -305,6 +313,8 @@ export default function BulkPriceAdjustModal({
                     priceBsUsdRef: snap.priceBsUsdRef,
                     unitPriceUsd: snap.unitPriceUsd,
                     unitPriceCop: snap.unitPriceCop,
+                    // Snapshots anteriores a este cambio no traen el factor.
+                    ...(Object.hasOwn(snap, 'costFactor') ? { costFactor: snap.costFactor } : {}),
                 };
             };
 

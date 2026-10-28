@@ -104,9 +104,12 @@ export function prepareProductFormState(product, effectiveRate, granelMode = get
         priceBsUsdRef: product.priceBsUsdRef != null ? product.priceBsUsdRef.toString() : '',
         costUsd: currentCostUsd > 0 ? currentCostUsd.toFixed(2) : '',
         costBs: currentCostBs > 0 ? currentCostBs.toFixed(2) : '',
-        costFactor: product.costFactor != null
-            ? product.costFactor.toString()
-            : (currentPriceUsd > 0 && currentCostUsd > 0 ? (currentCostUsd / currentPriceUsd).toFixed(3) : '0'),
+        // Con costo y precio manda el factor REAL (un ajuste masivo o una
+        // edición remota pudo dejar desfasado el guardado); el guardado solo
+        // sirve cuando falta uno de los dos.
+        costFactor: currentPriceUsd > 0 && currentCostUsd > 0
+            ? (currentCostUsd / currentPriceUsd).toFixed(3)
+            : (product.costFactor != null ? product.costFactor.toString() : '0'),
         stock: initialStock,
         unit: product.unit || 'unidad',
         unitsPerPackage: product.unitsPerPackage || '',

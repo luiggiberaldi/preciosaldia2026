@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Modal } from '../Modal';
 import ProductFormQuick from '../Products/ProductFormQuick';
 import { useProductContext } from '../../context/ProductContext';
-import { buildProductPayload, deriveCostFactorUpdate } from '../../utils/productProcessor';
+import { buildProductPayload, derivePricingFromEdit } from '../../utils/productProcessor';
 import { prepareProductFormState } from '../../hooks/useProductForm';
 import { getGranelUnitMode } from '../../utils/granel';
 import { showToast } from '../Toast';
@@ -31,9 +31,8 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
     const [costBs, setCostBs] = useState('');
     const [costCop, setCostCop] = useState('');
     // Factor de costo (igual que en la caja): Costo = Precio × factor.
-    // Los 2 últimos campos editados calculan el tercero (cost/price/factor).
+    // Costo fijo: el % recalcula el precio y el precio recalcula el %.
     const [costFactor, setCostFactor] = useState('');
-    const costEditOrderRef = useRef([]);
 
     const [stock, setStock] = useState('');
     const [lowStockAlert, setLowStockAlert] = useState('5');
@@ -68,7 +67,6 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
             setCostBs(formState.costBs || '');
             setCostCop(productToEdit.costCop != null ? String(productToEdit.costCop) : '');
             setCostFactor(formState.costFactor != null ? String(formState.costFactor) : '');
-            costEditOrderRef.current = Number(formState.costFactor) > 0 ? ['factor'] : [];
 
             setStock(formState.stock !== undefined && formState.stock !== null ? String(formState.stock) : '0');
             setLowStockAlert(String(formState.lowStockAlert ?? 5));
@@ -98,7 +96,6 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
             setCostBs('');
             setCostCop('');
             setCostFactor('');
-            costEditOrderRef.current = [];
 
             setStock('');
             setLowStockAlert('5');
@@ -119,10 +116,9 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
     if (!isOpen) return null;
 
     // ─── Factor de costo: misma lógica que la caja ───
-    // Los 2 últimos valores editados (costo, precio, factor) calculan el tercero.
-    const deriveFromLastTwoEdits = (editedField, cost, price, factor) => {
-        const result = deriveCostFactorUpdate(costEditOrderRef.current, editedField, { cost, price, factor });
-        costEditOrderRef.current = result.editOrder;
+    // Costo fijo: el % recalcula el precio y el precio recalcula el % (ver derivePricingFromEdit).
+    const applyPricingRule = (editedField, cost, price, factor) => {
+        const result = derivePricingFromEdit(editedField, { cost, price, factor });
         if (!result.field) return;
 
         if (result.field === 'factor') {
@@ -136,10 +132,6 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
         }
     };
 
-    const removeFromEditOrder = (field) => {
-        costEditOrderRef.current = costEditOrderRef.current.filter(item => item !== field);
-    };
-
     // Handlers for currency conversions
     const handlePriceUsdChange = (val) => {
         setPriceUsd(val);
@@ -150,11 +142,8 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
         } else {
             setPriceBs('');
         }
-        if (!val || usd <= 0) {
-            removeFromEditOrder('price');
-            return;
-        }
-        deriveFromLastTwoEdits('price', parseFloat(costUsd) || 0, usd, parseFloat(costFactor) || 0);
+        if (!val || usd <= 0) return;
+        applyPricingRule('price', parseFloat(costUsd) || 0, usd, parseFloat(costFactor) || 0);
     };
 
     const handlePriceBsChange = (val) => {
@@ -166,16 +155,12 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
         } else {
             setPriceUsd('');
         }
-        if (!val || amountBs <= 0 || bcvRate <= 0) {
-            removeFromEditOrder('price');
-            return;
-        }
-        deriveFromLastTwoEdits('price', parseFloat(costUsd) || 0, amountBs / bcvRate, parseFloat(costFactor) || 0);
+        if (!val || amountBs <= 0 || bcvRate <= 0) return;
+        applyPricingRule('price', parseFloat(costUsd) || 0, amountBs / bcvRate, parseFloat(costFactor) || 0);
     };
 
     const handlePriceCopChange = (val) => {
         setPriceCop(val);
-        removeFromEditOrder('price');
     };
 
     const handleCostUsdChange = (val) => {
@@ -186,11 +171,8 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
         } else {
             setCostBs('');
         }
-        if (!val || usd <= 0) {
-            removeFromEditOrder('cost');
-            return;
-        }
-        deriveFromLastTwoEdits('cost', usd, parseFloat(priceUsd) || 0, parseFloat(costFactor) || 0);
+        if (!val || usd <= 0) return;
+        applyPricingRule('cost', usd, parseFloat(priceUsd) || 0, parseFloat(costFactor) || 0);
     };
 
     const handleCostBsChange = (val) => {
@@ -201,25 +183,19 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
         } else {
             setCostUsd('');
         }
-        if (!val || amountBs <= 0 || bcvRate <= 0) {
-            removeFromEditOrder('cost');
-            return;
-        }
-        deriveFromLastTwoEdits('cost', amountBs / bcvRate, parseFloat(priceUsd) || 0, parseFloat(costFactor) || 0);
+        if (!val || amountBs <= 0 || bcvRate <= 0) return;
+        applyPricingRule('cost', amountBs / bcvRate, parseFloat(priceUsd) || 0, parseFloat(costFactor) || 0);
     };
 
     const handleCostCopChange = (val) => {
         setCostCop(val);
-        removeFromEditOrder('cost');
     };
 
     const handleCostFactorChange = (val) => {
         setCostFactor(val);
         const factor = parseFloat(val) || 0;
         if (factor > 0) {
-            deriveFromLastTwoEdits('factor', parseFloat(costUsd) || 0, parseFloat(priceUsd) || 0, factor);
-        } else {
-            removeFromEditOrder('factor');
+            applyPricingRule('factor', parseFloat(costUsd) || 0, parseFloat(priceUsd) || 0, factor);
         }
     };
 
