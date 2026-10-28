@@ -66,7 +66,13 @@ FROM (VALUES
 -- ── Sección 3: índices ──────────────────────────────────────────────────────
 UNION ALL
 SELECT '04 indice', i.nombre,
-       CASE WHEN to_regclass('public.' || i.nombre) IS NOT NULL THEN 'OK' ELSE 'FALTA' END
+       CASE WHEN to_regclass('public.' || i.nombre) IS NOT NULL THEN 'OK'
+            -- 20261021 solo exige un UNIQUE sobre (device_id, collection, doc_id):
+            -- producción ya lo tenía como restricción con el nombre por defecto.
+            WHEN i.nombre = 'sync_documents_device_collection_doc_uk'
+                 AND to_regclass('public.sync_documents_device_id_collection_doc_id_key') IS NOT NULL
+            THEN 'OK (equivalente: sync_documents_device_id_collection_doc_id_key)'
+            ELSE 'FALTA' END
 FROM (VALUES
     ('device_pairings_monitor_idx'),
     ('device_pairings_monitor_device_id_2_key'),
@@ -95,7 +101,7 @@ FROM (VALUES
     ('cloud_backups',    'device_read_own_backup',      'SELECT'),
     ('device_sessions',  'device_sessions_insert_own',  'INSERT'),
     ('device_sessions',  'device_sessions_select_own',  'SELECT'),
-    ('device_sessions',  'device_sessions_reclaim',     'UPDATE'),
+    -- device_sessions_reclaim: eliminada a propósito por 20261022 (no se espera).
     ('device_sessions',  'device_sessions_update_own',  'UPDATE'),
     ('device_pairings',  'device_pairings_authenticated_read', 'SELECT'),
     ('supervisor_commands', 'supervisor_commands_authorized_read', 'SELECT')
