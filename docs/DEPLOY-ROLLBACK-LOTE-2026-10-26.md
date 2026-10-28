@@ -1,7 +1,7 @@
 # Checklist de Deploy y Rollback — Lote 2026-10-26 (parque de cajas)
 
 > **Alcance:** los 7 commits verificados del 2026-10-26 (base `8674524` → `533291e`).
-> **Estado:** commits locales en `main`, **aún sin push**. Suite verificada: 1867 tests verdes (171 archivos) + ESLint + tsc.
+> **Estado (2026-10-28):** en `origin/main` y **en producción** (deploy Vercel `dpl_DwT54fweqhQynJoA4zMVQMHejFjy`, sha `533291e`, auto-deploy de `main`). Suite verificada: 1867 tests verdes (171 archivos) + ESLint + tsc.
 > **Compañero de este documento:** [ROLLBACK-STABLE-BASELINE.md](ROLLBACK-STABLE-BASELINE.md) (línea base anterior) y [BACKUP-RESTORE.md](BACKUP-RESTORE.md) (respaldos).
 
 ---
@@ -124,8 +124,8 @@ Va **después** del lote anterior y en un deploy aparte. Contiene la pestaña **
 
 1. [ ] **Migración primero:** aplicar `supabase/migrations/20261026_supervisor_supplier_invoice_commands.sql` en Sync Cloud. Es idempotente y conserva lo de 20261020/20261022 (`v_duration`, `rateMode`).
 2. [ ] Re-ejecutar [scripts/verificar-migraciones-produccion.sql](../scripts/verificar-migraciones-produccion.sql): Sección 7 debe decir `OK (20261026 proveedores)` en `create_supervisor_command` y `enforce_supervisor_income_command`, y Sección 8 `OK`.
-3. [ ] Variable `VITE_SUPERVISOR_REMOTE_SUPPLIERS_ENABLED=true` en Vercel (sin ella el monitor muestra el estado de cuenta en solo lectura; con `false` es la contención sin tocar código). Las demás capacidades no dependen de ella, salvo `VITE_SUPERVISOR_REMOTE_MUTATIONS_ENABLED=true`, que también la habilita.
-4. [ ] Desplegar **cajas y monitores juntos**: una caja vieja responde estas órdenes `failed` con «Tipo de comando no soportado» (sin aplicar nada, no es silencioso), y no publica `bodega_suppliers_v1` ni la familia `bodega_supplier_invoices_v1:<año>`, así que su monitor ve la pestaña vacía.
+3. [ ] Flag `VITE_SUPERVISOR_REMOTE_SUPPLIERS_ENABLED`: **activo por defecto** (sin variable en Vercel = encendido, como el resto de capacidades). No hace falta crearla; solo existe como contención (`false` deja la pestaña en solo lectura). Ojo: `VITE_SUPERVISOR_REMOTE_MUTATIONS_ENABLED=true` la enciende igual aunque esté en `false`.
+4. [ ] `git push` de `main` = **deploy a producción inmediato** (Vercel auto-deploy, mismo build para cajas y monitores). Por eso el paso 1 va antes del push, sin excepción. Cajas y monitores se actualizan juntos: una caja vieja responde estas órdenes `failed` con «Tipo de comando no soportado» (sin aplicar nada, no es silencioso), y no publica `bodega_suppliers_v1` ni la familia `bodega_supplier_invoices_v1:<año>`, así que su monitor ve la pestaña vacía.
 
 ### 6.2 Prueba funcional (piloto)
 
@@ -136,13 +136,14 @@ Va **después** del lote anterior y en un deploy aparte. Contiene la pestaña **
 
 ### 6.3 Rollback
 
-- Contención: `VITE_SUPERVISOR_REMOTE_SUPPLIERS_ENABLED=false` + redeploy (la pestaña queda en solo lectura).
+- Contención: crear `VITE_SUPERVISOR_REMOTE_SUPPLIERS_ENABLED=false` en Vercel (Production) + redeploy (la pestaña queda en solo lectura).
 - Revert de código: igual que §5.2. La migración se queda (aditiva; el código anterior no emite estos tipos). Los docs de proveedores en `sync_documents` quedan como datos inertes para el código anterior.
 
 ---
 
 ## 7. Pendientes fuera de este lote
 
-- Push de los 7 commits (decisión del dueño).
+- ~~Push de los 7 commits~~ hecho (en producción desde el deploy de `533291e`).
 - Los 2 drafts de `supabase/production-drafts/` siguen sin aplicar por diseño.
-- Borrar `tmp-diagnostico-backup.mjs` (script de diagnóstico con ruta local codificada, quedó fuera de los commits).
+- ~~Borrar `tmp-diagnostico-backup.mjs`~~ hecho 2026-10-28.
+- Seguridad: en Vercel `SUPABASE_SERVICE_KEY` está guardada como tipo `plain` (Vercel la marca `readable-secret`). Rotarla y re-crearla como `sensitive`.
