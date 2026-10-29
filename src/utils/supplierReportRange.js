@@ -20,6 +20,9 @@ export function filterActivityByRange(items, desde = '', hasta = '') {
     });
 }
 
+/** Registro que cuenta en los reportes: los pagos anulados quedan fuera. */
+export const isActiveRecord = (record) => record?.status !== 'ANULADA';
+
 /** Opciones del selector de período del PDF de estado de cuenta. */
 export const REPORT_RANGE_OPTIONS = [
     { id: 'today', label: 'Hoy' },
@@ -126,7 +129,7 @@ export function buildSupplierActivityLines({ invoices = [], payments = [], desde
         amountUsd: Number(i.amountUsd) || 0,
         kind: 'factura',
     }));
-    const pagos = filterActivityByRange(payments, desde, hasta).map((p) => ({
+    const pagos = filterActivityByRange(payments, desde, hasta).filter(isActiveRecord).map((p) => ({
         time: new Date(p.date || p.timestamp).getTime(),
         date: new Date(p.date || p.timestamp),
         label: 'Pago',

@@ -22,7 +22,7 @@ vi.mock('jspdf', () => ({
 
 import { generateGlobalSuppliersPDF, generateSupplierHistoryPDF } from '../src/utils/supplierReportGenerator';
 import { SupplierReportRangeModal } from '../src/components/Suppliers/SupplierModals';
-import { REPORT_RANGE_OPTIONS, resolveReportRange } from '../src/utils/supplierReportRange';
+import { REPORT_RANGE_OPTIONS, buildSupplierActivityLines, resolveReportRange } from '../src/utils/supplierReportRange';
 import { getPaymentLabel } from '../src/config/paymentMethods';
 
 const NOW = new Date('2026-10-29T15:00:00'); // jueves
@@ -52,6 +52,7 @@ describe('PDF de estado de cuenta', () => {
         { id: 'i1', type: 'INVOICE', invoiceNumber: 'jose', amountUsd: 150, date: '2026-10-29T12:00:00' },
         { id: 'p1', type: 'PAGO_PROVEEDOR', description: 'Pago de factura #jose (al registrarla)', totalUsd: -150, afectaCaja: false, paymentMethod: 'pago_externo', timestamp: '2026-10-29T12:00:00' },
         { id: 'i0', type: 'INVOICE', invoiceNumber: 'vieja', amountUsd: 30, date: '2026-09-02T12:00:00' },
+        { id: 'pv', type: 'PAGO_PROVEEDOR', status: 'ANULADA', description: 'Pago anulado', totalUsd: -40, paymentMethod: 'efectivo_usd', timestamp: '2026-10-20T12:00:00' },
     ];
 
     it('usa un menos ASCII, nombra el método y muestra período y totales', async () => {
@@ -67,6 +68,24 @@ describe('PDF de estado de cuenta', () => {
         expect(texts).toContain('USD 150.00'); // facturas y pagos del período
         expect(texts.some(t => t.includes('#vieja'))).toBe(false); // fuera del rango
         expect(saved[0]).toBe('Estado_Cuenta_Prueba.pdf');
+        // El pago anulado no sale ni en filas ni en el total de pagos.
+        expect(texts).not.toContain('Pago anulado');
+        expect(texts).not.toContain('- 40.00');
+        expect(texts.filter(t => t === 'USD 150.00')).toHaveLength(2);
+    });
+});
+
+describe('ticket de proveedores', () => {
+    it('no incluye pagos anulados', () => {
+        const { lines, pagosUsd } = buildSupplierActivityLines({
+            invoices: [],
+            payments: [
+                { id: 'a', totalUsd: -10, timestamp: '2026-10-01T12:00:00' },
+                { id: 'b', status: 'ANULADA', totalUsd: -99, timestamp: '2026-10-02T12:00:00' },
+            ],
+        });
+        expect(lines).toHaveLength(1);
+        expect(pagosUsd).toBe(10);
     });
 });
 
@@ -104,6 +123,7 @@ describe('SupplierReportRangeModal', () => {
     const history = [
         { id: 'i1', type: 'INVOICE', amountUsd: 10, date: new Date().toISOString() },
         { id: 'i0', type: 'INVOICE', amountUsd: 10, date: '2020-01-05T12:00:00' },
+        { id: 'pv', type: 'PAGO_PROVEEDOR', status: 'ANULADA', totalUsd: -5, timestamp: new Date().toISOString() },
     ];
 
     beforeEach(async () => {

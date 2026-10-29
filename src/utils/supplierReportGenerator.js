@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import { formatBs, formatCop, formatUsd } from './calculatorUtils';
 import { getPaymentLabel, toTitleCase } from '../config/paymentMethods';
-import { filterActivityByRange, rangeLabel } from './supplierReportRange';
+import { filterActivityByRange, isActiveRecord, rangeLabel } from './supplierReportRange';
 
 export async function generateSupplierHistoryPDF({
     supplier,
@@ -13,7 +13,8 @@ export async function generateSupplierHistoryPDF({
     hasta = '',
 }) {
     // Rango opcional: solo se imprimen los registros dentro de [desde, hasta].
-    const historyData = filterActivityByRange(allHistoryData, desde, hasta);
+    // Los pagos anulados no salen en el reporte (ni en filas ni en totales).
+    const historyData = filterActivityByRange(allHistoryData, desde, hasta).filter(isActiveRecord);
     const doc = new jsPDF('p', 'mm', 'letter');
     const WIDTH = 215.9;
     const HEIGHT = 279.4;
@@ -236,7 +237,7 @@ export async function generateSupplierHistoryPDF({
 
         // Totales del período (las facturas suman; los pagos anulados no cuentan).
         const facturasUsd = historyData.filter(r => r.type === 'INVOICE').reduce((t, r) => t + (Number(r.amountUsd) || 0), 0);
-        const pagosUsd = historyData.filter(r => r.type !== 'INVOICE' && r.status !== 'ANULADA').reduce((t, r) => t + Math.abs(Number(r.totalUsd) || 0), 0);
+        const pagosUsd = historyData.filter(r => r.type !== 'INVOICE').reduce((t, r) => t + Math.abs(Number(r.totalUsd) || 0), 0);
         checkPageBreak(20);
         y += 4;
         doc.setFont('helvetica', 'normal');

@@ -3,7 +3,7 @@ import { X, Truck, Save, Pencil, FileText, CreditCard, Clock, Phone, Trash2, Arr
 import { getLocalISODate } from '../../utils/dateHelpers';
 import { formatUsd, formatBs, formatCop } from '../../utils/calculatorUtils';
 import CustomSelect from '../CustomSelect';
-import { filterActivityByRange, REPORT_RANGE_OPTIONS, resolveReportRange, rangeLabel } from '../../utils/supplierReportRange';
+import { filterActivityByRange, isActiveRecord, REPORT_RANGE_OPTIONS, resolveReportRange, rangeLabel } from '../../utils/supplierReportRange';
 import { allocatePaymentsToInvoices } from '../../utils/supplierAllocation';
 import { compressImage, getInvoicePhotoUrl } from '../../utils/invoicePhotos';
 import { matchesSearch as matchesSearchFields } from '../../utils/searchMatch';
@@ -645,7 +645,8 @@ export function SupplierReportRangeModal({ supplierName, historyData = [], initi
     const [customDesde, setCustomDesde] = useState(initialDesde);
     const [customHasta, setCustomHasta] = useState(initialHasta);
     const { desde, hasta } = resolveReportRange(option, { desde: customDesde, hasta: customHasta });
-    const count = filterActivityByRange(historyData, desde, hasta).length;
+    // Mismo criterio que el PDF: los pagos anulados no cuentan.
+    const count = filterActivityByRange(historyData, desde, hasta).filter(isActiveRecord).length;
     const invalidCustom = option === 'custom' && !!desde && !!hasta && desde > hasta;
 
     return (
