@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Truck, Save, Pencil, FileText, CreditCard, Clock, Phone, Trash2, ArrowUpRight, CheckCircle2, Download, Ban, Search } from 'lucide-react';
+import { X, Truck, Save, Pencil, FileText, CreditCard, Clock, Phone, Trash2, ArrowUpRight, CheckCircle2, Download, Ban, Search, Camera, Image as ImageIcon } from 'lucide-react';
 import { getLocalISODate } from '../../utils/dateHelpers';
 import { formatUsd, formatBs, formatCop } from '../../utils/calculatorUtils';
 import CustomSelect from '../CustomSelect';
@@ -7,6 +7,26 @@ import { filterActivityByRange, isActiveRecord, REPORT_RANGE_OPTIONS, resolveRep
 import { allocatePaymentsToInvoices } from '../../utils/supplierAllocation';
 import { compressImage, getInvoicePhotoUrl } from '../../utils/invoicePhotos';
 import { matchesSearch as matchesSearchFields } from '../../utils/searchMatch';
+
+/**
+ * Dos formas de adjuntar la foto: la cámara (capture) o la galería / archivos.
+ * Con `capture` el móvil abre directo la cámara, por eso la galería va sin él.
+ */
+export function InvoicePhotoSourceButtons({ onSelect }) {
+    const base = 'flex-1 flex items-center justify-center gap-1.5 py-3 rounded-xl border border-dashed text-xs font-bold text-slate-500 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800';
+    return (
+        <div className="flex gap-2">
+            <label className={base}>
+                <Camera size={14} /> Tomar foto
+                <input type="file" accept="image/*" capture="environment" onChange={onSelect} className="hidden" aria-label="Tomar foto" />
+            </label>
+            <label className={base}>
+                <ImageIcon size={14} /> Galería / archivo
+                <input type="file" accept="image/*" onChange={onSelect} className="hidden" aria-label="Elegir de galería o archivo" />
+            </label>
+        </div>
+    );
+}
 
 /** Miniatura de la foto de una factura (solo local). */
 function InvoicePhotoThumb({ invoiceId, invoiceNumber }) {
@@ -206,14 +226,16 @@ export function AddInvoiceModal({ supplier, bcvRate, systemRate = bcvRate, copEn
 
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-3xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-200">
-                <div className="p-5 border-b border-slate-100 flex justify-between items-center">
+            <div className="bg-white dark:bg-slate-900 w-full max-w-sm sm:max-w-md rounded-3xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh] max-h-[90dvh]">
+                <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center shrink-0">
                     <h3 className="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
                         <FileText size={18} className="text-red-500" /> Cargar Factura
                     </h3>
                     <button onClick={onClose} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-full"><X size={18} /></button>
                 </div>
-                <form onSubmit={handleSubmit} className="p-5 space-y-4">
+                {/* Cuerpo con scroll y pie fijo: con foto y «Ya la pagué» el formulario pasa el alto del móvil. */}
+                <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+                    <div className="p-5 space-y-4 overflow-y-auto overscroll-contain flex-1 min-h-0">
                     <p className="text-xs text-slate-500 -mt-2 mb-2">Registrar deuda con: <strong>{supplier.name}</strong></p>
                     
                     <div>
@@ -307,16 +329,16 @@ export function AddInvoiceModal({ supplier, bcvRate, systemRate = bcvRate, copEn
                                 <button type="button" onClick={() => { setPhotoBlob(null); setPhotoPreview(null); }} className="absolute top-2 right-2 p-1 bg-white/90 rounded-full text-slate-600"><X size={14} /></button>
                             </div>
                         ) : (
-                            <label className="block w-full py-3 text-center rounded-xl border border-dashed text-xs font-bold text-slate-500 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
-                                Adjuntar foto
-                                <input type="file" accept="image/*" capture="environment" onChange={handlePhotoSelect} className="hidden" />
-                            </label>
+                            <InvoicePhotoSourceButtons onSelect={handlePhotoSelect} />
                         )}
                     </div>
+                    </div>
 
-                    <button type="submit" disabled={!invoiceNumber || !amountUsd || parseFloat(amountUsd) <= 0 || !invoiceDate} className="w-full py-3 bg-red-500 hover:bg-red-600 disabled:bg-red-500/50 text-white font-bold rounded-xl active:scale-95 transition-all text-sm flex justify-center items-center gap-2 mt-4">
-                        {alreadyPaid ? 'Registrar Factura Pagada' : 'Registrar Deuda'}
-                    </button>
+                    <div className="p-4 border-t border-slate-100 dark:border-slate-800 shrink-0">
+                        <button type="submit" disabled={!invoiceNumber || !amountUsd || parseFloat(amountUsd) <= 0 || !invoiceDate} className="w-full py-3 bg-red-500 hover:bg-red-600 disabled:bg-red-500/50 text-white font-bold rounded-xl active:scale-95 transition-all text-sm flex justify-center items-center gap-2">
+                            {alreadyPaid ? 'Registrar Factura Pagada' : 'Registrar Deuda'}
+                        </button>
+                    </div>
                 </form>
             </div>
         </div>
@@ -588,12 +610,13 @@ export function EditInvoiceModal({ invoice, onClose, onSave }) {
 
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-            <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-3xl shadow-xl overflow-hidden">
-                <div className="p-5 border-b border-slate-100 flex justify-between items-center">
+            <div className="bg-white dark:bg-slate-900 w-full max-w-sm sm:max-w-md rounded-3xl shadow-xl overflow-hidden flex flex-col max-h-[90vh] max-h-[90dvh]">
+                <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center shrink-0">
                     <h3 className="text-lg font-black text-slate-800 dark:text-white">Editar Factura</h3>
                     <button onClick={onClose} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-full"><X size={18} /></button>
                 </div>
-                <form onSubmit={handleSubmit} className="p-5 space-y-4">
+                <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+                    <div className="p-5 space-y-4 overflow-y-auto overscroll-contain flex-1 min-h-0">
                     <div>
                         <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Nro Control / Factura *</label>
                         <input type="text" required value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} className="w-full form-input border rounded-xl px-3 py-2 text-sm font-bold dark:bg-slate-950" />
@@ -624,14 +647,17 @@ export function EditInvoiceModal({ invoice, onClose, onSave }) {
                                 <button type="button" onClick={() => setPhotoRemoved(true)} className="font-bold text-red-500">Quitar foto</button>
                             </div>
                         ) : null}
-                        <label className="block w-full mt-2 py-2 text-center rounded-xl border border-dashed text-xs font-bold text-slate-500 cursor-pointer">
-                            {photoRemoved ? 'Foto se quitará al guardar' : 'Cambiar / adjuntar foto'}
-                            <input type="file" accept="image/*" capture="environment" onChange={handlePhotoSelect} className="hidden" />
-                        </label>
+                        {photoRemoved && <p className="mt-2 text-[10px] font-bold text-red-500">La foto se quitará al guardar</p>}
+                        <div className="mt-2">
+                            <InvoicePhotoSourceButtons onSelect={handlePhotoSelect} />
+                        </div>
                     </div>
-                    <button type="submit" disabled={!valid} className="w-full py-3 bg-brand-dark disabled:opacity-50 text-white font-bold rounded-xl text-sm">
-                        Guardar cambios
-                    </button>
+                    </div>
+                    <div className="p-4 border-t border-slate-100 dark:border-slate-800 shrink-0">
+                        <button type="submit" disabled={!valid} className="w-full py-3 bg-brand-dark disabled:opacity-50 text-white font-bold rounded-xl text-sm">
+                            Guardar cambios
+                        </button>
+                    </div>
                 </form>
             </div>
         </div>

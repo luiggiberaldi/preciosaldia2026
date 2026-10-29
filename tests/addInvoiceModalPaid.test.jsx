@@ -41,6 +41,14 @@ describe('AddInvoiceModal › «Ya la pagué»', () => {
         container?.remove();
     });
 
+    it('la foto se puede tomar con la cámara o elegir de la galería (sin capture)', () => {
+        const camera = container.querySelector('input[aria-label="Tomar foto"]');
+        const gallery = container.querySelector('input[aria-label="Elegir de galería o archivo"]');
+        expect(camera.getAttribute('capture')).toBe('environment');
+        expect(gallery.hasAttribute('capture')).toBe(false);
+        expect(gallery.getAttribute('accept')).toBe('image/*');
+    });
+
     it('al activarlo desaparece el plazo de pago y cambia el botón', async () => {
         expect(container.textContent).toContain('Plazo de pago');
         expect(container.textContent).toContain('Registrar Deuda');
