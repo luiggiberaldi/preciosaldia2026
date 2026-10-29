@@ -4,6 +4,7 @@ import { showToast } from '../components/Toast';
 import { saveInvoicePhoto, deleteInvoicePhoto } from '../utils/invoicePhotos';
 import { allocatePaymentsToInvoices, paidAmountForInvoice } from '../utils/supplierAllocation';
 import { round2 } from '../utils/dinero';
+import { buildSupplierPaymentRecord } from '../utils/supplierPayment';
 
 export function useSupplierManagement({ bcvRate, tasaCop, copEnabled, triggerHaptic, auditLog }) {
     const [suppliers, setSuppliers] = useState([]);
@@ -67,7 +68,13 @@ export function useSupplierManagement({ bcvRate, tasaCop, copEnabled, triggerHap
         refreshSupplierHistory(supplier.id);
     };
 
-    const handleAddInvoice = async (rawInvoiceData) => {
+    /**
+     * Registra una factura. Con `paid` ({ paymentMethod, currencyMode, retiraCaja })
+     * la factura nace ya pagada: se guarda con su pago completo y la deuda del
+     * proveedor no cambia (sumar y restar el mismo monto es neto cero). El pago
+     * lleva la fecha de la factura para que el gasto caiga en el mes correcto.
+     */
+    const handleAddInvoice = async (rawInvoiceData, paid = null) => {
         triggerHaptic && triggerHaptic();
         // La foto va a IndexedDB (solo local) y nunca al registro de la factura.
         const { _photoBlob, ...invoiceData } = rawInvoiceData;
@@ -80,20 +87,42 @@ export function useSupplierManagement({ bcvRate, tasaCop, copEnabled, triggerHap
                 invoiceData.hasPhoto = false;
             }
         }
-        const updatedInvoices = [...invoices, invoiceData];
+        const supplier = suppliers.find(s => s.id === invoiceData.supplierId);
+        const savedInvoice = paid
+            ? { ...invoiceData, status: 'PAGADA', amountPaidUsd: invoiceData.amountUsd }
+            : invoiceData;
+        const updatedInvoices = [...invoices, savedInvoice];
         await saveInvoices(updatedInvoices);
 
-        // Actualizar deuda del proveedor
-        const supplier = suppliers.find(s => s.id === invoiceData.supplierId);
-        if (supplier) {
+        if (paid && supplier) {
+            const allSales = await storageService.getItem('bodega_sales_v1', []);
+            allSales.push(buildSupplierPaymentRecord({
+                supplier,
+                amountUsd: invoiceData.amountUsd,
+                amountBs: invoiceData.amountBs,
+                amountCop: round2(invoiceData.amountUsd * tasaCop),
+                exchangeRate: invoiceData.exchangeRate,
+                rateType: invoiceData.rateType,
+                paymentMethod: paid.retiraCaja ? paid.paymentMethod : 'pago_externo',
+                currencyMode: paid.currencyMode,
+                retiraCaja: !!paid.retiraCaja,
+                invoiceId: invoiceData.id,
+                description: `Pago de factura #${invoiceData.invoiceNumber} (al registrarla)`,
+                tasaCop,
+                copEnabled,
+                timestamp: invoiceData.date,
+            }));
+            await storageService.setItem('bodega_sales_v1', allSales);
+        } else if (supplier) {
+            // Actualizar deuda del proveedor
             const updatedSupplier = { ...supplier, deuda: (supplier.deuda || 0) + invoiceData.amountUsd };
             const updatedSuppliers = suppliers.map(s => s.id === supplier.id ? updatedSupplier : s);
             await saveSuppliers(updatedSuppliers);
             setSelectedSupplier(updatedSupplier);
         }
         setIsAddInvoiceModalOpen(false);
-        showToast('Factura registrada', 'success');
-        auditLog('PROVEEDOR', 'FACTURA_REGISTRADA', `Factura $${invoiceData.amountUsd?.toFixed(2)} - ${suppliers.find(s => s.id === invoiceData.supplierId)?.name || '?'}`);
+        showToast(paid ? 'Factura pagada registrada' : 'Factura registrada', 'success');
+        auditLog('PROVEEDOR', paid ? 'FACTURA_PAGADA_REGISTRADA' : 'FACTURA_REGISTRADA', `Factura $${invoiceData.amountUsd?.toFixed(2)} - ${supplier?.name || '?'}${paid ? (paid.retiraCaja ? ' (pagada, Caja)' : ' (pagada, Externo)') : ''}`);
         refreshSupplierHistory(invoiceData.supplierId, updatedInvoices);
     };
 
@@ -134,34 +163,20 @@ export function useSupplierManagement({ bcvRate, tasaCop, copEnabled, triggerHap
 
         // 2. Registrar en Caja/Sistema
         const sales = allSales;
-        const totalEnBs = amountBs;
-        const totalEnUsd = safeAmountUsd;
-        const totalEnCop = currencyMode === 'COP' ? amountCop : (amountUsd * tasaCop);
-
-        const pagoRecord = {
-            id: crypto.randomUUID(),
-            timestamp: new Date().toISOString(),
-            tipo: 'PAGO_PROVEEDOR',
-            supplierId: supplier.id,
-            supplierName: supplier.name,
+        const pagoRecord = buildSupplierPaymentRecord({
+            supplier,
+            amountUsd: safeAmountUsd,
+            amountBs,
+            amountCop,
             exchangeRate: exchangeRate || bcvRate,
-            rateType: rateType || 'bcv',
-            totalBs: -totalEnBs,
-            totalUsd: -totalEnUsd,
-            ...(copEnabled && { totalCop: -totalEnCop }),
-            paymentMethod: paymentMethod,
-            afectaCaja: retiraCaja, // <-- Sostiene si descuenta de caja
-            ...(invoiceId && { invoiceId }), // factura elegida; sin ella el pago se reparte FIFO
-            payments: [{
-                methodId: paymentMethod,
-                amountUsd: currencyMode === 'USD' ? -totalEnUsd : 0,
-                amountBs: currencyMode === 'BS' ? -totalEnBs : 0,
-                ...(copEnabled && { amountCop: currencyMode === 'COP' ? -totalEnCop : 0 }),
-                currency: currencyMode,
-                methodLabel: retiraCaja ? 'Pago a Proveedor' : 'Pago Externo a Proveedor'
-            }],
-            items: [{ name: `Pago a proveedor: ${supplier.name}${retiraCaja ? '' : ' (Externo)'}`, qty: 1, priceUsd: -totalEnUsd, costBs: 0 }]
-        };
+            rateType,
+            paymentMethod,
+            currencyMode,
+            retiraCaja,
+            invoiceId,
+            tasaCop,
+            copEnabled,
+        });
         sales.push(pagoRecord);
         await storageService.setItem('bodega_sales_v1', sales);
 

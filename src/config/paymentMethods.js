@@ -209,6 +209,7 @@ export const getPaymentLabel = (id, fallbackLabel) => {
     // Virtual categories (not selectable, display-only)
     if (id === 'fiado') return 'Fiado (Por Cobrar)';
     if (id === 'cashea') return 'Cashea (Por Cobrar)';
+    if (id === 'pago_externo') return 'Pago Externo'; // pago a proveedor con fondos fuera de la caja
     if (id === 'saldo_favor') return 'Saldo a Favor';
     if (id === 'saldo_favor_generado' || id === '_saldo_favor_generado') return 'Saldo a Favor Generado';
 

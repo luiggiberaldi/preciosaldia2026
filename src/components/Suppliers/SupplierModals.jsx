@@ -3,7 +3,7 @@ import { X, Truck, Save, Pencil, FileText, CreditCard, Clock, Phone, Trash2, Arr
 import { getLocalISODate } from '../../utils/dateHelpers';
 import { formatUsd, formatBs, formatCop } from '../../utils/calculatorUtils';
 import CustomSelect from '../CustomSelect';
-import { filterActivityByRange } from '../../utils/supplierReportRange';
+import { filterActivityByRange, REPORT_RANGE_OPTIONS, resolveReportRange, rangeLabel } from '../../utils/supplierReportRange';
 import { allocatePaymentsToInvoices } from '../../utils/supplierAllocation';
 import { compressImage, getInvoicePhotoUrl } from '../../utils/invoicePhotos';
 import { matchesSearch as matchesSearchFields } from '../../utils/searchMatch';
@@ -127,8 +127,14 @@ function SupplierRateToggle({ useBcvRate, onChange, bcvRate, systemRate }) {
     );
 }
 
-export function AddInvoiceModal({ supplier, bcvRate, systemRate = bcvRate, onClose, onSave }) {
+export function AddInvoiceModal({ supplier, bcvRate, systemRate = bcvRate, copEnabled = false, activePaymentMethods = [], onClose, onSave }) {
     const [invoiceNumber, setInvoiceNumber] = useState('');
+    // «Ya la pagué»: la factura nace saldada (gasto registrado, sin deuda).
+    // Por defecto es un pago externo: lo típico es cargar un gasto ya hecho.
+    const [alreadyPaid, setAlreadyPaid] = useState(false);
+    const [payCurrency, setPayCurrency] = useState('USD');
+    const [paymentMethod, setPaymentMethod] = useState('efectivo_usd');
+    const [retiraCaja, setRetiraCaja] = useState(false);
     const [amountUsd, setAmountUsd] = useState('');
     const [useBcvRate, setUseBcvRate] = useState(true);
     const rateType = useBcvRate ? 'bcv' : 'system';
@@ -138,6 +144,7 @@ export function AddInvoiceModal({ supplier, bcvRate, systemRate = bcvRate, onClo
     const [dueDate, setDueDate] = useState('');
     const [photoBlob, setPhotoBlob] = useState(null);
     const [photoPreview, setPhotoPreview] = useState(null);
+    const paymentMethodOptions = activePaymentMethods.filter(m => m.currency === payCurrency);
 
     // Plazo en días: calcula la fecha de vencimiento a partir de la fecha de la factura.
     const setDueInDays = (days) => {
@@ -171,7 +178,8 @@ export function AddInvoiceModal({ supplier, bcvRate, systemRate = bcvRate, onClo
             invoiceNumber: invoiceNumber.trim(),
             // Mediodía local: evita que la fecha caiga en el día anterior al convertir a ISO.
             date: new Date(`${invoiceDate}T12:00:00`).toISOString(),
-            dueDate: dueDate || null,
+            // Una factura pagada no vence: se ignora el plazo aunque se haya llenado antes.
+            dueDate: alreadyPaid ? null : (dueDate || null),
             amountUsd: parseFloat(amountUsd),
             amountBs: parseFloat(amountUsd) * activeRate,
             rateType,
@@ -182,7 +190,18 @@ export function AddInvoiceModal({ supplier, bcvRate, systemRate = bcvRate, onClo
             hasPhoto: !!photoBlob,
             _photoBlob: photoBlob, // temporal: el hook la guarda en IndexedDB y la quita del registro
         };
-        onSave(invoiceData);
+        // El selector muestra el primer medio si el elegido no es de esta moneda: se guarda ese mismo.
+        const effectiveMethod = paymentMethodOptions.some(m => m.id === paymentMethod)
+            ? paymentMethod
+            : (paymentMethodOptions[0]?.id || paymentMethod);
+        onSave(invoiceData, alreadyPaid
+            ? { paymentMethod: effectiveMethod, currencyMode: payCurrency, retiraCaja }
+            : null);
+    };
+
+    const switchPayCurrency = (currency, defaultMethod) => {
+        setPayCurrency(currency);
+        setPaymentMethod(defaultMethod);
     };
 
     return (
@@ -216,6 +235,58 @@ export function AddInvoiceModal({ supplier, bcvRate, systemRate = bcvRate, onClo
                         <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha de la factura *</label>
                         <input type="date" required value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} className="w-full form-input border rounded-xl px-3 py-2 text-sm font-bold dark:bg-slate-950 text-slate-700 dark:text-white" />
                     </div>
+                    <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                        <div className="text-left">
+                            <span className="text-xs font-bold text-slate-700 dark:text-slate-200 block">Ya la pagué</span>
+                            <span className="text-[9px] text-slate-400 block leading-tight">
+                                {alreadyPaid
+                                    ? 'Queda saldada y cuenta como gasto del mes. No suma a la deuda.'
+                                    : 'Si ya la pagaste, regístrala como gasto sin crear deuda.'}
+                            </span>
+                        </div>
+                        <label className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center cursor-pointer select-none shrink-0">
+                            <input type="checkbox" checked={alreadyPaid} onChange={e => setAlreadyPaid(e.target.checked)} aria-label="Ya la pagué" className="sr-only peer" />
+                            <div className="relative w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                        </label>
+                    </div>
+
+                    {alreadyPaid && (
+                        <div className="space-y-3">
+                            <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                                <button type="button" onClick={() => switchPayCurrency('BS', 'efectivo_bs')} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${payCurrency === 'BS' ? 'bg-white shadow text-brand' : 'text-slate-500'}`}>Bs</button>
+                                <button type="button" onClick={() => switchPayCurrency('USD', 'efectivo_usd')} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${payCurrency === 'USD' ? 'bg-white shadow text-emerald-500' : 'text-slate-500'}`}>USD</button>
+                                {copEnabled && (
+                                    <button type="button" onClick={() => switchPayCurrency('COP', 'efectivo_cop')} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${payCurrency === 'COP' ? 'bg-white shadow text-amber-500' : 'text-slate-500'}`}>COP</button>
+                                )}
+                            </div>
+                            <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                                <div className="text-left">
+                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200 block">¿Salió de la Caja?</span>
+                                    <span className="text-[9px] text-slate-400 block leading-tight">
+                                        {retiraCaja
+                                            ? 'Se registra como egreso en el arqueo diario.'
+                                            : 'Pago con fondos externos. No altera el arqueo de caja.'}
+                                    </span>
+                                </div>
+                                <label className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center cursor-pointer select-none shrink-0">
+                                    <input type="checkbox" checked={retiraCaja} onChange={e => setRetiraCaja(e.target.checked)} aria-label="Salió de la Caja" className="sr-only peer" />
+                                    <div className="relative w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                                </label>
+                            </div>
+                            {retiraCaja && (
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Medio de Pago</label>
+                                    <CustomSelect
+                                        value={paymentMethodOptions.some(m => m.id === paymentMethod) ? paymentMethod : (paymentMethodOptions[0]?.id || '')}
+                                        onChange={setPaymentMethod}
+                                        options={paymentMethodOptions.map(method => ({ value: method.id, label: method.label }))}
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {!alreadyPaid && (
                     <div>
                         <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Plazo de pago</label>
                         <div className="flex gap-2 mb-2">
@@ -226,6 +297,7 @@ export function AddInvoiceModal({ supplier, bcvRate, systemRate = bcvRate, onClo
                         <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha Vencimiento (Opcional)</label>
                         <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="w-full form-input border rounded-xl px-3 py-2 text-sm font-bold dark:bg-slate-950 text-slate-700 dark:text-white" />
                     </div>
+                    )}
 
                     <div>
                         <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Foto de Factura <span className="normal-case font-medium">(opcional, solo en este equipo)</span></label>
@@ -243,7 +315,7 @@ export function AddInvoiceModal({ supplier, bcvRate, systemRate = bcvRate, onClo
                     </div>
 
                     <button type="submit" disabled={!invoiceNumber || !amountUsd || parseFloat(amountUsd) <= 0 || !invoiceDate} className="w-full py-3 bg-red-500 hover:bg-red-600 disabled:bg-red-500/50 text-white font-bold rounded-xl active:scale-95 transition-all text-sm flex justify-center items-center gap-2 mt-4">
-                        Registrar Deuda
+                        {alreadyPaid ? 'Registrar Factura Pagada' : 'Registrar Deuda'}
                     </button>
                 </form>
             </div>
@@ -566,12 +638,73 @@ export function EditInvoiceModal({ invoice, onClose, onSave }) {
     );
 }
 
+/** Elige el período del PDF de estado de cuenta (hoy, ayer, este mes, personalizado...). */
+export function SupplierReportRangeModal({ supplierName, historyData = [], initialDesde = '', initialHasta = '', onClose, onGenerate }) {
+    const hasInitialRange = !!(initialDesde || initialHasta);
+    const [option, setOption] = useState(hasInitialRange ? 'custom' : 'month');
+    const [customDesde, setCustomDesde] = useState(initialDesde);
+    const [customHasta, setCustomHasta] = useState(initialHasta);
+    const { desde, hasta } = resolveReportRange(option, { desde: customDesde, hasta: customHasta });
+    const count = filterActivityByRange(historyData, desde, hasta).length;
+    const invalidCustom = option === 'custom' && !!desde && !!hasta && desde > hasta;
+
+    return (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+            <div role="dialog" aria-label="Período del reporte" className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-3xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                    <h3 className="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
+                        <Download size={18} className="text-brand-dark dark:text-brand" /> Reporte PDF
+                    </h3>
+                    <button onClick={onClose} aria-label="Cerrar" className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-full"><X size={18} /></button>
+                </div>
+                <div className="p-5 space-y-4">
+                    <p className="text-xs text-slate-500 -mt-1">Estado de cuenta de <strong>{supplierName}</strong>. ¿De qué período lo quieres?</p>
+                    <div className="grid grid-cols-2 gap-2">
+                        {REPORT_RANGE_OPTIONS.map(opt => (
+                            <button
+                                key={opt.id}
+                                type="button"
+                                onClick={() => setOption(opt.id)}
+                                aria-pressed={option === opt.id}
+                                className={`rounded-xl border px-3 py-2.5 text-xs font-bold ${option === opt.id ? 'border-brand bg-brand/10 text-brand-dark dark:text-brand' : 'border-slate-200 dark:border-slate-700 text-slate-500'}`}
+                            >
+                                {opt.label}
+                            </button>
+                        ))}
+                    </div>
+                    {option === 'custom' && (
+                        <div className="flex items-center gap-2">
+                            <input type="date" value={customDesde} onChange={e => setCustomDesde(e.target.value)} aria-label="Reporte desde" className="form-input min-w-0 flex-1 border rounded-lg px-2 py-1.5 text-xs dark:bg-slate-950" />
+                            <span className="text-[10px] text-slate-400">a</span>
+                            <input type="date" value={customHasta} onChange={e => setCustomHasta(e.target.value)} aria-label="Reporte hasta" className="form-input min-w-0 flex-1 border rounded-lg px-2 py-1.5 text-xs dark:bg-slate-950" />
+                        </div>
+                    )}
+                    <p className={`text-[11px] font-bold ${invalidCustom ? 'text-red-600' : 'text-slate-500'}`} role={invalidCustom ? 'alert' : undefined}>
+                        {invalidCustom
+                            ? 'La fecha "desde" no puede ser posterior a "hasta".'
+                            : `${rangeLabel(desde, hasta)} · ${count} ${count === 1 ? 'movimiento' : 'movimientos'}`}
+                    </p>
+                    <button
+                        type="button"
+                        disabled={count === 0 || invalidCustom}
+                        onClick={() => onGenerate({ desde, hasta })}
+                        className="w-full py-3 bg-brand-dark hover:opacity-90 disabled:opacity-40 text-white font-bold rounded-xl active:scale-95 transition-all text-sm flex justify-center items-center gap-2"
+                    >
+                        <Download size={14} /> Generar PDF
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export function SupplierDetailsSheet({ supplier, isOpen, isAdmin, onClose, onAddInvoice, onPayInvoice, onEdit, onDelete, bcvRate, tasaCop, copEnabled, copPrimary, historyData, triggerHaptic, onEditInvoice, onDeleteInvoice, onVoidPayment }) {
     // Rango para estado de cuenta (YYYY-MM-DD local). Vacío = todo el historial.
     const [desde, setDesde] = useState('');
     const [hasta, setHasta] = useState('');
     const [invoiceStatusFilter, setInvoiceStatusFilter] = useState('PENDIENTES');
     const [invoiceSearch, setInvoiceSearch] = useState('');
+    const [isReportRangeOpen, setIsReportRangeOpen] = useState(false);
 
     // Cálculos del estado de cuenta. Se memorizan para no repetir el reparto FIFO,
     // los filtros y el ordenado en cada render (p. ej. al escribir en la búsqueda).
@@ -695,21 +828,9 @@ export function SupplierDetailsSheet({ supplier, isOpen, isAdmin, onClose, onAdd
                             <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                                 <Clock size={12} /> Estado de Cuenta
                             </h4>
-                            {visibleHistory.length > 0 && (
+                            {historyData.length > 0 && (
                                 <button
-                                    onClick={async () => {
-                                        triggerHaptic && triggerHaptic();
-                                        const { generateSupplierHistoryPDF } = await import('../../utils/supplierReportGenerator');
-                                        generateSupplierHistoryPDF({
-                                            supplier,
-                                            historyData,
-                                            bcvRate,
-                                            tasaCop,
-                                            copEnabled,
-                                            desde,
-                                            hasta
-                                        });
-                                    }}
+                                    onClick={() => { triggerHaptic && triggerHaptic(); setIsReportRangeOpen(true); }}
                                     className="text-[10px] font-bold text-brand-dark dark:text-brand bg-slate-100 dark:bg-slate-800/40 px-2.5 py-1 rounded-lg flex items-center gap-1 active:scale-95 transition-all animate-in fade-in duration-200"
                                 >
                                     <Download size={10} /> Reporte PDF
@@ -771,7 +892,7 @@ export function SupplierDetailsSheet({ supplier, isOpen, isAdmin, onClose, onAdd
                                             </div>
                                             <div className="flex-1 min-w-0">
                                                 <p className={`text-xs font-bold text-slate-700 dark:text-slate-200 ${voided ? 'line-through' : ''}`}>
-                                                    {isInvoice ? `Factura #${record.invoiceNumber}` : `Abono/Pago`}
+                                                    {isInvoice ? `Factura #${record.invoiceNumber}` : (record.description || 'Abono/Pago')}
                                                     {voided && <span className="ml-1.5 no-underline text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-rose-100 text-rose-600">Anulado</span>}
                                                 </p>                                                    <p className="text-[10px] text-slate-400">{dateStr} {isInvoice && record.dueDate && `• Venc: ${new Date(record.dueDate + 'T12:00:00').toLocaleDateString('es-VE')}`} {vencida && <span className="font-bold text-red-500">• VENCIDA</span>}</p>
                                                     {isInvoice && allocation.byInvoice.get(record.id) && (() => {
@@ -835,6 +956,20 @@ export function SupplierDetailsSheet({ supplier, isOpen, isAdmin, onClose, onAdd
                     </div>
                 </div>
             </div>
+            {isReportRangeOpen && (
+                <SupplierReportRangeModal
+                    supplierName={supplier.name}
+                    historyData={historyData}
+                    initialDesde={desde}
+                    initialHasta={hasta}
+                    onClose={() => setIsReportRangeOpen(false)}
+                    onGenerate={async ({ desde: from, hasta: to }) => {
+                        const { generateSupplierHistoryPDF } = await import('../../utils/supplierReportGenerator');
+                        await generateSupplierHistoryPDF({ supplier, historyData, bcvRate, tasaCop, copEnabled, desde: from, hasta: to });
+                        setIsReportRangeOpen(false);
+                    }}
+                />
+            )}
         </div>
     );
 }

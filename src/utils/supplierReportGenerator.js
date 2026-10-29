@@ -97,7 +97,7 @@ export async function generateSupplierHistoryPDF({
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(...RED);
-    doc.text('BALANCE TOTAL PENDIENTE', M + 5, y + 6);
+    doc.text('BALANCE TOTAL PENDIENTE (A LA FECHA)', M + 5, y + 6);
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(18);
@@ -118,6 +118,10 @@ export async function generateSupplierHistoryPDF({
     doc.setFontSize(11);
     doc.setTextColor(...BLUE);
     doc.text('HISTORIAL DE MOVIMIENTOS', M, y);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(...BODY);
+    doc.text(`Período: ${rangeLabel(desde, hasta)}`, RIGHT, y, { align: 'right' });
     y += 6;
 
     // Cabecera Tabla
@@ -130,10 +134,10 @@ export async function generateSupplierHistoryPDF({
         doc.setTextColor(255, 255, 255);
         
         doc.text('Fecha / Hora', M + 3, posY + 5.5);
-        doc.text('Tipo', M + 32, posY + 5.5);
-        doc.text('Referencia / Concepto', M + 60, posY + 5.5);
-        doc.text('Caja', M + 122, posY + 5.5);
-        doc.text('Método', M + 136, posY + 5.5);
+        doc.text('Tipo', M + 40, posY + 5.5);
+        doc.text('Referencia / Concepto', M + 64, posY + 5.5);
+        doc.text('Caja', M + 126, posY + 5.5);
+        doc.text('Método', M + 138, posY + 5.5);
         doc.text('Monto USD', RIGHT - 3, posY + 5.5, { align: 'right' });
     };
 
@@ -169,11 +173,11 @@ export async function generateSupplierHistoryPDF({
             if (isInvoice) {
                 doc.setFont('helvetica', 'bold');
                 doc.setTextColor(...RED);
-                doc.text('Factura', M + 32, y + 4.8);
+                doc.text('Factura', M + 40, y + 4.8);
             } else {
                 doc.setFont('helvetica', 'bold');
                 doc.setTextColor(...GREEN);
-                doc.text('Abono/Pago', M + 32, y + 4.8);
+                doc.text('Abono/Pago', M + 40, y + 4.8);
             }
             doc.setFont('helvetica', 'normal');
             doc.setTextColor(...INK);
@@ -182,8 +186,8 @@ export async function generateSupplierHistoryPDF({
             const refText = isInvoice 
                 ? `Factura #${record.invoiceNumber || 'S/N'}` 
                 : (record.description || 'Pago Registrado');
-            const truncatedRef = refText.length > 32 ? refText.slice(0, 30) + '...' : refText;
-            doc.text(truncatedRef, M + 60, y + 4.8);
+            const truncatedRef = refText.length > 40 ? refText.slice(0, 38) + '...' : refText;
+            doc.text(truncatedRef, M + 64, y + 4.8);
 
             // Afecta Caja (Y/N)
             const cajaText = isInvoice 
@@ -195,7 +199,7 @@ export async function generateSupplierHistoryPDF({
             } else {
                 doc.setTextColor(...MUTED);
             }
-            doc.text(cajaText, M + 122, y + 4.8);
+            doc.text(cajaText, M + 126, y + 4.8);
             doc.setFont('helvetica', 'normal');
             doc.setTextColor(...INK);
 
@@ -203,12 +207,13 @@ export async function generateSupplierHistoryPDF({
             const methodLabel = isInvoice 
                 ? 'N/A' 
                 : toTitleCase(getPaymentLabel(record.paymentMethod || (record.payments && record.payments[0]?.methodId) || ''));
-            const truncatedMethod = methodLabel.length > 18 ? methodLabel.slice(0, 16) + '...' : methodLabel;
-            doc.text(truncatedMethod, M + 136, y + 4.8);
+            const truncatedMethod = methodLabel.length > 14 ? methodLabel.slice(0, 12) + '...' : methodLabel;
+            doc.text(truncatedMethod, M + 138, y + 4.8);
 
             // Monto
             const amountUsdVal = isInvoice ? (record.amountUsd || 0) : Math.abs(record.totalUsd || 0);
-            const prefix = isInvoice ? '+' : '−';
+            // ASCII: el '−' (U+2212) no existe en la fuente helvetica del PDF y sale como basura.
+            const prefix = isInvoice ? '+' : '-';
             
             if (isInvoice) {
                 doc.setFont('helvetica', 'bold');
@@ -228,6 +233,26 @@ export async function generateSupplierHistoryPDF({
 
             y += 7;
         });
+
+        // Totales del período (las facturas suman; los pagos anulados no cuentan).
+        const facturasUsd = historyData.filter(r => r.type === 'INVOICE').reduce((t, r) => t + (Number(r.amountUsd) || 0), 0);
+        const pagosUsd = historyData.filter(r => r.type !== 'INVOICE' && r.status !== 'ANULADA').reduce((t, r) => t + Math.abs(Number(r.totalUsd) || 0), 0);
+        checkPageBreak(20);
+        y += 4;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(...BODY);
+        doc.text('Facturas del período', RIGHT - 45, y, { align: 'right' });
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(...RED);
+        doc.text(`USD ${formatUsd(facturasUsd)}`, RIGHT - 3, y, { align: 'right' });
+        y += 6;
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(...BODY);
+        doc.text('Pagos del período', RIGHT - 45, y, { align: 'right' });
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(...GREEN);
+        doc.text(`USD ${formatUsd(pagosUsd)}`, RIGHT - 3, y, { align: 'right' });
     }
 
     addFooter(pageNum);

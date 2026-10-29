@@ -20,6 +20,51 @@ export function filterActivityByRange(items, desde = '', hasta = '') {
     });
 }
 
+/** Opciones del selector de período del PDF de estado de cuenta. */
+export const REPORT_RANGE_OPTIONS = [
+    { id: 'today', label: 'Hoy' },
+    { id: 'yesterday', label: 'Ayer' },
+    { id: 'week', label: 'Esta semana' },
+    { id: 'month', label: 'Este mes' },
+    { id: 'lastMonth', label: 'Mes anterior' },
+    { id: 'all', label: 'Todo el historial' },
+    { id: 'custom', label: 'Personalizado' },
+];
+
+/**
+ * Traduce una opción del selector a { desde, hasta } (YYYY-MM-DD local).
+ * 'all' no limita; 'custom' usa las fechas dadas. `now` permite probarlo.
+ */
+export function resolveReportRange(optionId, { desde = '', hasta = '' } = {}, now = new Date()) {
+    if (optionId === 'all') return { desde: '', hasta: '' };
+    if (optionId === 'custom') return { desde, hasta };
+    const today = getLocalISODate(now);
+    switch (optionId) {
+        case 'today':
+            return { desde: today, hasta: today };
+        case 'yesterday': {
+            const d = new Date(now);
+            d.setDate(d.getDate() - 1);
+            const day = getLocalISODate(d);
+            return { desde: day, hasta: day };
+        }
+        case 'week': {
+            const d = new Date(now);
+            d.setDate(d.getDate() - d.getDay()); // domingo, igual que Reportes
+            return { desde: getLocalISODate(d), hasta: today };
+        }
+        case 'month':
+            return { desde: getLocalISODate(new Date(now.getFullYear(), now.getMonth(), 1)), hasta: today };
+        case 'lastMonth':
+            return {
+                desde: getLocalISODate(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
+                hasta: getLocalISODate(new Date(now.getFullYear(), now.getMonth(), 0)),
+            };
+        default:
+            return { desde: '', hasta: '' };
+    }
+}
+
 /** Texto legible del rango: 'Del 01/10/2026 al 09/10/2026', 'Todo el historial', etc. */
 export function buildSupplierPeriodSummary({ suppliers = [], invoices = [], payments = [], desde = '', hasta = '' }) {
     const supplierById = new Map(suppliers.map((supplier) => [supplier.id, supplier]));

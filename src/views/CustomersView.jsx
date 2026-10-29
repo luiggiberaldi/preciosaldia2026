@@ -323,6 +323,8 @@ export default function CustomersView({ triggerHaptic, isActive }) {
                         supplier={selectedSupplier}
                         bcvRate={bcvRate}
                         systemRate={effectiveRate}
+                        copEnabled={copEnabled}
+                        activePaymentMethods={activePaymentMethods}
                         onClose={() => setIsAddInvoiceModalOpen(false)}
                         onSave={handleAddInvoice}
                     />
