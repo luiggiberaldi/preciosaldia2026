@@ -20,7 +20,7 @@ vi.mock('jspdf', () => ({
     },
 }));
 
-import { generateSupplierHistoryPDF } from '../src/utils/supplierReportGenerator';
+import { generateGlobalSuppliersPDF, generateSupplierHistoryPDF } from '../src/utils/supplierReportGenerator';
 import { SupplierReportRangeModal } from '../src/components/Suppliers/SupplierModals';
 import { REPORT_RANGE_OPTIONS, resolveReportRange } from '../src/utils/supplierReportRange';
 import { getPaymentLabel } from '../src/config/paymentMethods';
@@ -67,6 +67,33 @@ describe('PDF de estado de cuenta', () => {
         expect(texts).toContain('USD 150.00'); // facturas y pagos del período
         expect(texts.some(t => t.includes('#vieja'))).toBe(false); // fuera del rango
         expect(saved[0]).toBe('Estado_Cuenta_Prueba.pdf');
+    });
+});
+
+describe('PDF de reporte general', () => {
+    beforeEach(() => { texts.length = 0; saved.length = 0; });
+
+    it('usa un menos ASCII, abrevia la operación y respeta el rango', async () => {
+        await generateGlobalSuppliersPDF({
+            suppliers: [{ id: 's', name: 'prueba', deuda: 0 }],
+            invoices: [
+                { id: 'i1', supplierId: 's', supplierName: 'prueba', invoiceNumber: 'jose', amountUsd: 150, date: '2026-10-29T12:00:00' },
+                { id: 'i0', supplierId: 's', supplierName: 'prueba', invoiceNumber: 'vieja', amountUsd: 30, date: '2026-09-02T12:00:00' },
+            ],
+            allSales: [{
+                id: 'p1', tipo: 'PAGO_PROVEEDOR', supplierId: 's', supplierName: 'prueba', totalUsd: -150, afectaCaja: false,
+                paymentMethod: 'pago_externo', description: 'Pago de factura #jose (al registrarla)', timestamp: '2026-10-29T12:00:00',
+            }],
+            desde: '2026-10-01',
+            hasta: '2026-10-31',
+        });
+
+        expect(texts).toContain('- 150.00');
+        expect(texts.join('')).not.toContain('−');
+        expect(texts).toContain('Pago Externo');
+        expect(texts).toContain('Pago de factura #jose');
+        expect(texts).toContain('Rango: Del 01/10/2026 al 31/10/2026');
+        expect(texts.some(t => t.includes('#vieja'))).toBe(false);
     });
 });
 

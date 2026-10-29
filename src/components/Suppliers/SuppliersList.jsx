@@ -6,6 +6,7 @@ import EmptyState from '../EmptyState';
 import SwipeableItem from '../SwipeableItem';
 import PaginationBar from '../PaginationBar';
 import { usePagination } from '../../hooks/usePagination';
+import { SupplierReportRangeModal } from './SupplierModals';
 
 export default function SuppliersList({
     suppliers,
@@ -23,8 +24,8 @@ export default function SuppliersList({
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState('all'); // 'all' | 'deuda'
     // Rango para reportes (YYYY-MM-DD local). Vacío = todo el historial.
-    const [desde, setDesde] = useState('');
-    const [hasta, setHasta] = useState('');
+    // Datos del selector de período del PDF global (null = cerrado).
+    const [reportPicker, setReportPicker] = useState(null);
 
     const filteredSuppliers = suppliers.filter(s => {
         const matchesSearch = matchesSearchFields([s.name, s.phone, s.rif], searchTerm);
@@ -121,31 +122,16 @@ export default function SuppliersList({
                     </div>
 
                     {suppliers.length > 0 && (
-                        <div className="flex items-center gap-1.5 shrink-0">
-                            <input type="date" value={desde} onChange={e => setDesde(e.target.value)} className="form-input border rounded-lg px-2 py-1 text-xs dark:bg-slate-950" aria-label="Desde" />
-                            <input type="date" value={hasta} onChange={e => setHasta(e.target.value)} className="form-input border rounded-lg px-2 py-1 text-xs dark:bg-slate-950" aria-label="Hasta" />
-                        </div>
-                    )}
-                    {suppliers.length > 0 && (
                         <button
                             onClick={async () => {
                                 triggerHaptic && triggerHaptic();
                                 try {
                                     const { storageService } = await import('../../utils/storageService');
                                     const allSales = await storageService.getItem('bodega_sales_v1', []);
-                                    const { generateGlobalSuppliersPDF } = await import('../../utils/supplierReportGenerator');
-                                    generateGlobalSuppliersPDF({
-                                        suppliers,
-                                        invoices,
-                                        allSales,
-                                        bcvRate,
-                                        tasaCop,
-                                        copEnabled,
-                                        desde,
-                                        hasta
-                                    });
+                                    const payments = allSales.filter(sale => sale.tipo === 'PAGO_PROVEEDOR' && sale.status !== 'ANULADA');
+                                    setReportPicker({ allSales, history: [...invoices, ...payments] });
                                 } catch (e) {
-                                    console.error('Error al generar el reporte global de proveedores:', e);
+                                    console.error('Error al preparar el reporte global de proveedores:', e);
                                 }
                             }}
                             className="px-4 py-1.5 rounded-full text-sm font-bold bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm shadow-emerald-500/20 flex items-center gap-1.5 active:scale-95 transition-all whitespace-nowrap"
@@ -243,6 +229,27 @@ export default function SuppliersList({
                     </>
                 )}
             </div>
+            {reportPicker && (
+                <SupplierReportRangeModal
+                    supplierName="todos los proveedores"
+                    historyData={reportPicker.history}
+                    onClose={() => setReportPicker(null)}
+                    onGenerate={async ({ desde, hasta }) => {
+                        const { generateGlobalSuppliersPDF } = await import('../../utils/supplierReportGenerator');
+                        await generateGlobalSuppliersPDF({
+                            suppliers,
+                            invoices,
+                            allSales: reportPicker.allSales,
+                            bcvRate,
+                            tasaCop,
+                            copEnabled,
+                            desde,
+                            hasta,
+                        });
+                        setReportPicker(null);
+                    }}
+                />
+            )}
         </div>
     );
 }

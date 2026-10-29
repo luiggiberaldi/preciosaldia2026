@@ -485,9 +485,9 @@ export async function generateGlobalSuppliersPDF({
         doc.setFontSize(8.5);
         doc.setTextColor(255, 255, 255);
         doc.text('Fecha / Hora', M + 3, posY + 5.5);
-        doc.text('Proveedor', M + 32, posY + 5.5);
-        doc.text('Operación', M + 75, posY + 5.5);
-        doc.text('Caja', M + 115, posY + 5.5);
+        doc.text('Proveedor', M + 40, posY + 5.5);
+        doc.text('Operación', M + 68, posY + 5.5);
+        doc.text('Caja', M + 116, posY + 5.5);
         doc.text('Método', M + 130, posY + 5.5);
         doc.text('Monto USD', RIGHT - 3, posY + 5.5, { align: 'right' });
     };
@@ -527,17 +527,19 @@ export async function generateGlobalSuppliersPDF({
             doc.text(dateStr, M + 3, y + 4.8);
 
             const provName = act.supplierName || suppliers.find(s => s.id === act.supplierId)?.name || 'Desconocido';
-            const truncatedProv = provName.length > 20 ? provName.slice(0, 18) + '...' : provName;
-            doc.text(truncatedProv, M + 32, y + 4.8);
+            const truncatedProv = provName.length > 14 ? provName.slice(0, 12) + '...' : provName;
+            doc.text(truncatedProv, M + 40, y + 4.8);
 
             if (isInvoice) {
                 doc.setFont('helvetica', 'bold');
                 doc.setTextColor(...RED);
-                doc.text(`Factura #${act.invoiceNumber || 'S/N'}`, M + 75, y + 4.8);
+                doc.text(`Factura #${act.invoiceNumber || 'S/N'}`, M + 68, y + 4.8);
             } else {
                 doc.setFont('helvetica', 'bold');
                 doc.setTextColor(...GREEN);
-                doc.text(act.description || 'Abono/Pago', M + 75, y + 4.8);
+                // En el listado general la columna es angosta: se omite la aclaración «(al registrarla)».
+                const opText = (act.description || 'Abono/Pago').replace(/\s*\(al registrarla\)$/, '');
+                doc.text(opText.length > 30 ? opText.slice(0, 28) + '...' : opText, M + 68, y + 4.8);
             }
             doc.setFont('helvetica', 'normal');
             doc.setTextColor(...INK);
@@ -549,16 +551,17 @@ export async function generateGlobalSuppliersPDF({
             } else {
                 doc.setTextColor(...MUTED);
             }
-            doc.text(cajaText, M + 115, y + 4.8);
+            doc.text(cajaText, M + 116, y + 4.8);
             doc.setFont('helvetica', 'normal');
             doc.setTextColor(...INK);
 
             const methodLabel = isInvoice ? 'N/A' : toTitleCase(getPaymentLabel(act.paymentMethod || (act.payments && act.payments[0]?.methodId) || ''));
-            const truncatedMethod = methodLabel.length > 18 ? methodLabel.slice(0, 16) + '...' : methodLabel;
+            const truncatedMethod = methodLabel.length > 14 ? methodLabel.slice(0, 12) + '...' : methodLabel;
             doc.text(truncatedMethod, M + 130, y + 4.8);
 
             const amtVal = isInvoice ? (act.amountUsd || 0) : Math.abs(act.totalUsd || 0);
-            const prefix = isInvoice ? '+' : '−';
+            // ASCII: el '−' (U+2212) no existe en la fuente helvetica del PDF y sale como basura.
+            const prefix = isInvoice ? '+' : '-';
 
             if (isInvoice) {
                 doc.setFont('helvetica', 'bold');

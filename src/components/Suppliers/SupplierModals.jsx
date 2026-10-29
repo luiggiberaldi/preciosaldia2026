@@ -658,7 +658,7 @@ export function SupplierReportRangeModal({ supplierName, historyData = [], initi
                     <button onClick={onClose} aria-label="Cerrar" className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-full"><X size={18} /></button>
                 </div>
                 <div className="p-5 space-y-4">
-                    <p className="text-xs text-slate-500 -mt-1">Estado de cuenta de <strong>{supplierName}</strong>. ¿De qué período lo quieres?</p>
+                    <p className="text-xs text-slate-500 -mt-1">Reporte de <strong>{supplierName}</strong>. ¿De qué período lo quieres?</p>
                     <div className="grid grid-cols-2 gap-2">
                         {REPORT_RANGE_OPTIONS.map(opt => (
                             <button
