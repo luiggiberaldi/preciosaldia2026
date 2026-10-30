@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { lowStockThreshold } from '../../utils/granel'; // BULTOS-001
+import { granelStockUnitLabel, isGranelProduct, lowStockThreshold } from '../../utils/granel'; // BULTOS-001
 import {
     Package,
     Hash,
@@ -56,7 +56,7 @@ export default function SupervisorInventoryCatalog({
     setStockPendingConfirm = () => {},
     believedStockOf = (p) => p?.stock ?? 0,
     formatBs = (val) => Number(val || 0).toFixed(2),
-    formatStockValue = (p, val) => (p?.isWeight ? `${Number(val || 0).toFixed(3)} Kg` : `${val} u`),
+    formatStockValue = (p, val) => ((p?.isWeight || isGranelProduct(p)) ? `${Number(val || 0)} ${granelStockUnitLabel(p)}` : `${val} u`),
     toTitleCase = (str) => (str ? String(str).charAt(0).toUpperCase() + String(str).slice(1).toLowerCase() : ''),
     openStockEditor = () => {},
     commitStockEdit = () => {},
@@ -253,9 +253,9 @@ export default function SupervisorInventoryCatalog({
                                         <input
                                             autoFocus
                                             type="number"
-                                            inputMode={p.isWeight ? 'decimal' : 'numeric'}
+                                            inputMode={(p.isWeight || isGranelProduct(p)) ? 'decimal' : 'numeric'}
                                             min="0"
-                                            step={p.isWeight ? '0.001' : '1'}
+                                            step={(p.isWeight || isGranelProduct(p)) ? '0.001' : '1'}
                                             value={stockEditValue}
                                             onChange={(event) => setStockEditValue(event.target.value)}
                                             onKeyDown={(event) => {
@@ -453,9 +453,9 @@ export default function SupervisorInventoryCatalog({
                                             <input
                                                 autoFocus
                                                 type="number"
-                                                inputMode={p.isWeight ? 'decimal' : 'numeric'}
+                                                inputMode={(p.isWeight || isGranelProduct(p)) ? 'decimal' : 'numeric'}
                                                 min="0"
-                                                step={p.isWeight ? '0.001' : '1'}
+                                                step={(p.isWeight || isGranelProduct(p)) ? '0.001' : '1'}
                                                 value={stockEditValue}
                                                 onChange={(event) => setStockEditValue(event.target.value)}
                                                 onKeyDown={(event) => {

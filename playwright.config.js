@@ -28,5 +28,7 @@ export default defineConfig({
         url: 'http://127.0.0.1:4173',
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,
+        // Ventas remotas (default apagado en producción): el e2e las prueba encendidas.
+        env: { VITE_SUPERVISOR_REMOTE_SALES_ENABLED: 'true' },
     },
 });

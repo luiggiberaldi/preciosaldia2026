@@ -155,3 +155,21 @@ variable forzada a `'false'` en el proyecto Vercel.
 - **Batería cerrada:** las 6 pruebas preexistentes en rojo quedaron alineadas con los contratos vigentes (panel plegable del bloqueo, "sin rollback" del fallo de publicación) y `DashboardCashControls` quedó blindado contra props ausentes.
 
 **QA:** lint 0 errores, `tsc` limpio, suite completa **160 archivos / 1724 tests en verde** (16 skipped), build PWA OK; más el gate pre-push (e2e) y el CI de Actions en el push.
+
+---
+
+## 2026-10-29 — release 2.0.5 (ventas remotas, anulación, compras de mercancía y EN VIVO)
+
+**Contenido del release:**
+- **Vender desde el Supervisor** (`supervisor.sale.create`, migración 20261029): misma vista que la caja (buscador, categorías, cesta; cobro modo PC/móvil según la pantalla), solo contado, la caja re-precia y registra con su pipeline normal. Avance de efectivo si la caja lo tiene activo (20261030). Botón «Cancelar venta» mientras espera. **No deja cobrar con la caja cerrada.** Sigue tras el interruptor `VITE_SUPERVISOR_REMOTE_SALES_ENABLED` (apagado por defecto).
+- **Anular ventas del turno desde el Supervisor** (`supervisor.sale.void`, 20261031) con motivo obligatorio; la caja anula con `processVoidSale`.
+- **Compras de mercancía** (nuevo): registro de facturas ya pagadas para saber cuánto se gastó en el mes. En la caja: Reportes → Compras (cargar, editar, borrar). Reporte por período con total, por proveedor, por día y detalle, más PDF. No toca caja, cierre, stock ni deudas. Sync por **mes** (`bodega_merchandise_purchases_v1:<YYYY-MM>`) para no inflar el egress. En el Supervisor: Proveedores → Compras de mercancía, también con cargar/editar/borrar por órdenes `supervisor.purchase.*` (20261101).
+- **Carrera al recargar la caja:** una descarga vieja del pull inicial podía borrar una compra recién guardada por orden del Supervisor. La caja ahora registra el watermark de lo que publica y conserva las compras locales posteriores al doc.
+- **EN VIVO:** se quedaba en «Recuperando»/«Sincronizando» tras un corte de red o «Actualizar datos» con el canal Realtime aún vivo. Corregido.
+- Encabezado del Supervisor: diagnósticos ocultos (`?diag=1` para soporte), versión visible (`v2.0.5 · commit`) y nombre del negocio de la caja sincronizado en vivo.
+- Inventario en orden alfabético; granel muestra stock en kg/L en todo el sistema; +/− y lápiz corrigen stock granel con decimales.
+- Ajustes de venta (IVA, avances, stock negativo) sincronizados al Supervisor solo cuando cambian.
+
+**Migraciones aplicadas en producción:** 20261029, 20261030, 20261031, 20261101 (verificadas).
+
+**QA:** lint 0 errores, `tsc` limpio, suite completa en verde, e2e de ventas remotas y stock; prueba real de compra desde el Supervisor a la caja (alta y borrado).

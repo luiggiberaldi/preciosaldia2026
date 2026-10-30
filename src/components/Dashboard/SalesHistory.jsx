@@ -455,6 +455,7 @@ export default function SalesHistory({
                                         {s.tipo === 'AVANCE_EFECTIVO' ? 'Avance de Efectivo' : (s.customerName || 'Consumidor Final')} 
                                         {s.tipo === 'VENTA_FIADA' && <span className="text-[9px] bg-amber-100 text-amber-600 px-1 rounded uppercase font-black">Fiado</span>}
                                         {hasCashea && <span className="text-[9px] bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 px-1.5 py-0.5 rounded uppercase font-black flex items-center gap-0.5"><CasheaIcon size={10} /> Cashea</span>}
+                                        {s.remoteSale && <span data-testid="remote-sale-badge" title="Vendida desde el Supervisor" className="text-[9px] bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300 px-1.5 py-0.5 rounded uppercase font-black truncate max-w-[45%]">Remota · {s.remoteSale.sellerName}</span>}
                                     </p>
                                     <p className="text-[11px] text-slate-500 flex items-center gap-1">
                                         {s.saleNumber && <span className="font-black text-slate-400">#{String(s.saleNumber).padStart(7, '0')}</span>}

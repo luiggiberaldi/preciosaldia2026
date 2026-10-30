@@ -11,7 +11,10 @@
 --   20261016 * (3), 20261017 * (3), 20261018 product delete,
 --   20261020 server clock, 20261021 índices, 20261022 * (2),
 --   20261023 expected stock negativo, 20261024 delete policy,
---   20261026 órdenes de proveedores/facturas (Sección 7 y Sección 8).
+--   20261026 órdenes de proveedores/facturas, 20261029 ventas remotas,
+--   20261030 avances en ventas remotas, 20261031 anulación remota,
+--   20261101 compras de mercancía
+--   (Sección 7 y Sección 8).
 --
 -- NOTA: 20261017_supervisor_command_ttl_extended.sql quedó SOBRESCRITA por
 -- 20261020_supervisor_command_server_clock.sql (misma función), por lo que su
@@ -122,6 +125,10 @@ FROM (VALUES
     ('get_supervisor_command_control_counts'),
     ('enforce_supervisor_income_command'),
     ('is_valid_supervisor_inventory_batch_payload'),
+    ('is_valid_supervisor_sale_payload'),     -- 20261029 ventas remotas
+    ('supervisor_json_number'),               -- 20261029 ventas remotas
+    ('is_valid_supervisor_sale_void_payload'), -- 20261031 anulación remota
+    ('is_valid_supervisor_purchase_payload'), -- 20261101 compras de mercancía
     ('generate_pairing_token'),
     ('pair_monitor_device'),
     ('unpair_monitor'),
@@ -156,12 +163,20 @@ SELECT
             THEN CASE
                 WHEN pr.prosrc NOT LIKE '%v_duration%' THEN 'VERSIÓN VIEJA (falta 20261020)'
                 WHEN pr.prosrc NOT LIKE '%supervisor.invoice.delete%' THEN 'VERSIÓN VIEJA (falta 20261026 proveedores)'
-                ELSE 'OK (20261026 proveedores)' END
+                WHEN pr.prosrc NOT LIKE '%supervisor.sale.create%' THEN 'VERSIÓN VIEJA (falta 20261029 ventas remotas)'
+                WHEN pr.prosrc NOT LIKE '%supervisor.sale.void%' THEN 'VERSIÓN VIEJA (falta 20261031 anulación remota)'
+                WHEN pr.prosrc NOT LIKE '%supervisor.purchase.upsert%' THEN 'VERSIÓN VIEJA (falta 20261101 compras)'
+                ELSE 'OK (20261101 compras)' END
         WHEN pr.proname = 'enforce_supervisor_income_command'
             THEN CASE
                 WHEN pr.prosrc NOT LIKE '%rateMode%' THEN 'VERSIÓN VIEJA (falta 20261022)'
                 WHEN pr.prosrc NOT LIKE '%supervisor.invoice.delete%' THEN 'VERSIÓN VIEJA (falta 20261026 proveedores)'
-                ELSE 'OK (20261026 proveedores)' END
+                WHEN pr.prosrc NOT LIKE '%supervisor.sale.create%' THEN 'VERSIÓN VIEJA (falta 20261029 ventas remotas)'
+                WHEN pr.prosrc NOT LIKE '%supervisor.sale.void%' THEN 'VERSIÓN VIEJA (falta 20261031 anulación remota)'
+                WHEN pr.prosrc NOT LIKE '%supervisor.purchase.upsert%' THEN 'VERSIÓN VIEJA (falta 20261101 compras)'
+                ELSE 'OK (20261101 compras)' END
+        WHEN pr.proname = 'is_valid_supervisor_sale_payload'
+            THEN CASE WHEN pr.prosrc LIKE '%cashAdvances%' THEN 'OK (20261030 avances)' ELSE 'VERSIÓN VIEJA (falta 20261030 avances)' END
         WHEN pr.proname = 'is_valid_supervisor_inventory_batch_payload'
             THEN CASE WHEN pr.prosrc LIKE '%-10000000%' THEN 'OK (20261023 stock negativo)' ELSE 'VERSIÓN VIEJA (falta 20261023)' END
     END AS version
@@ -170,10 +185,12 @@ JOIN pg_namespace ns ON ns.oid = pr.pronamespace
 WHERE ns.nspname = 'public'
   AND pr.proname IN ('create_supervisor_command',
                      'enforce_supervisor_income_command',
-                     'is_valid_supervisor_inventory_batch_payload')
+                     'is_valid_supervisor_inventory_batch_payload',
+                     'is_valid_supervisor_sale_payload')
 ORDER BY 1;
 
--- ── Sección 8: CHECK de tipos de orden (20261026 proveedores/facturas) ───────
+-- ── Sección 8: CHECK de tipos de orden (20261026 proveedores/facturas,
+--    20261029 ventas remotas) ─────────────────────────────────────────────────
 -- Sin esto, el INSERT de una orden supervisor.supplier.* / invoice.* falla
 -- aunque la RPC ya la acepte.
 SELECT
@@ -182,4 +199,28 @@ SELECT
         SELECT 1 FROM pg_constraint
         WHERE conname = 'supervisor_commands_command_type_check'
           AND pg_get_constraintdef(oid) LIKE '%supervisor.invoice.delete%'
-    ) THEN 'OK' ELSE 'FALTA' END AS estado;
+    ) THEN 'OK' ELSE 'FALTA' END AS estado
+UNION ALL
+SELECT
+    'supervisor_commands_command_type_check (venta remota)',
+    CASE WHEN EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'supervisor_commands_command_type_check'
+          AND pg_get_constraintdef(oid) LIKE '%supervisor.sale.create%'
+    ) THEN 'OK' ELSE 'FALTA' END
+UNION ALL
+SELECT
+    'supervisor_commands_command_type_check (anulación remota)',
+    CASE WHEN EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'supervisor_commands_command_type_check'
+          AND pg_get_constraintdef(oid) LIKE '%supervisor.sale.void%'
+    ) THEN 'OK' ELSE 'FALTA' END
+UNION ALL
+SELECT
+    'supervisor_commands_command_type_check (compras de mercancía)',
+    CASE WHEN EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'supervisor_commands_command_type_check'
+          AND pg_get_constraintdef(oid) LIKE '%supervisor.purchase.delete%'
+    ) THEN 'OK' ELSE 'FALTA' END;

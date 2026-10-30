@@ -7,6 +7,8 @@ import {
     bsToUsd,
     qtyFromMoneyAmount,
     formatStockDisplay,
+    granelStockUnitLabel,
+    isGranelProduct,
     getGranelTitle,
     getGranelQuickOptions,
     getGranelStep,
@@ -125,6 +127,8 @@ const SearchBar = forwardRef(function SearchBar({
                         <X size={18} />
                     </button>
                 )}
+                {/* Sin startRecording (p. ej. Supervisor › Vender) no hay dictado por voz. */}
+                {startRecording && (
                 <button
                     onPointerDown={(e) => { e.preventDefault(); startRecording(); }}
                     onPointerUp={(e) => { e.preventDefault(); stopRecording(); }}
@@ -145,6 +149,7 @@ const SearchBar = forwardRef(function SearchBar({
                         <Mic size={18} className={isRecording ? 'animate-bounce' : ''} />
                     )}
                 </button>
+                )}
             </div>
 
             {/* Search Dropdown (oculto en modo galería: el grid es el buscador) */}
@@ -211,7 +216,7 @@ const SearchBar = forwardRef(function SearchBar({
                                             <span className={`text-[10px] font-medium flex items-center gap-1
                                                 ${isOutOfStock ? 'text-red-500' : isLowStock ? 'text-amber-500' : 'text-slate-400'}`}>
                                                 {isLowStock && !isOutOfStock && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />}
-                                                {isOutOfStock ? 'Sin stock' : `Stock: ${p.stock ?? 0}`}
+                                                {isOutOfStock ? 'Sin stock' : `Stock: ${isGranelProduct(p) ? `${formatStockDisplay(p.stock ?? 0, true)} ${granelStockUnitLabel(p)}` : (p.stock ?? 0)}`}
                                             </span>
                                         </div>
                                     </div>

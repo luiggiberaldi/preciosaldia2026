@@ -96,6 +96,14 @@ function typeLabelOf(payload = {}, type) {
             return 'EDICIÓN DE FACTURA';
         case 'supervisor.invoice.delete':
             return 'BAJA DE FACTURA';
+        case 'supervisor.sale.create':
+            return 'VENTA REMOTA';
+        case 'supervisor.sale.void':
+            return 'ANULACIÓN REMOTA';
+        case 'supervisor.purchase.upsert':
+            return 'COMPRA DE MERCANCÍA';
+        case 'supervisor.purchase.delete':
+            return 'BORRADO DE COMPRA';
         default:
             return 'ORDEN DEL SUPERVISOR';
     }
@@ -143,6 +151,14 @@ function titleOf(command, payload, resolveName) {
             return payload.invoiceNumber
                 ? `Factura #${payload.invoiceNumber}`
                 : `Factura ${shortId(payload.invoiceId)}`;
+        case 'supervisor.sale.create':
+            return `Venta de ${payload.seller?.name || 'Supervisor'}`;
+        case 'supervisor.sale.void':
+            return payload.saleNumber ? `Anular venta #${payload.saleNumber}` : 'Anular venta';
+        case 'supervisor.purchase.upsert':
+            return payload.purchase?.supplier || 'Compra de mercancía';
+        case 'supervisor.purchase.delete':
+            return payload.supplier ? `Borrar compra de ${payload.supplier}` : 'Borrar compra';
         case 'supervisor.rate.set':
             return 'Tasa de la caja';
         case 'supervisor.shift.close':

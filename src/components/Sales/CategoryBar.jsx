@@ -4,6 +4,7 @@ import { BODEGA_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../config
 import { formatCop, formatBs, formatUsd, getCop, getUsd } from '../../utils/calculatorUtils';
 import { productMatchesSearch } from '../../utils/searchMatch';
 import SmartImage from '../SmartImage';
+import { formatStockDisplay, granelStockUnitLabel, isGranelProduct } from '../../utils/granel';
 
 const PAGE_SIZE = 30;
 
@@ -34,6 +35,9 @@ export default function CategoryBar({
     cart = [],
     allowCashAdvance = false,
     onOpenCashAdvance,
+    // Supervisor › Vender reutiliza esta barra sin atajos de teclado ni las
+    // acciones que solo existen en la caja (se ocultan si falta su handler).
+    showShortcuts = true,
 }) {
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
     const categoryScrollRef = useRef(null);
@@ -148,13 +152,15 @@ export default function CategoryBar({
                     }`}
                 >
                     {/* Monto Libre Button */}
-                    <button
-                        onClick={() => { triggerHaptic && triggerHaptic(); onOpenCustomAmount && onOpenCustomAmount(); }}
-                        className="shrink-0 flex items-center gap-1.5 px-3 py-2 min-h-[40px] rounded-lg text-xs font-black transition-all active:scale-95 bg-brand-light dark:bg-surface-800/30 text-brand-dark dark:text-brand border border-surface-300 dark:border-surface-700 hover:bg-brand-light shadow-sm"
-                    >
-                        <Calculator size={14} />
-                        Monto Libre
-                    </button>
+                    {onOpenCustomAmount && (
+                        <button
+                            onClick={() => { triggerHaptic && triggerHaptic(); onOpenCustomAmount(); }}
+                            className="shrink-0 flex items-center gap-1.5 px-3 py-2 min-h-[40px] rounded-lg text-xs font-black transition-all active:scale-95 bg-brand-light dark:bg-surface-800/30 text-brand-dark dark:text-brand border border-surface-300 dark:border-surface-700 hover:bg-brand-light shadow-sm"
+                        >
+                            <Calculator size={14} />
+                            Monto Libre
+                        </button>
+                    )}
 
                     {/* Avance Efectivo Button */}
                     {allowCashAdvance && (
@@ -168,7 +174,9 @@ export default function CategoryBar({
                     )}
 
                     {/* Divider */}
-                    <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 my-auto mx-0.5 rounded-full shrink-0" />
+                    {(onOpenCustomAmount || allowCashAdvance) && (
+                        <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 my-auto mx-0.5 rounded-full shrink-0" />
+                    )}
 
                     {/* Show categories with products */}
                     {activeCategories.map(cat => {
@@ -223,12 +231,14 @@ export default function CategoryBar({
             <div className="shrink-0 flex items-center justify-between gap-2 mb-2 relative flex-wrap sm:flex-nowrap">
                 {/* Izquierda: acciones de venta */}
                 <div className="flex items-center gap-2 flex-wrap">
-                    <button
-                        onClick={() => { triggerHaptic && triggerHaptic(); onOpenHelp && onOpenHelp(); }}
-                        className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800/50 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-[10px] font-black uppercase tracking-wide hover:bg-blue-100 transition-all active:scale-95"
-                    >
-                        <HelpCircle size={11} /> AYUDA (?)
-                    </button>
+                    {onOpenHelp && (
+                        <button
+                            onClick={() => { triggerHaptic && triggerHaptic(); onOpenHelp(); }}
+                            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800/50 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-[10px] font-black uppercase tracking-wide hover:bg-blue-100 transition-all active:scale-95"
+                        >
+                            <HelpCircle size={11} /> AYUDA (?)
+                        </button>
+                    )}
 
                     {/* Botón para abrir la lista de tickets en espera */}
                     {pendingCartsCount > 0 && (
@@ -241,7 +251,7 @@ export default function CategoryBar({
                     )}
 
                     {/* Botón para estacionar la venta actual (con input en línea) */}
-                    {cart.length > 0 && (
+                    {onHoldCart && cart.length > 0 && (
                         <div className="relative flex items-center">
                             {showNoteInput ? (
                                 <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 rounded-full shadow-sm animate-in slide-in-from-left duration-150">
@@ -284,12 +294,14 @@ export default function CategoryBar({
                 </div>
 
                 {/* Derecha: Vaciar cesta */}
-                <button
-                    onClick={onClearCart}
-                    className="flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-red-500 transition-colors"
-                >
-                    <Trash2 size={12} /> VACIAR CESTA <span className="bg-slate-100 dark:bg-slate-800 text-slate-400 px-1 rounded text-[8px] font-black">F4</span>
-                </button>
+                {onClearCart && (
+                    <button
+                        onClick={onClearCart}
+                        className="flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-red-500 transition-colors"
+                    >
+                        <Trash2 size={12} /> VACIAR CESTA {showShortcuts && <span className="bg-slate-100 dark:bg-slate-800 text-slate-400 px-1 rounded text-[8px] font-black">F4</span>}
+                    </button>
+                )}
             </div>
 
             {/* Product Grid */}
@@ -326,7 +338,7 @@ export default function CategoryBar({
                                             ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border-rose-200'
                                             : 'bg-emerald-100/90 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border-emerald-200/60'
                                     }`}>
-                                        {isOut ? 'AGOTADO' : `${p.isWeight ? (p.stock ?? 0).toFixed(2) : (p.stock ?? 0)} ${p.isWeight ? 'KG' : 'U'}`}
+                                        {isOut ? 'AGOTADO' : `${(p.isWeight || isGranelProduct(p)) ? formatStockDisplay(p.stock ?? 0, true) : (p.stock ?? 0)} ${(p.isWeight || isGranelProduct(p)) ? granelStockUnitLabel(p).toUpperCase() : 'U'}`}
                                     </span>
 
                                     {/* Badge Superior Izquierdo: Icono Vectorial SVG nítido */}
@@ -459,6 +471,7 @@ export default function CategoryBar({
                     )}
 
                     {/* ── FOOTER DE ATAJOS DE TECLADO ── */}
+                    {showShortcuts && (
                     <div className="shrink-0 mt-4 flex items-center justify-center gap-3 flex-wrap py-2 border-t border-slate-100 dark:border-slate-800/60">
                         {[
                             { key: 'F2', label: 'BUSCAR' },
@@ -472,6 +485,7 @@ export default function CategoryBar({
                             </span>
                         ))}
                     </div>
+                    )}
                 </div>
             )}
         </div>

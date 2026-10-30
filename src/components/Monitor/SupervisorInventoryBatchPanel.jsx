@@ -3,7 +3,7 @@ import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, CheckCircle2, Loader2,
 import { showToast } from '../Toast';
 import SupervisorSelect from './SupervisorSelect';
 import { SUPERVISOR_REMOTE_EGRESS_ENABLED, SUPERVISOR_REMOTE_PRODUCTS_ENABLED } from '../../config/supervisorPolicy';
-import { formatGranelDisplay, isGranelProduct } from '../../utils/granel';
+import { formatGranelDisplay, formatStockDisplay, granelStockUnitLabel, isGranelProduct } from '../../utils/granel';
 import {
     addInventoryDraftLine,
     createInventoryDraft,
@@ -681,7 +681,7 @@ export default function SupervisorInventoryBatchPanel({
                                 <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-52 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
                                     {availableProducts.map(product => (
                                         <button key={product.id} type="button" onClick={() => handleSelectProduct(product)} className={`flex min-h-10 w-full items-center justify-between rounded-xl px-3 text-left text-xs hover:bg-emerald-50 dark:hover:bg-slate-800 ${String(selectedProductId) === String(product.id) ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : 'text-slate-700 dark:text-slate-200'}`}>
-                                            <span className="truncate font-bold">{product.name}</span><span className="ml-2 shrink-0 text-[10px] text-slate-400">{product.stock ?? 0} u</span>
+                                            <span className="truncate font-bold">{product.name}</span><span className="ml-2 shrink-0 text-[10px] text-slate-400">{isGranelProduct(product) ? `${formatStockDisplay(product.stock ?? 0, true)} ${granelStockUnitLabel(product)}` : `${product.stock ?? 0} u`}</span>
                                         </button>
                                     ))}
                                 </div>

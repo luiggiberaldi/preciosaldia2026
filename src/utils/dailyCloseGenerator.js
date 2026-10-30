@@ -70,6 +70,8 @@ export function describeSaleSettlement(sale = {}) {
     if (creditLabel) tags.push({ text: `${creditLabel.replace(' (Por Cobrar)', '')} $${formatUsd(creditUsd)}`, tone: 'credit' });
     else if (sale.tipo === 'COBRO_DEUDA') tags.push({ text: 'ABONO DE DEUDA', tone: 'info' });
     else if (sale.tipo === 'COBRO_CASHEA') tags.push({ text: 'REMESA CASHEA', tone: 'info' });
+    // Venta remota (supervisor.sale.create): quién la vendió fuera de la caja.
+    if (sale.remoteSale) tags.push({ text: `REMOTA · ${String(sale.remoteSale.sellerName || 'Supervisor').toUpperCase()}`, tone: 'info' });
 
     return {
         creditUsd,

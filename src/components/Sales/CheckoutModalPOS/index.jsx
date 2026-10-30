@@ -50,6 +50,8 @@ export default function CheckoutModalPOS({
     currentFloatBs = 0,
     onSwitchMode,
     isProcessing = false,
+    // Ventas remotas del supervisor: solo contado (sin pestaña Crédito).
+    allowCredit = true,
 }) {
     const { setCheckoutMode } = useProductContext();
 
@@ -644,6 +646,7 @@ export default function CheckoutModalPOS({
                     onSwitchToBasic={handleSwitchToBasic}
                     tasa={effectiveRate}
                     casheaActive={casheaActive}
+                    allowCredit={allowCredit}
                 />
                 <div className="flex flex-col lg:flex-row flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
                     <PaymentLeftColumn

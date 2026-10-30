@@ -139,6 +139,19 @@ Va **después** del lote anterior y en un deploy aparte. Contiene la pestaña **
 - Contención: crear `VITE_SUPERVISOR_REMOTE_SUPPLIERS_ENABLED=false` en Vercel (Production) + redeploy (la pestaña queda en solo lectura).
 - Revert de código: igual que §5.2. La migración se queda (aditiva; el código anterior no emite estos tipos). Los docs de proveedores en `sync_documents` quedan como datos inertes para el código anterior.
 
+### 6.4 Ventas remotas desde el supervisor (`supervisor.sale.create`, plan 2026-10-29)
+
+Venta de **contado** que arma el monitor y la caja principal re-precia y registra. Requiere internet en ambos y la caja encendida con turno abierto. Va **apagada por defecto**.
+
+1. [ ] **Migración primero:** `supabase/migrations/20261029_supervisor_remote_sales.sql` (reemplaza las tres puertas de 20261026 conservando los 17 tipos; añade `is_valid_supervisor_sale_payload` y `supervisor_json_number`).
+2. [ ] Script de verificación: Sección 6 `OK` en las dos funciones nuevas; Sección 7 `OK (20261029 ventas remotas)`; Sección 8 `OK` en las dos filas.
+3. [ ] `git push` (con el flag apagado no aparece la pestaña **Vender** ni la caja acepta ventas).
+4. [ ] Cajas piloto actualizadas (recargar la app). Una caja vieja responde «Tipo de comando no soportado» y el monitor muestra «Actualiza la caja principal».
+5. [ ] Encender: `VITE_SUPERVISOR_REMOTE_SALES_ENABLED=true` en Vercel (Production) + **redeploy** (Vite lo hornea en el build).
+6. [ ] Piloto real: venta con caja abierta (número en la caja, stock descontado, insignia «Remota · vendedor», ticket con «Vendido por»); caja cerrada → rechazo; cambiar un precio en la caja y vender sin esperar la sincronización → rechazo con el total nuevo.
+
+Rollback: `VITE_SUPERVISOR_REMOTE_SALES_ENABLED=false` + redeploy (bloquea envío y recepción). La migración se queda (aditiva). Las ventas remotas ya registradas son ventas normales de la caja (se anulan con el flujo de siempre).
+
 ---
 
 ## 7. Pendientes fuera de este lote

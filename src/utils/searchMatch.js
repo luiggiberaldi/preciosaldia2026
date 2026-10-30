@@ -30,3 +30,10 @@ export function productMatchesSearch(product, query) {
         query,
     );
 }
+
+const NAME_COLLATOR = new Intl.Collator('es', { sensitivity: 'base', numeric: true });
+
+/** Orden alfabético de productos por nombre (A→Z, ignora tildes/mayúsculas; «2» antes de «10»). */
+export function compareProductsByName(a, b) {
+    return NAME_COLLATOR.compare(String(a?.name || '').trim(), String(b?.name || '').trim());
+}

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { pushLocalSync } from '../hooks/useCloudSync';
+import { resolveEffectiveRate, resolveTasaCop } from '../utils/effectiveRate';
 
 const RateContext = createContext();
 
@@ -114,24 +115,16 @@ export function RateProvider({ children, rates = {}, rateDiscrepancyWarning = nu
     }, []);
 
     // ── CÁLCULO DE TASA EFECTIVA EN BS Y COP ──
-    const effectiveRate = useMemo(() => {
-        if (rateMode === 'manual') {
-            const parsed = parseFloat(customRate);
-            return (parsed && parsed > 0) ? parsed : (rates?.bcv?.price || 1);
-        }
-        if (rateMode === 'usdt') return rates?.usdt?.price || rates?.bcv?.price || 1;
-        if (rateMode === 'euro') return rates?.euro?.price || rates?.bcv?.price || 1;
-        return rates?.bcv?.price || 1;
-    }, [rateMode, customRate, rates]);
+    // Fuente única (utils/effectiveRate): el receptor de ventas remotas usa la misma fórmula.
+    const effectiveRate = useMemo(
+        () => resolveEffectiveRate({ rateMode, customRate, rates }),
+        [rateMode, customRate, rates],
+    );
 
-    const tasaCop = useMemo(() => {
-        if (!copEnabled) return 0;
-        if (autoCopEnabled && rates?.cop?.price) {
-            return rates.cop.price;
-        }
-        const manual = parseFloat(tasaCopManual);
-        return (manual && manual > 0) ? manual : (rates?.cop?.price || 0);
-    }, [copEnabled, autoCopEnabled, tasaCopManual, rates]);
+    const tasaCop = useMemo(
+        () => resolveTasaCop({ copEnabled, autoCopEnabled, tasaCopManual, rates }),
+        [copEnabled, autoCopEnabled, tasaCopManual, rates],
+    );
 
     const value = useMemo(() => ({
         streetRate,

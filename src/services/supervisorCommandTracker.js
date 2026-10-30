@@ -71,6 +71,10 @@ const DEFAULT_LABELS = {
     'supervisor.invoice.create': 'el registro de factura',
     'supervisor.invoice.update': 'la edición de la factura',
     'supervisor.invoice.delete': 'la baja de la factura',
+    'supervisor.sale.create': 'la venta',
+    'supervisor.sale.void': 'la anulación de la venta',
+    'supervisor.purchase.upsert': 'la compra de mercancía',
+    'supervisor.purchase.delete': 'el borrado de la compra',
 };
 
 /** Descripción llana del cambio: nombra qué se pidió, nunca un genérico vacío. */
@@ -112,6 +116,17 @@ export function describeSupervisorCommand(type, payload = {}) {
             return `la edición de la factura${payload.invoiceNumber ? ` #${payload.invoiceNumber}` : ''}`;
         case 'supervisor.invoice.delete':
             return `la baja de la factura${payload.invoiceNumber ? ` #${payload.invoiceNumber}` : ''}`;
+        case 'supervisor.sale.void':
+            return `la anulación de la venta${payload.saleNumber ? ` #${payload.saleNumber}` : ''}`;
+        case 'supervisor.purchase.upsert':
+            return payload.purchase?.supplier ? `la compra de "${payload.purchase.supplier}"` : 'la compra de mercancía';
+        case 'supervisor.purchase.delete':
+            return payload.supplier ? `el borrado de la compra de "${payload.supplier}"` : 'el borrado de la compra';
+        case 'supervisor.sale.create': {
+            const units = Array.isArray(payload.items) ? payload.items.length : 0;
+            const total = Number(payload.totalsSeen?.totalUsd);
+            return `la venta${units ? ` de ${units} producto${units === 1 ? '' : 's'}` : ''}${Number.isFinite(total) ? ` (USD ${total.toFixed(2)})` : ''}`;
+        }
         case 'supervisor.inventory.batch.adjust': {
             const lines = Array.isArray(payload.lines) ? payload.lines.length : (payload.productId ? 1 : 0);
             const base = DEFAULT_LABELS[type];

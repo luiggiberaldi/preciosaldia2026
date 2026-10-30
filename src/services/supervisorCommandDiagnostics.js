@@ -168,6 +168,10 @@ export function commandTypeLabel(type) {
         case 'supervisor.invoice.create': return 'Factura · registro';
         case 'supervisor.invoice.update': return 'Factura · edición';
         case 'supervisor.invoice.delete': return 'Factura · baja';
+        case 'supervisor.sale.create': return 'Venta remota';
+        case 'supervisor.sale.void': return 'Anulación remota';
+        case 'supervisor.purchase.upsert': return 'Compra de mercancía';
+        case 'supervisor.purchase.delete': return 'Compra · borrado';
         default: return type ? String(type).replace('supervisor.', '') : 'Sin tipo';
     }
 }

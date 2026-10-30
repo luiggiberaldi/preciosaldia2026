@@ -20,6 +20,7 @@ import SettingsTabUsuarios from '../components/Settings/tabs/SettingsTabUsuarios
 import SettingsTabSistema from '../components/Settings/tabs/SettingsTabSistema';
 import SettingsTabLicencia from '../components/Settings/tabs/SettingsTabLicencia';
 import { useCloudBackup } from '../hooks/useCloudBackup';
+import { pushLocalSync } from '../hooks/useCloudSync';
 import { useDataImportExport } from '../hooks/useDataImportExport';
 import { useAuthStore } from '../hooks/store/useAuthStore';
 import WalletView from './WalletView';
@@ -215,6 +216,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
             return;
         }
         localStorage.setItem('business_name', businessName);
+        pushLocalSync('business_name', businessName);
         localStorage.setItem('business_rif', businessRif);
         localStorage.setItem('business_phone', normalizeVzlaPhone(businessPhone) || '');
         localStorage.setItem('printer_paper_width', paperWidth);
@@ -394,7 +396,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
 
                         {/* Version footer */}
                         <div className="text-center py-4">
-                            <p className="text-[10px] text-slate-400 dark:text-slate-600 font-bold">PreciosAlDía Bodegas v2.0.4</p>
+                            <p className="text-[10px] text-slate-400 dark:text-slate-600 font-bold">PreciosAlDía Bodegas v2.0.5</p>
                         </div>
                     </div>
                 </div>

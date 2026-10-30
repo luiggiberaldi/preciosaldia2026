@@ -6,7 +6,7 @@ import { CATEGORY_COLORS } from '../../config/categories';
 import { storageService } from '../../utils/storageService';
 // Cierre FIX-VENTAS-STOCK-SUPERVISOR §4: escritos del catálogo bajo pos_write_lock.
 import { mutateCatalogLocked } from '../../utils/catalogLock';
-import { isGranelProduct, isLowStockProduct, granelUnitLabel, parseStockInput, adjustStockValue, formatStockDisplay, formatLowStockAlert } from '../../utils/granel'; // GRANEL-001
+import { isGranelProduct, isLowStockProduct, granelStockUnitLabel, parseStockInput, adjustStockValue, formatStockDisplay, formatLowStockAlert } from '../../utils/granel'; // GRANEL-001
 
 // ─── FILA DEL CATÁLOGO (PICKER LIMPIO CON CHECKMARK) ───
 function CatalogRow({ p, isSelected, direction, onToggle }) {
@@ -42,7 +42,7 @@ function CatalogRow({ p, isSelected, direction, onToggle }) {
                     </span>
                     {isGranelProduct(p) && (
                         <span className="text-[9px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-lg border border-amber-200/60 dark:border-amber-800/60">
-                            A granel ({granelUnitLabel(p)})
+                            A granel ({granelStockUnitLabel(p)})
                         </span>
                     )}
                     {hasBulk && (
@@ -104,7 +104,7 @@ function AdjustRow({ p, qty, direction, adjUnit, tempPkgSize, onSetQty, onSetAdj
     };
 
     const isGranel = isGranelProduct(p);
-    const unitLabel = isGranel ? granelUnitLabel(p) : 'ud';
+    const unitLabel = isGranel ? granelStockUnitLabel(p) : 'ud';
 
     const handleChangeQty = (e) => {
         const val = e.target.value;
@@ -566,7 +566,7 @@ export default function StockBatchModal({
                                     const isBulkMode = unitsPerPkg > 1 && adjUnit === 'lotes';
                                     const hasInlineEdit = (tempPackageSizes[productId] || 0) > 1;
                                     const rowIsGranel = isGranelProduct(p);
-                                    const rowUnitLabel = rowIsGranel ? granelUnitLabel(p) : 'ud';
+                                    const rowUnitLabel = rowIsGranel ? granelStockUnitLabel(p) : 'ud';
 
                                     return (
                                         <div key={productId} className={`py-2 border-b border-slate-100 dark:border-slate-800/40 ${isExcess ? 'bg-red-50/60 dark:bg-red-950/30 px-2 rounded-xl' : ''}`}>

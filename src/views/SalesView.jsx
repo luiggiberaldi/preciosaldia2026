@@ -15,6 +15,7 @@ import { useCart } from '../context/CartContext';
 import { useProductContext } from '../context/ProductContext';
 import { isGranelProduct, parseCartQuantity, adjustStockValue, parseEan13ScaleBarcode, calculateItemStockDeduction } from '../utils/granel'; // GRANEL-001
 import { deriveCartFields, resyncCartItems } from '../utils/cartSync'; // SYNC-CESTA-001
+import { buildCashAdvanceProduct } from '../utils/cashAdvance';
 
 // Components
 import SalesHeader from '../components/Sales/SalesHeader';
@@ -761,22 +762,9 @@ export default function SalesView({ triggerHaptic, isActive }) {
 
     const handleConfirmCashAdvance = (advanceData) => {
         try {
-            const advanceProduct = {
-                id: `advance_${Date.now()}`,
-                name: `Avance Efectivo (${advanceData.currency})`,
-                priceUsdt: advanceData.totalCobrado / effectiveRate,
-                exactBs: advanceData.currency === 'BS' ? advanceData.totalCobrado : null,
-                costBs: 0,
-                costUsd: 0,
-                unit: 'servicio',
-                category: 'otros',
-                stock: 9999,
-                isCashAdvance: true,
-                montoEfectivo: advanceData.montoEfectivo,
-                montoComision: advanceData.montoComision,
-                comisionPct: advanceData.comisionPct,
-                currency: advanceData.currency
-            };
+            // utils/cashAdvance: misma fórmula que las ventas remotas. Un avance
+            // en USD cobra su total en USD (antes se dividía por la tasa).
+            const advanceProduct = buildCashAdvanceProduct(advanceData, effectiveRate, `advance_${Date.now()}`);
             addToCart(advanceProduct);
             setShowCashAdvanceModal(false);
             showToast('Avance de efectivo agregado al carrito', 'success');

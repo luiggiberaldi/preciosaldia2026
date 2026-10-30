@@ -5,7 +5,7 @@ import { Calculator, DollarSign, Wallet, X, LayoutGrid, Zap } from 'lucide-react
  * PaymentHeader — Header del modo POS.
  * Incluye tabs Contado/Crédito + botón de cambio rápido de modo (a Basic).
  */
-export default function PaymentHeader({ modo, setModo, onClose, onSwitchToBasic, tasa, casheaActive = false }) {
+export default function PaymentHeader({ modo, setModo, onClose, onSwitchToBasic, tasa, casheaActive = false, allowCredit = true }) {
     return (
         <div className="min-h-[48px] sm:h-14 px-3 sm:px-4 py-1 pt-[env(safe-area-inset-top)] bg-white dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center gap-2 shrink-0 shadow-sm">
             {/* Título */}
@@ -21,7 +21,8 @@ export default function PaymentHeader({ modo, setModo, onClose, onSwitchToBasic,
                 </div>
             </div>
 
-            {/* Tabs Contado / Crédito */}
+            {/* Tabs Contado / Crédito (sin crédito, p. ej. ventas remotas, no hay tabs) */}
+            {allowCredit && (
             <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl gap-0.5">
                 <button
                     type="button"
@@ -52,6 +53,7 @@ export default function PaymentHeader({ modo, setModo, onClose, onSwitchToBasic,
                     <Wallet size={13} /> Crédito
                 </button>
             </div>
+            )}
 
             {/* Acciones: cerrar */}
             <div className="flex items-center gap-2">

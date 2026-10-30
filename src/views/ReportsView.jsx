@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 // v1.2.0: useReveal hook para animaciones reveal-on-scroll (design system "Precios al Día")
 import { useReveal } from '../hooks/useReveal';
-import { BarChart3, Download, LockIcon, Recycle, TrendingDown } from 'lucide-react';
+import { BarChart3, Download, LockIcon, Recycle, ShoppingBag, TrendingDown } from 'lucide-react';
 import { storageService } from '../utils/storageService';
 import { formatBs } from '../utils/calculatorUtils';
 import { useProductContext } from '../context/ProductContext';
@@ -19,6 +19,8 @@ import { useReportExport } from '../hooks/useReportExport';
 import ReportsMetricsTab from '../components/Reports/ReportsMetricsTab';
 import ReportsHistoryTab from '../components/Reports/ReportsHistoryTab';
 import ReportsExpensesTab from '../components/Reports/ReportsExpensesTab';
+import ReportsPurchasesTab from '../components/Reports/ReportsPurchasesTab';
+import { useMerchandisePurchases } from '../hooks/useMerchandisePurchases';
 import { printThermalTicket } from '../utils/ticketGenerator';
 
 const SALES_KEY = 'bodega_sales_v1';
@@ -60,6 +62,7 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
     const [recycleOffer, setRecycleOffer] = useState(null);
 
     const { handleExportPDF } = useReportExport({ triggerHaptic });
+    const { purchases, savePurchase, deletePurchase } = useMerchandisePurchases({ enabled: isActive !== false });
 
     // ── Void Sale Handler ──
     const confirmVoidSale = async () => {
@@ -97,7 +100,20 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
             }
         };
         load();
-        return () => { mounted = false; };
+        // Ventas remotas del supervisor y sincronización: refrescar sin recargar.
+        let timer = null;
+        const onStorageUpdate = (e) => {
+            const key = e?.detail?.key;
+            if (![SALES_KEY, 'bodega_customers_v1', CUSTOMER_LEDGER_KEY].includes(key)) return;
+            clearTimeout(timer);
+            timer = setTimeout(load, 50);
+        };
+        window.addEventListener('app_storage_update', onStorageUpdate);
+        return () => {
+            mounted = false;
+            clearTimeout(timer);
+            window.removeEventListener('app_storage_update', onStorageUpdate);
+        };
     }, [isActive]);
 
     const { from, to } = useMemo(() => {
@@ -227,7 +243,7 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                     </div>
                     Reportes
                 </h2>
-                {activeTab !== 'expenses' && (
+                {activeTab !== 'expenses' && activeTab !== 'purchases' && (
                     <button
                         onClick={onExportPDF}
                         disabled={salesForStats.length === 0 && salesForCashFlow.length === 0}
@@ -238,8 +254,8 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                 )}
             </div>
 
-            {/* Tab Selector — 4 tabs */}
-            <div className="flex bg-slate-200 dark:bg-surface-800 p-1 rounded-xl gap-1">
+            {/* Tab Selector — 5 tabs (en móvil se desliza) */}
+            <div className="flex bg-slate-200 dark:bg-surface-800 p-1 rounded-xl gap-1 overflow-x-auto scrollbar-hide">
                 <button
                     onClick={() => { triggerHaptic && triggerHaptic(); setActiveTab('metrics'); }}
                     className={`flex-1 py-2.5 min-h-[40px] text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1 ${activeTab === 'metrics' ? 'bg-white dark:bg-surface-900 text-brand-dark dark:text-brand shadow-tone-sm' : 'text-slate-600 hover:text-slate-800 dark:text-surface-400'}`}
@@ -257,6 +273,12 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                     className={`flex-1 py-2.5 min-h-[40px] text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1 ${activeTab === 'expenses' ? 'bg-white dark:bg-surface-900 text-brand-dark dark:text-brand shadow-tone-sm' : 'text-slate-600 hover:text-slate-800 dark:text-surface-400'}`}
                 >
                     <TrendingDown size={14} aria-hidden="true"/> Gastos
+                </button>
+                <button
+                    onClick={() => { triggerHaptic && triggerHaptic(); setActiveTab('purchases'); }}
+                    className={`flex-1 px-2 py-2.5 min-h-[40px] text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1 whitespace-nowrap ${activeTab === 'purchases' ? 'bg-white dark:bg-surface-900 text-brand-dark dark:text-brand shadow-tone-sm' : 'text-slate-600 hover:text-slate-800 dark:text-surface-400'}`}
+                >
+                    <ShoppingBag size={14} aria-hidden="true"/> Compras
                 </button>
                 <button
                     onClick={() => { triggerHaptic && triggerHaptic(); setActiveTab('history'); }}
@@ -413,6 +435,20 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                     supplierInvoices={supplierInvoices}
                     from={from}
                     to={to}
+                />
+            )}
+
+            {activeTab === 'purchases' && (
+                <ReportsPurchasesTab
+                    purchases={purchases}
+                    from={from}
+                    to={to}
+                    rate={bcvRate}
+                    salesUsd={totalUsd}
+                    businessName={localStorage.getItem('business_name') || ''}
+                    onSave={savePurchase}
+                    onDelete={deletePurchase}
+                    triggerHaptic={triggerHaptic}
                 />
             )}
 

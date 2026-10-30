@@ -9,7 +9,13 @@ import PaymentMethodsManager from '../PaymentMethodsManager';
 import CasheaIcon from '../../CasheaIcon';
 import PrinterHardwareManager from '../PrinterHardwareManager';
 import { useProductContext } from '../../../context/ProductContext';
-import { loadTaxConfig, saveTaxConfig, resetTaxConfig, IVA_FACTORY_RATE, normalizeIvaRate } from '../../../config/taxConfig';
+import { loadTaxConfig, saveTaxConfig as saveTaxConfigLocal, resetTaxConfig as resetTaxConfigLocal, IVA_FACTORY_RATE, normalizeIvaRate } from '../../../config/taxConfig';
+import { pushLocalSync } from '../../../hooks/useCloudSync';
+
+// El IVA viaja al supervisor: las ventas remotas se cobran con el mismo total.
+const publishTaxConfig = (config) => { pushLocalSync('tax_config_v1', JSON.stringify(config)); return config; };
+const saveTaxConfig = (config) => publishTaxConfig(saveTaxConfigLocal(config));
+const resetTaxConfig = () => publishTaxConfig(resetTaxConfigLocal());
 
 const SUB_TABS = [
     {
@@ -165,7 +171,7 @@ export default function SettingsTabVentas({
         setCashAdvancePct(val);
         const parsed = parseFloat(val);
         const safeVal = isNaN(parsed) || parsed < 0 ? 0 : parsed;
-        localStorage.setItem('cash_advance_default_pct', safeVal.toString());
+        localStorage.setItem('cash_advance_default_pct', safeVal.toString()); pushLocalSync('cash_advance_default_pct', safeVal.toString());
         forceHeartbeat();
     };
 
@@ -180,10 +186,10 @@ export default function SettingsTabVentas({
         const parsed = parseFloat(cashAdvancePct);
         if (isNaN(parsed) || parsed < 0) {
             setCashAdvancePct('10');
-            localStorage.setItem('cash_advance_default_pct', '10');
+            localStorage.setItem('cash_advance_default_pct', '10'); pushLocalSync('cash_advance_default_pct', '10');
         } else {
             setCashAdvancePct(parsed.toString());
-            localStorage.setItem('cash_advance_default_pct', parsed.toString());
+            localStorage.setItem('cash_advance_default_pct', parsed.toString()); pushLocalSync('cash_advance_default_pct', parsed.toString());
         }
     };
 
@@ -594,7 +600,7 @@ export default function SettingsTabVentas({
                                         onChange={() => {
                                             const newVal = !cashAdvanceEnabled;
                                             setCashAdvanceEnabled(newVal);
-                                            localStorage.setItem('allow_cash_advance', newVal.toString());
+                                            localStorage.setItem('allow_cash_advance', newVal.toString()); pushLocalSync('allow_cash_advance', newVal.toString());
                                             forceHeartbeat();
                                             showToast(newVal ? 'Avances activados' : 'Avances desactivados', 'success');
                                             triggerHaptic?.();
@@ -664,7 +670,7 @@ export default function SettingsTabVentas({
                                         onChange={() => {
                                             const newVal = !allowNegativeStock;
                                             setAllowNegativeStock(newVal);
-                                            localStorage.setItem('allow_negative_stock', newVal.toString());
+                                            localStorage.setItem('allow_negative_stock', newVal.toString()); pushLocalSync('allow_negative_stock', newVal.toString());
                                             forceHeartbeat();
                                             showToast(newVal ? 'Se permite vender sin stock' : 'No se permite vender sin stock', 'success');
                                             triggerHaptic?.();

@@ -33,7 +33,11 @@ export async function processSaleTransaction({
     copEnabled,
     discountData,
     useAutoRate,
-    granelUnitMode = getGranelUnitMode()
+    granelUnitMode = getGranelUnitMode(),
+    // Venta remota (supervisor.sale.create): id fijo del monitor para que una
+    // reentrega nunca registre dos ventas, y la etiqueta con el vendedor.
+    saleId = null,
+    remoteSale = null,
 }) {
     if (cart.length === 0) return { success: false, error: 'Carrito vacío' };
 
@@ -232,7 +236,7 @@ export async function processSaleTransaction({
     }
 
     const sale = {
-        id: crypto.randomUUID(),
+        id: saleId || crypto.randomUUID(),
         granelUnitMode: granelUnitMode === GRANEL_MODE_GR_ML ? GRANEL_MODE_GR_ML : 'kg_lt',
         tipo: tipoVenta,
         status: 'COMPLETADA',
@@ -315,7 +319,8 @@ export async function processSaleTransaction({
         fiadoUsd: fiadoAmountUsd,
         casheaUsd: casheaUsd,
         // TIP-001: propina donada, ya normalizada a una sola moneda canónica.
-        tipDonated: tipDonated
+        tipDonated: tipDonated,
+        ...(remoteSale ? { remoteSale } : {}),
     };
 
     // FIN-008: deepFreeze en lugar de Object.freeze (congela items[] y payments[]).
@@ -324,6 +329,14 @@ export async function processSaleTransaction({
     // FIN-007: withLock reemplaza navigator.locks.request directo (feature detection + fallback).
     const lockResult = await withLock('pos_write_lock', async () => {
         const existingSales = await storageService.getItem(SALES_KEY, []);
+        // G2 (ventas remotas): con id fijo, una venta ya registrada se devuelve
+        // tal cual — sin tocar stock, cartera ni numeración.
+        if (saleId) {
+            const duplicate = existingSales.find(s => s?.id === saleId);
+            if (duplicate) {
+                return { success: true, duplicate: true, sale: duplicate, updatedProducts: null, updatedCustomers: null };
+            }
+        }
         const saleNumber = existingSales.reduce((mx, s) => Math.max(mx, s.saleNumber || 0), 0) + 1;
 
         // ── Deducir stock con precisión ──
@@ -413,12 +426,14 @@ export async function processSaleTransaction({
 
         // Audit log
         const user = useAuthStore.getState().usuarioActivo;
-        const tipo = casheaUsd > 0 ? 'VENTA_CASHEA' : (fiadoAmountUsd > 0 ? 'VENTA_FIADA' : 'VENTA_COMPLETADA');
+        const tipo = remoteSale
+            ? 'VENTA_REMOTA'
+            : (casheaUsd > 0 ? 'VENTA_CASHEA' : (fiadoAmountUsd > 0 ? 'VENTA_FIADA' : 'VENTA_COMPLETADA'));
         logEvent('VENTA', tipo,
             // FIN-036: usar el total dinámico, el mismo que se persiste en la venta.
-            `Venta #${saleNumber} - $${round2(activeCartTotalUsd)} - ${cart.length} items - ${selectedCustomer?.name || 'Consumidor Final'}`,
+            `Venta #${saleNumber} - $${round2(activeCartTotalUsd)} - ${cart.length} items - ${selectedCustomer?.name || 'Consumidor Final'}${remoteSale ? ` - remota (${remoteSale.sellerName})` : ''}`,
             user,
-            { saleId: finalPersistedSale.id, total: activeCartTotalUsd, items: cart.length }
+            { saleId: finalPersistedSale.id, total: activeCartTotalUsd, items: cart.length, ...(remoteSale ? { remoteSale } : {}) }
         );
 
         if (negativeStockUsed) {

@@ -175,6 +175,25 @@ describe('useMonitorSync · política full vs incremental del pull', () => {
         expect(h.sync.syncDiagnostics.lastPull.bytes).toBeGreaterThan(0);
     });
 
+    it('con el canal aún vivo, refrescar o volver de offline regresa a «En vivo»', async () => {
+        seedProductsDoc();
+        await mountMonitor();
+        expect(h.sync.isConnected).toBe(true);
+
+        await act(async () => { window.dispatchEvent(new Event('offline')); });
+        expect(h.sync.isConnected).toBe(false);
+        await act(async () => { window.dispatchEvent(new Event('online')); });
+        await flush();
+        await flush();
+        expect(h.sync.isConnected).toBe(true);
+        expect(h.sync.syncState).toBe('connected');
+
+        await act(async () => { await h.sync.triggerRefresh(); });
+        await flush();
+        expect(h.sync.isConnected).toBe(true);
+        expect(h.sync.syncState).toBe('connected');
+    });
+
     it('pasado el intervalo, la reconexión reintegra el paquete completo (borrados remotos)', async () => {
         seedProductsDoc();
         await mountMonitor();

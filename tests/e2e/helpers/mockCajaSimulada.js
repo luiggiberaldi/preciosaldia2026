@@ -39,6 +39,9 @@
  */
 
 import { buildSyncEnvelope } from '../../../src/services/supervisorSyncService.js';
+import { planRemoteSale } from '../../../src/services/supervisorSaleCommand.js';
+import { planRemoteVoid } from '../../../src/services/supervisorSaleVoidCommand.js';
+import { toRemoteSaleReceipt } from '../../../src/services/supervisorSaleReceiver.js';
 import {
     applySupervisorInvoiceCommand,
     applySupervisorSupplierCommand,
@@ -169,6 +172,10 @@ export async function installCajaSimulada(page, {
     warnings = [],
     primaryDeviceId = 'e2e-primary-device',
     ledger = {},
+    // Ventas remotas (supervisor.sale.create): la caja simulada decide con el
+    // MISMO planRemoteSale del receptor real. `holdPending` deja la orden sin
+    // tomar (caja apagada) y le acorta la ventana para probar la cancelación.
+    saleCaja = null,
 } = {}) {
     const received = [];
     const sockets = new Set();
@@ -382,7 +389,86 @@ export async function installCajaSimulada(page, {
         }
     };
 
+    const saleState = saleCaja ? {
+        products: [...(saleCaja.products || [])],
+        sales: [...(saleCaja.sales || [])],
+        paymentMethods: saleCaja.paymentMethods || [],
+        context: { effectiveRate: 40, tasaCop: 0, copEnabled: false, ivaOpts: null, allowNegativeStock: false, ...(saleCaja.context || {}) },
+    } : null;
+
+    // Espejo de applyRemoteSaleOnCaja sin el storage del navegador: el
+    // registro se reduce a lo que el ACK necesita (número, totales, receipt).
+    const applySaleCommand = (row) => {
+        if (row.command_type === 'supervisor.sale.void' && saleState) {
+            // Espejo de applyRemoteVoidOnCaja con el MISMO planRemoteVoid.
+            const plan = planRemoteVoid(row.payload, { sales: saleState.sales });
+            if (plan.status === 'rejected') {
+                return { status: 'rejected', error: plan.error, ackPayload: { commandId: row.command_id, status: 'rejected', error: plan.error, code: plan.code } };
+            }
+            if (plan.status === 'apply') {
+                plan.sale.status = 'ANULADA';
+                plan.sale.voidInfo = { remote: true, by: row.payload.requestedBy.name, reason: row.payload.reason, commandId: row.command_id };
+            }
+            return {
+                status: 'applied',
+                ackPayload: { commandId: row.command_id, status: 'applied', saleId: plan.sale.id, saleNumber: plan.sale.saleNumber ?? null, duplicate: plan.status === 'already_applied' },
+            };
+        }
+        if (row.command_type !== 'supervisor.sale.create' || !saleState) return null;
+        const plan = planRemoteSale(row.payload, { ...saleState, ...saleState.context });
+        if (plan.status === 'rejected') {
+            const { status: _s, ...details } = plan;
+            return { status: 'rejected', error: plan.error, ackPayload: { commandId: row.command_id, status: 'rejected', ...details } };
+        }
+        let sale = plan.status === 'already_applied' ? plan.sale : null;
+        if (!sale) {
+            const input = plan.saleInput;
+            const saleNumber = saleState.sales.reduce((mx, s) => Math.max(mx, s.saleNumber || 0), 0) + 1;
+            sale = {
+                id: input.saleId,
+                saleNumber,
+                tipo: 'VENTA',
+                status: 'COMPLETADA',
+                timestamp: new Date().toISOString(),
+                items: input.cart.map((l) => ({
+                    id: l.id, name: l.name, qty: l.qty, priceUsd: l.priceUsd, _mode: l._mode,
+                    ...(l.isCashAdvance ? { isCashAdvance: true, montoEfectivo: l.montoEfectivo, montoComision: l.montoComision, comisionPct: l.comisionPct, currency: l.currency } : {}),
+                })),
+                totalUsd: input.cartTotalUsd,
+                totalBs: input.cartTotalBs,
+                payments: input.payments,
+                rate: input.effectiveRate,
+                customerName: 'Consumidor Final',
+                remoteSale: { ...input.remoteSale, commandId: row.command_id },
+            };
+            saleState.sales.unshift(sale);
+        }
+        return {
+            status: plan.warnings?.length ? 'applied_with_warnings' : 'applied',
+            ackPayload: {
+                commandId: row.command_id,
+                status: 'applied',
+                saleId: sale.id,
+                saleNumber: sale.saleNumber,
+                totalUsd: sale.totalUsd,
+                totalBs: sale.totalBs,
+                duplicate: plan.status === 'already_applied',
+                sale: toRemoteSaleReceipt(sale),
+                ...(plan.warnings?.length ? { warnings: plan.warnings } : {}),
+            },
+        };
+    };
+
     const applyRow = (row) => {
+        if (row.command_type === 'supervisor.sale.create' && saleCaja?.holdPending) return;
+        const saleResult = applySaleCommand(row);
+        if (saleResult) {
+            row.status = saleResult.status;
+            row.ack_payload = saleResult.ackPayload;
+            row.error_message = saleResult.error ?? null;
+            broadcastCommandUpdate(row);
+            return;
+        }
         const ledgerResult = applyLedgerCommand(row);
         if (ledgerResult) {
             row.status = ledgerResult.status;
@@ -426,9 +512,25 @@ export async function installCajaSimulada(page, {
             ack_payload: null,
             error_message: null,
         };
+        if (row.command_type === 'supervisor.sale.create' && saleCaja?.holdPending) {
+            // Caja apagada: la orden queda pendiente y su ventana vence pronto.
+            row.expires_at = new Date(Date.now() + (saleCaja.holdExpiresInMs ?? 1500)).toISOString();
+        }
         received.push(row);
         setTimeout(() => applyRow(row), applyAfterMs);
         await route.fulfill(json([row]));
+    });
+
+    // ── Cancelación (monitor) de una orden pendiente: atómica como la RPC real ─
+    await page.route(/\/rest\/v1\/rpc\/cancel_supervisor_command(\?|$)/, async (route) => {
+        const body = route.request().postDataJSON() || {};
+        const entry = received.find((row) => row.command_id === body.p_command_id);
+        if (entry && entry.status === 'pending') {
+            entry.status = 'cancelled';
+            entry.error_message = body.p_reason || 'Cancelado';
+            broadcastCommandUpdate(entry);
+        }
+        await route.fulfill(json([{ command_id: body.p_command_id, status: entry?.status || 'unknown' }]));
     });
 
     // ── Lecturas/inspección del comando: estado actual de la fila ─────────────
@@ -466,6 +568,7 @@ export async function installCajaSimulada(page, {
         received,
         commandTypes: () => received.map((row) => row.command_type),
         topics: () => [...joinedTopics],
+        sales: () => (saleState ? saleState.sales.map((sale) => ({ ...sale })) : []),
         ledger: () => ({
             suppliers: ledgerState.suppliers.map((supplier) => ({ ...supplier })),
             invoices: ledgerState.invoices.map((invoice) => ({ ...invoice })),

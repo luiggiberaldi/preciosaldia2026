@@ -271,6 +271,16 @@ export const isLiquidProduct = (p) => {
 };
 
 /**
+ * Unidad del STOCK de un producto a granel: el inventario se guarda SIEMPRE en
+ * kg (sólidos) o L (líquidos), aunque el producto diga «gramo» o «ml» (esa es
+ * su presentación). Úsala para rotular existencias; nunca `granelUnitLabel`,
+ * que devolvería «g» y haría leer 4.6 kg como 4.6 g.
+ * @param {object|string|null} p
+ * @returns {'kg'|'L'}
+ */
+export const granelStockUnitLabel = (p) => (isLiquidProduct(p) ? 'L' : 'kg');
+
+/**
  * Unidad de medida corta canónica ("kg", "L", "g", "ml" o "UND").
  * @param {object|string|null} p
  * @returns {string}

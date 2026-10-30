@@ -4,7 +4,7 @@ import { CATEGORY_COLORS, CATEGORY_ICONS, UNITS } from '../../config/categories'
 import { formatUsd, formatBs, formatCop, smartCashRounding, getCop, getUsd } from '../../utils/calculatorUtils';
 import { showToast } from '../Toast';
 import SmartImage from '../SmartImage';
-import { isGranelProduct, isLowStockProduct, granelUnitLabel, parseStockInput, formatStockDisplay, formatLowStockAlert } from '../../utils/granel'; // GRANEL-001
+import { isGranelProduct, isLowStockProduct, granelStockUnitLabel, parseStockInput, formatStockDisplay, formatLowStockAlert } from '../../utils/granel'; // GRANEL-001
 import { marginOverPricePercent } from '../../utils/productCostFactor';
 
 export default function ProductCard({
@@ -28,7 +28,8 @@ export default function ProductCard({
 }) {
     // GRANEL-001: edición inline rápida del stock al tocar el número.
     const isGranel = isGranelProduct(p);
-    const unitShort = isGranel ? granelUnitLabel(p) : 'UND';
+    // El stock granel vive en kg/L aunque el producto se rotule en g/ml.
+    const unitShort = isGranel ? granelStockUnitLabel(p) : 'UND';
     const [isEditingStock, setIsEditingStock] = useState(false);
     const [stockDraft, setStockDraft] = useState('');
     const stockInputRef = useRef(null);

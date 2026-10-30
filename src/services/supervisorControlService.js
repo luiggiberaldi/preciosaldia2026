@@ -58,6 +58,10 @@ export const COMMAND_TYPE_LABELS = Object.freeze({
     'supervisor.invoice.create': 'Registrar factura',
     'supervisor.invoice.update': 'Editar factura',
     'supervisor.invoice.delete': 'Eliminar factura',
+    'supervisor.sale.create': 'Venta remota',
+    'supervisor.sale.void': 'Anular venta',
+    'supervisor.purchase.upsert': 'Compra de mercancía',
+    'supervisor.purchase.delete': 'Borrar compra',
 });
 
 function isWarningCommand(command) {

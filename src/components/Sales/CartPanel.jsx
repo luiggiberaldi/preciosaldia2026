@@ -31,7 +31,11 @@ export default function CartPanel({
     copPrimary,
     tasaCop,
     canRegistrarAporte,
-    onOpenAporte
+    onOpenAporte,
+    // Supervisor › Vender: sin atajos de teclado y con cobro bloqueable
+    // (sin conexión o venta en curso). Sin onOpenDiscount no hay descuento.
+    showShortcuts = true,
+    checkoutDisabled = false,
 }) {
     const [editingQtyId, setEditingQtyId] = React.useState(null);
     const [tempQty, setTempQty] = React.useState('');
@@ -313,8 +317,9 @@ export default function CartPanel({
                                                             inputMode={itemIsGranel ? "decimal" : "numeric"}
                                                         />
                                                     ) : (
-                                                        <span 
-                                                            onClick={() => handleQtyClick(item)} 
+                                                        <span
+                                                            aria-label={`Cantidad de ${item.name}`}
+                                                            onClick={() => handleQtyClick(item)}
                                                             className="min-w-[2.5rem] px-1 text-center font-black text-slate-800 dark:text-white text-xs cursor-pointer hover:text-emerald-500 transition-colors whitespace-nowrap"
                                                         >
                                                             {qtyDisplay}
@@ -353,6 +358,7 @@ export default function CartPanel({
             <div className="shrink-0 p-3 sm:p-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:pb-[calc(1rem+env(safe-area-inset-bottom))] lg:pb-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 rounded-b-none lg:rounded-b-2xl lg:sm:rounded-b-3xl space-y-2.5">
                 
                 {/* Botón de Descuento */}
+                {onOpenDiscount && (
                 <button
                     onClick={() => { triggerHaptic && triggerHaptic(); onOpenDiscount(); }}
                     disabled={cart.length === 0}
@@ -385,6 +391,7 @@ export default function CartPanel({
                         </div>
                     )}
                 </button>
+                )}
 
                 {/* Subtotal simple */}
                 <div className="flex justify-between items-center text-xs font-bold text-slate-500 px-1 pt-1">
@@ -432,13 +439,13 @@ export default function CartPanel({
                 {/* Botones de acción */}
                 <div className="flex gap-2">
                     <button
-                        disabled={cart.length === 0}
+                        disabled={cart.length === 0 || checkoutDisabled}
                         onClick={onCheckout}
                         className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black text-sm rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-[0.98] transition-all"
                     >
                         <CheckCircle size={18} className="opacity-80" />
                         COBRAR
-                        <kbd className="bg-white/20 px-1.5 py-0.5 rounded text-[9px] font-mono leading-none">F9</kbd>
+                        {showShortcuts && <kbd className="bg-white/20 px-1.5 py-0.5 rounded text-[9px] font-mono leading-none">F9</kbd>}
                     </button>
                 </div>
             </div>

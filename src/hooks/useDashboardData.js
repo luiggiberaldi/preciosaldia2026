@@ -38,5 +38,24 @@ export function useDashboardData(isActive, requestPermission) {
         setCustomers(savedCustomers);
     };
 
+    // Ventas escritas fuera de esta vista (ventas remotas del supervisor,
+    // sincronización) se reflejan sin recargar la página.
+    useEffect(() => {
+        if (!isActive) return;
+        let timer = null;
+        const onStorageUpdate = (e) => {
+            const key = e?.detail?.key;
+            if (key !== SALES_KEY && key !== 'bodega_customers_v1') return;
+            clearTimeout(timer);
+            timer = setTimeout(refreshData, 50);
+        };
+        window.addEventListener('app_storage_update', onStorageUpdate);
+        return () => {
+            clearTimeout(timer);
+            window.removeEventListener('app_storage_update', onStorageUpdate);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshData solo usa setters estables
+    }, [isActive]);
+
     return { sales, setSales, customers, setCustomers, isLoadingLocal, refreshData };
 }

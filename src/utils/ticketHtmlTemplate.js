@@ -305,6 +305,7 @@ export function buildTicketHtml(sale, bcvRate, paperConfig, settings) {
         <span style="font-weight:bold;">Cliente:</span> ${escapeHtml(sale.customerName || 'Consumidor Final')}
     </div>
     ${sale.customerDocument ? `<div style="font-size:${fTiny};color:#000;">C.I/RIF: ${escapeHtml(sale.customerDocument)}</div>` : ''}
+    ${sale.remoteSale?.sellerName ? `<div style="font-size:${fTiny};color:#000;">Vendido por: ${escapeHtml(sale.remoteSale.sellerName)}</div>` : ''}
 
     <hr class="dash">
 

@@ -6,6 +6,7 @@ import {
     SUPERVISOR_REMOTE_RATE_ENABLED,
     SUPERVISOR_REMOTE_EGRESS_ENABLED,
     SUPERVISOR_REMOTE_SUPPLIERS_ENABLED,
+    SUPERVISOR_REMOTE_SALES_ENABLED,
     SUPERVISOR_EXTENDED_TTL_ENABLED,
 } from '../config/supervisorPolicy';
 import { ensureSupervisorSession } from './supervisorAuth';
@@ -158,21 +159,24 @@ export function shouldAwaitSupervisorAck(type) {
     return type !== 'supervisor.rate.set';
 }
 
-export function isSupervisorCommandEnabled(type, payload = {}) {
+export function isSupervisorCommandEnabled(type, payload = {}, salesEnabled = SUPERVISOR_REMOTE_SALES_ENABLED) {
     if (!SUPERVISOR_COMMAND_TYPES.includes(type)) return false;
+    // G10: la venta remota solo con su flag; REMOTE_MUTATIONS no la habilita.
+    if (type === 'supervisor.sale.create' || type === 'supervisor.sale.void') return salesEnabled === true;
     const isProductChange = type === 'supervisor.product.create' || type === 'supervisor.product.update';
     const isIncomeBatch = type === 'supervisor.inventory.batch.adjust' && payload?.direction === 'ingreso';
     const isEgressBatch = type === 'supervisor.inventory.batch.adjust' && payload?.direction === 'egreso';
     const isRateChange = type === 'supervisor.rate.set';
     const isSupplierChange = type.startsWith('supervisor.supplier.');
     const isInvoiceChange = type.startsWith('supervisor.invoice.');
+    const isPurchaseChange = type.startsWith('supervisor.purchase.');
 
     return SUPERVISOR_REMOTE_MUTATIONS_ENABLED
         || (isProductChange && SUPERVISOR_REMOTE_PRODUCTS_ENABLED)
         || (isIncomeBatch && SUPERVISOR_REMOTE_INCOME_ENABLED)
         || (isEgressBatch && SUPERVISOR_REMOTE_EGRESS_ENABLED)
         || (isRateChange && SUPERVISOR_REMOTE_RATE_ENABLED)
-        || ((isSupplierChange || isInvoiceChange) && SUPERVISOR_REMOTE_SUPPLIERS_ENABLED);
+        || ((isSupplierChange || isInvoiceChange || isPurchaseChange) && SUPERVISOR_REMOTE_SUPPLIERS_ENABLED);
 }
 
 export function generateSupervisorCommandId() {
@@ -188,6 +192,8 @@ export function generateSupervisorCommandId() {
  * aplicar la migración de Fase 5.
  */
 export function getCommandTtlMs(type, extendedTtl = SUPERVISOR_EXTENDED_TTL_ENABLED) {
+    // La venta remota usa siempre su ventana propia (la RPC 20261029 la acepta).
+    if (type === 'supervisor.sale.create' || type === 'supervisor.sale.void') return getCommandMaxTtlMs(type);
     return extendedTtl ? getCommandMaxTtlMs(type) : SUPERVISOR_COMMAND_TTL_MS;
 }
 

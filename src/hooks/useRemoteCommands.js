@@ -35,6 +35,14 @@ import {
     applySupervisorInvoiceCommand,
     applySupervisorSupplierCommand,
 } from '../services/supervisorSupplierCommand';
+import { applyRemoteSaleOnCaja, applyRemoteVoidOnCaja } from '../services/supervisorSaleReceiver';
+import { processVoidSale } from '../utils/voidSaleProcessor';
+import { processSaleTransaction } from '../utils/checkoutProcessor';
+import { getActivePaymentMethods } from '../config/paymentMethods';
+import { getCartIvaOpts } from '../config/taxConfig';
+import { readStoredRateContext } from '../utils/effectiveRate';
+import { SUPERVISOR_REMOTE_SALES_ENABLED } from '../config/supervisorPolicy';
+import { MERCHANDISE_PURCHASES_KEY, planPurchaseCommand } from '../utils/merchandisePurchases';
 
 function rowToCommand(row, deviceId) {
     const issuedAt = new Date(row.issued_at).getTime();
@@ -434,6 +442,41 @@ export function useRemoteCommands(deviceId, enabled = true) {
             };
         };
 
+        // Compras de mercancía: la caja guarda la compra que armó el supervisor
+        // (upsert/borrado por id, idempotente) y publica su mes. No toca caja,
+        // stock ni deudas.
+        const applyPurchaseRemote = async (type, payload, commandId) => {
+            let plan;
+            await withLock('pos_write_lock', async () => {
+                const purchases = (await storageService.getItem(MERCHANDISE_PURCHASES_KEY, [])) || [];
+                plan = planPurchaseCommand(type, payload, purchases);
+                if (plan.status !== 'apply') return;
+                await writeVerifiedValue(storageService, MERCHANDISE_PURCHASES_KEY, plan.list);
+                window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: MERCHANDISE_PURCHASES_KEY, source: 'remote' } }));
+                markAckTelemetry(commandId, 'local_applied');
+            });
+            if (plan.status === 'rejected') return { commandId, status: 'rejected', error: plan.error };
+            const base = {
+                commandId,
+                purchaseId: plan.purchase?.id ?? payload.purchaseId ?? null,
+                duplicate: plan.status === 'already_applied',
+            };
+            if (plan.status === 'already_applied') return { ...base, status: 'applied' };
+            let published = true;
+            try {
+                published = classifyProductPublishResult(await publishKeyNow(MERCHANDISE_PURCHASES_KEY)).published;
+            } catch {
+                published = false;
+            } finally {
+                markAckTelemetry(commandId, 'publish_end');
+            }
+            return {
+                ...base,
+                status: published ? 'applied' : 'applied_with_warnings',
+                ...(published ? {} : { warnings: ['Publicación a la nube sin confirmar; el barrido periódico la re-publicará'] }),
+            };
+        };
+
         const applyInventoryBatchCommand = async (payload, commandId) => {
             let adjustment;
             let acknowledgedEarly = false;
@@ -778,6 +821,62 @@ export function useRemoteCommands(deviceId, enabled = true) {
                     appliedPayload = await applySupplierInvoiceRemote({ entity: 'invoice', action: 'delete', invoiceId: command.payload.invoiceId, commandId: row.command_id });
                     if (appliedPayload.status === 'rejected') showToast(`⚠️ Orden del Supervisor rechazada: ${appliedPayload.error}`, 'warning');
                     else showToast('🧾 Factura eliminada por el Supervisor', 'success');
+                } else if (command.type === 'supervisor.sale.create') {
+                    // Venta remota: G3 — se llama SIN pos_write_lock (processSaleTransaction
+                    // lo toma por su cuenta y no es reentrante).
+                    appliedPayload = await applyRemoteSaleOnCaja({
+                        payload: command.payload,
+                        commandId: row.command_id,
+                        enabled: SUPERVISOR_REMOTE_SALES_ENABLED,
+                        storage: storageService,
+                        getPaymentMethods: getActivePaymentMethods,
+                        readContext: () => ({
+                            ...readStoredRateContext(),
+                            ivaOpts: getCartIvaOpts(),
+                            allowNegativeStock: localStorage.getItem('allow_negative_stock') === 'true',
+                            allowCashAdvance: localStorage.getItem('allow_cash_advance') === 'true',
+                        }),
+                        processSale: processSaleTransaction,
+                    });
+                    if (appliedPayload.status === 'rejected') {
+                        showToast(`⚠️ Venta remota rechazada: ${appliedPayload.error}`, 'warning');
+                    } else {
+                        markAckTelemetry(row.command_id, 'local_applied');
+                        window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_sales_v1', source: 'remote' } }));
+                        window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: 'bodega_products_v1', source: 'remote' } }));
+                        if (!appliedPayload.duplicate) {
+                            showToast(`🛒 Venta remota #${appliedPayload.saleNumber} registrada (${command.payload?.seller?.name || 'Supervisor'})`, 'success');
+                        }
+                    }
+                } else if (command.type === 'supervisor.sale.void') {
+                    // Anulación remota: processVoidSale toma pos_write_lock por su
+                    // cuenta (no reentrante) — se llama sin lock, igual que la venta.
+                    appliedPayload = await applyRemoteVoidOnCaja({
+                        payload: command.payload,
+                        commandId: row.command_id,
+                        enabled: SUPERVISOR_REMOTE_SALES_ENABLED,
+                        storage: storageService,
+                        processVoid: processVoidSale,
+                    });
+                    if (appliedPayload.status === 'rejected') {
+                        showToast(`⚠️ Anulación remota rechazada: ${appliedPayload.error}`, 'warning');
+                    } else {
+                        markAckTelemetry(row.command_id, 'local_applied');
+                        ['bodega_sales_v1', 'bodega_products_v1', 'bodega_customers_v1'].forEach((key) => {
+                            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key, source: 'remote' } }));
+                        });
+                        if (!appliedPayload.duplicate) {
+                            showToast(`🚫 Venta #${appliedPayload.saleNumber ?? '?'} anulada por ${command.payload?.requestedBy?.name || 'el Supervisor'}: ${command.payload?.reason || ''}`, 'warning');
+                        }
+                    }
+                } else if (command.type === 'supervisor.purchase.upsert' || command.type === 'supervisor.purchase.delete') {
+                    appliedPayload = await applyPurchaseRemote(command.type, command.payload, row.command_id);
+                    if (appliedPayload.status === 'rejected') showToast(`⚠️ Orden del Supervisor rechazada: ${appliedPayload.error}`, 'warning');
+                    else if (!appliedPayload.duplicate) {
+                        showToast(command.type === 'supervisor.purchase.delete'
+                            ? '🧾 Compra borrada por el Supervisor'
+                            : `🧾 Compra de ${command.payload?.purchase?.supplier || 'mercancía'} registrada por el Supervisor`, 'success');
+                    }
                 } else if (command.type === 'supervisor.inventory.batch.adjust') {
                     appliedPayload = await applyInventoryBatchCommand(command.payload, row.command_id);
                 } else if (command.type === 'supervisor.shift.close' || command.type === 'supervisor.shift.reopen') {

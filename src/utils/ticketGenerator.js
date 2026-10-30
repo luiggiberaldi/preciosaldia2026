@@ -105,6 +105,17 @@ export async function generateTicketPDF(sale, bcvRate) {
     doc.text(sale.customerName || 'Consumidor Final', M + 14, y);
     y += 6;
 
+    if (sale.remoteSale?.sellerName) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(...INK);
+        doc.text('Vendido por:', M, y);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(...BODY);
+        doc.text(String(sale.remoteSale.sellerName), M + 19, y);
+        y += 6;
+    }
+
     if (sale.customerDocument) {
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(8);

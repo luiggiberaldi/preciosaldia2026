@@ -37,6 +37,11 @@ import {
     mergeSalesSyncDoc,
     mergeSupplierInvoicesSyncDoc,
 } from './useCloudSync';
+import {
+    PURCHASES_SYNC_BASE_KEY,
+    isPurchasesSyncDocId,
+    mergePurchasesSyncDoc,
+} from '../utils/purchasesSyncFamily';
 
 // Plan de stock delta: el catálogo del monitor es una VISTA derivada — el
 // baseline del último doc de productos (con su `stockAsOf`) más los efectos de
@@ -171,9 +176,11 @@ export function useMonitorSync(pairedDeviceId) {
         const isSalesFamily = isSalesSyncDocId(docId);
         const isProductsFamily = isProductsSyncDocId(docId);
         const isSupplierInvoicesFamily = isSupplierInvoicesSyncDocId(docId);
+        const isPurchasesFamily = isPurchasesSyncDocId(docId);
         const contractKey = isSalesFamily ? SALES_SYNC_BASE_KEY
             : isProductsFamily ? PRODUCTS_SYNC_BASE_KEY
-            : isSupplierInvoicesFamily ? SUPPLIER_INVOICES_SYNC_BASE_KEY : docId;
+            : isSupplierInvoicesFamily ? SUPPLIER_INVOICES_SYNC_BASE_KEY
+            : isPurchasesFamily ? PURCHASES_SYNC_BASE_KEY : docId;
         const validation = validateSupervisorSyncDocument(contractKey, envelope.payload);
         if (!validation.valid) {
             return { applied: false, rejected: true, error: validation.error };
@@ -244,6 +251,11 @@ export function useMonitorSync(pairedDeviceId) {
                     const localInvoices = await localforage.getItem(SUPPLIER_INVOICES_SYNC_BASE_KEY);
                     const mergedInvoices = mergeSupplierInvoicesSyncDoc(localInvoices, docId, envelope.payload);
                     await localforage.setItem(writeKey, mergedInvoices);
+                } else if (isPurchasesFamily) {
+                    // Compras de mercancía: reemplazo de franja por mes.
+                    writeKey = PURCHASES_SYNC_BASE_KEY;
+                    const localPurchases = await localforage.getItem(PURCHASES_SYNC_BASE_KEY);
+                    await localforage.setItem(writeKey, mergePurchasesSyncDoc(localPurchases, docId, envelope.payload));
                 } else {
                     await localforage.setItem(docId, envelope.payload);
                 }
@@ -487,7 +499,8 @@ export function useMonitorSync(pairedDeviceId) {
                 SUPERVISOR_SYNC_KEYS.includes(doc.doc_id)
                 || isSalesSyncDocId(doc.doc_id)
                 || isProductsSyncDocId(doc.doc_id)
-                || isSupplierInvoicesSyncDocId(doc.doc_id));
+                || isSupplierInvoicesSyncDocId(doc.doc_id)
+                || isPurchasesSyncDocId(doc.doc_id));
 
             let targetDocIds;
             if (full) {
@@ -665,6 +678,13 @@ export function useMonitorSync(pairedDeviceId) {
                     setSyncState(SUPERVISOR_SYNC_STATES.DEGRADED);
                     setSyncError(realtime.error);
                     return { ok: false, error: realtime.error, ...batch };
+                }
+                // Si el canal ya estaba vivo (refresco manual o vuelta del modo
+                // offline) `subscribeToRealtime` no vuelve a emitir SUBSCRIBED:
+                // sin esto el indicador quedaba en «Recuperando» para siempre.
+                if (isActiveLifecycle(lifecycleId) && subscriptionRef.current) {
+                    setIsConnected(true);
+                    setSyncState(SUPERVISOR_SYNC_STATES.CONNECTED);
                 }
 
                 return { ok: true, error: null, ...batch };

@@ -15,7 +15,7 @@ import { getLocalISODate } from '../../utils/dateHelpers';
 const inputClass = 'w-full form-input border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2.5 text-sm font-bold dark:bg-slate-950 text-slate-800 dark:text-white focus:ring-2 focus:ring-primary-500/50 transition-all';
 const labelClass = 'block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1';
 
-async function sendTracked({ type, targetDeviceId, payload, label, onSuccess }) {
+export async function sendTracked({ type, targetDeviceId, payload, label, onSuccess }) {
     try {
         const result = await sendSupervisorCommand({ type, targetDeviceId, payload });
         if (!result.ok) {
@@ -127,7 +127,7 @@ export function RemoteSupplierFormModal({ isOpen, onClose, targetDeviceId, suppl
                 <button
                     type="submit"
                     disabled={isSubmitting || !name.trim()}
-                    className="w-full py-3 bg-primary-600 hover:bg-primary-700 disabled:bg-primary-600/50 text-white font-bold rounded-xl active:scale-95 transition-all text-sm flex justify-center items-center gap-2"
+                    className="w-full py-3 bg-brand-dark hover:opacity-90 disabled:opacity-50 text-white font-bold rounded-xl active:scale-95 transition-all text-sm flex justify-center items-center gap-2"
                 >
                     <Save size={16} />
                     {isSubmitting ? 'Enviando…' : 'Enviar a la caja'}
@@ -282,7 +282,7 @@ export function RemoteInvoiceFormModal({
                 <button
                     type="submit"
                     disabled={isSubmitting || !valid}
-                    className="w-full py-3 bg-primary-600 hover:bg-primary-700 disabled:bg-primary-600/50 text-white font-bold rounded-xl active:scale-95 transition-all text-sm flex justify-center items-center gap-2"
+                    className="w-full py-3 bg-brand-dark hover:opacity-90 disabled:opacity-50 text-white font-bold rounded-xl active:scale-95 transition-all text-sm flex justify-center items-center gap-2"
                 >
                     <Save size={16} />
                     {isSubmitting ? 'Enviando…' : 'Enviar a la caja'}

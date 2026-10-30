@@ -67,15 +67,15 @@ const TEST_PAYMENT_METHODS = [
 export const SEED_INDEXEDDB_SNIPPET = `
 (function () { async function __seedLocalforage() {
     const DATA = {
-        'bodega_products_v1': ${JSON.stringify(TEST_PRODUCTS)},
+        'bodega_products_v1': ${JSON.stringify(TEST_PRODUCTS)}.concat(Array.isArray(window.__E2E_EXTRA_PRODUCTS) ? window.__E2E_EXTRA_PRODUCTS : []),
         'bodega_customers_v1': ${JSON.stringify(TEST_CUSTOMERS)},
         'bodega_payment_methods_v1': ${JSON.stringify(TEST_PAYMENT_METHODS)},
         // La caja abierta es la puerta del flujo e2e (CajaCerradaOverlay sin ella).
         'bodega_sales_v1': [{
             id: 'apertura_e2e_1', tipo: 'APERTURA_CAJA',
             openingUsd: 100, openingBs: 4000, openingCop: 0,
-            timestamp: new Date().toISOString(), cajaCerrada: false,
-        }],
+            timestamp: new Date().toISOString(), cajaCerrada: window.__E2E_SHIFT_CLOSED === true,
+        }].concat(Array.isArray(window.__E2E_EXTRA_SALES) ? window.__E2E_EXTRA_SALES : []),
     };
     // Borrar bases previas para partir de cero en cada test.
     const existing = await indexedDB.databases?.().catch(() => []) || [];

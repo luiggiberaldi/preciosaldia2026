@@ -8,6 +8,9 @@ import {
     normalizeProductFieldValue,
     resolveEffectivePriceUsd,
 } from './supervisorProductCommand';
+import { validateRemoteSalePayload } from './supervisorSaleCommand';
+import { validateRemoteVoidPayload } from './supervisorSaleVoidCommand';
+import { validatePurchaseCommandPayload } from '../utils/merchandisePurchases';
 
 export {
     buildProductRevision,
@@ -54,6 +57,8 @@ const SYNC_VALIDATORS = Object.freeze({
     // familia `bodega_supplier_invoices_v1:<año>` validada por su clave base.
     bodega_suppliers_v1: Array.isArray,
     bodega_supplier_invoices_v1: Array.isArray,
+    // Compras de mercancía (familia `bodega_merchandise_purchases_v1:<YYYY-MM>`).
+    bodega_merchandise_purchases_v1: Array.isArray,
     abasto_audit_log_v1: Array.isArray,
     monitor_rates_v12: isPlainObject,
     bodega_custom_rate: (value) => {
@@ -65,6 +70,25 @@ const SYNC_VALIDATORS = Object.freeze({
     tasa_cop: (value) => isFiniteNumber(Number(value)) && Number(value) >= 0,
     cop_enabled: isBooleanLike,
     auto_cop_enabled: isBooleanLike,
+    // IVA de la caja: el monitor lo necesita para cobrar ventas remotas con el
+    // mismo total que la caja calculará (G1). Viaja como texto JSON.
+    tax_config_v1: (value) => {
+        try {
+            const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+            return isPlainObject(parsed);
+        } catch {
+            return false;
+        }
+    },
+    // Ajustes de venta de la caja que el monitor aplica en «Vender».
+    allow_cash_advance: isBooleanLike,
+    allow_negative_stock: isBooleanLike,
+    cash_advance_default_pct: (value) => {
+        const parsed = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+        return isFiniteNumber(parsed) && parsed >= 0 && parsed <= 100;
+    },
+    // Nombre del negocio de la caja (encabezado del Supervisor).
+    business_name: (value) => typeof value === 'string' && value.length <= 120,
 });
 
 export const SUPERVISOR_SYNC_KEYS = Object.freeze(Object.keys(SYNC_VALIDATORS));
@@ -112,6 +136,14 @@ export const SUPERVISOR_COMMAND_TYPES = Object.freeze([
     'supervisor.invoice.create',
     'supervisor.invoice.update',
     'supervisor.invoice.delete',
+    // Ventas remotas (plan 2026-10-29): venta de contado que la caja re-precia
+    // y registra. Requiere su propio flag (no lo cubre REMOTE_MUTATIONS).
+    'supervisor.sale.create',
+    // Anulación remota de una venta del turno abierto (mismo flag).
+    'supervisor.sale.void',
+    // Compras de mercancía (registro de facturas ya pagadas; no toca caja ni stock).
+    'supervisor.purchase.upsert',
+    'supervisor.purchase.delete',
 ]);
 
 // Campos de PIN que jamás deben viajar en una edición de usuario remota.
@@ -147,9 +179,16 @@ export const COMMAND_EXTENDED_TTL_TYPES = Object.freeze([
     'supervisor.invoice.create',
     'supervisor.invoice.update',
     'supervisor.invoice.delete',
+    'supervisor.purchase.upsert',
+    'supervisor.purchase.delete',
 ]);
 
+// Venta remota: 2 minutos para que la caja la tome; si no, el monitor la
+// cancela. Una vez tomada no caduca (lo garantiza claim_supervisor_command).
+export const COMMAND_SALE_TTL_MS = 2 * 60_000;
+
 export function getCommandMaxTtlMs(type) {
+    if (type === 'supervisor.sale.create' || type === 'supervisor.sale.void') return COMMAND_SALE_TTL_MS;
     return COMMAND_EXTENDED_TTL_TYPES.includes(type) ? COMMAND_EXTENDED_TTL_MS : COMMAND_TTL_MS;
 }
 
@@ -295,6 +334,13 @@ function validateCommandPayload(type, payload) {
         case 'supervisor.invoice.delete':
             return typeof payload.invoiceId === 'string'
                 && payload.invoiceId.trim().length > 0;
+        case 'supervisor.sale.create':
+            return validateRemoteSalePayload(payload).ok;
+        case 'supervisor.sale.void':
+            return validateRemoteVoidPayload(payload).ok;
+        case 'supervisor.purchase.upsert':
+        case 'supervisor.purchase.delete':
+            return validatePurchaseCommandPayload(type, payload).ok;
         case 'supervisor.user.create':
             return typeof payload.nombre === 'string'
                 && ['CAJERO', 'ADMIN'].includes(payload.rol)

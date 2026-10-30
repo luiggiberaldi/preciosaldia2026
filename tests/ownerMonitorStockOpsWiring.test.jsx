@@ -307,9 +307,18 @@ describe('OwnerMonitorView · diagnóstico de comandos y reconciliación de fila
         expect(row()).toBeTruthy();
     }
 
-    it('el botón del encabezado abre el panel de diagnóstico de comandos', async () => {
+    it('los diagnósticos están ocultos en el encabezado por defecto', async () => {
         await act(async () => root.render(<OwnerMonitorView theme="light" toggleTheme={() => {}} triggerHaptic={() => {}} rates={{}} />));
         await flush();
+        expect(container.querySelector('button[title="Diagnóstico de Comandos"]')).toBeNull();
+        expect(container.querySelector('button[title="Diagnóstico de Sincronización"]')).toBeNull();
+    });
+
+    it('con ?diag=1 el botón del encabezado abre el panel de diagnóstico de comandos', async () => {
+        window.history.replaceState(null, '', '/?diag=1');
+        await act(async () => root.render(<OwnerMonitorView theme="light" toggleTheme={() => {}} triggerHaptic={() => {}} rates={{}} />));
+        await flush();
+        window.history.replaceState(null, '', '/');
 
         const diagnosticsButton = container.querySelector('button[title="Diagnóstico de Comandos"]');
         expect(diagnosticsButton).toBeTruthy();

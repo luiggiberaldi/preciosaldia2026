@@ -64,7 +64,12 @@ function legacyReversalMovements(sale) {
     return movements;
 }
 
-export async function processVoidSale(saleParam, currentSales, currentProducts) {
+/**
+ * @param {object} [options]
+ * @param {object} [options.voidInfo] Datos de quién/por qué se anuló (p. ej.
+ *   anulación remota del Supervisor); quedan en el registro de la venta.
+ */
+export async function processVoidSale(saleParam, currentSales, currentProducts, options = {}) {
     const sale = (saleParam && typeof saleParam === 'object' && saleParam.sale) ? saleParam.sale : saleParam;
     if (!sale) throw new Error('Sale object is required to void.');
     if (sale.status === 'ANULADA') throw new Error('Esta venta ya fue anulada.');
@@ -128,6 +133,7 @@ export async function processVoidSale(saleParam, currentSales, currentProducts) 
             ? {
                 ...s,
                 status: 'ANULADA',
+                ...(options?.voidInfo ? { voidInfo: options.voidInfo } : {}),
                 stockEffects: [...(Array.isArray(s.stockEffects) ? s.stockEffects : []), ...voidEffects],
             }
             : s);

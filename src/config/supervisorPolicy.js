@@ -14,6 +14,10 @@ export const SUPERVISOR_REMOTE_RATE_ENABLED = isEnabled('VITE_SUPERVISOR_REMOTE_
 export const SUPERVISOR_REMOTE_EGRESS_ENABLED = isEnabled('VITE_SUPERVISOR_REMOTE_EGRESS_ENABLED');
 // Fase 2: gestión remota de proveedores y facturas (altas/ediciones/bajas).
 export const SUPERVISOR_REMOTE_SUPPLIERS_ENABLED = isEnabled('VITE_SUPERVISOR_REMOTE_SUPPLIERS_ENABLED');
+// Ventas remotas (plan 2026-10-29). Default FALSE: se enciende en Vercel tras
+// aplicar la migración 20261029 y actualizar las cajas piloto. Apagarlo bloquea
+// el envío en el monitor y la recepción en la caja (G10).
+export const SUPERVISOR_REMOTE_SALES_ENABLED = isEnabled('VITE_SUPERVISOR_REMOTE_SALES_ENABLED', false);
 // Fase 5: TTL extendido por tipo (5 min para catálogo/inventario/usuarios).
 // Default FALSE hasta el rollout: la migración debe estar aplicada en
 // producción y los receivers actualizados antes de encenderlo.
@@ -26,5 +30,6 @@ export default {
     SUPERVISOR_REMOTE_RATE_ENABLED,
     SUPERVISOR_REMOTE_EGRESS_ENABLED,
     SUPERVISOR_REMOTE_SUPPLIERS_ENABLED,
+    SUPERVISOR_REMOTE_SALES_ENABLED,
     SUPERVISOR_EXTENDED_TTL_ENABLED,
 };

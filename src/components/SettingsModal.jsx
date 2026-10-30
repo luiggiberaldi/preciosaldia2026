@@ -6,6 +6,7 @@ import { showToast } from '../components/Toast';
 import PaymentMethodsManager from './Settings/PaymentMethodsManager';
 import { normalizeVzlaPhone, isValidVzlaPhone } from '../utils/phoneValidation';
 import { LS_KEYS } from '../config/backupKeys';
+import { pushLocalSync } from '../hooks/useCloudSync';
 
 import { useSecurity } from '../hooks/useSecurity';
 import { useProductContext } from '../context/ProductContext';
@@ -52,6 +53,7 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
             return;
         }
         localStorage.setItem('business_name', businessName);
+        pushLocalSync('business_name', businessName);
         localStorage.setItem('business_rif', businessRif);
         localStorage.setItem('business_phone', normalizeVzlaPhone(businessPhone) || '');
         localStorage.setItem('printer_paper_width', paperWidth);
@@ -385,7 +387,7 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
                             onClick={() => {
                                 const newVal = !allowNegativeStock;
                                 setAllowNegativeStock(newVal);
-                                localStorage.setItem('allow_negative_stock', newVal.toString());
+                                localStorage.setItem('allow_negative_stock', newVal.toString()); pushLocalSync('allow_negative_stock', newVal.toString());
                                 forceHeartbeat();
                                 showToast(newVal ? 'Se permite vender sin stock' : 'No se permite vender sin stock', 'success');
                                 if (triggerHaptic) triggerHaptic();

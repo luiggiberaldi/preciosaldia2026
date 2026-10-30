@@ -42,6 +42,9 @@ describe('Supervisor sync contract', () => {
         expect(validateSupervisorSyncDocument('bodega_custom_rate', '45.50').valid).toBe(true);
         expect(validateSupervisorSyncDocument('bodega_custom_rate', 'NaN').valid).toBe(false);
         expect(validateSupervisorSyncDocument('bodega_use_auto_rate', 'true').valid).toBe(true);
+        expect(validateSupervisorSyncDocument('business_name', 'Bodega La Esquina').valid).toBe(true);
+        expect(validateSupervisorSyncDocument('business_name', 'x'.repeat(121)).valid).toBe(false);
+        expect(validateSupervisorSyncDocument('business_name', { name: 'x' }).valid).toBe(false);
     });
 
     it('rechaza claves de autenticación aunque tengan payload', () => {
