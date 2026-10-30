@@ -50,6 +50,7 @@ import PairingScanScreen from './components/PairingScanScreen';
 import QuickSupervisorPairingModal from './components/security/QuickSupervisorPairingModal';
 import SplashScreenPlayer from './remotion/SplashScreenPlayer';
 import { getLocalISODate } from './utils/dateHelpers';
+import { applyUiScale } from './utils/uiScale';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('inicio');
@@ -249,10 +250,7 @@ export default function App() {
     localStorage.setItem('theme', theme);
 
     // Apply saved UI scale
-    const savedScale = parseInt(localStorage.getItem('ui_scale'));
-    if (savedScale >= 60 && savedScale <= 140) {
-      root.style.zoom = `${savedScale}%`;
-    }
+    applyUiScale(parseInt(localStorage.getItem('ui_scale')), root);
 
     // Update theme-color meta: cian #01696f (light) / carbón #1a1917 (dark)
     const meta = document.querySelector('meta[name="theme-color"]');

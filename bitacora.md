@@ -173,3 +173,13 @@ variable forzada a `'false'` en el proyecto Vercel.
 **Migraciones aplicadas en producción:** 20261029, 20261030, 20261031, 20261101 (verificadas).
 
 **QA:** lint 0 errores, `tsc` limpio, suite completa en verde, e2e de ventas remotas y stock; prueba real de compra desde el Supervisor a la caja (alta y borrado).
+
+---
+
+## 2026-10-30 — fix(ui): la escala de interfaz ya no deja franja en blanco ni corta COBRAR
+
+**Problema:** en algunas laptops la pantalla Vender (y el resto) terminaba antes del borde inferior, con el menú flotando en una franja vacía. Causa: «Escala de interfaz» (Ajustes → Sistema) aplica `zoom` al `<html>`, y el zoom también escala las unidades de viewport. A 85 % la app medía el 85 % de la ventana; por encima de 100 % se salía (COBRAR y pies de modal cortados). Solo pasaba en equipos con la escala distinta de 100 %.
+
+**Cambio:** plugin PostCSS `postcss-viewport-zoom.js` que reescribe cada `vh/dvh/svh/lvh/vw…` del CSS generado a `calc(N / var(--ui-zoom, 1))` (cubre las 39 vistas y modales sin tocarlas; idempotente). `applyUiScale` (`src/utils/uiScale.js`) fija `zoom` y `--ui-zoom` juntos al arrancar y desde Ajustes. A 100 % el resultado es idéntico al anterior.
+
+**QA:** medido en Vender a 80/85/100/115 % (el contenido llega al borde; COBRAR visible a 115 %), 4 tests nuevos, lint 0 errores, `tsc` limpio.

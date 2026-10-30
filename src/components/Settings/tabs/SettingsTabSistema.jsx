@@ -17,6 +17,7 @@ import { storageService } from '../../../utils/storageService';
 import { PRODUCTS_KEY } from '../../../utils/catalogLock';
 import { planCatalogPackagingFix, formatPackagingFixReport } from '../../../utils/granel';
 import { hasPackagingFixUndo, undoPackagingFixMigration } from '../../../utils/packagingFixMigration';
+import { applyUiScale } from '../../../utils/uiScale';
 
 export default function SettingsTabSistema({
     theme, toggleTheme,
@@ -138,7 +139,7 @@ export default function SettingsTabSistema({
     }, [deviceId]);
 
     useEffect(() => {
-        document.documentElement.style.zoom = `${uiScale}%`;
+        applyUiScale(uiScale);
         localStorage.setItem('ui_scale', uiScale.toString());
     }, [uiScale]);
 
