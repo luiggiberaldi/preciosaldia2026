@@ -14,9 +14,11 @@
 //      sección desaparecía cuando las cobranzas superaban al fiado).
 //   3. El peso en Bs de una cuenta por cobrar usa la tasa de SU venta
 //      (`bsAtSaleRate`, H8) y cae a la tasa vigente solo en registros legacy.
+//   4. Igual para los medios en USD (`bsAtSale`/`usdAtSale`): los % no cambian
+//      al mover la tasa de hoy.
 // ============================================================
 
-import { divR, mulR, round2, sumR } from './dinero';
+import { divR, mulR, round2, subR, sumR } from './dinero';
 
 /**
  * ¿El bucket representa una cuenta por cobrar (crédito otorgado) y NO dinero
@@ -51,6 +53,14 @@ export function toBsEquivalent(data, { bcvRate = 1, tasaCop = 0 } = {}) {
     }
     if (data.currency === 'USD') {
         const safeRate = bcvRate > 0 ? bcvRate : 1;
+        // Cada venta pesa con SU tasa (`bsAtSale`); solo lo que no la trae
+        // (registros legacy) usa la tasa de hoy. Así el % no se mueve al
+        // cambiar la tasa.
+        const coveredUsd = Number(data.usdAtSale);
+        const coveredBs = Number(data.bsAtSale);
+        if (Number.isFinite(coveredUsd) && Number.isFinite(coveredBs)) {
+            return round2(coveredBs + mulR(subR(total, coveredUsd), safeRate));
+        }
         return round2(mulR(total, safeRate));
     }
     if (data.currency === 'COP') {

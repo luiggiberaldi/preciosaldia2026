@@ -33,6 +33,18 @@ const FACTORY_LABELS = {
     cashea:            'Cashea (Por Cobrar)',
 };
 
+/**
+ * Medios en USD: guarda cuántos USD tienen tasa de venta conocida (`usdAtSale`)
+ * y su peso en Bs con ESA tasa (`bsAtSale`). Aditivo: no altera `total`. Así los
+ * porcentajes no se mueven al cambiar la tasa de hoy (ver toBsEquivalent).
+ */
+function trackUsdAtSale(bucket, usd, saleRate) {
+    const rate = Number(saleRate);
+    if (!(rate > 0) || !Number.isFinite(usd)) return;
+    bucket.usdAtSale = round2((bucket.usdAtSale || 0) + usd);
+    bucket.bsAtSale = round2((bucket.bsAtSale || 0) + mulR(usd, rate));
+}
+
 function _resolveMethodLabel(methodId) {
     if (!methodId) return 'Método Desconocido';
     if (FACTORY_LABELS[methodId]) return FACTORY_LABELS[methodId];
@@ -364,6 +376,7 @@ export class FinancialEngine {
                     breakdown[method] = { total: 0, currency: currency, label: _resolveMethodLabel(method) };
                 }
                 breakdown[method].total = round2(breakdown[method].total + valueToSum);
+                if (currency === 'USD') trackUsdAtSale(breakdown[method], valueToSum, sale.rate);
             } else {
                 // Aggregate incoming payments (V2 sales)
                 sale.payments.forEach(p => {
@@ -401,6 +414,7 @@ export class FinancialEngine {
                         breakdown[p.methodId].total = round2(breakdown[p.methodId].total + amountUsd);
                     } else if (p.currency === 'USD') {
                         breakdown[p.methodId].total = round2(breakdown[p.methodId].total + amountUsd);
+                        trackUsdAtSale(breakdown[p.methodId], amountUsd, sale.rate);
                     } else if (p.currency === 'COP') {
                         // FIN-003: Ventas legacy sin tasaCop → fallback a `1` subestimaba COP por ~4000x.
                         // Si no hay tasaCop, NO sumamos al bucket COP (mejor ausente que mal).
@@ -511,6 +525,7 @@ export class FinancialEngine {
                             breakdown[cashMethod] = { total: 0, currency: cashCurrency, label: _resolveMethodLabel(cashMethod) };
                         }
                         breakdown[cashMethod].total = round2(breakdown[cashMethod].total - round2(item.montoEfectivo || 0));
+                        if (isUsd) trackUsdAtSale(breakdown[cashMethod], -round2(item.montoEfectivo || 0), sale.rate);
 
                         // 2. Registrar la comisión ganada contablemente
                         if (!breakdown['_comision_avance']) {
