@@ -152,6 +152,26 @@ export async function fetchSupervisorControlCommands({
     return { data: Array.isArray(data) ? data : [], count: count || 0, error: error || null };
 }
 
+/** Órdenes de compra de mercancía ya aplicadas por la caja en los últimos días. */
+export async function fetchAppliedPurchaseCommands({
+    targetDeviceId,
+    sinceDays = 7,
+    client = supabaseCloud,
+} = {}) {
+    if (!client || !targetDeviceId) return { data: [], error: new Error('No hay caja vinculada') };
+    const since = new Date(Date.now() - sinceDays * 86_400_000).toISOString();
+    const { data, error } = await client
+        .from('supervisor_commands')
+        .select('command_id,command_type,status,issued_at,created_at,payload')
+        .eq('target_device_id', targetDeviceId)
+        .in('command_type', ['supervisor.purchase.upsert', 'supervisor.purchase.delete'])
+        .in('status', ['applied', 'applied_with_warnings'])
+        .gte('issued_at', since)
+        .order('issued_at', { ascending: true })
+        .limit(300);
+    return { data: Array.isArray(data) ? data : [], error: error || null };
+}
+
 export async function fetchSupervisorControlCounts({ targetDeviceId, client = supabaseCloud } = {}) {
     if (!client || !targetDeviceId) return { counts: null, error: new Error('No hay caja vinculada') };
     const { data, error } = await client.rpc('get_supervisor_command_control_counts', {

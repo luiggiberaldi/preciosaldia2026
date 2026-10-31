@@ -12,6 +12,8 @@ import {
     buildPurchaseUpsertPayload,
 } from '../../utils/merchandisePurchases';
 import { sendTracked } from './RemoteSupplierModals';
+import PurchasesPendingSync from './PurchasesPendingSync';
+import { usePurchaseCommands } from '../../hooks/usePurchaseCommands';
 
 const RANGES = [
     { id: 'month', label: 'Este mes' },
@@ -21,6 +23,7 @@ const RANGES = [
 
 export default function MonitorPurchasesPanel({ businessName = '', targetDeviceId = null, available = true, rate = 0, triggerHaptic }) {
     const { purchases } = useMerchandisePurchases();
+    const purchaseCommands = usePurchaseCommands(targetDeviceId);
     const [range, setRange] = useState('month');
     const today = getLocalISODate(new Date());
     const [customFrom, setCustomFrom] = useState(today);
@@ -64,6 +67,7 @@ export default function MonitorPurchasesPanel({ businessName = '', targetDeviceI
                     </div>
                 )}
             </div>
+            <PurchasesPendingSync commands={purchaseCommands} purchases={purchases} />
             <ReportsPurchasesTab
                 purchases={purchases}
                 from={from}

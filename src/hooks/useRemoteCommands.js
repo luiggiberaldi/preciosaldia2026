@@ -67,6 +67,13 @@ function isRetryableAckError(error) {
     return !status;
 }
 
+// El aviso lleva el motivo real del salto o fallo de la publicación: sin él,
+// desde el Supervisor no se distingue «sync no activo» de un error de red.
+function publishWarnings(pushResult) {
+    const reason = String(pushResult?.error || pushResult?.reason || '').slice(0, 120);
+    return [`Publicación a la nube sin confirmar${reason ? ` (${reason})` : ''}; el barrido periódico la re-publicará`];
+}
+
 export async function ackCommand(commandId, status, ackPayload = {}, errorMessage = null) {
     // Telemetría: el momento en que el ACK sale hacia la caja de datos es la
     // métrica que tests/supervisorAckLatency.perf.test.jsx mide en local.
@@ -374,7 +381,7 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 // H4 (auditoría 2026-10-22): el aviso «se aplicó con reservas»
                 // ahora explica LA reserva en palabras.
                 ...(publish?.published ? {} : {
-                    warnings: ['Publicación a la nube sin confirmar; el barrido periódico la re-publicará'],
+                    warnings: publishWarnings(pushResult),
                 }),
             };
         };
@@ -416,11 +423,16 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 ? ['bodega_suppliers_v1', 'bodega_supplier_invoices_v1']
                 : ['bodega_suppliers_v1'];
             let published = true;
+            let failedPush = null;
             for (const key of changedKeys) {
                 try {
                     const pushResult = await publishKeyNow(key);
-                    if (!classifyProductPublishResult(pushResult).published) published = false;
-                } catch {
+                    if (!classifyProductPublishResult(pushResult).published) {
+                        published = false;
+                        failedPush = pushResult;
+                    }
+                } catch (publishError) {
+                    failedPush = { error: publishError?.message };
                     // Un fallo de publicación NUNCA convierte un cambio local ya
                     // aplicado en «failed»: se degrada a la advertencia y el
                     // barrido periódico re-publica (misma semántica que productos).
@@ -437,7 +449,7 @@ export function useRemoteCommands(deviceId, enabled = true) {
                 ...(result.invoiceId != null ? { invoiceId: result.invoiceId } : {}),
                 status: published ? 'applied' : 'applied_with_warnings',
                 ...(published ? {} : {
-                    warnings: ['Publicación a la nube sin confirmar; el barrido periódico la re-publicará'],
+                    warnings: publishWarnings(failedPush),
                 }),
             };
         };
@@ -463,9 +475,12 @@ export function useRemoteCommands(deviceId, enabled = true) {
             };
             if (plan.status === 'already_applied') return { ...base, status: 'applied' };
             let published = true;
+            let pushResult = null;
             try {
-                published = classifyProductPublishResult(await publishKeyNow(MERCHANDISE_PURCHASES_KEY)).published;
-            } catch {
+                pushResult = await publishKeyNow(MERCHANDISE_PURCHASES_KEY);
+                published = classifyProductPublishResult(pushResult).published;
+            } catch (publishError) {
+                pushResult = { error: publishError?.message };
                 published = false;
             } finally {
                 markAckTelemetry(commandId, 'publish_end');
@@ -473,7 +488,7 @@ export function useRemoteCommands(deviceId, enabled = true) {
             return {
                 ...base,
                 status: published ? 'applied' : 'applied_with_warnings',
-                ...(published ? {} : { warnings: ['Publicación a la nube sin confirmar; el barrido periódico la re-publicará'] }),
+                ...(published ? {} : { warnings: publishWarnings(pushResult) }),
             };
         };
 

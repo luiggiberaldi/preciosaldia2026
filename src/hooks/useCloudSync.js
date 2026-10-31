@@ -1557,7 +1557,12 @@ export function useCloudSync(deviceId) {
                         { detail: { deviceId, source: 'pairing_realtime' } }
                     ));
 
-                    const shouldRestart = active ? !isInitialized.current : isInitialized.current;
+                    // Vínculo activo con la sincronización apagada (caja 30/10: aplicaba
+                    // órdenes pero no publicaba nada hasta recargar): el barrido de
+                    // recuperación la vuelve a encender sin intervención del cajero.
+                    const shouldRestart = active
+                        ? (!isInitialized.current || !isCloudSyncActive)
+                        : isInitialized.current;
                     if (shouldRestart) {
                         isCloudSyncActive = false;
                         isInitialized.current = false;

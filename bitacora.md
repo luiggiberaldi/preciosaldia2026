@@ -183,3 +183,32 @@ variable forzada a `'false'` en el proyecto Vercel.
 **Cambio:** plugin PostCSS `postcss-viewport-zoom.js` que reescribe cada `vh/dvh/svh/lvh/vw…` del CSS generado a `calc(N / var(--ui-zoom, 1))` (cubre las 39 vistas y modales sin tocarlas; idempotente). `applyUiScale` (`src/utils/uiScale.js`) fija `zoom` y `--ui-zoom` juntos al arrancar y desde Ajustes. A 100 % el resultado es idéntico al anterior.
 
 **QA:** medido en Vender a 80/85/100/115 % (el contenido llega al borde; COBRAR visible a 115 %), 4 tests nuevos, lint 0 errores, `tsc` limpio.
+
+---
+
+## 2026-10-30 — fix(reportes): los % de «Medios de pago» ya no cambian al mover la tasa
+
+**Problema:** el equivalente en Bs de los medios en USD se calculaba con la tasa de HOY, así que al cambiar la tasa (p. ej. de 889 a 1,00) los porcentajes de la tarjeta «Medios de pago» (panel y Reportes) se movían aunque las ventas ya estaban cobradas.
+
+**Cambio:** `FinancialEngine.calculatePaymentBreakdown` guarda en cada bucket USD `usdAtSale` (USD con tasa de venta conocida) y `bsAtSale` (su peso en Bs con ESA tasa); aditivo, `total` no cambia. `toBsEquivalent` usa `bsAtSale` y solo lo que no trae tasa (legacy) usa la tasa vigente. El panel del Supervisor ya calculaba sus % en USD por pago y no cambia.
+
+**QA:** 4 tests nuevos (`paymentBreakdownRateStable`), 231 tests de finanzas/reportes/cierre en verde, lint 0 errores, `tsc` limpio.
+
+## 2026-10-31 — feat(supervisor): compras «guardadas en la caja, sincronizando…»
+
+**Problema:** las compras cargadas desde el Supervisor solo aparecen cuando la caja
+publica su mes en la nube. La caja F5D31 dejó de publicar el 30/10 y el Supervisor
+mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas de nuevo.
+
+**Cambios:**
+- `src/utils/purchasesPendingSync.js` (nuevo): `computeUnsyncedPurchases` cruza las
+  órdenes `supervisor.purchase.*` aplicadas con la lista sincronizada (por id y
+  `updatedAt`; borrados pendientes mientras la compra siga en la nube) y marca `stale`
+  pasados 5 minutos.
+- `fetchAppliedPurchaseCommands` (`supervisorControlService.js`) y
+  `src/hooks/usePurchaseCommands.js`: lee las órdenes aplicadas de los últimos 7 días
+  (sondeo de 30 s + recarga cuando el tracker confirma una orden).
+- `src/components/Monitor/PurchasesPendingSync.jsx` (nuevo), en `MonitorPurchasesPanel`:
+  bloque aparte que NO suma al total, con aviso «La caja no está subiendo datos a la nube
+  desde…» cuando tarda.
+- Pruebas: `tests/purchasesPendingSync.test.js`, `tests/purchasesPendingSyncView.test.jsx`.
