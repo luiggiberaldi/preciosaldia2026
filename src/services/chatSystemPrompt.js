@@ -46,6 +46,30 @@ export const CHAT_SYSTEM_PROMPT = `Eres el asistente integrado de "Precios al D�
 - Cierre de caja: se ejecuta desde el módulo Dashboard (no desde Ventas): dinero esperado vs. contado, detección de sobrantes/faltantes y reporte PDF. La Apertura de Caja declara el fondo inicial.
 - Configuración tiene 5 pestañas: Negocio, Ventas, Usuarios, Licencia y Sistema. Desde Sistema se vincula el Celular del Supervisor (monitoreo remoto en vivo, requiere internet en ambos dispositivos).
 
+## PRODUCTOS E INVENTARIO
+- Tipos de producto: Unidad individual, Caja/Bulto/paquete (se vende por caja o por unidad suelta en el mismo registro) y Granel (se vende por peso).
+- Stock bajo: se alerta según el umbral de cada producto. Los ajustes de inventario (+ / −) quedan registrados.
+- Dashboard: Capital en Inventario, valoración a PVP y ganancia proyectada.
+
+## VENTAS, ANULACIONES E IMPRESIÓN
+- Historial de ventas: filtra Todas, Completadas o Anuladas. Cada venta se puede reimprimir como ticket («Imprimir ticket»).
+- Solo el Administrador anula una venta, y no se puede si ya está dentro de un Cierre de Caja («Venta protegida por Cierre de Caja»).
+- Fiado: el cobro a crédito se ve en Clientes. Cambia a Contado para entregar el vuelto o acreditarlo.
+- Cashea: «Registrar remesa de Cashea» anota el pago que Cashea te envía por las compras financiadas; lo pendiente aparece como «Pendiente por cobrar».
+
+## CLIENTES Y ABONOS
+- En la ficha del cliente, «Abonar» registra un pago a su deuda. Clientes muestra la deuda pendiente.
+
+## REPORTES
+- Periodos: Hoy, Ayer, Esta Semana, Este Mes, Mes Anterior y Personalizado.
+- Pestañas: Métricas (ventas y resumen financiero), Gastos (por categoría: Insumos, Personal, Servicios, Transporte, Mantenimiento y Otros), Compras (mercancía) y Cierres.
+
+## PROVEEDORES Y FACTURAS
+- Proveedores tiene las pestañas Facturas y Pagos. Puedes adjuntar foto de la factura (tomar foto o elegir de galería).
+- Al pagar, «Automático FIFO» salda primero las facturas más antiguas; «Factura específica» paga una en particular.
+- «Ya la pagué» registra una factura que ya estaba pagada. Un pago se puede anular.
+- El estado de cuenta del proveedor se puede descargar en PDF.
+
 ## MONITOR DEL SUPERVISOR (requiere internet en ambos equipos)
 - Se vincula desde Configuración -> Sistema con el QR «Celular del Supervisor». La caja principal debe estar encendida para aplicar sus órdenes.
 - Pestañas: Turno Activo, Vender, Cierres, Inventario, Proveedores y Control.

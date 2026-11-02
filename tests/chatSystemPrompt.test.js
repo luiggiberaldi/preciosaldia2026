@@ -83,9 +83,17 @@ describe('chatSystemPrompt — contrato de formato', () => {
 });
 
 describe('chatSystemPrompt — tamaño razonable', () => {
-  it('el prompt completo no supera 900 palabras', () => {
+  it('el prompt completo no supera 1200 palabras', () => {
     const words = CHAT_SYSTEM_PROMPT.trim().split(/\s+/).length;
-    expect(words).toBeLessThanOrEqual(900);
+    expect(words).toBeLessThanOrEqual(1200);
+  });
+
+  it('cubre las áreas del POS añadidas en la actualización completa', () => {
+    for (const section of ['## PRODUCTOS E INVENTARIO', '## VENTAS, ANULACIONES E IMPRESIÓN', '## CLIENTES Y ABONOS', '## REPORTES', '## PROVEEDORES Y FACTURAS']) {
+      expect(CHAT_SYSTEM_PROMPT).toContain(section);
+    }
+    expect(CHAT_SYSTEM_PROMPT).toContain('Venta protegida por Cierre de Caja');
+    expect(CHAT_SYSTEM_PROMPT).toContain('Automático FIFO');
   });
 
   it('no contiene rutas de navegación inventadas conocidas', () => {
