@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bot, Send, Trash2, X, Sparkles, User, AlertCircle, Mic, MicOff, DollarSign, Package, BarChart3, Users, Receipt, WifiOff, ShieldCheck } from 'lucide-react';
+import { Bot, Send, Trash2, X, Sparkles, User, AlertCircle, Mic, MicOff, DollarSign, Package, BarChart3, Users, Receipt, WifiOff, ShieldCheck, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { useProductContext } from '../context/ProductContext';
 import { useCart } from '../context/CartContext';
 import { useAuthStore } from '../hooks/store/useAuthStore';
@@ -7,9 +7,19 @@ import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { storageService } from '../utils/storageService';
 import { compileSystemConsciousnessContext } from '../services/systemConsciousnessService';
 import { processDeterministicOfflineQuery } from '../services/deterministicBotEngine';
+import { getChatSuggestions } from '../services/chatSuggestions';
+import { recordChatFeedback } from '../services/chatFeedback';
+import { renderChatMarkdown } from './Chat/ChatMarkdown';
 
 // Historial que se envía a la IA: el servidor acepta hasta 20 mensajes (con el contexto del POS delante).
 const MAX_HISTORY_MESSAGES = 12;
+
+const SUGGESTION_ICONS = { vuelto: DollarSign, cuadre: BarChart3, stock: Package, cobrar: Users, ventas: Receipt, anular: AlertCircle, supervisor: ShieldCheck };
+
+// Identificador de instalación: permite al servidor dar un cupo por equipo y no por wifi compartido.
+const getDeviceId = () => {
+    try { return localStorage.getItem('pda_device_id') || ''; } catch { return ''; }
+};
 
 export default function AIAssistantWidget() {
     const [isOpen, setIsOpen] = useState(false);
@@ -27,7 +37,7 @@ export default function AIAssistantWidget() {
         return [
             {
                 role: 'assistant',
-                content: '¡Hola! Soy tu **Conciencia Operativa del Sistema Precios al Día**. Pregúntame sobre ventas, inventario, salud de backups o cálculo de vuelto cambiario.'
+                content: '¡Hola! Soy el **Asistente de Precios al Día**. Pregúntame sobre ventas, inventario, proveedores, reportes o cálculo de vuelto cambiario.'
             }
         ];
     });
@@ -165,16 +175,17 @@ export default function AIAssistantWidget() {
             });
 
             // Enviar mensajes (api/chat.js inyecta CHAT_SYSTEM_PROMPT; el cliente no puede enviar «system»)
-            const apiMessages = [
-                { role: 'user', content: `[CONTEXTO EN TIEMPO REAL DEL POS]\n${contextText}` },
-                ...newMessages.slice(-MAX_HISTORY_MESSAGES).map(m => ({ role: m.role, content: m.content }))
-            ];
+            const apiMessages = newMessages.slice(-MAX_HISTORY_MESSAGES).map(m => ({ role: m.role, content: m.content }));
 
             abortControllerRef.current = new AbortController();
             const response = await fetch('/api/chat', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ messages: apiMessages }),
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(getDeviceId() ? { 'X-PDA-Device-Id': getDeviceId() } : {})
+                },
+                // El contexto del POS viaja aparte: el servidor lo anexa al system prompt como datos.
+                body: JSON.stringify({ messages: apiMessages, context: contextText }),
                 signal: abortControllerRef.current.signal
             });
 
@@ -264,47 +275,13 @@ export default function AIAssistantWidget() {
         }
     };
 
-    const parseInline = (text) => {
-        const parts = text.split(/(\*\*.*?\*\*|\*.*?\*|`.*?`)/g);
-        return parts.map((part, index) => {
-            if (part.startsWith('**') && part.endsWith('**')) return <strong key={index} className="font-bold text-slate-950 dark:text-white">{part.slice(2, -2)}</strong>;
-            if (part.startsWith('*') && part.endsWith('*')) return <em key={index} className="italic font-medium">{part.slice(1, -1)}</em>;
-            if (part.startsWith('`') && part.endsWith('`')) return <code key={index} className="bg-slate-200 dark:bg-slate-700/80 px-1.5 py-0.5 rounded text-[11px] font-mono text-emerald-700 dark:text-emerald-300 font-bold">{part.slice(1, -1)}</code>;
-            return part;
-        });
-    };
-
-    const parseMarkdown = (text) => {
-        if (!text) return null;
-        const lines = text.split('\n');
-        const result = [];
-        lines.forEach((line, lineIndex) => {
-            const isLast = lineIndex === lines.length - 1;
-            if (line.startsWith('### ')) {
-                result.push(<h4 key={lineIndex} className="text-xs font-black text-slate-950 dark:text-white mt-2 mb-1">{parseInline(line.slice(4))}</h4>);
-                return;
-            }
-            if (line.startsWith('## ')) {
-                result.push(<h3 key={lineIndex} className="text-sm font-black text-slate-950 dark:text-white mt-2.5 mb-1">{parseInline(line.slice(3))}</h3>);
-                return;
-            }
-            if (line.startsWith('# ')) {
-                result.push(<h2 key={lineIndex} className="text-sm font-black text-emerald-600 dark:text-emerald-400 mt-3 mb-1">{parseInline(line.slice(2))}</h2>);
-                return;
-            }
-            if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
-                const content = line.trim().slice(2);
-                result.push(<div key={lineIndex} className="flex items-start gap-1.5 ml-1 my-0.5"><span className="text-emerald-600 dark:text-emerald-400 font-bold">•</span><span>{parseInline(content)}</span></div>);
-                return;
-            }
-            if (line.trim() === '') {
-                if (!isLast) result.push(<br key={lineIndex} />);
-                return;
-            }
-            result.push(<span key={lineIndex}>{parseInline(line)}</span>);
-            if (!isLast) result.push(<br key={`br-${lineIndex}`} />);
-        });
-        return result;
+    const handleFeedback = (index, vote) => {
+        const answer = messages[index];
+        if (!answer || answer.feedback) return;
+        const question = [...messages.slice(0, index)].reverse().find(m => m.role === 'user')?.content || '';
+        recordChatFeedback({ vote, question, answer: answer.content });
+        setMessages(prev => prev.map((m, idx) => (idx === index ? { ...m, feedback: vote } : m)));
+        showToast('¡Gracias por tu opinión!');
     };
 
     const handleClear = () => setIsConfirmOpen(true);
@@ -313,19 +290,13 @@ export default function AIAssistantWidget() {
         setMessages([
             {
                 role: 'assistant',
-                content: 'Conversación reiniciada. ¿En qué puedo ayudarte con el sistema **Precios al Día Bot 2.0**?'
+                content: 'Conversación reiniciada. ¿En qué puedo ayudarte con **Precios al Día**?'
             }
         ]);
         setIsConfirmOpen(false);
     };
 
-    const suggestions = [
-        { label: "Vuelto Cambiario", icon: DollarSign, prompt: "¿Cómo me ayuda el POS a calcular el vuelto o cambio?" },
-        { label: "Cuadre de Hoy", icon: BarChart3, prompt: "¿Cuánto llevo vendido hoy en total y cuál es el desglose por método de pago?" },
-        { label: "Stock Crítico", icon: Package, prompt: "¿Cuáles son los productos con bajo stock o agotados en mi inventario?" },
-        { label: "Cuentas por Cobrar", icon: Users, prompt: "¿Cuáles clientes tienen deudas pendientes en el negocio?" },
-        { label: "Últimas Ventas", icon: Receipt, prompt: "¿Muestras el detalle completo de las últimas ventas registradas?" }
-    ];
+    const suggestions = getChatSuggestions(usuarioActivo?.rol);
 
     if (isKeyboardActive && !isOpen) return null;
 
@@ -374,7 +345,7 @@ export default function AIAssistantWidget() {
                     </div>
 
                     {/* Mensajes Chat Stream */}
-                    <div className="flex-1 overflow-y-auto p-4 space-y-3.5 custom-scrollbar bg-slate-50/50 dark:bg-slate-900/50">
+                    <div role="log" aria-live="polite" aria-label="Conversación con el asistente" className="flex-1 overflow-y-auto p-4 space-y-3.5 custom-scrollbar bg-slate-50/50 dark:bg-slate-900/50">
                         {messages.map((m, i) => (
                             <div key={i} className={`flex items-start gap-2.5 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
                                 <div className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 text-xs font-bold overflow-hidden ${
@@ -389,7 +360,13 @@ export default function AIAssistantWidget() {
                                         ? 'bg-emerald-600 text-white rounded-tr-none font-medium'
                                         : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-tl-none border border-slate-200/90 dark:border-slate-700/80 font-medium'
                                 }`}>
-                                    {parseMarkdown(m.content)}
+                                    {renderChatMarkdown(m.content)}
+                                    {m.role === 'assistant' && i > 0 && m.content && !(isTyping && i === messages.length - 1) && (
+                                        <div className="flex items-center gap-1 mt-1.5 -mb-0.5">
+                                            <button type="button" aria-label="Respuesta útil" aria-pressed={m.feedback === 'up'} disabled={Boolean(m.feedback)} onClick={() => handleFeedback(i, 'up')} className={`p-1 rounded-lg transition-colors ${m.feedback === 'up' ? 'text-emerald-600' : 'text-slate-400 hover:text-emerald-600 disabled:opacity-40'}`}><ThumbsUp size={12} /></button>
+                                            <button type="button" aria-label="Respuesta no útil" aria-pressed={m.feedback === 'down'} disabled={Boolean(m.feedback)} onClick={() => handleFeedback(i, 'down')} className={`p-1 rounded-lg transition-colors ${m.feedback === 'down' ? 'text-rose-600' : 'text-slate-400 hover:text-rose-600 disabled:opacity-40'}`}><ThumbsDown size={12} /></button>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         ))}
@@ -408,10 +385,16 @@ export default function AIAssistantWidget() {
                         <div ref={messagesEndRef} />
                     </div>
 
+                    {toastMessage && (
+                        <div role="status" className="absolute bottom-28 left-1/2 -translate-x-1/2 z-[290] px-3 py-1.5 rounded-xl bg-slate-900 text-white text-[10px] font-bold shadow-lg dark:bg-white dark:text-slate-900">
+                            {toastMessage}
+                        </div>
+                    )}
+
                     {/* Sugerencias Rápidas — Carrusel Horizontal High Contrast */}
                     <div className="px-3 py-2 flex items-center gap-1.5 bg-slate-100 dark:bg-slate-850 shrink-0 border-t border-slate-200 dark:border-slate-800 overflow-x-auto no-scrollbar">
                         {suggestions.map((s, idx) => {
-                            const IconComponent = s.icon;
+                            const IconComponent = SUGGESTION_ICONS[s.id] || Sparkles;
                             return (
                                 <button
                                     key={idx}

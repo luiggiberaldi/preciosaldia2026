@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { fetchBcvRates } from './api/bcvRatesHelper.js';
 // Fuente única del system prompt — la misma que usa api/chat.js en Vercel.
-import { CHAT_SYSTEM_PROMPT } from './src/services/chatSystemPrompt.js';
+import { buildChatSystemMessage, CHAT_TEMPERATURE, CHAT_MAX_TOKENS } from './src/services/chatSystemPrompt.js';
 
 // Versión del package.json para cacheId estable (INFRA-006).
 import pkg from './package.json' with { type: 'json' };
@@ -129,7 +129,7 @@ export default defineConfig(({ mode }) => {
         server.middlewares.use('/api/chat', (req, res) => {
           res.setHeader('Access-Control-Allow-Origin', '*');
           res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-          res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-PDA-Device-Id');
 
           if (req.method === 'OPTIONS') {
             res.statusCode = 200;
@@ -146,7 +146,7 @@ export default defineConfig(({ mode }) => {
           req.on('data', (chunk) => { body += chunk; });
           req.on('end', async () => {
             try {
-              const { messages } = JSON.parse(body);
+              const { messages, context } = JSON.parse(body);
               if (!messages || !Array.isArray(messages)) {
                 res.statusCode = 400;
                 res.end(JSON.stringify({ error: "El cuerpo debe contener un arreglo 'messages'." }));
@@ -156,11 +156,11 @@ export default defineConfig(({ mode }) => {
               // ── Proveedor multi-tenant (OpenAI-compatible) ──
               // AI_BASE_URL  → endpoint base (default: Groq). Cualquier proveedor
               //                que hable /chat/completions estilo OpenAI sirve.
-              // AI_MODEL     → modelo a usar (default: llama-3.3-70b-versatile).
+              // AI_MODEL     → modelo a usar (default: openai/gpt-oss-120b, igual que producción).
               // AI_API_KEYS  → claves separadas por coma (alias retrocompatible:
               //                GROQ_KEYS sigue funcionando).
               const aiBaseUrl = (env.AI_BASE_URL || 'https://api.groq.com/openai/v1').replace(/\/$/, '');
-              const aiModel = env.AI_MODEL || 'llama-3.3-70b-versatile';
+              const aiModel = env.AI_MODEL || 'openai/gpt-oss-120b'; // mismo default que api/chat.js
               const aiKeysStr = env.AI_API_KEYS || env.GROQ_KEYS || '';
               const allKeys = aiKeysStr.split(',').map(k => k.trim()).filter(Boolean);
               if (allKeys.length === 0) {
@@ -172,15 +172,16 @@ export default defineConfig(({ mode }) => {
               // Blindaje de paridad con producción: se descarta cualquier "system"
               // del cliente y siempre se inyecta el prompt compartido primero.
               const safeMessages = [
-                { role: 'system', content: CHAT_SYSTEM_PROMPT },
-                ...messages.filter(m => m && m.role !== 'system'),
+                { role: 'system', content: buildChatSystemMessage(context) },
+                ...messages.filter(m => m && m.role !== 'system').slice(-20),
               ];
 
               const requestBody = JSON.stringify({
                 model: aiModel,
                 messages: safeMessages,
-                temperature: 0.7,
-                max_tokens: 2048,
+                temperature: CHAT_TEMPERATURE,
+                max_tokens: CHAT_MAX_TOKENS,
+                reasoning_effort: 'low',
                 stream: true,
               });
 
@@ -214,8 +215,9 @@ export default defineConfig(({ mode }) => {
 
                 if (!groqRes.ok) {
                   const errText = await groqRes.text();
-                  res.statusCode = groqRes.status;
-                  res.end(JSON.stringify({ error: errText }));
+                  console.error(`[Chat dev] Error no recuperable del proveedor (HTTP ${groqRes.status}):`, errText.slice(0, 500));
+                  res.statusCode = 502;
+                  res.end(JSON.stringify({ error: 'El asistente no pudo procesar la consulta en este momento.' }));
                   return;
                 }
 

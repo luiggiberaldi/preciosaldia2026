@@ -1,4 +1,4 @@
-import { CHAT_SYSTEM_PROMPT as CHAT_SYSTEM } from '../src/services/chatSystemPrompt.js';
+import { buildChatSystemMessage, CHAT_TEMPERATURE, CHAT_MAX_TOKENS } from '../src/services/chatSystemPrompt.js';
 
 // Vercel Serverless Function — Proxy seguro para el Chatbot del POS Precios al Día
 // Realiza rotación aleatoria (óptima para entornos serverless sin estado) y oculta las API keys de Groq.
@@ -48,7 +48,7 @@ function applyCorsHeaders(res, req) {
         res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Vary', 'Origin');
         res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-PDA-Device-Id');
         res.setHeader('Access-Control-Max-Age', '86400');
     }
 }
@@ -67,6 +67,8 @@ function getClientIp(req) {
 
 const RL_PER_MINUTE = 10;
 const RL_PER_DAY = 200;
+const RL_IP_PER_MINUTE = 60; // tope por IP cuando el dispositivo está identificado
+const RL_IP_PER_DAY = 1000;
 const memoryCounters = new Map(); // fallback en memoria (por instancia) si no hay Redis
 
 function memoryIncrement(bucketKey, windowMs) {
@@ -114,21 +116,22 @@ async function upstashCommand(command) {
     }
 }
 
-// Retorna { allowed: true } o { allowed: false, retryAfterSeconds }.
-async function checkRateLimit(ip) {
-    const dayKey = `rl:chat:d:${new Date().toISOString().slice(0, 10)}:${ip}`;
-    const minKey = `rl:chat:m:${Math.floor(Date.now() / 60000)}:${ip}`;
+// Cubeta de ventana fija para una identidad (dispositivo o IP).
+// Retorna { allowed: true } o { allowed: false, retryAfterSeconds, reason }.
+async function checkBucket(id, perMinute, perDay) {
+    const dayKey = `rl:chat:d:${new Date().toISOString().slice(0, 10)}:${id}`;
+    const minKey = `rl:chat:m:${Math.floor(Date.now() / 60000)}:${id}`;
 
     try {
         const dayCount = await upstashCommand(['INCR', dayKey]);
         if (dayCount !== null) {
             if (dayCount === 1) await upstashCommand(['EXPIRE', dayKey, 86400]);
-            if (dayCount > RL_PER_DAY) {
+            if (dayCount > perDay) {
                 return { allowed: false, retryAfterSeconds: 3600, reason: 'daily' };
             }
             const minCount = await upstashCommand(['INCR', minKey]);
             if (minCount === 1) await upstashCommand(['EXPIRE', minKey, 60]);
-            if (minCount > RL_PER_MINUTE) {
+            if (minCount > perMinute) {
                 return { allowed: false, retryAfterSeconds: 60, reason: 'minute' };
             }
             return { allowed: true };
@@ -138,12 +141,30 @@ async function checkRateLimit(ip) {
     }
 
     // Fallback en memoria (por instancia; protección parcial si no hay Redis)
-    const minCount = memoryIncrement(`m:${Math.floor(Date.now() / 60000)}:${ip}`, 60000);
-    const dayCount = memoryIncrement(`d:${new Date().toISOString().slice(0, 10)}:${ip}`, 86400000);
+    const minCount = memoryIncrement(`m:${Math.floor(Date.now() / 60000)}:${id}`, 60000);
+    const dayCount = memoryIncrement(`d:${new Date().toISOString().slice(0, 10)}:${id}`, 86400000);
     pruneMemoryCounters();
-    if (dayCount > RL_PER_DAY) return { allowed: false, retryAfterSeconds: 3600, reason: 'daily' };
-    if (minCount > RL_PER_MINUTE) return { allowed: false, retryAfterSeconds: 60, reason: 'minute' };
+    if (dayCount > perDay) return { allowed: false, retryAfterSeconds: 3600, reason: 'daily' };
+    if (minCount > perMinute) return { allowed: false, retryAfterSeconds: 60, reason: 'minute' };
     return { allowed: true };
+}
+
+// Identificador de instalación (cabecera X-PDA-Device-Id): evita que varios cajeros
+// detrás del mismo wifi compartan un solo cupo. Solo se acepta con formato seguro.
+function getDeviceId(req) {
+    const raw = req.headers['x-pda-device-id'];
+    return typeof raw === 'string' && /^[A-Za-z0-9_-]{8,80}$/.test(raw) ? raw : null;
+}
+
+// Con dispositivo identificado: cupo propio (10/min, 200/día) + tope amplio por IP contra abuso
+// (60/min, 1000/día). Sin dispositivo: cupo estricto por IP, como antes.
+async function checkRateLimit(ip, deviceId) {
+    if (deviceId) {
+        const byDevice = await checkBucket(`dev:${deviceId}`, RL_PER_MINUTE, RL_PER_DAY);
+        if (!byDevice.allowed) return byDevice;
+        return checkBucket(`ip:${ip}`, RL_IP_PER_MINUTE, RL_IP_PER_DAY);
+    }
+    return checkBucket(`ip:${ip}`, RL_PER_MINUTE, RL_PER_DAY);
 }
 
 // ── Handler ─────────────────────────────────────────────────────────────────
@@ -156,7 +177,7 @@ export default async function handler(req, res) {
 
     try {
         // 1) Rate limit por IP (antes de consumir cualquier recurso)
-        const rl = await checkRateLimit(getClientIp(req));
+        const rl = await checkRateLimit(getClientIp(req), getDeviceId(req));
         if (!rl.allowed) {
             res.setHeader('Retry-After', String(rl.retryAfterSeconds));
             return res.status(429).json({
@@ -195,13 +216,14 @@ export default async function handler(req, res) {
         // 3) Anti-inyección: se descarta cualquier "system" proveniente del cliente.
         // El prompt del sistema especializado SIEMPRE lo inyecta el servidor.
         const userMessages = messages.filter(m => m.role === 'user' || m.role === 'assistant');
-        const formattedMessages = [{ role: 'system', content: CHAT_SYSTEM }, ...userMessages];
+        // El contexto del POS viaja aparte y se anexa al system prompt como datos (acotado y sin caracteres de control).
+        const formattedMessages = [{ role: 'system', content: buildChatSystemMessage(req.body?.context) }, ...userMessages];
 
         const requestBody = JSON.stringify({
             model: aiModel,
             messages: formattedMessages,
-            temperature: 0.4,
-            max_tokens: 4096,
+            temperature: CHAT_TEMPERATURE,
+            max_tokens: CHAT_MAX_TOKENS,
             reasoning_effort: 'low', // los tokens de razonamiento de gpt-oss consumen max_tokens
             stream: true,
         });

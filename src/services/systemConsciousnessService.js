@@ -5,6 +5,9 @@ import { storageService } from '../utils/storageService';
 import { getActivePaymentMethods } from '../config/paymentMethods';
 import { isLowStockProduct } from '../utils/granel'; // BULTOS-001
 import { getCaracasISODate, getCaracasDayOf } from '../utils/dateHelpers';
+import { findOpenCashShift } from '../utils/cashShift';
+import { summarizePurchases } from '../utils/merchandisePurchases';
+import { buildSupplierLedger } from '../utils/supplierLedger';
 
 export async function compileSystemConsciousnessContext({ effectiveRate, tasaCop, products, cart, usuarioActivo, isOnline }) {
     const role = usuarioActivo?.rol || 'CAJERO';
@@ -38,9 +41,16 @@ export async function compileSystemConsciousnessContext({ effectiveRate, tasaCop
     let totalSalesBs = 0;
     let paymentSummary = 'Sin ventas registradas hoy';
     let lastSalesDetail = 'Sin transacciones recientes';
+    let allSales = [];
+    let shiftSummary = 'Sin turno abierto';
 
     try {
         const sales = await storageService.getItem('bodega_sales_v1', []);
+        allSales = Array.isArray(sales) ? sales : [];
+        const openShift = findOpenCashShift(allSales);
+        if (openShift?.timestamp) {
+            shiftSummary = `Abierto desde ${new Date(openShift.timestamp).toLocaleString('es-VE', { timeZone: 'America/Caracas', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`;
+        }
         // «Hoy» en la zona de Caracas: las ventas se guardan en ISO UTC.
         const todayStr = getCaracasISODate();
         const todaySales = sales
@@ -95,6 +105,34 @@ export async function compileSystemConsciousnessContext({ effectiveRate, tasaCop
         }
     }
 
+    // 6b. COMPRAS DE MERCANCIA Y PROVEEDORES (SOLO ADMIN / SUPERVISOR)
+    let purchasesSummary = 'No autorizado para el rol Cajero';
+    let suppliersSummary = 'No autorizado para el rol Cajero';
+    if (!isCajero) {
+        try {
+            const [purchases, suppliers, invoices] = await Promise.all([
+                storageService.getItem('bodega_merchandise_purchases_v1', []),
+                storageService.getItem('bodega_suppliers_v1', []),
+                storageService.getItem('bodega_supplier_invoices_v1', []),
+            ]);
+            const todayKey = getCaracasISODate();
+            const month = summarizePurchases(purchases, `${todayKey.slice(0, 8)}01`, todayKey);
+            const topSupplier = month.suppliers[0];
+            purchasesSummary = month.count > 0
+                ? `${month.count} compras este mes | Total: $${month.totalUsd.toFixed(2)} USD${topSupplier ? ` | Mayor proveedor: ${topSupplier.name} ($${topSupplier.totalUsd.toFixed(2)})` : ''}`
+                : 'Sin compras registradas este mes';
+
+            const ledger = buildSupplierLedger(suppliers, invoices, allSales);
+            const withDebt = ledger.filter((row) => (row.deudaUsd || 0) > 0.01);
+            const totalPayable = withDebt.reduce((acc, row) => acc + (row.deudaUsd || 0), 0);
+            const overdueInvoices = ledger.reduce((acc, row) => acc + (row.overdueCount || 0), 0);
+            suppliersSummary = `${withDebt.length} proveedores con deuda | Total por pagar: $${totalPayable.toFixed(2)} USD | ${overdueInvoices} facturas vencidas`;
+        } catch {
+            purchasesSummary = 'Sin datos de compras';
+            suppliersSummary = 'Sin datos de proveedores';
+        }
+    }
+
     // 7. CONSTRUCCION DE PAYLOAD DE CONTEXTO SEGUN EL ROL ACTIVO
     if (isCajero) {
         return `
@@ -109,6 +147,7 @@ export async function compileSystemConsciousnessContext({ effectiveRate, tasaCop
 - Carrito de Venta Activo: ${cartCount} ítems (${cartSummary})
 - Inventario: ${totalProducts} registrados | ${lowStockItems.length} bajos de stock (${outOfStockItems.length} agotados)
 - Productos Críticos: ${criticalStockSummary}
+- Turno de caja: ${shiftSummary}
 - Ventas procesadas hoy: ${salesCount} (todas las cajas del día)
 - Estado de Respaldo: ${backupStatus}
 - Estado de Sincronización: ${syncQueueStatus}
@@ -135,6 +174,9 @@ No tienes permitido consultar ni revelar costos de compra, márgenes de ganancia
 - Salud de Inventario: ${totalProducts} productos | ${lowStockItems.length} bajo stock crítico | ${outOfStockItems.length} agotados
 - Productos Críticos: ${criticalStockSummary}
 - Salud de Deudas / Cuentas por Cobrar: ${debtSummary}
+- Turno de caja: ${shiftSummary}
+- Compras de mercancía del mes: ${purchasesSummary}
+- Proveedores (cuentas por pagar): ${suppliersSummary}
 - Salud de Copias de Seguridad (Backup): ${backupStatus}
 - Salud de Sincronización Nube: ${syncQueueStatus}
 `.trim();
