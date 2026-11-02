@@ -3,14 +3,26 @@
 
 import { storageService } from '../utils/storageService';
 import { formatLowStockAlert, isLowStockProduct } from '../utils/granel';
+import { getCaracasISODate, getCaracasDayOf } from '../utils/dateHelpers';
+
+/** Minúsculas y sin tildes: «Dólares» y «dolares» deben coincidir. */
+export function normalizeBotQuery(text = '') {
+    return String(text).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+}
+
+/** Coincidencia por palabra completa (evita que «trabajo» active «bajo» o «hoyo» active «hoy»). */
+export function matchesAnyWord(normalizedQuery, words) {
+    const pattern = new RegExp(`\\b(?:${words.join('|')})\\b`);
+    return pattern.test(normalizedQuery);
+}
 
 export async function processDeterministicOfflineQuery(userQuery, { effectiveRate, tasaCop, products, cart, usuarioActivo, offlineReason = 'no_internet' }) {
-    const q = userQuery.toLowerCase().trim();
+    const q = normalizeBotQuery(userQuery);
     const timestampStr = new Date().toLocaleString('es-VE', { timeZone: 'America/Caracas' });
     const isCajero = (usuarioActivo?.rol || 'CAJERO') === 'CAJERO';
 
     // 1. CONSULTA DE VUELTO CAMBIARIO / CALCULADORA
-    if (q.includes('vuelto') || q.includes('cambio') || q.includes('tasa') || q.includes('dolar') || q.includes('bs')) {
+    if (matchesAnyWord(q, ['vuelto', 'vueltos', 'cambio', 'tasa', 'dolar', 'dolares', 'bs'])) {
         const rateBcv = effectiveRate || 0;
         const rateCopVal = tasaCop || 0;
 
@@ -40,7 +52,7 @@ export async function processDeterministicOfflineQuery(userQuery, { effectiveRat
     }
 
     // 2. CONSULTA DE INVENTARIO / STOCK CRITICO
-    if (q.includes('stock') || q.includes('inventario') || q.includes('agotado') || q.includes('bajo')) {
+    if (matchesAnyWord(q, ['stock', 'inventario', 'agotado', 'agotados', 'bajo', 'bajos'])) {
         const lowStockItems = products ? products.filter(isLowStockProduct) : [];
         const outOfStockItems = products ? products.filter(p => (p.stock ?? 0) <= 0) : [];
 
@@ -56,16 +68,17 @@ export async function processDeterministicOfflineQuery(userQuery, { effectiveRat
 ${criticalList}
 
 ## Recomendación
-Planifica un pedido a proveedores para reponer los productos agotados antes del fin de semana.
+${lowStockItems.length > 0 || outOfStockItems.length > 0
+    ? 'Planifica un pedido a proveedores para reponer los productos agotados o con stock bajo.'
+    : 'No hay reposiciones urgentes.'}
 
 Fuente: Datos locales del POS (Modo Offline) · ${timestampStr}`;
     }
 
     // 3. CONSULTA DE VENTAS Y CAJA HOY
-    if (q.includes('venta') || q.includes('caja') || q.includes('cuadre') || q.includes('hoy') || q.includes('ganancia')) {
+    if (matchesAnyWord(q, ['venta', 'ventas', 'caja', 'cajas', 'cuadre', 'hoy', 'ganancia', 'ganancias'])) {
         // Filtro financiero ampliado: misma política que el modo online (systemConsciousnessService).
-        // Ya no depende de 3 keywords exactas ("¿cuánto gané hoy extra?" ahora también se bloquea).
-        const asksFinancial = /ganancia|gané|gane|costo|margen|deuda|deudor|utilidad|beneficio|fiado/.test(q);
+        const asksFinancial = matchesAnyWord(q, ['ganancia', 'ganancias', 'gane', 'costo', 'costos', 'margen', 'deuda', 'deudas', 'deudor', 'utilidad', 'beneficio', 'fiado']);
         if (isCajero && asksFinancial) {
             return `## Estado actual (Modo Local Offline)
 
@@ -82,19 +95,20 @@ Fuente: Datos locales del POS (Modo Offline) · ${timestampStr}`;
         let totalSalesBs = 0;
         try {
             const sales = await storageService.getItem('bodega_sales_v1', []);
-            const todayStr = new Date().toISOString().split('T')[0];
-            const todaySales = sales.filter(s => s.timestamp?.startsWith(todayStr) && s.status !== 'ANULADA');
+            // «Hoy» en la zona de Caracas: las ventas se guardan en ISO UTC.
+            const todayStr = getCaracasISODate();
+            const todaySales = sales.filter(s => getCaracasDayOf(s.timestamp) === todayStr && s.status !== 'ANULADA');
             salesCount = todaySales.length;
             totalSalesUsd = todaySales.reduce((acc, s) => acc + (s.totalUsd || 0), 0);
             totalSalesBs = todaySales.reduce((acc, s) => acc + (s.totalBs || 0), 0);
         } catch {}
 
         // Paridad de roles con el modo online (systemConsciousnessService):
-        // el Cajero solo ve el conteo de su turno, nunca los montos totales.
+        // el Cajero solo ve el conteo del día, nunca los montos totales.
         if (isCajero) {
             return `## Estado actual (Modo Local Offline)
 
-- **Ventas de tu turno hoy**: ${salesCount} transacciones procesadas.
+- **Ventas procesadas hoy**: ${salesCount} transacciones (todas las cajas del día).
 
 ## Recomendación
 Para montos totales y desglose por método de pago, consulta a un Administrador o Supervisor.
@@ -117,12 +131,12 @@ Fuente: Datos locales del POS (Modo Offline) · ${timestampStr}`;
     // 4. RESPUESTA POR DEFECTO MODO LOCAL
     // El encabezado debe reflejar la causa real: no es lo mismo "sin internet"
     // (offline de verdad) que "el servicio de IA no respondió" (hay internet,
-    // pero Groq falla — 403/429/500, saturación, etc.).
+    // pero el proveedor falla — 403/429/500, saturación, etc.).
     const headerLine = offlineReason === 'ai_service_error'
-        ? '- **Conexión**: A internet ✅ — el servicio de IA no está disponible en este momento.'
+        ? '- **Conexión**: A internet ✅ — el asistente de IA no está disponible en este momento.'
         : '- **Conexión**: Sin conexión a internet.';
     const aiNote = offlineReason === 'ai_service_error'
-        ? 'El asistente responde con datos locales porque el servicio de IA no está disponible (clave suspendida, cuota agotada o error del proveedor). Revisa GROQ_KEYS o reintenta más tarde.'
+        ? 'El asistente responde con datos locales mientras el servicio de IA no está disponible. Reintenta más tarde.'
         : 'Conéctate a internet si deseas realizar preguntas complejas a la Inteligencia Artificial.';
     return `## Estado actual (Modo Local Offline)
 
@@ -130,7 +144,7 @@ ${headerLine}
 - **Asistente en Modo Local**: El bot está procesando tus consultas directamente con los datos locales del dispositivo.
 
 ## Recomendación
-Puedes consultar sobre vuelto cambiario, inventario bajo de stock o resumen de ventas del turno. ${aiNote}
+Puedes consultar sobre vuelto cambiario, inventario bajo de stock o resumen de ventas del día. ${aiNote}
 
 Fuente: Datos locales del POS (Modo Offline) · ${timestampStr}`;
 }

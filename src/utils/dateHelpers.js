@@ -5,6 +5,22 @@ export function getLocalISODate(d = new Date()) {
     return `${year}-${month}-${day}`;
 }
 
+/** Fecha YYYY-MM-DD en la zona de Caracas (las ventas se guardan en ISO UTC). */
+export function getCaracasISODate(d = new Date()) {
+    return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Caracas',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).format(d);
+}
+
+/** Día (Caracas) de un timestamp ISO; '' si no es válido. */
+export function getCaracasDayOf(timestamp) {
+    const d = new Date(timestamp);
+    return Number.isNaN(d.getTime()) ? '' : getCaracasISODate(d);
+}
+
 export function getDateRange(rangeId) {
     const now = new Date();
     const todayStr = getLocalISODate(now);

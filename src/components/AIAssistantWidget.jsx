@@ -8,6 +8,9 @@ import { storageService } from '../utils/storageService';
 import { compileSystemConsciousnessContext } from '../services/systemConsciousnessService';
 import { processDeterministicOfflineQuery } from '../services/deterministicBotEngine';
 
+// Historial que se envía a la IA: el servidor acepta hasta 20 mensajes (con el contexto del POS delante).
+const MAX_HISTORY_MESSAGES = 12;
+
 export default function AIAssistantWidget() {
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState(() => {
@@ -161,10 +164,10 @@ export default function AIAssistantWidget() {
                 isOnline
             });
 
-            // Enviar mensajes (el servidor worker.js inyectará CHAT_SYSTEM_CONSCIOUSNESS)
+            // Enviar mensajes (api/chat.js inyecta CHAT_SYSTEM_PROMPT; el cliente no puede enviar «system»)
             const apiMessages = [
                 { role: 'user', content: `[CONTEXTO EN TIEMPO REAL DEL POS]\n${contextText}` },
-                ...newMessages.map(m => ({ role: m.role, content: m.content }))
+                ...newMessages.slice(-MAX_HISTORY_MESSAGES).map(m => ({ role: m.role, content: m.content }))
             ];
 
             abortControllerRef.current = new AbortController();
@@ -175,7 +178,13 @@ export default function AIAssistantWidget() {
                 signal: abortControllerRef.current.signal
             });
 
-            if (!response.ok) throw new Error(`Error de servidor (${response.status})`);
+            if (!response.ok) {
+                // El servidor explica el motivo (límite de consultas, servicio saturado): se muestra tal cual.
+                const body = await response.json().catch(() => null);
+                const serverError = new Error(`Error de servidor (${response.status})`);
+                serverError.userMessage = body?.error || null;
+                throw serverError;
+            }
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
@@ -210,12 +219,12 @@ export default function AIAssistantWidget() {
 
                 if (updatedNeeded) {
                     setMessages(prev => {
-                        const updated = [...prev];
-                        updated[updated.length - 1].content = aiResponse;
-                        return updated;
+                        return [...prev.slice(0, -1), { role: 'assistant', content: aiResponse }];
                     });
                 }
             }
+            // Stream vacío: sin texto no hay respuesta que mostrar; pasa al respaldo local.
+            if (!aiResponse.trim()) throw new Error('Respuesta vacía del asistente');
         } catch (error) {
             if (error?.name === 'AbortError') {
                 // El usuario cerró el panel: limpiar la burbuja vacía y no mostrar fallback ni error
@@ -226,6 +235,11 @@ export default function AIAssistantWidget() {
                     }
                     return updated;
                 });
+                return;
+            }
+            if (error?.userMessage) {
+                // Aviso del servidor (límite de consultas, servicio saturado): no hay respaldo offline que mostrar.
+                setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${error.userMessage}` }]);
                 return;
             }
             // Fallback seguro a respuesta determinista local en caso de fallo de red/IA.
@@ -241,13 +255,9 @@ export default function AIAssistantWidget() {
             });
 
             setMessages(prev => {
-                const updated = [...prev];
-                if (updated[updated.length - 1].role === 'assistant' && updated[updated.length - 1].content === "") {
-                    updated[updated.length - 1].content = fallbackOfflineReply;
-                } else {
-                    updated.push({ role: 'assistant', content: fallbackOfflineReply });
-                }
-                return updated;
+                const last = prev[prev.length - 1];
+                const base = last?.role === 'assistant' && last.content === "" ? prev.slice(0, -1) : prev;
+                return [...base, { role: 'assistant', content: fallbackOfflineReply }];
             });
         } finally {
             setIsTyping(false);

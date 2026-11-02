@@ -53,6 +53,11 @@ describe('chatSystemPrompt — contrato de veracidad', () => {
     }
   });
 
+  it('describe el monitor del supervisor y sus pestañas reales', () => {
+    expect(CHAT_SYSTEM_PROMPT).toContain('MONITOR DEL SUPERVISOR');
+    expect(CHAT_SYSTEM_PROMPT).toContain('Turno Activo, Vender, Cierres, Inventario, Proveedores y Control');
+  });
+
   it('mantiene la voz venezolana del comercio', () => {
     expect(CHAT_SYSTEM_PROMPT).toContain('bodega');
     expect(CHAT_SYSTEM_PROMPT).toContain('vuelto');

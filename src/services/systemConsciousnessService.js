@@ -4,6 +4,7 @@
 import { storageService } from '../utils/storageService';
 import { getActivePaymentMethods } from '../config/paymentMethods';
 import { isLowStockProduct } from '../utils/granel'; // BULTOS-001
+import { getCaracasISODate, getCaracasDayOf } from '../utils/dateHelpers';
 
 export async function compileSystemConsciousnessContext({ effectiveRate, tasaCop, products, cart, usuarioActivo, isOnline }) {
     const role = usuarioActivo?.rol || 'CAJERO';
@@ -40,9 +41,10 @@ export async function compileSystemConsciousnessContext({ effectiveRate, tasaCop
 
     try {
         const sales = await storageService.getItem('bodega_sales_v1', []);
-        const todayStr = new Date().toISOString().split('T')[0];
+        // «Hoy» en la zona de Caracas: las ventas se guardan en ISO UTC.
+        const todayStr = getCaracasISODate();
         const todaySales = sales
-            .filter(s => s.timestamp?.startsWith(todayStr) && s.status !== 'ANULADA')
+            .filter(s => getCaracasDayOf(s.timestamp) === todayStr && s.status !== 'ANULADA')
             .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
         salesCount = todaySales.length;
@@ -107,7 +109,7 @@ export async function compileSystemConsciousnessContext({ effectiveRate, tasaCop
 - Carrito de Venta Activo: ${cartCount} ítems (${cartSummary})
 - Inventario: ${totalProducts} registrados | ${lowStockItems.length} bajos de stock (${outOfStockItems.length} agotados)
 - Productos Críticos: ${criticalStockSummary}
-- Ventas de tu turno hoy: ${salesCount} ventas procesadas
+- Ventas procesadas hoy: ${salesCount} (todas las cajas del día)
 - Estado de Respaldo: ${backupStatus}
 - Estado de Sincronización: ${syncQueueStatus}
 

@@ -166,15 +166,14 @@ export default async function handler(req, res) {
             });
         }
 
-        const { messages } = req.body;
+        const messages = req.body?.messages;
 
-        // 2) Guardas de entrada
+        // 2) Guardas de entrada. Si llegan más mensajes que el máximo, se quedan los más recientes
+        // (la conversación larga no debe romper el chat).
         if (!messages || !Array.isArray(messages)) {
             return res.status(400).json({ error: "El cuerpo de la petición debe contener un arreglo de 'messages'." });
         }
-        if (messages.length > MAX_MESSAGES) {
-            return res.status(400).json({ error: `Demasiados mensajes (máximo ${MAX_MESSAGES}).` });
-        }
+        messages.splice(0, Math.max(0, messages.length - MAX_MESSAGES));
         for (const m of messages) {
             if (!m || typeof m.content !== 'string' || m.content.length > MAX_CHARS_PER_MESSAGE) {
                 return res.status(400).json({ error: `Cada mensaje debe ser texto de hasta ${MAX_CHARS_PER_MESSAGE} caracteres.` });
@@ -189,7 +188,8 @@ export default async function handler(req, res) {
         const allKeys = groqKeysStr.split(',').map(k => k.trim()).filter(Boolean);
 
         if (allKeys.length === 0) {
-            return res.status(500).json({ error: 'No se encontraron claves de API configuradas en el servidor (GROQ_KEYS).' });
+            console.error('[Chat API] Sin claves de IA configuradas (AI_API_KEYS / GROQ_KEYS).');
+            return res.status(503).json({ error: 'El asistente no está disponible en este momento. Intenta más tarde.' });
         }
 
         // 3) Anti-inyección: se descarta cualquier "system" proveniente del cliente.
@@ -284,7 +284,7 @@ export default async function handler(req, res) {
         console.error('[Chat API] Todas las keys de IA fallaron:', lastError);
         return res.status(503).json({
             error: allBlocked403
-                ? 'El servicio de IA rechazó todas las claves (403). La organización del proveedor parece bloqueada o suspendida — revisa la consola del proveedor o configura otro proveedor (AI_BASE_URL / AI_API_KEYS).'
+                ? 'El asistente no está disponible en este momento. Avisa al administrador del sistema.'
                 : 'El servicio de IA está temporalmente saturado. Por favor intenta en unos segundos.',
         });
     } catch (error) {
