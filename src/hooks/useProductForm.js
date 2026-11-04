@@ -1,5 +1,6 @@
 import { useReducer, useCallback } from 'react';
 import { unShiftBarcode } from '../utils/barcodeNormalizer';
+import { resolveCostFactor } from '../utils/productProcessor';
 import {
     getGranelUnitMode,
     GRANEL_MODE_GR_ML,
@@ -105,10 +106,10 @@ export function prepareProductFormState(product, effectiveRate, granelMode = get
         costUsd: currentCostUsd > 0 ? currentCostUsd.toFixed(2) : '',
         costBs: currentCostBs > 0 ? currentCostBs.toFixed(2) : '',
         // Con costo y precio manda el factor REAL (un ajuste masivo o una
-        // edición remota pudo dejar desfasado el guardado); el guardado solo
-        // sirve cuando falta uno de los dos.
+        // edición remota pudo dejar desfasado el guardado), salvo que el guardado
+        // difiera solo por redondeo: así un 30% elegido no reaparece como 29.9%.
         costFactor: currentPriceUsd > 0 && currentCostUsd > 0
-            ? (currentCostUsd / currentPriceUsd).toFixed(3)
+            ? Number(resolveCostFactor(currentCostUsd, currentPriceUsd, product.costFactor)).toFixed(3)
             : (product.costFactor != null ? product.costFactor.toString() : '0'),
         stock: initialStock,
         unit: product.unit || 'unidad',

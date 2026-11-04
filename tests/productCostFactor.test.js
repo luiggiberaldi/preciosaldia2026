@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { prepareProductFormState } from '../src/hooks/useProductForm.js';
-import { actualCostFactor, buildProductPayload, derivePricingFromEdit, roundDerivedPrice } from '../src/utils/productProcessor.js';
+import { actualCostFactor, buildProductPayload, derivePricingFromEdit, roundDerivedPrice, normalizePriceUsd, formatPriceUsdInput, resolveCostFactor } from '../src/utils/productProcessor.js';
+import { FinancialEngine } from '../src/core/FinancialEngine.js';
 import {
     costFactorFromMarginPercent,
     formatCostFactorAsMarginPercent,
@@ -130,24 +131,75 @@ describe('margen sobre el precio de venta', () => {
     });
 });
 
-describe('precio redondeado a centavos y margen real', () => {
-  it('costo $0.04 al 30% de margen: el precio vendible es $0.06 y el margen real 33%', () => {
-    const { value } = derivePricingFromEdit('factor', { cost: 0.04, price: 0, factor: 0.7 });
-    expect(value).toBeCloseTo(0.0571, 4);
-    const { price, factor } = roundDerivedPrice(value, 0.04);
-    expect(price).toBe(0.06);
-    expect(factor).toBe(0.667);
-    expect(formatCostFactorAsMarginPercent(factor)).toBe('33.3');
+describe('precio con decimales extra: el margen elegido se mantiene', () => {
+  it('normalizePriceUsd: 6 decimales bajo $0.10, 4 desde ahí, y no toca precios a centavos', () => {
+    expect(normalizePriceUsd(0.0571428)).toBe(0.057143);
+    expect(normalizePriceUsd(1.428571)).toBe(1.4286);
+    expect(normalizePriceUsd(1.43)).toBe(1.43);
+    expect(normalizePriceUsd(0)).toBe(0);
+    expect(normalizePriceUsd('abc')).toBe(0);
   });
 
-  it('con costos normales el redondeo no mueve el margen visible', () => {
-    const { value } = derivePricingFromEdit('factor', { cost: 1, price: 0, factor: 0.7 });
-    const { price, factor } = roundDerivedPrice(value, 1);
-    expect(price).toBe(1.43);
-    expect(formatCostFactorAsMarginPercent(factor)).toBe('30.1');
+  it('formatPriceUsdInput: 2 decimales si alcanzan, los exactos si no', () => {
+    expect(formatPriceUsdInput(0.0571428)).toBe('0.057143');
+    expect(formatPriceUsdInput(0.06)).toBe('0.06');
+    expect(formatPriceUsdInput(1.4)).toBe('1.40');
+    expect(formatPriceUsdInput(1.428571)).toBe('1.4286');
+    expect(formatPriceUsdInput(0)).toBe('');
+  });
+
+  it('caso reportado: costo $0.04 al 30% → $0.057143, ficha 30% y tarjeta +30%', () => {
+    const { value } = derivePricingFromEdit('factor', { cost: 0.04, price: 0, factor: 0.7 });
+    const { price, factor } = roundDerivedPrice(value, 0.04, 0.7);
+    expect(price).toBe(0.057143);
+    expect(formatCostFactorAsMarginPercent(factor)).toBe('30');
+    expect(Math.round(marginOverPricePercent(price, 0.04))).toBe(30);
+  });
+
+  it('si el precio real se aleja del factor elegido, se muestra el factor real', () => {
+    // El usuario escribe $0.06 a mano con costo $0.04: el factor real (0.667) manda.
+    expect(resolveCostFactor(0.04, 0.06, 0.7)).toBe(0.667);
   });
 
   it('un precio que redondea a cero conserva el valor y no inventa factor', () => {
-    expect(roundDerivedPrice(0.004, 0.003)).toEqual({ price: 0.004, factor: null });
+    expect(roundDerivedPrice(0.0000004, 0.0000003, 0.7)).toEqual({ price: 0.0000004, factor: null });
+  });
+
+  it('el cobro por línea se redondea a centavos: 1 unidad $0.06, 100 unidades $5.71', () => {
+    const line = (qty) => ({ id: 'p1', name: 'Sal', qty, priceUsd: 0.057143, costUsd: 0.04, _mode: 'unit' });
+    expect(FinancialEngine.buildCartTotals([line(1)], null, 40, 0, false, null).totalUsd).toBe(0.06);
+    expect(FinancialEngine.buildCartTotals([line(100)], null, 40, 0, false, null).totalUsd).toBe(5.71);
+  });
+
+  // Matriz: precios bajos y altos × márgenes. Flujo completo de la ficha → guardado → tarjeta → reabrir.
+  const COSTS = [0.01, 0.02, 0.03, 0.04, 0.07, 0.09, 0.13, 0.2, 0.33, 0.5, 0.75, 0.99, 1, 1.37, 2.5, 3.33, 7.89, 12, 45.5, 99.99, 250, 999.99];
+  const MARGINS = [1, 5, 10, 12.5, 15, 20, 25, 30, 33, 35, 40, 45, 50, 60, 66, 75, 80, 90];
+
+  it.each(COSTS)('costo $%s: el margen elegido se mantiene en ficha, guardado, tarjeta y al reabrir', (cost) => {
+    for (const margin of MARGINS) {
+      const typedFactor = Number(costFactorFromMarginPercent(margin));
+      const { value } = derivePricingFromEdit('factor', { cost, price: 0, factor: typedFactor });
+      const { price, factor: shownFactor } = roundDerivedPrice(value, cost, typedFactor);
+      const where = `costo ${cost}, margen ${margin}%`;
+
+      // 1) Ficha: al salir del campo sigue el % escrito.
+      expect(formatCostFactorAsMarginPercent(shownFactor), where).toBe(String(margin));
+
+      // 2) Guardado.
+      const saved = payloadFor({ priceUsd: formatPriceUsdInput(price), costUsd: String(cost), costFactor: String(shownFactor) });
+      expect(saved.priceUsd, where).toBe(price);
+      expect(formatCostFactorAsMarginPercent(saved.costFactor), where).toBe(String(margin));
+
+      // 3) Margen real del precio guardado: a menos de 0.05 puntos del elegido.
+      const real = marginOverPricePercent(saved.priceUsd, saved.costUsd);
+      expect(Math.abs(real - margin), where).toBeLessThanOrEqual(0.05);
+
+      // 4) Tarjeta (+N%, sin decimales): a medio punto del elegido (12.5% puede verse 12 o 13).
+      expect(Math.abs(Number(real.toFixed(0)) - margin), where).toBeLessThanOrEqual(0.5 + 1e-9);
+
+      // 5) Reabrir la ficha: mismo %.
+      const reopened = prepareProductFormState({ ...saved, id: 'x' }, 40);
+      expect(formatCostFactorAsMarginPercent(reopened.costFactor), where).toBe(String(margin));
+    }
   });
 });

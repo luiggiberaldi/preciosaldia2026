@@ -51,6 +51,14 @@ export const round2 = (n) => _shiftRound(n, 2);
 export const round4 = (n) => _shiftRound(n, 4);
 
 /**
+ * Redondea a 6 decimales (precios de venta por debajo de $0.10: con 4 decimales el margen
+ * elegido aún se movería medio punto en precios de un centavo).
+ * @param {number} n
+ * @returns {number}
+ */
+export const round6 = (n) => _shiftRound(n, 6);
+
+/**
  * Redondea a 3 decimales (para cantidades de peso: gramos/kg en ventas por peso).
  * @param {number} n
  * @returns {number}

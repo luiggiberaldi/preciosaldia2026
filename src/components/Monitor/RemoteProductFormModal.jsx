@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Modal } from '../Modal';
 import ProductFormQuick from '../Products/ProductFormQuick';
 import { useProductContext } from '../../context/ProductContext';
-import { buildProductPayload, derivePricingFromEdit, roundDerivedPrice } from '../../utils/productProcessor';
+import { buildProductPayload, derivePricingFromEdit, roundDerivedPrice, formatPriceUsdInput } from '../../utils/productProcessor';
 import { prepareProductFormState } from '../../hooks/useProductForm';
 import { getGranelUnitMode } from '../../utils/granel';
 import { showToast } from '../Toast';
@@ -125,8 +125,8 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
             setCostFactor(result.value.toFixed(3));
         } else if (result.field === 'price') {
             // El precio se guarda a centavos: se muestra el precio, los Bs y el margen REALES tras redondear.
-            const { price: sellPrice, factor: realFactor } = roundDerivedPrice(result.value, cost);
-            setPriceUsd(sellPrice.toFixed(2));
+            const { price: sellPrice, factor: realFactor } = roundDerivedPrice(result.value, cost, factor);
+            setPriceUsd(formatPriceUsdInput(sellPrice));
             if (bcvRate > 0) setPriceBs((sellPrice * bcvRate).toFixed(2));
             if (realFactor !== null) setCostFactor(realFactor.toFixed(3));
         } else {
@@ -153,8 +153,7 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
         setPriceBs(val);
         const amountBs = parseFloat(val) || 0;
         if (bcvRate > 0 && val) {
-            const calculatedUsd = (amountBs / bcvRate).toFixed(2);
-            setPriceUsd(calculatedUsd);
+            setPriceUsd(formatPriceUsdInput(amountBs / bcvRate));
         } else {
             setPriceUsd('');
         }

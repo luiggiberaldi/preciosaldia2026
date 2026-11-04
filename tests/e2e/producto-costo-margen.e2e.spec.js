@@ -70,9 +70,9 @@ test.describe('costo fijo al editar margen y precio', () => {
         await expect(marginInput(page)).toHaveValue('50');
         await expect(costInput(page)).toHaveValue('0.50');
 
-        // A: margen 50 → 40 % → precio 0.50 / 0.60 = 0.83; el costo no se mueve.
+        // A: margen 50 → 40 % → precio 0.50 / 0.60 = 0.8333 (4 decimales: el margen no se mueve); el costo no se mueve.
         await marginInput(page).fill('40');
-        await expect(priceInput(page)).toHaveValue('0.83');
+        await expect(priceInput(page)).toHaveValue('0.8333');
         await expect(costInput(page)).toHaveValue('0.50');
 
         // B: precio → 1.25 → margen 60 %; el costo no se mueve.

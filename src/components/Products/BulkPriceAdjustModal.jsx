@@ -6,6 +6,7 @@ import { storageService } from '../../utils/storageService';
 // Cierre FIX-VENTAS-STOCK-SUPERVISOR §4: escritos del catálogo bajo pos_write_lock.
 import { mutateCatalogLocked } from '../../utils/catalogLock';
 import { round2 } from '../../utils/dinero';
+import { normalizePriceUsd } from '../../utils/productProcessor';
 import { actualCostFactor } from '../../utils/productProcessor';
 import { formatUsd, formatBs, formatCop } from '../../utils/calculatorUtils';
 import CustomSelect from '../CustomSelect';
@@ -117,7 +118,7 @@ export default function BulkPriceAdjustModal({
             const cost = p.costUsd || (p.costBs && effectiveRate > 0 ? p.costBs / effectiveRate : 0);
             if (cost <= 0) return false;
             const basePrice = p.priceUsdt ?? p.priceUsd ?? 0;
-            const newPrice = Math.max(0.01, round2(basePrice * multiplier));
+            const newPrice = Math.max(0.01, normalizePriceUsd(basePrice * multiplier));
             return newPrice < cost;
         });
     }, [affectedProducts, direction, multiplier, effectiveRate]);
@@ -126,7 +127,7 @@ export default function BulkPriceAdjustModal({
     const previewSamples = useMemo(() => {
         return affectedProducts.slice(0, 3).map(p => {
             const oldPriceUsd = p.priceUsdt ?? p.priceUsd ?? 0;
-            const newPriceUsd = Math.max(0.01, round2(oldPriceUsd * multiplier));
+            const newPriceUsd = Math.max(0.01, normalizePriceUsd(oldPriceUsd * multiplier));
             const oldPriceBs = oldPriceUsd * (effectiveRate || 0);
             const newPriceBs = newPriceUsd * (effectiveRate || 0);
             const oldPriceCop = p.priceCop || (tasaCop > 0 ? Math.round(oldPriceUsd * tasaCop) : null);
@@ -216,7 +217,7 @@ export default function BulkPriceAdjustModal({
             const scaleProduct = (p) => {
                 const oldPriceUsd = p.priceUsdt ?? p.priceUsd ?? 0;
                 // Si el precio base era 0, respetarlo para no inflar artículos en $0
-                const newPriceUsd = oldPriceUsd > 0 ? Math.max(0.01, round2(oldPriceUsd * multiplier)) : 0;
+                const newPriceUsd = oldPriceUsd > 0 ? Math.max(0.01, normalizePriceUsd(oldPriceUsd * multiplier)) : 0;
 
                 const updated = {
                     ...p,

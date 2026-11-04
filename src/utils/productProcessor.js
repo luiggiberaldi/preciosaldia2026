@@ -1,7 +1,7 @@
 // FIN-017: Reemplaza Math.round(raw/safeRate*100)/100 por divR + round2 de dinero.js.
 // FIN-030: Mantiene `priceUsdt` (typo histórico) pero añade alias `priceUsd` (mismo valor)
 //          para migración gradual hacia el nombre canónico.
-import { round2, round3, divR, mulR, round0 } from './dinero.js';
+import { round2, round3, round4, round6, divR, mulR, round0 } from './dinero.js';
 import { CurrencyService } from '../services/CurrencyService.js'; // FIN-017-pattern: safeParse en vez de parseFloat.
 import {
     normalizePackagingType,
@@ -43,16 +43,55 @@ export function derivePricingFromEdit(editedField, { cost, price, factor }) {
     return { field: null, value: null };
 }
 
+/** Bajo este precio (USD) se guardan 6 decimales; desde aquí, 4. */
+export const LOW_PRICE_EXTRA_DECIMALS_BELOW_USD = 0.1;
+
 /**
- * El precio en USD se guarda a centavos: el precio derivado de un margen (costo ÷ factor) se
- * redondea igual que al guardar, y el factor se recalcula con ese precio. Con costos de centavos
- * el redondeo mueve mucho el margen (costo $0.04 al 30% → $0.0571 → $0.06 = 33%).
- * @returns {{ price: number, factor: number|null }} precio vendible y su factor REAL.
+ * Precio de venta en USD que se guarda: 4 decimales (6 bajo $0.10), a cualquier nivel de precio.
+ * Redondear a centavos movía el margen elegido (costo $0.04 al 30% → $0.06 = 33%;
+ * costo $0.20 al 30% → $0.29 = 31%). Así el margen se conserva (< 0.05 puntos); la pantalla
+ * sigue mostrando 2 decimales y el cobro por línea se redondea a centavos
+ * (0.057143 × 100 = $5.71). Un precio escrito a centavos queda igual (1.43 → 1.43).
  */
-export function roundDerivedPrice(rawPrice, costUsd) {
-    const price = round2(rawPrice);
+export function normalizePriceUsd(rawPrice) {
+    const value = Number(rawPrice);
+    if (!Number.isFinite(value) || value <= 0) return 0;
+    return value < LOW_PRICE_EXTRA_DECIMALS_BELOW_USD ? round6(value) : round4(value);
+}
+
+/** Texto del campo de precio USD: 2 decimales, o los exactos si el precio los necesita. */
+export function formatPriceUsdInput(rawPrice) {
+    const price = normalizePriceUsd(rawPrice);
+    if (price <= 0) return '';
+    // eslint-disable-next-line no-restricted-syntax -- texto del input (no es un cálculo); el valor ya viene redondeado con round4/round2
+    return price === round2(price) ? price.toFixed(2) : String(price);
+}
+
+/**
+ * Precio vendible derivado de un margen (costo ÷ factor) y el factor que se debe mostrar.
+ * El factor pedido se conserva si el redondeo apenas lo mueve (≤ 0.002 = 0.2 puntos de margen);
+ * si lo mueve más, se muestra el factor REAL.
+ * @returns {{ price: number, factor: number|null }}
+ */
+export function roundDerivedPrice(rawPrice, costUsd, requestedFactor) {
+    const price = normalizePriceUsd(rawPrice);
     if (!(price > 0)) return { price: Number(rawPrice) || 0, factor: null };
-    return { price, factor: actualCostFactor(costUsd, price) };
+    return { price, factor: resolveCostFactor(costUsd, price, requestedFactor) };
+}
+
+/** Diferencia de factor que se considera solo redondeo (0.002 = 0.2 puntos de margen). */
+export const COST_FACTOR_ROUNDING_TOLERANCE = 0.002;
+
+/**
+ * Factor a guardar/mostrar: el elegido por el usuario si el precio real lo cumple salvo
+ * redondeo (así 30% sigue siendo 30% y no 29.9%); si no, el factor REAL (costo ÷ precio).
+ * null si falta costo o precio.
+ */
+export function resolveCostFactor(costUsd, priceUsd, preferredFactor) {
+    const real = actualCostFactor(costUsd, priceUsd);
+    if (real === null) return null;
+    const preferred = Number(preferredFactor);
+    return preferred > 0 && Math.abs(real - preferred) <= COST_FACTOR_ROUNDING_TOLERANCE ? preferred : real;
 }
 
 /** Factor real (costo ÷ precio, 3 decimales) o null si falta precio o costo. */
@@ -91,8 +130,8 @@ export function buildProductPayload(formData, effectiveRate) {
     // FIN-017: usar divR (división redondeada) en vez de Math.round(raw/safeRate*100)/100.
     // safeParse para normalizar input del usuario (maneja coma decimal y separadores de miles).
     const finalPriceUsd = priceUsd
-        ? round2(CurrencyService.safeParse(priceUsd))
-        : (priceBs ? divR(CurrencyService.safeParse(priceBs), safeRate) : 0);
+        ? normalizePriceUsd(CurrencyService.safeParse(priceUsd))
+        : (priceBs ? normalizePriceUsd(CurrencyService.safeParse(priceBs) / safeRate) : 0);
     const finalCostUsd = costUsd
         ? round2(CurrencyService.safeParse(costUsd))
         : (costBs ? divR(CurrencyService.safeParse(costBs), safeRate) : 0);
@@ -198,7 +237,7 @@ export function buildProductPayload(formData, effectiveRate) {
         // Con costo y precio, el factor guardado es SIEMPRE el real: así el %
         // del formulario nunca contradice la insignia de margen de la ficha.
         ...(formData.costFactor !== undefined ? {
-            costFactor: actualCostFactor(finalCostUsd, finalPriceUsd)
+            costFactor: resolveCostFactor(finalCostUsd, finalPriceUsd, formData.costFactor)
                 ?? (formData.costFactor !== null && formData.costFactor !== '' && Number.isFinite(Number(formData.costFactor))
                     ? Number(formData.costFactor)
                     : null),

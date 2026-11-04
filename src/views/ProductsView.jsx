@@ -34,7 +34,7 @@ import { useProductFiltering } from '../hooks/useProductFiltering';
 import { marginOverPricePercent } from '../utils/productCostFactor';
 import { useProductForm } from '../hooks/useProductForm';
 import { useProductSorting } from '../hooks/useProductSorting';
-import { buildProductPayload, derivePricingFromEdit, roundDerivedPrice } from '../utils/productProcessor';
+import { buildProductPayload, derivePricingFromEdit, roundDerivedPrice, formatPriceUsdInput } from '../utils/productProcessor';
 import { isGranelProduct, isLowStockProduct, formatStockDisplay, getGranelUnitMode } from '../utils/granel'; // GRANEL-001 / GRANEL-DUAL
 import { uploadProductImage, migrateCatalogImagesOnce } from '../utils/imageUpload';
 // useAuthStore removed - single-user app
@@ -339,8 +339,8 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
             setCostFactor(result.value.toFixed(3));
         } else if (result.field === 'price') {
             // El precio se guarda a centavos: se muestra el precio, los Bs y el margen REALES tras redondear.
-            const { price: sellPrice, factor: realFactor } = roundDerivedPrice(result.value, cost);
-            setPriceUsd(sellPrice.toFixed(2));
+            const { price: sellPrice, factor: realFactor } = roundDerivedPrice(result.value, cost, factor);
+            setPriceUsd(formatPriceUsdInput(sellPrice));
             setPriceBs((sellPrice * effectiveRate).toFixed(2));
             if (realFactor !== null) setCostFactor(realFactor.toFixed(3));
             if (copEnabled && tasaCop > 0) setPriceCop(Math.round(sellPrice * tasaCop).toString());
@@ -365,7 +365,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         const amountBs = parseFloat(val) || 0;
         if (!val || amountBs <= 0) { setPriceUsd(''); setPriceCop(''); return; }
         const usd = amountBs / effectiveRate;
-        setPriceUsd(usd.toFixed(2));
+        setPriceUsd(formatPriceUsdInput(usd));
         if (copEnabled && tasaCop > 0) setPriceCop(Math.round(usd * tasaCop).toString());
         applyPricingRule('price', parseFloat(costUsd) || 0, usd, parseFloat(costFactor) || 0);
     };
