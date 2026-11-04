@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { prepareProductFormState } from '../src/hooks/useProductForm.js';
-import { actualCostFactor, buildProductPayload, derivePricingFromEdit } from '../src/utils/productProcessor.js';
+import { actualCostFactor, buildProductPayload, derivePricingFromEdit, roundDerivedPrice } from '../src/utils/productProcessor.js';
 import {
     costFactorFromMarginPercent,
     formatCostFactorAsMarginPercent,
@@ -128,4 +128,26 @@ describe('margen sobre el precio de venta', () => {
         expect(marginOverPricePercent(1, null)).toBeNull();
         expect(marginOverPricePercent('', '')).toBeNull();
     });
+});
+
+describe('precio redondeado a centavos y margen real', () => {
+  it('costo $0.04 al 30% de margen: el precio vendible es $0.06 y el margen real 33%', () => {
+    const { value } = derivePricingFromEdit('factor', { cost: 0.04, price: 0, factor: 0.7 });
+    expect(value).toBeCloseTo(0.0571, 4);
+    const { price, factor } = roundDerivedPrice(value, 0.04);
+    expect(price).toBe(0.06);
+    expect(factor).toBe(0.667);
+    expect(formatCostFactorAsMarginPercent(factor)).toBe('33.3');
+  });
+
+  it('con costos normales el redondeo no mueve el margen visible', () => {
+    const { value } = derivePricingFromEdit('factor', { cost: 1, price: 0, factor: 0.7 });
+    const { price, factor } = roundDerivedPrice(value, 1);
+    expect(price).toBe(1.43);
+    expect(formatCostFactorAsMarginPercent(factor)).toBe('30.1');
+  });
+
+  it('un precio que redondea a cero conserva el valor y no inventa factor', () => {
+    expect(roundDerivedPrice(0.004, 0.003)).toEqual({ price: 0.004, factor: null });
+  });
 });

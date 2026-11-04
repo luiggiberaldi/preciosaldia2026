@@ -43,6 +43,18 @@ export function derivePricingFromEdit(editedField, { cost, price, factor }) {
     return { field: null, value: null };
 }
 
+/**
+ * El precio en USD se guarda a centavos: el precio derivado de un margen (costo ÷ factor) se
+ * redondea igual que al guardar, y el factor se recalcula con ese precio. Con costos de centavos
+ * el redondeo mueve mucho el margen (costo $0.04 al 30% → $0.0571 → $0.06 = 33%).
+ * @returns {{ price: number, factor: number|null }} precio vendible y su factor REAL.
+ */
+export function roundDerivedPrice(rawPrice, costUsd) {
+    const price = round2(rawPrice);
+    if (!(price > 0)) return { price: Number(rawPrice) || 0, factor: null };
+    return { price, factor: actualCostFactor(costUsd, price) };
+}
+
 /** Factor real (costo ÷ precio, 3 decimales) o null si falta precio o costo. */
 export function actualCostFactor(costUsd, priceUsd) {
     const cost = Number(costUsd);

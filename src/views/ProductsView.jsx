@@ -34,7 +34,7 @@ import { useProductFiltering } from '../hooks/useProductFiltering';
 import { marginOverPricePercent } from '../utils/productCostFactor';
 import { useProductForm } from '../hooks/useProductForm';
 import { useProductSorting } from '../hooks/useProductSorting';
-import { buildProductPayload, derivePricingFromEdit } from '../utils/productProcessor';
+import { buildProductPayload, derivePricingFromEdit, roundDerivedPrice } from '../utils/productProcessor';
 import { isGranelProduct, isLowStockProduct, formatStockDisplay, getGranelUnitMode } from '../utils/granel'; // GRANEL-001 / GRANEL-DUAL
 import { uploadProductImage, migrateCatalogImagesOnce } from '../utils/imageUpload';
 // useAuthStore removed - single-user app
@@ -338,9 +338,12 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         if (result.field === 'factor') {
             setCostFactor(result.value.toFixed(3));
         } else if (result.field === 'price') {
-            setPriceUsd(result.value.toFixed(2));
-            setPriceBs((result.value * effectiveRate).toFixed(2));
-            if (copEnabled && tasaCop > 0) setPriceCop(Math.round(result.value * tasaCop).toString());
+            // El precio se guarda a centavos: se muestra el precio, los Bs y el margen REALES tras redondear.
+            const { price: sellPrice, factor: realFactor } = roundDerivedPrice(result.value, cost);
+            setPriceUsd(sellPrice.toFixed(2));
+            setPriceBs((sellPrice * effectiveRate).toFixed(2));
+            if (realFactor !== null) setCostFactor(realFactor.toFixed(3));
+            if (copEnabled && tasaCop > 0) setPriceCop(Math.round(sellPrice * tasaCop).toString());
         } else {
             setCostUsd(result.value.toFixed(2));
             setCostBs((result.value * effectiveRate).toFixed(2));
