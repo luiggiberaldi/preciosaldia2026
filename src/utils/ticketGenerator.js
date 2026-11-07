@@ -5,7 +5,7 @@ import {
     PDF_WIDTH, PDF_MARGIN, PDF_CENTER_X, PDF_RIGHT,
     getPaperConfig,
 } from './ticketConstants';
-import { buildTicketHtml } from './ticketHtmlTemplate';
+import { buildTicketHtml, buildIvaTicketRows, isExemptLine } from './ticketHtmlTemplate';
 import { openPrintWindow } from './printerUtils';
 import { mulR, divR } from './dinero';
 import { getGranelUnitMode, formatGranelDisplay, isGranelProduct } from './granel';
@@ -43,11 +43,12 @@ export async function generateTicketPDF(sale, bcvRate) {
         : 'Saldo a favor acreditado:';
     const tipDonatedUsd = Math.max(0, Number(sale.tipDonated?.amountUsd) || 0);
     const hasPhysicalChange = Number(sale.changeUsd) > 0 || Number(sale.changeBs) > 0;
+    const ivaRows = buildIvaTicketRows(sale, rate);
 
     // Altura MUY generosa para que nunca se corte
     const H = 160 + (itemCount * 14) + (paymentCount * 7) + (hasFiado ? 18 : 0)
         + (walletCreditUsd > 0 ? 10 : 0) + (tipDonatedUsd > 0 ? 10 : 0)
-        + (hasPhysicalChange ? 10 : 0);
+        + (hasPhysicalChange ? 10 : 0) + (ivaRows.length * 5);
 
     const doc = new jsPDF('p', 'mm', [WIDTH, H]);
 
@@ -170,7 +171,7 @@ export async function generateTicketPDF(sale, bcvRate) {
             doc.text(qtyUnit, M, y);
             
             const maxNameWidth = Math.max(10, RIGHT - descX - (is80 ? 18 : 14));
-            const nameLines = doc.splitTextToSize(item.name, maxNameWidth);
+            const nameLines = doc.splitTextToSize(item.name + (isExemptLine(item) ? ' (E)' : ''), maxNameWidth);
             doc.text(nameLines, descX, y);
             
             doc.setFont('helvetica', 'bold');
@@ -201,20 +202,6 @@ export async function generateTicketPDF(sale, bcvRate) {
     dash(y); y += 7;
 
     // ════════════════════════════════════
-    //  TASA DE CAMBIO (centrada, sola)
-    // ════════════════════════════════════
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
-    doc.setTextColor(...MUTED);
-    doc.text('Tasa BCV: Bs ' + formatBs(rate) + ' por ' + (isCop ? 'USD 1' : '$1'), CX, y, { align: 'center' });
-    y += 5;
-    if (sale.tasaCop > 0) {
-        doc.text('Tasa COP: ' + sale.tasaCop.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' por USD 1', CX, y, { align: 'center' });
-        y += 5;
-    }
-    y += 3;
-
-    // ════════════════════════════════════
     //  TOTAL (cada cosa en su propia linea, centrado)
     // ════════════════════════════════════
     doc.setFont('helvetica', 'bold');
@@ -232,6 +219,21 @@ export async function generateTicketPDF(sale, bcvRate) {
         y += 7;
     }
 
+    // IVA: EXENTO (E) / BASE IMPONIBLE n% / IVA n% (mismo desglose que el ticket impreso).
+    if (ivaRows.length > 0) {
+        const ivaInBs = (localStorage.getItem('receipt_currency_mode') || 'bs') === 'bs';
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        doc.setTextColor(...BODY);
+        ivaRows.forEach((row) => {
+            doc.text(row.label + ':', M, y);
+            doc.text(ivaInBs ? 'Bs ' + formatBs(row.bs) : fmtUsd(row.usd), RIGHT, y, { align: 'right' });
+            y += 5;
+        });
+        y += 3;
+    }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
     doc.setTextColor(...BODY);
     doc.text('TOTAL', CX, y, { align: 'center' });
     y += 8;

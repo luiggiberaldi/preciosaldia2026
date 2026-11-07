@@ -2,6 +2,42 @@ import { formatBs, formatCop, formatUsd } from './calculatorUtils.js';
 import { mulR, divR, round0, round2 } from './dinero.js';
 import { getGranelUnitMode, formatSaleItemQuantity } from './granel.js';
 
+/** Línea exenta: la venta guardó su % de IVA y es 0. */
+export function isExemptLine(item) {
+    return item?.ivaRate !== undefined && item?.ivaRate !== null && Number(item.ivaRate) === 0;
+}
+
+/** "16" → "16%", "8.5" → "8,5%". */
+export function formatIvaRateLabel(rate) {
+    return `${String(Number(rate)).replace('.', ',')}%`;
+}
+
+/**
+ * Filas del desglose de IVA del ticket: EXENTO (E), BASE IMPONIBLE n% e IVA n%.
+ * Sin desglose guardado (ventas anteriores) cae al formato BASE / IVA.
+ * @returns {Array<{ label: string, usd: number, bs: number }>}
+ */
+export function buildIvaTicketRows(sale, rate) {
+    const breakdown = sale?.ivaBreakdown;
+    if (breakdown && Array.isArray(breakdown.groups)) {
+        const rows = [];
+        if (breakdown.exemptUsd > 0 || breakdown.exemptBs > 0) {
+            rows.push({ label: 'EXENTO (E)', usd: breakdown.exemptUsd, bs: breakdown.exemptBs });
+        }
+        breakdown.groups.forEach((g) => {
+            rows.push({ label: `BASE IMPONIBLE ${formatIvaRateLabel(g.rate)}`, usd: g.baseUsd, bs: g.baseBs });
+            rows.push({ label: `IVA ${formatIvaRateLabel(g.rate)}`, usd: g.ivaUsd, bs: g.ivaBs });
+        });
+        return rows;
+    }
+    if (!(sale?.ivaUsd > 0)) return [];
+    const baseUsd = sale.baseUsd ?? round2(sale.totalUsd - sale.ivaUsd);
+    return [
+        { label: 'BASE', usd: baseUsd, bs: mulR(baseUsd, rate) },
+        { label: 'IVA', usd: sale.ivaUsd, bs: mulR(sale.ivaUsd, rate) },
+    ];
+}
+
 function escapeHtml(str) {
     if (str === null || str === undefined) return '';
     const s = String(str);
@@ -51,7 +87,8 @@ export function buildTicketHtml(sale, bcvRate, paperConfig, settings) {
         const itemExactBs = item.exactBs ?? (item.isCashAdvance && item.currency === 'BS' ? (item.montoEfectivo + item.montoComision) : null);
         const sub = itemExactBs != null ? (rate > 0 ? divR(itemExactBs, rate) : effectivePriceUsd) : mulR(effectivePriceUsd, item.qty);
         const subBs = itemExactBs != null ? mulR(itemExactBs, item.qty) : mulR(sub, rate);
-        const name = escapeHtml(item.name);
+        // (E) = exento de IVA. Solo en ventas que guardaron el % por línea (IVA activo).
+        const name = escapeHtml(item.name) + (isExemptLine(item) ? ' (E)' : '');
         const priceBs = itemExactBs != null ? itemExactBs : mulR(effectivePriceUsd, rate);
 
         let totalStr = '';
@@ -180,28 +217,18 @@ export function buildTicketHtml(sale, bcvRate, paperConfig, settings) {
         `;
     }
 
-    // IVA (fase 4): fila separada solo si la venta tiene IVA. Sin IVA, el ticket no cambia.
+    // IVA: desglose EXENTO (E) / BASE IMPONIBLE n% / IVA n%. Sin IVA, el ticket no cambia.
+    // En modo Bs los montos salen de las bases en Bs (cuadran con el TOTAL en Bs).
+    const ivaRows = buildIvaTicketRows(sale, rate);
     let ivaBlockHtml = '';
-    if (sale.ivaUsd > 0) {
-        const baseUsdForTicket = sale.baseUsd ?? round2(sale.totalUsd - sale.ivaUsd);
-        let baseVal, ivaVal;
-        if (receiptCurrencyMode === 'bs') {
-            baseVal = 'Bs ' + formatBs(mulR(baseUsdForTicket, rate));
-            ivaVal = 'Bs ' + formatBs(mulR(sale.ivaUsd, rate));
-        } else {
-            baseVal = fmtUsd(baseUsdForTicket);
-            ivaVal = fmtUsd(sale.ivaUsd);
-        }
+    if (ivaRows.length > 0) {
+        const fmtRow = (row) => (receiptCurrencyMode === 'bs' ? 'Bs ' + formatBs(row.bs) : fmtUsd(row.usd));
         ivaBlockHtml = `
         <table style="margin-bottom:6px; font-size:${fTiny}; border-top: 1px dashed #000; padding-top: 4px;">
-            <tr>
-                <td style="text-align:left; color:#000; font-weight:bold;">BASE:</td>
-                <td style="text-align:right; color:#000; font-weight:bold;">${baseVal}</td>
-            </tr>
-            <tr>
-                <td style="text-align:left; color:#000; font-weight:bold;">IVA:</td>
-                <td style="text-align:right; color:#000; font-weight:bold;">${ivaVal}</td>
-            </tr>
+            ${ivaRows.map((row) => `<tr>
+                <td style="text-align:left; color:#000; font-weight:bold;">${row.label}:</td>
+                <td style="text-align:right; color:#000; font-weight:bold; white-space:nowrap;">${fmtRow(row)}</td>
+            </tr>`).join('')}
         </table>
         `;
     }

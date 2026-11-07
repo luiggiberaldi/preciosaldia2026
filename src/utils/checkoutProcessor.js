@@ -51,20 +51,31 @@ export async function processSaleTransaction({
     let activeCartTotalBs = cartTotalBs;
     let activeBaseUsd = cartBaseUsd;
     let activeIvaUsd = cartIvaUsd;
+    let ivaTotals = null;
+
+    // IVA: misma configuración que la cesta y el modal, para que el total guardado coincida.
+    const taxConfig = loadTaxConfig();
+    const ivaOpts = {
+        enabled: taxConfig.ivaEnabled,
+        resolveRate: (item) => resolveLineIvaRate(item, taxConfig),
+    };
 
     if (hasDualItem) {
-        // IVA: misma configuración que la cesta y el modal, para que el total guardado coincida.
-        const taxConfig = loadTaxConfig();
-        const ivaOpts = {
-            enabled: taxConfig.ivaEnabled,
-            resolveRate: (item) => resolveLineIvaRate(item, taxConfig),
-        };
         const computedTotals = FinancialEngine.buildCartTotals(cart, discountData, effectiveRate, copEnabled ? tasaCop : 0, isBsPayment, ivaOpts);
         activeCartTotalUsd = computedTotals.totalUsd;
         activeCartTotalBs = computedTotals.totalBs;
         activeBaseUsd = computedTotals.baseUsd;
         activeIvaUsd = computedTotals.ivaUsd;
+        ivaTotals = computedTotals;
+    } else if (taxConfig.ivaEnabled) {
+        ivaTotals = FinancialEngine.buildCartTotals(cart, discountData, effectiveRate, copEnabled ? tasaCop : 0, isBsPayment, ivaOpts);
     }
+    // Desglose para el ticket (EXENTO / BASE / IVA por %): solo si cuadra con el total que se cobra.
+    const ivaBreakdown = ivaTotals?.ivaBreakdown
+        && Math.abs((ivaTotals.totalUsd || 0) - (Number(activeCartTotalUsd) || 0)) < 0.005
+        && Math.abs((ivaTotals.totalBs || 0) - (Number(activeCartTotalBs) || 0)) < 0.005
+        ? ivaTotals.ivaBreakdown
+        : null;
 
     if (isNaN(activeCartTotalUsd) || activeCartTotalUsd < 0 || isNaN(activeCartTotalBs) || activeCartTotalBs < 0) {
         return { success: false, error: 'Integridad matemática comprometida' };
@@ -265,12 +276,15 @@ export async function processSaleTransaction({
             montoComision: i.montoComision || null,
             comisionPct: i.comisionPct || null,
             currency: i.currency || null,
-            exactBs: i.exactBs || null
+            exactBs: i.exactBs || null,
+            // % de IVA aplicado a la línea (0 = exento): el ticket marca (E) a los exentos.
+            ...(taxConfig.ivaEnabled ? { ivaRate: resolveLineIvaRate(i, taxConfig) } : {}),
         })),
         cartSubtotalUsd: cartSubtotalUsd,
         // IVA (fase 4): base sin IVA e IVA cobrado, guardados en la venta para ticket y reportes.
         baseUsd: activeBaseUsd ?? null,
         ivaUsd:  activeIvaUsd ?? 0,
+        ...(ivaBreakdown ? { ivaBs: ivaBreakdown.ivaBs, ivaBreakdown } : {}),
         discountType:       discountData?.type      || null,
         discountValue:      discountData?.value     || 0,
         discountAmountUsd:  discountData?.amountUsd || 0,

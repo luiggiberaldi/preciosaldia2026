@@ -1,5 +1,6 @@
 import { formatBs } from '../../utils/calculatorUtils';
 import { getGranelUnitMode, formatSaleItemQuantity } from '../../utils/granel';
+import { buildIvaTicketRows, isExemptLine } from '../../utils/ticketHtmlTemplate';
 
 /**
  * Builds a WhatsApp-ready receipt URL for sharing a sale.
@@ -23,6 +24,7 @@ export function buildReceiptWhatsAppUrl(receipt, currentRate) {
     const receiptGranelMode = r.granelUnitMode || getGranelUnitMode();
     const itemsLines = (r.items ?? []).map(item => {
         const qty = formatSaleItemQuantity(item, receiptGranelMode); // BULTOS-001: bulto vs ud
+        const itemName = item.name + (isExemptLine(item) ? ' (E)' : ''); // (E) = exento de IVA
         const subUsd = (item.priceUsd * item.qty).toFixed(2);
         const unitPriceUsd = parseFloat(item.priceUsd).toFixed(2);
         const priceBs = item.priceUsd * (r.rate || 1);
@@ -31,19 +33,19 @@ export function buildReceiptWhatsAppUrl(receipt, currentRate) {
         if (receiptCurrencyMode === 'usd') {
             const subStr = isCop ? `USD ${subUsd}` : `$${subUsd}`;
             const unitStr = isCop ? `USD ${unitPriceUsd}` : `$${unitPriceUsd}`;
-            return `- ${item.name}\n  ${qty} x ${unitStr} = ${subStr}`;
+            return `- ${itemName}\n  ${qty} x ${unitStr} = ${subStr}`;
         }
         
         if (receiptCurrencyMode === 'bs') {
             const subStr = `Bs ${formatBs(subBs)}`;
             const unitStr = `Bs ${formatBs(priceBs)}`;
-            return `- ${item.name}\n  ${qty} x ${unitStr} = ${subStr}`;
+            return `- ${itemName}\n  ${qty} x ${unitStr} = ${subStr}`;
         }
 
         // mixto
         const subStr = isCop ? `USD ${subUsd}` : `$${subUsd}`;
         const unitStr = isCop ? `USD ${unitPriceUsd}` : `$${unitPriceUsd}`;
-        let line = `- ${item.name}\n  ${qty} x ${unitStr} = ${subStr}`;
+        let line = `- ${itemName}\n  ${qty} x ${unitStr} = ${subStr}`;
         if (isCop) {
             const copSub = (item.priceUsd * item.qty * r.tasaCop).toLocaleString('es-CO', { maximumFractionDigits: 0 });
             line += ` (${copSub} COP)`;
@@ -62,6 +64,11 @@ export function buildReceiptWhatsAppUrl(receipt, currentRate) {
             : `USD ${parseFloat(p.amountUsd).toFixed(2)}`;
         return `  ${p.methodLabel}: ${val}`;
     }).join('\n');
+
+    // IVA: EXENTO (E) / BASE IMPONIBLE n% / IVA n% (mismo desglose que el ticket impreso).
+    const ivaLines = buildIvaTicketRows(r, r.rate || currentRate || 1)
+        .map((row) => `${row.label}: ${receiptCurrencyMode === 'bs' ? `Bs ${formatBs(row.bs)}` : fmtUsd(row.usd)}`)
+        .join(String.fromCharCode(10));
 
     // Totales
     const totalBs = r.totalBs ?? (r.totalUsd * r.rate);
@@ -140,13 +147,13 @@ export function buildReceiptWhatsAppUrl(receipt, currentRate) {
         itemsLines,
         ``,
         sep,
+        ivaLines,
         totalLine,
         paymentsLines ? `\nPAGOS:\n${paymentsLines}` : '',
         changeLines,
         tipLine,
         fiadoLine,
         sep,
-        r.tasaCop > 0 ? `Tasa COP: ${r.tasaCop.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` : '',
         `Gracias por su compra!`,
         ``,
         `_Este documento no constituye factura fiscal. Comprobante de control interno._`,

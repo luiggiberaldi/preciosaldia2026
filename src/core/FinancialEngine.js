@@ -639,27 +639,26 @@ export class FinancialEngine {
 
         const baseUsd = round2(Math.max(0, subR(subtotalUsd, discountAmountUsd)));
 
-        // IVA (fase 2 del plan 2026-10-13). Se calcula sobre la base ya descontada,
-        // por línea y con round2 antes de sumar. Sin ivaOpts.enabled no cambia nada.
+        const discountAmountBs = mulR(discountAmountUsd, bcvRate);
+        const baseBs = round2(Math.max(0, subR(subtotalBs, discountAmountBs)));
+
+        // IVA por alícuota (como una factura): la base descontada se reparte entre las
+        // líneas con su peso EXACTO (divR redondeaba el peso a 2 decimales y desviaba la
+        // base), se agrupa por % y el IVA se calcula sobre la base de cada grupo, en USD y
+        // en Bs por separado. Así en el ticket EXENTO + BASE + IVA = TOTAL en ambas monedas.
+        // Sin ivaOpts.enabled no cambia nada.
         let ivaUsd = 0;
+        let ivaBs = 0;
+        let ivaBreakdown = null;
         if (ivaOpts && ivaOpts.enabled === true && subtotalUsd > 0) {
-            const perLine = cartItems.map((item, idx) => {
-                const lineUsd = lineItemsUsd[idx];
-                const lineShare = subtotalUsd > 0 ? divR(lineUsd, subtotalUsd) : 0;
-                const lineBaseUsd = mulR(baseUsd, lineShare);
-                const rate = typeof ivaOpts.resolveRate === 'function'
-                    ? ivaOpts.resolveRate(item)
-                    : Number(ivaOpts.rate ?? 0);
-                return mulR(lineBaseUsd, divR(rate, 100));
+            ivaBreakdown = FinancialEngine.buildIvaBreakdown(cartItems, {
+                lineItemsUsd, lineItemsBs, subtotalUsd, subtotalBs, baseUsd, baseBs, ivaOpts,
             });
-            ivaUsd = round2(sumR(perLine));
+            ivaUsd = ivaBreakdown.ivaUsd;
+            ivaBs = ivaBreakdown.ivaBs;
         }
 
         const totalUsd = round2(baseUsd + ivaUsd);
-
-        const discountAmountBs = mulR(discountAmountUsd, bcvRate);
-        const baseBs = round2(Math.max(0, subR(subtotalBs, discountAmountBs)));
-        const ivaBs = ivaUsd > 0 ? mulR(ivaUsd, bcvRate) : 0;
         const totalBs = round2(baseBs + ivaBs);
 
         // FIN-010: totalCop unificado — divR para descuento proporcional, round2 consistente.
@@ -685,9 +684,66 @@ export class FinancialEngine {
             discountAmountBs,
             baseUsd,
             ivaUsd,
+            ivaBs,
+            ivaBreakdown,
             totalUsd,
             totalBs,
             totalCop
+        };
+    }
+
+    /**
+     * Desglose de IVA por alícuota de un carrito (base ya descontada).
+     * @returns {{ exemptUsd:number, exemptBs:number, ivaUsd:number, ivaBs:number,
+     *   groups: Array<{ rate:number, baseUsd:number, baseBs:number, ivaUsd:number, ivaBs:number }> }}
+     *   `groups` solo trae alícuotas > 0, de mayor a menor. exento + Σ bases = base del carrito.
+     */
+    static buildIvaBreakdown(cartItems, { lineItemsUsd, lineItemsBs, subtotalUsd, subtotalBs, baseUsd, baseBs, ivaOpts }) {
+        const resolveRate = (item) => {
+            const r = typeof ivaOpts.resolveRate === 'function' ? ivaOpts.resolveRate(item) : Number(ivaOpts.rate ?? 0);
+            return Number.isFinite(Number(r)) && Number(r) > 0 ? Number(r) : 0;
+        };
+        // Peso exacto del descuento (sin redondear): base / subtotal.
+        const usdFactor = subtotalUsd > 0 ? baseUsd / subtotalUsd : 0;
+        const bsFactor = subtotalBs > 0 ? baseBs / subtotalBs : 0;
+        const byRate = new Map();
+        cartItems.forEach((item, idx) => {
+            const rate = resolveRate(item);
+            const group = byRate.get(rate) || { rate, baseUsd: 0, baseBs: 0 };
+            group.baseUsd += (lineItemsUsd[idx] || 0) * usdFactor;
+            group.baseBs += (lineItemsBs[idx] || 0) * bsFactor;
+            byRate.set(rate, group);
+        });
+        const exempt = byRate.get(0);
+        const taxed = [...byRate.values()]
+            .filter((g) => g.rate > 0)
+            .sort((a, b) => b.rate - a.rate)
+            .map((g) => ({ rate: g.rate, baseUsd: round2(g.baseUsd), baseBs: round2(g.baseBs) }));
+        let exemptUsd = exempt ? round2(exempt.baseUsd) : 0;
+        let exemptBs = exempt ? round2(exempt.baseBs) : 0;
+        // El centavo de redondeo va al exento si existe; si no, al grupo más grande:
+        // así exento + bases = base del carrito exactamente.
+        const restUsd = subR(baseUsd, round2(exemptUsd + sumR(taxed.map((g) => g.baseUsd))));
+        const restBs = subR(baseBs, round2(exemptBs + sumR(taxed.map((g) => g.baseBs))));
+        if (exempt || taxed.length === 0) {
+            exemptUsd = round2(exemptUsd + restUsd);
+            exemptBs = round2(exemptBs + restBs);
+        } else {
+            const largest = taxed.reduce((m, g) => (g.baseUsd > m.baseUsd ? g : m), taxed[0]);
+            largest.baseUsd = round2(largest.baseUsd + restUsd);
+            largest.baseBs = round2(largest.baseBs + restBs);
+        }
+        const groups = taxed.map((g) => ({
+            ...g,
+            ivaUsd: mulR(g.baseUsd, g.rate / 100),
+            ivaBs: mulR(g.baseBs, g.rate / 100),
+        }));
+        return {
+            exemptUsd,
+            exemptBs,
+            groups,
+            ivaUsd: sumR(groups.map((g) => g.ivaUsd)),
+            ivaBs: sumR(groups.map((g) => g.ivaBs)),
         };
     }
 
