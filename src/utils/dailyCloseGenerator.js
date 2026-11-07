@@ -3,6 +3,7 @@ import { formatBs, formatCop, formatUsd } from './calculatorUtils';
 import { getPaymentLabel, toTitleCase } from '../config/paymentMethods';
 import { round2, mulR, divR } from './dinero';
 import { buildCloseDaySummary } from './closeDaySummary';
+import { buildCloseTaxSummary } from './closeTaxSummary';
 import { formatSaleItemQuantity } from './granel';
 import { getPaperConfig } from './ticketConstants';
 import { openPrintWindow } from './printerUtils';
@@ -166,6 +167,8 @@ export async function generateDailyClosePDF({
         carteraUsd,
     });
     const daySummaryRows = daySummary.hasMovement ? daySummary.rows.length : 0;
+    // IVA del período: EXENTO (E) / BASE IMPONIBLE n% / IVA n% (mismo desglose que el ticket de venta).
+    const taxSummary = buildCloseTaxSummary(allSales);
 
     // Detección de configuración de COP
     let isCop = false;
@@ -838,6 +841,54 @@ export async function generateDailyClosePDF({
             y += noteLines.length * 3.2 + 4;
         }
 
+        // 6. IMPUESTOS (IVA): exento / base imponible / IVA por alícuota.
+        if (taxSummary.hasTax) {
+            const taxRowH = 5;
+            const taxBlockH = 11 + taxSummary.rows.length * taxRowH;
+            checkPageBreak(taxBlockH + 14);
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(9.5);
+            doc.setTextColor(...BLUE);
+            doc.text('IMPUESTOS (IVA) DEL PERÍODO', M, y);
+            y += 5.5;
+
+            const taxW = RIGHT - M;
+            doc.setFillColor(...BG_CARD);
+            doc.rect(M, y, taxW, taxBlockH, 'F');
+            doc.setDrawColor(...BORDER_CARD);
+            doc.setLineWidth(0.25);
+            doc.rect(M, y, taxW, taxBlockH, 'S');
+            doc.setFillColor(...BLUE);
+            doc.rect(M, y, taxW, 1.2, 'F');
+
+            let taxY = y + 7;
+            taxSummary.rows.forEach((row) => {
+                if (row.bold) {
+                    doc.setDrawColor(...BORDER_CARD);
+                    doc.line(M + 3, taxY - 3.4, M + taxW - 3, taxY - 3.4);
+                }
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(7.5);
+                doc.setTextColor(...INK);
+                doc.text(row.label, M + 3, taxY);
+                doc.text(`Bs ${formatBs(row.bs)}`, M + taxW - 38, taxY, { align: 'right' });
+                doc.text(`$${formatUsd(row.usd)}`, M + taxW - 3, taxY, { align: 'right' });
+                taxY += taxRowH;
+            });
+            y += taxBlockH + 3;
+
+            doc.setFont('helvetica', 'italic');
+            doc.setFontSize(6.4);
+            doc.setTextColor(...MUTED);
+            const taxNote = doc.splitTextToSize(
+                'Exento (E): productos sin IVA. Las ventas hechas antes de que el ticket desglosara el IVA no distinguen exentos: se muestran como «sin desglose». Las ventas anuladas no se cuentan.',
+                RIGHT - M
+            );
+            doc.text(taxNote, M, y);
+            y += taxNote.length * 3.2 + 4;
+        }
+
         // Agregar footer final y descargar
         addFooter(pageNum);
 
@@ -892,7 +943,9 @@ export async function generateDailyClosePDF({
         daySummaryRowsCount += 1; // título + separador
     }
 
+    const taxRowsCount = taxSummary.hasTax ? taxSummary.rows.length + 2 : 0;
     const H = 100
+        + (taxRowsCount * 5.2)
         + (expectedStatsRowsCount * 5.2)
         + (egresosRowCount * 5.2)
         + (paymentRows * 6.5)
@@ -1216,6 +1269,26 @@ export async function generateDailyClosePDF({
             }
         });
 
+        y += 1;
+        dash(y); y += 6;
+    }
+
+    // ── IVA DEL PERÍODO: EXENTO (E) / BASE IMPONIBLE n% / IVA n% ──
+    if (taxSummary.hasTax) {
+        y = sectionTitle('IVA DEL PERÍODO', y);
+        taxSummary.rows.forEach((row) => {
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(row.bold ? fBody : fMuted);
+            doc.setTextColor(...INK);
+            doc.text(row.label, M, y);
+            doc.text(`$${formatUsd(row.usd)}`, VALUE_RIGHT, y, { align: 'right' });
+            y += 4.6;
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(fMuted);
+            doc.setTextColor(...MUTED);
+            doc.text(`Bs ${formatBs(row.bs)}`, VALUE_RIGHT, y, { align: 'right' });
+            y += 5;
+        });
         y += 1;
         dash(y); y += 6;
     }

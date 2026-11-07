@@ -12,6 +12,7 @@
 
 import { formatBs, formatCop, formatUsd } from './calculatorUtils.js';
 import { round2 } from './dinero.js';
+import { buildCloseTaxSummary } from './closeTaxSummary.js';
 
 function escHtml(str) {
     if (str === null || str === undefined) return '';
@@ -109,6 +110,23 @@ export function buildDailyCloseHtml(cierreData, paperConfig, settings) {
                     }
                     return rowHtml(entry.label || entry.methodId || '—', valStr, fSmall);
                 }).join('')}
+            </table>
+        </div>
+        <hr class="dash">` : '';
+
+    // ── IVA del período: EXENTO (E) / BASE IMPONIBLE n% / IVA n% ──
+    // allSales trae todas las transacciones del día (incluye anuladas, que no se cuentan).
+    const taxSummary = buildCloseTaxSummary(cierreData.allSales || sales);
+    const taxHtml = taxSummary.hasTax ? `
+        <div style="margin-bottom:6px;">
+            <div style="font-size:${fTiny};font-weight:bold;color:#000;margin-bottom:2px;text-transform:uppercase;letter-spacing:0.5px;">IVA del Período</div>
+            <table style="width:100%;">
+                ${taxSummary.rows.map((row) => `
+                    <tr style="${row.bold ? 'border-top:1px dashed #000;' : ''}">
+                        <td style="font-size:${fSmall};font-weight:${row.bold ? '900' : 'bold'};text-align:left;padding:2px 4px 0 0;width:55%;vertical-align:top;word-break:break-word;">${escHtml(row.label)}</td>
+                        <td style="font-size:${fSmall};font-weight:${row.bold ? '900' : 'bold'};text-align:right;padding:2px 0 0 0;width:45%;vertical-align:top;white-space:nowrap;">${fmtUsd(row.usd)}</td>
+                    </tr>
+                    <tr><td></td><td style="font-size:${fTiny};text-align:right;padding:0 0 2px 0;white-space:nowrap;">Bs ${formatBs(row.bs)}</td></tr>`).join('')}
             </table>
         </div>
         <hr class="dash">` : '';
@@ -283,6 +301,7 @@ export function buildDailyCloseHtml(cierreData, paperConfig, settings) {
 
     <!-- Desglose de ingresos -->
     ${breakdownHtml}
+    ${taxHtml}
 
     <!-- Egresos -->
     ${egresosHtml}

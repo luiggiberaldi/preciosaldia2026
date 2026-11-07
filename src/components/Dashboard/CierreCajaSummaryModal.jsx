@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, CheckCircle2, Printer, Download, Share2, AlertTriangle, Coins } from 'lucide-react';
-import { formatBs, formatCop } from '../../utils/calculatorUtils';
+import { formatBs, formatCop, formatUsd } from '../../utils/calculatorUtils';
+import { buildCloseTaxSummary } from '../../utils/closeTaxSummary';
 
 export default function CierreCajaSummaryModal({
     isOpen,
@@ -39,6 +40,9 @@ export default function CierreCajaSummaryModal({
 
     const hasCop = copEnabled && (expectedCop > 0 || declaredCop > 0);
     const fmtCop = (v) => formatCop(v);
+
+    // IVA del período (exento / base imponible / IVA por alícuota). Oculto en cierre ciego.
+    const taxSummary = blindClose ? null : buildCloseTaxSummary(summaryData?.allSales || sales);
 
     const advances = summaryData?.advances || { count: 0, totalEfectivoBs: 0, totalEfectivoUsd: 0, totalComisionBs: 0, totalComisionUsd: 0 };
 
@@ -80,6 +84,24 @@ export default function CierreCajaSummaryModal({
                             <strong className="text-base sm:text-lg font-black text-emerald-600 dark:text-emerald-400 mt-0.5 block">{formatBs(todayTotalBs)} Bs</strong>
                         </div>
                     </div>
+                    )}
+
+                    {/* IVA del período */}
+                    {taxSummary?.hasTax && (
+                        <div data-testid="cierre-iva-summary" className="space-y-1.5">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">IVA del período</span>
+                            <div className="border border-slate-100 dark:border-slate-800 rounded-2xl overflow-hidden text-xs">
+                                {taxSummary.rows.map((row) => (
+                                    <div key={row.key} className={`flex items-start justify-between gap-3 px-3 py-1.5 border-b last:border-b-0 border-slate-100 dark:border-slate-800/50 ${row.bold ? 'bg-slate-50 dark:bg-slate-800/40' : ''}`}>
+                                        <span className={`${row.bold ? 'font-black' : 'font-bold'} text-slate-700 dark:text-slate-200`}>{row.label}</span>
+                                        <span className="text-right shrink-0">
+                                            <strong className="font-mono font-black text-slate-800 dark:text-white block">${formatUsd(row.usd)}</strong>
+                                            <span className="font-mono text-[10px] text-slate-400 block">{formatBs(row.bs)} Bs</span>
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
                     )}
 
                     {/* Detalles de Operaciones */}
