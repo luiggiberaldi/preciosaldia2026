@@ -109,6 +109,12 @@ describe('cierre impreso (HTML térmico)', () => {
         expect(html).toContain('TOTAL IVA RECAUDADO');
     });
 
+    it('la tasa del cierre dice "Tasa activa" (automática o manual), no "Tasa BCV"', () => {
+        const html = render();
+        expect(html).toContain('Tasa activa: Bs 895,00');
+        expect(html).not.toContain('Tasa BCV');
+    });
+
     it('sin IVA en el período el cierre queda como antes', () => {
         const html = render({ allSales: [SIN_IVA] });
         expect(html).not.toContain('IVA del Período');

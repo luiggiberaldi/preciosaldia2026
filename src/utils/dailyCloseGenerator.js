@@ -325,7 +325,7 @@ export async function generateDailyClosePDF({
         if (isCop && tasaCop > 0) {
             aptRows.push(['Fondo Inicial COP', `${formatCop(apertura?.openingCop || 0)} COP`]);
         }
-        aptRows.push(['Tasa de Cambio BCV', `Bs ${formatBs(bcvRate)}`]);
+        aptRows.push(['Tasa activa', `Bs ${formatBs(bcvRate)}`]);
         if (isCop && tasaCop > 0) {
             aptRows.push(['Tasa de Cambio COP', `${tasaCop.toLocaleString('es-CO')} COP`]);
         }
@@ -1039,7 +1039,7 @@ export async function generateDailyClosePDF({
         ['Ingresos brutos (Bs)', `Bs ${formatBs(todayTotalBs)}`],
         [`Ganancia estimada (${usdLabel})`, fmtUsd(bcvRate > 0 ? divR(todayProfit, bcvRate) : 0)],
         ['Ganancia estimada (Bs)', `Bs ${formatBs(todayProfit)}`],
-        ['Tasa oficial BCV', `Bs ${formatBs(bcvRate)}`],
+        ['Tasa activa', `Bs ${formatBs(bcvRate)}`],
     ];
 
     if (isCop && tasaCop > 0) {

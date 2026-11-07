@@ -291,7 +291,7 @@ export function buildDailyCloseHtml(cierreData, paperConfig, settings) {
     <!-- Título del documento -->
     <div class="center" style="font-size:${fBase};font-weight:900;margin:4px 0;">${escHtml(titleLabel)}</div>
     <div style="font-size:${fTiny};color:#000;margin:2px 0 6px;">Fecha: ${fecha} ${hora}</div>
-    <div style="font-size:${fTiny};color:#000;margin-bottom:2px;">Tasa BCV: Bs ${formatBs(bcvRate)}</div>
+    <div style="font-size:${fTiny};color:#000;margin-bottom:2px;">Tasa activa: Bs ${formatBs(bcvRate)}</div>
     <div style="font-size:${fTiny};color:#000;margin-bottom:2px;">Operaciones: ${todayItemsSold}</div>
 
     <hr class="dash">
