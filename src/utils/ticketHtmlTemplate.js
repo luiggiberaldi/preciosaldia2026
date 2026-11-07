@@ -1,6 +1,7 @@
 import { formatBs, formatCop, formatUsd } from './calculatorUtils.js';
 import { mulR, divR, round0, round2 } from './dinero.js';
 import { getGranelUnitMode, formatSaleItemQuantity } from './granel.js';
+import { loadTaxConfig } from '../config/taxConfig.js';
 
 /** Línea exenta: la venta guardó su % de IVA y es 0. */
 export function isExemptLine(item) {
@@ -32,9 +33,15 @@ export function buildIvaTicketRows(sale, rate) {
     }
     if (!(sale?.ivaUsd > 0)) return [];
     const baseUsd = sale.baseUsd ?? round2(sale.totalUsd - sale.ivaUsd);
+    // Venta anterior al desglose: si el IVA es exactamente la alícuota general sobre toda
+    // la base (venta 100% gravada), se rotula con el %; si no (había exentos), BASE / IVA.
+    const generalRate = Number(loadTaxConfig().ivaRate) || 0;
+    const exact = generalRate > 0 && baseUsd > 0 && mulR(baseUsd, generalRate / 100) === round2(sale.ivaUsd);
+    const inferred = generalRate;
+    const pct = exact ? ` ${formatIvaRateLabel(inferred)}` : '';
     return [
-        { label: 'BASE', usd: baseUsd, bs: mulR(baseUsd, rate) },
-        { label: 'IVA', usd: sale.ivaUsd, bs: mulR(sale.ivaUsd, rate) },
+        { label: exact ? `BASE IMPONIBLE${pct}` : 'BASE', usd: baseUsd, bs: mulR(baseUsd, rate) },
+        { label: `IVA${pct}`, usd: sale.ivaUsd, bs: mulR(sale.ivaUsd, rate) },
     ];
 }
 

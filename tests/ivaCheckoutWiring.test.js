@@ -35,8 +35,8 @@ describe('ticket con IVA', () => {
             getPaperConfig('58'),
             settings
         );
-        expect(html).toContain('BASE:');
-        expect(html).toContain('IVA:');
+        expect(html).toContain('BASE IMPONIBLE 16%:');
+        expect(html).toContain('IVA 16%:');
         expect(html).toContain('$10.00');
         expect(html).toContain('$1.60');
     });
@@ -49,7 +49,7 @@ describe('ticket con IVA', () => {
             getPaperConfig('58'),
             settings
         );
-        expect(html).toContain('BASE:');
+        expect(html).toContain('BASE IMPONIBLE 16%:');
         expect(html).toContain('Bs ');
     });
 

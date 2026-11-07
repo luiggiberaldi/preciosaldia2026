@@ -158,12 +158,18 @@ describe('ticket impreso (HTML)', () => {
         expect(html).not.toContain('IVA');
     });
 
-    it('venta vieja con IVA pero sin desglose guardado: conserva BASE / IVA', () => {
-        const rows = buildIvaTicketRows({ totalUsd: 11.6, baseUsd: 10, ivaUsd: 1.6 }, 500);
-        expect(rows).toEqual([
-            { label: 'BASE', usd: 10, bs: 5000 },
-            { label: 'IVA', usd: 1.6, bs: 800 },
-        ]);
+    it('venta vieja sin desglose: deduce el % si el IVA es exactamente un % de la base', () => {
+        // Ticket #0000006 del cliente: base $8.75, IVA $1.40 = 16%.
+        const rows = buildIvaTicketRows({ totalUsd: 10.15, baseUsd: 8.75, ivaUsd: 1.4 }, 897.54);
+        expect(rows.map((r) => r.label)).toEqual(['BASE IMPONIBLE 16%', 'IVA 16%']);
+        expect(rows.map((r) => r.usd)).toEqual([8.75, 1.4]);
+    });
+
+    it('venta vieja con exentos mezclados (el % no cuadra): conserva BASE / IVA', () => {
+        // Base 20 (10 exento + 10 gravado), IVA 1.60 → 8% aparente, no exacto como alícuota real
+        // pero sí entero: se evita rotular mal exigiendo que el IVA sea exacto con la base completa.
+        const rows = buildIvaTicketRows({ totalUsd: 21.6, baseUsd: 20, ivaUsd: 1.6 }, 500);
+        expect(rows.map((r) => r.label)).toEqual(['BASE', 'IVA']);
     });
 });
 
@@ -219,5 +225,26 @@ describe('la venta guarda el % por línea y el desglose', () => {
         expect(result.success).toBe(true);
         expect(result.sale.items.every((i) => !('ivaRate' in i))).toBe(true);
         expect(result.sale.ivaBreakdown).toBeUndefined();
+    });
+});
+
+describe('pantalla de recibo tras cobrar (ReceiptModal)', () => {
+    it('venta del cliente: Chocotina exenta con (E) y desglose EXENTO / BASE 16% / IVA 16%', async () => {
+        const React = (await import('react')).default;
+        const { renderToStaticMarkup } = await import('react-dom/server');
+        const { default: ReceiptModal } = await import('../src/components/Sales/ReceiptModal');
+        localStorage.setItem('receipt_currency_mode', 'usd');
+        const cart = [
+            { id: 'coco', name: 'BESITOS DE COCO ARTESANAL', priceUsd: 0.85, qty: 1 },
+            { id: 'choco', name: 'CHOCOLATE CHOCOTINA KRON 1 KG', priceUsd: 13, qty: 2, ivaRate: 0 },
+        ];
+        const sale = saleFromCart(cart);
+        const html = renderToStaticMarkup(React.createElement(ReceiptModal, { receipt: sale, onClose: () => {}, currentRate: RATE }));
+        expect(html).toContain('CHOCOLATE CHOCOTINA KRON 1 KG (E)');
+        expect(html).not.toContain('BESITOS DE COCO ARTESANAL (E)');
+        expect(html).toMatch(/EXENTO \(E\)<\/span><span[^>]*>\$26\.00/);
+        expect(html).toMatch(/BASE IMPONIBLE 16%<\/span><span[^>]*>\$0\.85/);
+        expect(html).toMatch(/IVA 16%<\/span><span[^>]*>\$0\.14/);
+        expect(sale.totalUsd).toBe(26.99);
     });
 });

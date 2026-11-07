@@ -1,9 +1,10 @@
 import React from 'react';
 import { CheckCircle, Wallet, Send, X, Printer } from 'lucide-react';
-import { formatBs, formatCop } from '../../utils/calculatorUtils';
+import { formatBs, formatCop, formatUsd } from '../../utils/calculatorUtils';
 import { printThermalTicket } from '../../utils/ticketGenerator';
 import CasheaIcon from '../CasheaIcon';
 import { getGranelUnitMode, formatSaleItemQuantity } from '../../utils/granel';
+import { buildIvaTicketRows, isExemptLine } from '../../utils/ticketHtmlTemplate';
 
 export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, currentRate, copPrimary }) {
     if (!receipt) return null;
@@ -81,11 +82,22 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                             );
                         })()}
 
-                        {receipt.tipo !== 'AVANCE_EFECTIVO' && receipt.ivaUsd > 0 && (
-                            <p className="text-xs font-bold text-slate-500 mb-2">
-                                Base ${(receipt.baseUsd ?? (receipt.totalUsd - receipt.ivaUsd)).toFixed(2)} + IVA ${receipt.ivaUsd.toFixed(2)}
-                            </p>
-                        )}
+                        {receipt.tipo !== 'AVANCE_EFECTIVO' && (() => {
+                            // Mismo desglose que el ticket: EXENTO (E) / BASE IMPONIBLE n% / IVA n%.
+                            const ivaRows = buildIvaTicketRows(receipt, receipt.rate || currentRate || 1);
+                            if (ivaRows.length === 0) return null;
+                            const inBs = receiptCurrencyMode === 'bs';
+                            return (
+                                <div data-testid="receipt-iva-breakdown" className="mx-auto mb-2 w-full max-w-[240px] text-[11px] font-bold text-slate-500 space-y-0.5">
+                                    {ivaRows.map((row) => (
+                                        <div key={row.label} className="flex justify-between gap-3">
+                                            <span>{row.label}</span>
+                                            <span className="tabular-nums text-slate-700">{inBs ? `Bs ${formatBs(row.bs)}` : `$${formatUsd(row.usd)}`}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            );
+                        })()}
 
                         <div className="inline-flex items-center flex-wrap justify-center gap-1.5 px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-full text-xs font-bold text-slate-600 dark:text-slate-350 mt-2">
                             {receipt.payments && receipt.payments.filter(p => p.methodId !== 'cashea' && !p.isCashea).map((p, i, arr) => (
@@ -141,7 +153,7 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                                     return (
                                         <div key={i} className="bg-amber-500/5 dark:bg-amber-500/10 border border-dashed border-amber-500/20 p-3 rounded-2xl space-y-1.5 text-xs text-left">
                                             <div className="flex justify-between items-center text-slate-500">
-                                                <span className="font-bold text-slate-700 block leading-tight">{item.name}</span>
+                                                <span className="font-bold text-slate-700 block leading-tight">{item.name}{isExemptLine(item) ? ' (E)' : ''}</span>
                                             </div>
                                             <div className="flex justify-between items-center text-slate-650 dark:text-slate-400">
                                                 <span>Efectivo Entregado:</span>
@@ -169,7 +181,7 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                                     return (
                                         <div key={i} className="flex justify-between items-start text-sm border-b border-slate-200/50 pb-2 last:border-0 last:pb-0">
                                             <div className="flex-1 pr-4">
-                                                <span className="font-bold text-slate-700 block leading-tight">{item.name}</span>
+                                                <span className="font-bold text-slate-700 block leading-tight">{item.name}{isExemptLine(item) ? ' (E)' : ''}</span>
                                                 <span className="text-xs text-slate-400">{qtyStr} × ${itemPriceUsd.toFixed(2)}</span>
                                             </div>
                                             <div className="text-right">
@@ -183,7 +195,7 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                                     return (
                                         <div key={i} className="flex justify-between items-start text-sm border-b border-slate-200/50 pb-2 last:border-0 last:pb-0">
                                             <div className="flex-1 pr-4">
-                                                <span className="font-bold text-slate-700 block leading-tight">{item.name}</span>
+                                                <span className="font-bold text-slate-700 block leading-tight">{item.name}{isExemptLine(item) ? ' (E)' : ''}</span>
                                                 <span className="text-xs text-slate-400">{qtyStr} × Bs {formatBs(priceBs)}</span>
                                             </div>
                                             <div className="text-right">
@@ -197,7 +209,7 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                                 return (
                                     <div key={i} className="flex justify-between items-start text-sm border-b border-slate-200/50 pb-2 last:border-0 last:pb-0">
                                         <div className="flex-1 pr-4">
-                                            <span className="font-bold text-slate-700 block leading-tight">{item.name}</span>
+                                            <span className="font-bold text-slate-700 block leading-tight">{item.name}{isExemptLine(item) ? ' (E)' : ''}</span>
                                             {isCop ? (
                                                 copPrimary ? (
                                                     <>
