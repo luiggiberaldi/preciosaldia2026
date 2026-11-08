@@ -17,7 +17,7 @@ import {
 describe('valores de fábrica', () => {
     it('IVA de fábrica es 16% y arranca desactivado', () => {
         expect(IVA_FACTORY_RATE).toBe(16);
-        expect(DEFAULT_TAX_CONFIG).toEqual({ ivaEnabled: false, ivaRate: 16 });
+        expect(DEFAULT_TAX_CONFIG).toEqual({ ivaEnabled: false, ivaRate: 16, ivaIncluded: false });
     });
 
     it('DEFAULT_TAX_CONFIG está congelado', () => {
@@ -57,6 +57,7 @@ describe('sanitizeTaxConfig', () => {
         expect(sanitizeTaxConfig({ ivaEnabled: true, ivaRate: 'abc' })).toEqual({
             ivaEnabled: true,
             ivaRate: 16,
+            ivaIncluded: false,
         });
     });
 
@@ -67,8 +68,8 @@ describe('sanitizeTaxConfig', () => {
     });
 
     it('maneja entrada nula sin lanzar', () => {
-        expect(sanitizeTaxConfig(null)).toEqual({ ivaEnabled: false, ivaRate: 16 });
-        expect(sanitizeTaxConfig(undefined)).toEqual({ ivaEnabled: false, ivaRate: 16 });
+        expect(sanitizeTaxConfig(null)).toEqual({ ivaEnabled: false, ivaRate: 16, ivaIncluded: false });
+        expect(sanitizeTaxConfig(undefined)).toEqual({ ivaEnabled: false, ivaRate: 16, ivaIncluded: false });
     });
 });
 
@@ -110,28 +111,28 @@ describe('persistencia en localStorage', () => {
     });
 
     it('sin nada guardado devuelve los valores de fábrica', () => {
-        expect(loadTaxConfig()).toEqual({ ivaEnabled: false, ivaRate: 16 });
+        expect(loadTaxConfig()).toEqual({ ivaEnabled: false, ivaRate: 16, ivaIncluded: false });
     });
 
     it('guarda y vuelve a leer la configuración', () => {
         saveTaxConfig({ ivaEnabled: true, ivaRate: 12 });
-        expect(loadTaxConfig()).toEqual({ ivaEnabled: true, ivaRate: 12 });
+        expect(loadTaxConfig()).toEqual({ ivaEnabled: true, ivaRate: 12, ivaIncluded: false });
     });
 
     it('saveTaxConfig sanea antes de guardar', () => {
         const saved = saveTaxConfig({ ivaEnabled: true, ivaRate: 500 });
-        expect(saved).toEqual({ ivaEnabled: true, ivaRate: 16 });
-        expect(loadTaxConfig()).toEqual({ ivaEnabled: true, ivaRate: 16 });
+        expect(saved).toEqual({ ivaEnabled: true, ivaRate: 16, ivaIncluded: false });
+        expect(loadTaxConfig()).toEqual({ ivaEnabled: true, ivaRate: 16, ivaIncluded: false });
     });
 
     it('JSON corrupto en localStorage vuelve a valores de fábrica', () => {
         localStorage.setItem('tax_config_v1', '{no es json');
-        expect(loadTaxConfig()).toEqual({ ivaEnabled: false, ivaRate: 16 });
+        expect(loadTaxConfig()).toEqual({ ivaEnabled: false, ivaRate: 16, ivaIncluded: false });
     });
 
     it('resetTaxConfig restaura 16% y desactivado', () => {
         saveTaxConfig({ ivaEnabled: true, ivaRate: 3 });
-        expect(resetTaxConfig()).toEqual({ ivaEnabled: false, ivaRate: 16 });
-        expect(loadTaxConfig()).toEqual({ ivaEnabled: false, ivaRate: 16 });
+        expect(resetTaxConfig()).toEqual({ ivaEnabled: false, ivaRate: 16, ivaIncluded: false });
+        expect(loadTaxConfig()).toEqual({ ivaEnabled: false, ivaRate: 16, ivaIncluded: false });
     });
 });

@@ -10,7 +10,7 @@ import { deepFreeze } from './deepFreeze.js';      // FIN-008: deep freeze (no s
 import { FINANCIAL_EPSILON } from './securityConstants.js';
 import { FinancialEngine } from '../core/FinancialEngine.js';
 import { CurrencyService } from '../services/CurrencyService.js';
-import { loadTaxConfig, resolveLineIvaRate } from '../config/taxConfig.js';
+import { loadTaxConfig, resolveLineIvaRate, getCartIvaOpts } from '../config/taxConfig.js';
 
 const SALES_KEY = 'bodega_sales_v1';
 const PRODUCTS_KEY = 'bodega_products_v1';
@@ -55,10 +55,7 @@ export async function processSaleTransaction({
 
     // IVA: misma configuración que la cesta y el modal, para que el total guardado coincida.
     const taxConfig = loadTaxConfig();
-    const ivaOpts = {
-        enabled: taxConfig.ivaEnabled,
-        resolveRate: (item) => resolveLineIvaRate(item, taxConfig),
-    };
+    const ivaOpts = getCartIvaOpts(taxConfig);
 
     if (hasDualItem) {
         const computedTotals = FinancialEngine.buildCartTotals(cart, discountData, effectiveRate, copEnabled ? tasaCop : 0, isBsPayment, ivaOpts);
@@ -285,6 +282,9 @@ export async function processSaleTransaction({
         baseUsd: activeBaseUsd ?? null,
         ivaUsd:  activeIvaUsd ?? 0,
         ...(ivaBreakdown ? { ivaBs: ivaBreakdown.ivaBs, ivaBreakdown } : {}),
+        // Precios con IVA incluido: la ganancia de esta venta resta su IVA. Se guarda
+        // en la venta para que cambiar el ajuste después no altere ventas pasadas.
+        ...(ivaOpts.included && (activeIvaUsd ?? 0) > 0 ? { ivaIncluido: true } : {}),
         discountType:       discountData?.type      || null,
         discountValue:      discountData?.value     || 0,
         discountAmountUsd:  discountData?.amountUsd || 0,

@@ -5,6 +5,7 @@ import CustomSelect from '../CustomSelect';
 import { showToast } from '../Toast';
 import PricingModeSelector from './PricingModeSelector';
 import ProductCostFactorControl from './ProductCostFactorControl';
+import { loadTaxConfig } from '../../config/taxConfig';
 import {
     granelUnitLabel,
     useGranelUnitMode,
@@ -95,6 +96,13 @@ export default function ProductFormQuick({
     // Margin sobre venta: (precio - costo) / precio = 1 - factor costo.
     const mainMarginPct = parsedPrice > 0 && parsedCost > 0 ? ((parsedPrice - parsedCost) / parsedPrice * 100) : null;
     const mainMarginUsd = parsedPrice - parsedCost;
+
+    // Precios con IVA incluido: parte del precio es IVA. Solo informativo, no cambia el precio.
+    const taxCfg = loadTaxConfig();
+    const includedIvaRate = taxCfg.ivaEnabled && taxCfg.ivaIncluded && ivaMode !== 'exento' ? taxCfg.ivaRate : 0;
+    const netPriceUsd = includedIvaRate > 0 ? Math.round(parsedPrice / (1 + includedIvaRate / 100) * 100) / 100 : null;
+    const realMarginPct = netPriceUsd > 0 && parsedCost > 0 ? ((netPriceUsd - parsedCost) / netPriceUsd * 100) : null;
+    const realMarginUsd = netPriceUsd !== null ? netPriceUsd - parsedCost : null;
 
     // Unit margin for lote with sellByUnit
     const effectiveUnitPrice = copEnabled && tasaCop > 0 && unitPriceCop
@@ -695,6 +703,17 @@ export default function ProductFormQuick({
                                     <span className="text-xs ml-1.5 opacity-80 font-bold">(${mainMarginUsd.toFixed(2)})</span>
                                 </span>
                             </div>
+
+                            {/* IVA incluido: margen real sobre el precio sin IVA */}
+                            {realMarginPct !== null && (
+                                <div className="flex justify-between items-center text-xs" data-testid="real-margin-iva">
+                                    <span className="text-slate-500 font-medium">Sin IVA ${netPriceUsd.toFixed(2)} · margen real:</span>
+                                    <span className={`font-black ${realMarginPct >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                        {realMarginPct.toFixed(1)}%
+                                        <span className="ml-1.5 opacity-80 font-bold">(${realMarginUsd.toFixed(2)})</span>
+                                    </span>
+                                </div>
+                            )}
 
                             {/* Unit margin for lote with sellByUnit */}
                             {isLote && sellByUnit && parsedUnits > 1 && unitMarginPct !== null && (

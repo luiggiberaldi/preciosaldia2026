@@ -2,7 +2,7 @@
 // Nota: SalesHeader.jsx y CartPanel.jsx son subcomponentes fuera de scope; se migran en P2-P4.
 import { useState, useEffect, useCallback, useRef, useMemo, useDeferredValue } from 'react';
 import { FinancialEngine } from '../core/FinancialEngine';
-import { loadTaxConfig, resolveLineIvaRate } from '../config/taxConfig';
+import { getCartIvaOpts } from '../config/taxConfig';
 import { storageService } from '../utils/storageService';
 import { useSounds } from '../hooks/useSounds';
 import { useVoiceSearch } from '../hooks/useVoiceSearch';
@@ -362,11 +362,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
         ivaUsd: cartIvaUsd,
     } = useMemo(() => {
         // IVA fase 3: lee la configuración fiscal y la tasa de cada línea.
-        const taxConfig = loadTaxConfig();
-        const ivaOpts = {
-            enabled: taxConfig.ivaEnabled,
-            resolveRate: (item) => resolveLineIvaRate(item, taxConfig),
-        };
+        const ivaOpts = getCartIvaOpts();
         return FinancialEngine.buildCartTotals(cart, discount, effectiveRate, copEnabled ? tasaCop : 0, false, ivaOpts);
     }, [cart, discount, effectiveRate, copEnabled, tasaCop]);
 

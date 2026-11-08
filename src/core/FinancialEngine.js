@@ -141,7 +141,13 @@ export class FinancialEngine {
         // Subtract the global cart discount spread (represented in Bs)
         const discountBs = mulR((sale.discountAmountUsd || 0), saleRate);
 
-        return subR(itemsProfit, discountBs);
+        // Precios con IVA incluido: el IVA de la venta es del fisco, no ganancia.
+        // Solo ventas marcadas al cobrar; con IVA añadido el precio ya venía sin IVA.
+        const includedIvaBs = sale.ivaIncluido === true
+            ? (sale.ivaBs != null ? round2(sale.ivaBs) : mulR(sale.ivaUsd || 0, saleRate))
+            : 0;
+
+        return subR(subR(itemsProfit, discountBs), includedIvaBs);
     }
 
     /**
@@ -647,10 +653,16 @@ export class FinancialEngine {
         // base), se agrupa por % y el IVA se calcula sobre la base de cada grupo, en USD y
         // en Bs por separado. Así en el ticket EXENTO + BASE + IVA = TOTAL en ambas monedas.
         // Sin ivaOpts.enabled no cambia nada.
+        //
+        // IVA incluido (ivaOpts.included): los precios ya traen el IVA. El descuento se
+        // aplica sobre el precio con IVA y luego el IVA se saca de lo cobrado. El total
+        // no cambia y `baseUsd` pasa a ser lo cobrado sin IVA (base + exento).
         let ivaUsd = 0;
         let ivaBs = 0;
         let ivaBreakdown = null;
-        if (ivaOpts && ivaOpts.enabled === true && subtotalUsd > 0) {
+        const ivaActive = Boolean(ivaOpts && ivaOpts.enabled === true && subtotalUsd > 0);
+        const ivaIncluded = ivaActive && ivaOpts.included === true;
+        if (ivaActive) {
             ivaBreakdown = FinancialEngine.buildIvaBreakdown(cartItems, {
                 lineItemsUsd, lineItemsBs, subtotalUsd, subtotalBs, baseUsd, baseBs, ivaOpts,
             });
@@ -658,15 +670,16 @@ export class FinancialEngine {
             ivaBs = ivaBreakdown.ivaBs;
         }
 
-        const totalUsd = round2(baseUsd + ivaUsd);
-        const totalBs = round2(baseBs + ivaBs);
+        const totalUsd = ivaIncluded ? baseUsd : round2(baseUsd + ivaUsd);
+        const totalBs = ivaIncluded ? baseBs : round2(baseBs + ivaBs);
+        const netBaseUsd = ivaIncluded ? subR(baseUsd, ivaUsd) : baseUsd;
 
         // FIN-010: totalCop unificado — divR para descuento proporcional, round2 consistente.
         // Antes: `Math.round(sumR(...) * (1 - discountAmountUsd / subtotalUsd))` mezclaba
         // raw division + Math.round con el mulR de la rama sin priceCop.
         const allItemsHaveCop = cartItems.every(i => i.priceCop != null && i.priceCop > 0);
         // Con IVA activo, el COP lleva el mismo factor que el USD (totalUsd / baseUsd).
-        const ivaFactorCop = ivaUsd > 0 && baseUsd > 0 ? divR(totalUsd, baseUsd) : 1;
+        const ivaFactorCop = !ivaIncluded && ivaUsd > 0 && baseUsd > 0 ? divR(totalUsd, baseUsd) : 1;
         const totalCop = copRate > 0
             ? (allItemsHaveCop
                 ? round2(mulR(
@@ -682,10 +695,11 @@ export class FinancialEngine {
             subtotalBs,
             discountAmountUsd,
             discountAmountBs,
-            baseUsd,
+            baseUsd: netBaseUsd,
             ivaUsd,
             ivaBs,
             ivaBreakdown,
+            ivaIncluded,
             totalUsd,
             totalBs,
             totalCop
@@ -733,12 +747,26 @@ export class FinancialEngine {
             largest.baseUsd = round2(largest.baseUsd + restUsd);
             largest.baseBs = round2(largest.baseBs + restBs);
         }
-        const groups = taxed.map((g) => ({
-            ...g,
-            ivaUsd: mulR(g.baseUsd, g.rate / 100),
-            ivaBs: mulR(g.baseBs, g.rate / 100),
-        }));
+        // Añadido: IVA = base × %. Incluido: el monto del grupo ya trae el IVA, así que
+        // base = monto / (1 + %) e IVA = monto − base (base + IVA = monto, sin centavos sueltos).
+        const included = ivaOpts.included === true;
+        const groups = taxed.map((g) => {
+            if (!included) {
+                return { ...g, ivaUsd: mulR(g.baseUsd, g.rate / 100), ivaBs: mulR(g.baseBs, g.rate / 100) };
+            }
+            const factor = 1 + g.rate / 100;
+            const netUsd = round2(g.baseUsd / factor);
+            const netBs = round2(g.baseBs / factor);
+            return {
+                rate: g.rate,
+                baseUsd: netUsd,
+                baseBs: netBs,
+                ivaUsd: subR(g.baseUsd, netUsd),
+                ivaBs: subR(g.baseBs, netBs),
+            };
+        });
         return {
+            ...(included ? { included: true } : {}),
             exemptUsd,
             exemptBs,
             groups,

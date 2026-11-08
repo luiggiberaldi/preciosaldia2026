@@ -105,6 +105,14 @@ export default function SettingsTabVentas({
         triggerHaptic?.();
     };
 
+    const handleIvaIncludedToggle = () => {
+        const next = saveTaxConfig({ ...loadTaxConfig(), ivaIncluded: !loadTaxConfig().ivaIncluded });
+        setTaxConfig(next);
+        forceHeartbeat?.();
+        showToast?.(next.ivaIncluded ? 'Precios con IVA incluido' : 'IVA se suma al precio', 'success');
+        triggerHaptic?.();
+    };
+
     // Guarda solo valores válidos (0–100). Mientras se escribe no se corrige el texto.
     const handleIvaRateChange = (e) => {
         const raw = e.target.value;
@@ -345,9 +353,25 @@ export default function SettingsTabVentas({
                             <div className="flex items-center justify-between">
                                 <div>
                                     <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Cobrar IVA</p>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Suma el IVA al total de cada venta nueva. Las ventas anteriores no cambian.</p>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                        {taxConfig.ivaIncluded
+                                            ? 'Desglosa el IVA que ya traen tus precios en cada venta nueva. Las ventas anteriores no cambian.'
+                                            : 'Suma el IVA al total de cada venta nueva. Las ventas anteriores no cambian.'}
+                                    </p>
                                 </div>
                                 <Toggle enabled={taxConfig.ivaEnabled} onChange={handleIvaToggle} aria-label="Cobrar IVA" />
+                            </div>
+
+                            <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-3">
+                                <div>
+                                    <p className="text-xs font-extrabold text-slate-700 dark:text-slate-200">Mis precios ya incluyen IVA</p>
+                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                        {taxConfig.ivaIncluded
+                                            ? 'El total no cambia: un producto de $11,60 se cobra $11,60 (base $10,00 + IVA $1,60). La ganancia descuenta el IVA.'
+                                            : 'Apagado: el IVA se suma encima del precio ($10,00 + 16% = $11,60).'}
+                                    </p>
+                                </div>
+                                <Toggle enabled={taxConfig.ivaIncluded} onChange={handleIvaIncludedToggle} aria-label="Mis precios ya incluyen IVA" />
                             </div>
 
                             <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 space-y-2">

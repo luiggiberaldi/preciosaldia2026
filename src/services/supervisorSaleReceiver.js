@@ -40,6 +40,7 @@ export function toRemoteSaleReceipt(sale) {
         baseUsd: sale.baseUsd ?? null,
         ivaUsd: sale.ivaUsd ?? 0,
         ...(sale.ivaBreakdown ? { ivaBs: sale.ivaBs ?? null, ivaBreakdown: sale.ivaBreakdown } : {}),
+        ...(sale.ivaIncluido === true ? { ivaIncluido: true } : {}),
         payments: sale.payments || [],
         changeUsd: sale.changeUsd ?? 0,
         changeBs: sale.changeBs ?? 0,

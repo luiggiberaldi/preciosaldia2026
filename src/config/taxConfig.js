@@ -3,6 +3,8 @@
 // - IVA general editable desde Ajustes; 16% de fábrica.
 // - Cada producto puede tener `ivaRate` propio: undefined/null = usar la general, 0 = exento.
 // - `ivaEnabled` arranca en false: no cambia ningún total hasta que el dueño lo active.
+// - `ivaIncluded`: los precios ya traen el IVA. El total no cambia; el IVA se saca del
+//   precio (base = precio / (1 + %)). En false (de fábrica) el IVA se suma encima.
 
 const TAX_CONFIG_KEY = 'tax_config_v1';
 
@@ -11,6 +13,7 @@ export const IVA_FACTORY_RATE = 16;
 export const DEFAULT_TAX_CONFIG = Object.freeze({
     ivaEnabled: false,
     ivaRate: IVA_FACTORY_RATE,
+    ivaIncluded: false,
 });
 
 /** Devuelve un número válido entre 0 y 100, o null si la entrada no es válida. */
@@ -27,6 +30,7 @@ export function sanitizeTaxConfig(raw) {
     return {
         ivaEnabled: raw?.ivaEnabled === true,
         ivaRate: rate ?? IVA_FACTORY_RATE,
+        ivaIncluded: raw?.ivaIncluded === true,
     };
 }
 
@@ -38,6 +42,8 @@ export function sanitizeTaxConfig(raw) {
 export function resolveLineIvaRate(item, config = DEFAULT_TAX_CONFIG) {
     const cfg = sanitizeTaxConfig(config);
     if (!cfg.ivaEnabled) return 0;
+    // El avance de efectivo (monto + comisión) siempre es exento.
+    if (item?.isCashAdvance) return 0;
     const productRate = normalizeIvaRate(item?.ivaRate);
     if (item?.ivaRate !== undefined && item?.ivaRate !== null && item?.ivaRate !== '' && productRate !== null) {
         return productRate;
@@ -60,10 +66,10 @@ export function loadTaxConfig() {
  * Opciones IVA listas para pasar a FinancialEngine.buildCartTotals.
  * Usar siempre esta función para que cesta, cobro, saldo y guardado usen la misma regla.
  */
-export function getCartIvaOpts() {
-    const taxConfig = loadTaxConfig();
+export function getCartIvaOpts(taxConfig = loadTaxConfig()) {
     return {
         enabled: taxConfig.ivaEnabled,
+        included: taxConfig.ivaEnabled && taxConfig.ivaIncluded === true,
         resolveRate: (item) => resolveLineIvaRate(item, taxConfig),
     };
 }

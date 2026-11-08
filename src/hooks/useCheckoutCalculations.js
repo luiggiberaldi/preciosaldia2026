@@ -3,7 +3,7 @@ import { round2, divR, mulR, subR, sumR } from '../utils/dinero';
 import { FINANCIAL_EPSILON } from '../utils/securityConstants';
 import { CurrencyService } from '../services/CurrencyService';
 import { FinancialEngine } from '../core/FinancialEngine';
-import { loadTaxConfig, resolveLineIvaRate, getCartIvaOpts } from '../config/taxConfig';
+import { getCartIvaOpts } from '../config/taxConfig';
 import { isTicketRepriced, repriceDeltaUsd } from '../utils/reprice.js';
 
 /**
@@ -62,11 +62,7 @@ export function useCheckoutCalculations({
             return { totalUsd: baseCartTotalUsd, totalBs: baseCartTotalBs };
         }
         // IVA fase 3: configuración fiscal leída del módulo de config.
-        const taxConfig = loadTaxConfig();
-        const ivaOpts = {
-            enabled: taxConfig.ivaEnabled,
-            resolveRate: (item) => resolveLineIvaRate(item, taxConfig),
-        };
+        const ivaOpts = getCartIvaOpts();
         return FinancialEngine.buildCartTotals(cart, discountData, safeRate, safeTasaCop, isBsPaymentActive, ivaOpts);
     }, [cart, discountData, safeRate, safeTasaCop, isBsPaymentActive, baseCartTotalUsd, baseCartTotalBs]);
 

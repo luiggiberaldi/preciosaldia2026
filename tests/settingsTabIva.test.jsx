@@ -125,7 +125,7 @@ describe('Ajustes → Ventas → Terminal: tarjeta IVA', () => {
         await act(async () => {
             restoreBtn().click();
         });
-        expect(loadTaxConfig()).toEqual({ ivaEnabled: false, ivaRate: 16 });
+        expect(loadTaxConfig()).toEqual({ ivaEnabled: false, ivaRate: 16, ivaIncluded: false });
         expect(rateInput().value).toBe('16');
     });
 

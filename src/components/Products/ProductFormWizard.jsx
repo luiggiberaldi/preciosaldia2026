@@ -4,6 +4,7 @@ import { useProductContext } from '../../context/ProductContext';
 import CustomSelect from '../CustomSelect';
 import { showToast } from '../Toast';
 import ProductCostFactorControl from './ProductCostFactorControl';
+import { loadTaxConfig } from '../../config/taxConfig';
 import {
     granelUnitLabel,
     useGranelUnitMode,
@@ -92,6 +93,13 @@ export default function ProductFormWizard({
     // Margin calculations
     const mainMarginPct = parsedPrice > 0 && parsedCost > 0 ? ((parsedPrice - parsedCost) / parsedPrice * 100) : null;
     const mainMarginUsd = parsedPrice - parsedCost;
+
+    // Precios con IVA incluido: parte del precio es IVA. Solo informativo, no cambia el precio.
+    const taxCfg = loadTaxConfig();
+    const includedIvaRate = taxCfg.ivaEnabled && taxCfg.ivaIncluded && ivaMode !== 'exento' ? taxCfg.ivaRate : 0;
+    const netPriceUsd = includedIvaRate > 0 ? Math.round(parsedPrice / (1 + includedIvaRate / 100) * 100) / 100 : null;
+    const realMarginPct = netPriceUsd > 0 && parsedCost > 0 ? ((netPriceUsd - parsedCost) / netPriceUsd * 100) : null;
+    const realMarginUsd = netPriceUsd !== null ? netPriceUsd - parsedCost : null;
 
     const effectiveUnitPrice = copEnabled && tasaCop > 0 && unitPriceCop
         ? parseFloat(unitPriceCop) / tasaCop
@@ -805,6 +813,15 @@ export default function ProductFormWizard({
                                         <span className="text-[10px] ml-1.5 opacity-80 font-bold">(${mainMarginUsd.toFixed(2)})</span>
                                     </span>
                                 </div>
+                                {realMarginPct !== null && (
+                                    <div className="flex justify-between items-center" data-testid="real-margin-iva">
+                                        <span className="text-slate-500 font-medium">Sin IVA ${netPriceUsd.toFixed(2)} · margen real:</span>
+                                        <span className={`font-black ${realMarginPct >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                            {realMarginPct.toFixed(1)}%
+                                            <span className="text-[10px] ml-1.5 opacity-80 font-bold">(${realMarginUsd.toFixed(2)})</span>
+                                        </span>
+                                    </div>
+                                )}
                                 {isLote && sellByUnit && parsedUnits > 1 && unitMarginPct !== null && (
                                     <div className="flex justify-between items-center border-t border-slate-200/50 dark:border-slate-700/50 pt-1 mt-1">
                                         <span className="text-slate-500 font-medium">Margen Unidad:</span>
