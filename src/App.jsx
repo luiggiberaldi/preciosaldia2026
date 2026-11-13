@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, Suspense, lazy } from 'react';
 import { Home, ShoppingCart, Store, Users, Download, FlaskConical, Moon, Sun, BarChart3, WifiOff, X, Settings, Clock } from 'lucide-react';
 
 import DashboardView from './views/DashboardView';
@@ -27,6 +27,9 @@ import { useOfflineQueue } from './hooks/useOfflineQueue';
 import { useAutoBackup } from './hooks/useAutoBackup';
 import { useRemoteCommands } from './hooks/useRemoteCommands';
 import CommandPalette from './components/CommandPalette';
+import SideNav from './app/SideNav';
+import { ADMIN_ONLY_TABS, canOpenTab } from './app/roleTabs';
+import { usePrefetchMainViews } from './app/usePrefetchMainViews';
 import LockScreen from './components/security/LockScreen';
 import { useAutoLock } from './hooks/useAutoLock';
 import { useAuthStore } from './hooks/store/useAuthStore';
@@ -54,6 +57,26 @@ import { applyUiScale } from './utils/uiScale';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('inicio');
+  // Barra lateral (PC). Sin preferencia guardada: arranca plegada en pantallas < 1280px para dar más espacio.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    const saved = localStorage.getItem('sidebar_collapsed');
+    return saved === null ? window.innerWidth < 1280 : saved === '1';
+  });
+  // Caja en pantallas < 1440px (p. ej. 1366x768): el menú se muestra recogido para dar
+  // espacio a los productos. Abrirlo ahí solo dura la sesión y no cambia la preferencia guardada.
+  const [isNarrowScreen, setIsNarrowScreen] = useState(() => window.innerWidth < 1440);
+  const [salesSidebarOpen, setSalesSidebarOpen] = useState(false);
+  useEffect(() => {
+    const onResize = () => setIsNarrowScreen(window.innerWidth < 1440);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  const salesAutoCollapse = activeTab === 'ventas' && isNarrowScreen;
+  const effectiveSidebarCollapsed = salesAutoCollapse ? !salesSidebarOpen : sidebarCollapsed;
+  const toggleSidebar = () => {
+    if (salesAutoCollapse) { setSalesSidebarOpen((o) => !o); return; }
+    setSidebarCollapsed(c => { localStorage.setItem('sidebar_collapsed', c ? '0' : '1'); return !c; });
+  };
   const [installPrompt, setInstallPrompt] = useState(null);
   const [showIOSInstall, setShowIOSInstall] = useState(false);
   const [mountedViews, setMountedViews] = useState({});
@@ -311,6 +334,21 @@ export default function App() {
 
   const isCajero = requireLogin && usuarioActivo?.rol === 'CAJERO';
 
+  // Portero de pantallas (traído de Farmacia, ERR-118). Toda navegación pasa por aquí;
+  // si algo deja al Cajero en Reportes o Ajustes (paleta, aviso, enlace), vuelve a Vender.
+  const goTo = useCallback((tab) => { if (canOpenTab(tab, isCajero)) setActiveTab(tab); }, [isCajero]);
+  useEffect(() => {
+    if (!canOpenTab(activeTab, isCajero)) setActiveTab('ventas');
+  }, [activeTab, isCajero]);
+
+  // Al cambiar de usuario se desmontan las pantallas que dejó abiertas el anterior
+  // (si no, Reportes/Ajustes del Administrador quedarían montadas y escondidas con CSS).
+  useEffect(() => {
+    setMountedViews({});
+  }, [usuarioActivo?.id, usuarioActivo?.rol]);
+
+  usePrefetchMainViews(!isMonitorMode);
+
   const ALL_TABS = [
     { id: 'inicio', label: 'Inicio', icon: Home },
     { id: 'ventas', label: 'Vender', icon: ShoppingCart },
@@ -460,7 +498,19 @@ export default function App() {
       <ProductProvider>
         {/* OFFLINE-IMG: precalienta el cache del SW con TODAS las imágenes del inventario */}
         <ImagePrecacheRunner />
-        <main className={`flex-1 min-h-0 w-full max-w-full px-0 lg:px-6 xl:px-8 mx-auto relative ${isKeyboardOpen ? 'pb-2' : 'pb-16 lg:pb-1'} flex flex-col overflow-y-auto`}>
+        <SideNav
+          tabs={TABS}
+          activeTab={activeTab}
+          setActiveTab={goTo}
+          triggerHaptic={triggerHaptic}
+          collapsed={effectiveSidebarCollapsed}
+          onToggle={toggleSidebar}
+          requireLogin={requireLogin}
+          usuarioActivo={usuarioActivo}
+          logout={logout}
+        />
+        {/* En PC el contenido deja el ancho de la barra lateral (--sbw) y se centra hasta 1400px. */}
+        <main style={{ '--sbw': effectiveSidebarCollapsed ? '4rem' : '14rem' }} className={`flex-1 min-h-0 w-full max-w-full px-0 ${activeTab === 'ventas' ? 'lg:px-4 xl:px-5 2xl:px-8' : 'lg:pl-[max(1.5rem,calc((100vw-var(--sbw)-1400px)/2))] lg:pr-[max(1.5rem,calc((100vw-var(--sbw)-1400px)/2))]'} mx-auto relative ${isKeyboardOpen ? 'pb-2' : 'pb-[4.75rem] lg:pb-1'} flex flex-col overflow-y-auto transition-[margin] duration-200 lg:w-auto lg:mr-0 ${effectiveSidebarCollapsed ? 'lg:ml-16' : 'lg:ml-56'}`}>
 
           {/* Hidden Admin Trigger Area */}
         <div
@@ -475,7 +525,7 @@ export default function App() {
             <PremiumGuard featureName="Punto de Venta" isShop={true}>
               {(activeTab === 'ventas' || mountedViews.ventas) && (
                 <Suspense fallback={<div className="flex-1 p-4 space-y-4"><div className="skeleton h-10 w-40" /><div className="skeleton h-32" /><div className="skeleton h-48" /></div>}>
-                  <SalesView rates={rates} rateDiscrepancyWarning={rateDiscrepancyWarning} triggerHaptic={triggerHaptic} onNavigate={setActiveTab} isActive={activeTab === 'ventas'} />
+                  <SalesView rates={rates} rateDiscrepancyWarning={rateDiscrepancyWarning} triggerHaptic={triggerHaptic} onNavigate={goTo} isActive={activeTab === 'ventas'} />
                 </Suspense>
               )}
             </PremiumGuard>
@@ -496,7 +546,7 @@ export default function App() {
 
         <div className={`flex-1 flex flex-col ${activeTab === 'inicio' ? '' : 'hidden'}`}>
           <ErrorBoundary>
-            <DashboardView rates={rates} triggerHaptic={triggerHaptic} onNavigate={(tab) => { if (tab === 'ajustes') { if (!isCajero) setActiveTab('ajustes'); } else { setActiveTab(tab); } }} theme={theme} toggleTheme={toggleTheme} isActive={activeTab === 'inicio'} isDemo={isDemo} demoTimeLeft={demoTimeLeft} />
+            <DashboardView rates={rates} triggerHaptic={triggerHaptic} onNavigate={goTo} theme={theme} toggleTheme={toggleTheme} isActive={activeTab === 'inicio'} isDemo={isDemo} demoTimeLeft={demoTimeLeft} />
           </ErrorBoundary>
         </div>
 
@@ -515,7 +565,7 @@ export default function App() {
             <div data-view="reportes" className={`flex-1 flex flex-col ${activeTab === 'reportes' ? '' : 'hidden'}`}>
               <ErrorBoundary>
                 <PremiumGuard featureName="Reportes Históricos" isShop={true}>
-                  <ReportsView rates={rates} triggerHaptic={triggerHaptic} onNavigate={setActiveTab} isActive={activeTab === 'reportes'} />
+                  <ReportsView rates={rates} triggerHaptic={triggerHaptic} onNavigate={goTo} isActive={activeTab === 'reportes'} />
                 </PremiumGuard>
               </ErrorBoundary>
             </div>
@@ -545,7 +595,7 @@ export default function App() {
         <BottomNav
           tabs={TABS}
           activeTab={activeTab}
-          setActiveTab={setActiveTab}
+          setActiveTab={goTo}
           triggerHaptic={triggerHaptic}
           requireLogin={requireLogin}
           usuarioActivo={usuarioActivo}
@@ -565,7 +615,8 @@ export default function App() {
           isOpen={isCommandPaletteOpen} 
           onClose={() => setIsCommandPaletteOpen(false)} 
           onToggle={() => setIsCommandPaletteOpen(p => !p)} 
-          navigateTo={setActiveTab} 
+          navigateTo={goTo}
+          hiddenTabs={isCajero ? ADMIN_ONLY_TABS : null}
       />
 
       {/* iOS Install Instructions Modal */}
@@ -685,8 +736,6 @@ function BottomNav({
   setShowIOSInstall,
   isKeyboardOpen
 }) {
-  if (isKeyboardOpen) return null;
-
   const { cart } = useCart();
   // GRANEL-001-UI: el badge cuenta ARTÍCULOS distintos de la cesta, nunca suma cantidades.
   // Sumar item.qty mostraba decimales (ej: "1.355") para productos a granel (kg/L).
@@ -696,9 +745,14 @@ function BottomNav({
     return cart.length;
   }, [cart]);
 
+  // El retorno va DESPUÉS de los hooks (reglas de React): antes estaba arriba y al abrir
+  // el teclado cambiaba el número de hooks (error #310).
+  if (isKeyboardOpen) return null;
+
+  // Solo teléfono y tablet: en PC la navegación vive en la barra lateral (SideNav).
   return (
-    <div className={`fixed bottom-1 left-0 right-0 ${activeTab === 'ventas' ? 'lg:right-[400px]' : ''} px-1 sm:px-6 pb-[max(0.25rem,env(safe-area-inset-bottom))] pt-0 max-w-xl lg:max-w-lg mx-auto z-30 pointer-events-none animate-in slide-in-from-bottom-4 duration-300`}>
-      <div className="relative bg-slate-900/95 dark:bg-slate-950/95 backdrop-blur-2xl rounded-2xl px-1 sm:px-2 py-1.5 flex justify-between items-center shadow-2xl shadow-black/40 border border-white/10 ring-1 ring-black/10 pointer-events-auto">
+    <div className="lg:hidden fixed bottom-0 left-0 right-0 z-30 pointer-events-none animate-in slide-in-from-bottom-4 duration-300">
+      <div className="relative bg-slate-900/95 dark:bg-slate-950/95 backdrop-blur-2xl rounded-t-2xl px-1 sm:px-4 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] flex justify-between items-center shadow-2xl shadow-black/40 border-t border-white/10 pointer-events-auto sm:max-w-xl sm:mx-auto">
         {tabs.map(tab => {
           const isVender = tab.id === 'ventas';
           const isActive = activeTab === tab.id;
