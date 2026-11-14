@@ -265,3 +265,10 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 - Decisión del dueño: el sistema no usará tema oscuro.
 **Casos y errores:** [CASO-003](docs/casos/CASO-003-vender-estilo-farmacia.md); ERR-007 (resuelto), ERR-008 (descartado); P-007 (descartado), P-008.
 **Verificación:** batería completa 2.241 de 2.244 (16 omitidas); fallan las mismas 3 de licencias de antes (`licenseMonitoringMissing` ×2, `licensePolicy` ×1), ajenas a este cambio. Pruebas nuevas: `rateStamp`, `productInitials`, `salesFeaturesCartCompact`, `hotProducts`; ajustada `posSearchViewModes`. ESLint sin errores en los archivos tocados. `docs:check` al día. Probado en el navegador a 1366×768, 1920×1080, 1024×768, 768 y 375 con 2.400 productos de prueba. No verificado: varias categorías y fotos reales (P-008). Sin commit.
+
+## 2026-11-14 — Cobro «Procesar Pago» estilo Farmacia y vueltos (CASO-004)
+
+**Contexto:** el dueño comparó el cobro de PC con el de Farmacia y pidió auditoría, plan y ejecución fase a fase.
+**Cambios:** resumen único y botón COBRAR junto al total; «Completar» y atajos de 44 px; vuelto en opciones de un toque con «Sugerido» ($ en billetes + resto en Bs) y reparto automático; confirmación del vuelto siempre; F9/Enter cobran; `redondeoUsd`; Esc ya no cierra el cobro; Bs con 2 decimales; Biopago de fábrica; referencia de pago por método (de fábrica en «No»); teclado numérico táctil; `index.jsx` partido en `parts/`. Detalle y archivos en el caso.
+**Casos y errores:** CASO-004, ERR-009 a ERR-012.
+**Verificación:** pruebas del cobro 157 de 157; batería completa 2296 pasan, 3 fallan (licencias, ya fallaban antes); navegador `tests/e2e/cobro-pos.e2e.spec.js` 17 de 17 a 1366×768 y 1024×768. No verificado: laptop táctil real, impresora térmica y PDF con referencia, cuadre con ventas reales.

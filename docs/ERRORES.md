@@ -14,6 +14,10 @@ Cada error encontrado va aquí, con su solución. Reglas en [LEY-DOCUMENTACION.m
 | ERR-006 | Explosión de egress en sync_documents | 2026-10-23 | Resuelto | — |
 | ERR-007 | Un producto sin precio se agregaba a la cesta a $0.00 | 2026-11-14 | Resuelto | CASO-003 |
 | ERR-008 | Tema oscuro: precios de las fichas y total de la cesta casi invisibles | 2026-11-14 | Descartado | CASO-003 |
+| ERR-009 | Un faltante de hasta $0,01 se cobraba sin dejar rastro | 2026-11-14 | Resuelto | CASO-004 |
+| ERR-010 | La confirmación del vuelto mostraba Bs con 3 decimales | 2026-11-14 | Resuelto | CASO-004 |
+| ERR-011 | `Esc` en un campo del cobro cerraba todo el cobro | 2026-11-14 | Resuelto | CASO-004 |
+| ERR-012 | «Todo en $» anotaba dólares con centavos que no existen | 2026-11-14 | Resuelto (mitigado) | CASO-004 |
 
 ERR-004 a ERR-006 se reconstruyeron desde informes ya existentes; el detalle completo está en esos informes. ERR-001 a ERR-003 se arreglaron y guardaron el 2026-11-13 (commit «fix(caja): …», ver CASO-002).
 
@@ -104,3 +108,47 @@ ERR-004 a ERR-006 se reconstruyeron desde informes ya existentes; el detalle com
 - **Decisión:** el dueño dijo «el sistema no utilizará tema oscuro». No se arregla; Bodega trabaja solo en tema claro (el de fábrica). Si algún día se activa el tema oscuro, este error hay que resolverlo antes.
 - **Cómo comprobarlo:** Ajustes → tema oscuro, ir a Vender y mirar el precio de cualquier ficha sin bulto/unidad y el «TOTAL $» de la cesta.
 - **Relacionados:** CASO-003, P-007.
+
+## ERR-009 — Un faltante de hasta $0,01 se cobraba sin dejar rastro
+
+- **Fecha:** 2026-11-14
+- **Estado:** Resuelto
+- **Dónde:** `src/utils/checkoutProcessor.js`.
+- **Síntoma:** por redondeo de los Bs podía faltar $0,01; la venta pasaba como pagada y no quedaba anotado en ningún lado. Al cuadrar, un centavo que nadie podía explicar.
+- **Causa:** la regla «hasta $0,01 no se fía» existía, pero no guardaba la diferencia (Farmacia sí, CASO-004 de Farmacia).
+- **Solución:** la venta guarda `redondeoUsd` (0 si el pago fue exacto). No cambia ningún total.
+- **Cómo comprobarlo:** `tests/redondeoUsd.test.js` (3 pruebas).
+- **Relacionados:** CASO-004.
+
+## ERR-010 — La confirmación del vuelto mostraba Bs con 3 decimales
+
+- **Fecha:** 2026-11-14
+- **Estado:** Resuelto
+- **Dónde:** `src/components/Sales/CheckoutModalPOS/components/ChangeConfirmationModal.jsx` (`formatBs`).
+- **Síntoma:** podía salir «Bs 7.375,006» (mismo error que ERR-116 de Farmacia).
+- **Causa:** el formato fijaba el mínimo de decimales pero no el máximo, y recibía `vuelto × tasa` sin redondear.
+- **Solución:** `round2` y `maximumFractionDigits: 2`.
+- **Cómo comprobarlo:** cobrar con vuelto; «Vuelto total» en Bs muestra 2 decimales.
+- **Relacionados:** CASO-004.
+
+## ERR-011 — `Esc` en un campo del cobro cerraba todo el cobro
+
+- **Fecha:** 2026-11-14
+- **Estado:** Resuelto
+- **Dónde:** `PaymentInputs.jsx` (Esc vacía el campo) y `SalesView.jsx` (Esc en la ventana cierra el cobro).
+- **Síntoma:** el cajero pulsaba `Esc` para borrar un monto y se cerraba el cobro entero, perdiendo lo escrito y el cliente elegido. Con la confirmación del vuelto abierta, `Esc` también cerraba todo.
+- **Causa:** el campo vaciaba el monto pero dejaba subir la tecla hasta la ventana, donde Vender cierra el cobro.
+- **Solución:** con un monto escrito, el campo detiene la tecla (solo borra). Con el campo vacío, `Esc` sigue cerrando el cobro. La confirmación del vuelto atiende `Esc` antes que Vender y cierra solo ella.
+- **Cómo comprobarlo:** `tests/e2e/cobro-pos.e2e.spec.js` («Esc con un monto escrito…» y «La confirmación muestra el aviso…»).
+- **Relacionados:** CASO-004.
+
+## ERR-012 — «Todo en $» anotaba dólares con centavos que no existen
+
+- **Fecha:** 2026-11-14
+- **Estado:** Resuelto (mitigado)
+- **Dónde:** cobro de PC (`CheckoutModalPOS`).
+- **Síntoma:** con un vuelto de $3,27, «Todo en $» anotaba «entregué $3,27 en dólares». En la vida real se dan $3 y el resto en Bs, así que el «Efectivo esperado» del cierre se desviaba (menos dólares, más Bs).
+- **Causa:** el desglose realista (`computeRealisticSplit`) solo lo usaba el cobro de celular.
+- **Solución:** opción «Sugerido: $3 + Bs …» en el cobro de PC, con los ajustes de Caja & Vuelto; «Todo en $» con centavos avisa. No se bloquea (decisión del dueño).
+- **Cómo comprobarlo:** `tests/cobroSugerido.test.js` y la prueba «Sugerido» de `tests/e2e/cobro-pos.e2e.spec.js`.
+- **Relacionados:** CASO-004.

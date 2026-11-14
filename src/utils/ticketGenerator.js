@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf';
+import { refSuffix } from './paymentReference.js';
 import { formatBs, formatCop, formatUsd } from './calculatorUtils';
 import {
     INK, BODY, MUTED, GREEN, RULE, RED,
@@ -319,7 +320,7 @@ export async function generateTicketPDF(sale, bcvRate) {
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(7.5);
                 doc.setTextColor(...BODY);
-                doc.text(pIsInternalCredit ? 'Saldo a favor utilizado:' : (p.methodLabel || 'Pago'), M, y);
+                doc.text(pIsInternalCredit ? 'Saldo a favor utilizado:' : `${p.methodLabel || 'Pago'}${refSuffix(p)}`, M, y);
                 doc.setFont('helvetica', 'bold');
                 doc.setTextColor(...INK);
                 doc.text(val, RIGHT, y, { align: 'right' });

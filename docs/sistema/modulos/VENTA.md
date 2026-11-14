@@ -20,7 +20,18 @@ Arma la cesta, cobra con uno o varios métodos de pago, calcula el vuelto, descu
 
 ## Métodos de pago
 
-De fábrica: Efectivo Bs, Pago Móvil, Punto de Venta, Efectivo USD, Efectivo COP, Transferencia COP. El **Saldo a favor** es un método virtual: es crédito interno del cliente, no dinero recibido. El dueño puede agregar métodos propios (`bodega_payment_methods_v1`).
+De fábrica: Efectivo Bs, Pago Móvil, Punto de Venta, Biopago, Efectivo USD, Efectivo COP, Transferencia COP. Cada método (menos el efectivo) puede pedir **referencia de pago** (últimos 4): No / Opcional / Obligatoria, en Ajustes → Ventas → Caja & Vuelto; de fábrica todos en «No». La referencia se guarda en el pago (`referencia`), sale en recibo y tickets, y el cobro avisa si se repite el mismo día ([CASO-004](../../casos/CASO-004-cobro-pos-estilo-farmacia.md)). El **Saldo a favor** es un método virtual: es crédito interno del cliente, no dinero recibido. El dueño puede agregar métodos propios (`bodega_payment_methods_v1`).
+
+## Cobro de PC («Procesar Pago», CASO-004)
+
+- Arriba a la izquierda, un solo panel: **Total**, **Pagado** y **Falta** (ámbar) o **Vuelto** (verde). Debajo, el botón **«COBRAR $X»** o **«FALTAN $X»**.
+- Cada método tiene **«⚡ Completar»** (o la tecla Espacio) para poner lo que falta. Efectivo $ tiene atajos $1…$100.
+- **Vuelto:** «¿Cómo entregas el vuelto?» con **Sugerido** ($ en billetes + resto en Bs, solo si el vuelto tiene centavos), **Todo en $**, **Todo en Bs**, **En $ y Bs** (el otro campo se llena solo), **Lo deja (propina)** y **A su billetera** (con cliente).
+- El «Sugerido» usa Ajustes → Caja & Vuelto: billete más pequeño y redondeo «a favor de la tienda» (la diferencia queda en caja). «A favor del cliente» no redondea hacia arriba en PC, porque dar de más no se puede anotar en la venta.
+- Con vuelto, después de COBRAR **siempre** sale la confirmación de la distribución (Enter confirma, Esc vuelve).
+- **Teclado:** F9 abre el cobro y, ya dentro, cobra; Enter en el último campo cobra; Esc en un campo con monto lo borra (no cierra el cobro).
+- **Pantalla táctil:** teclado numérico propio (Ajustes → Ventas → Terminal & Cobro: Automático / Siempre / Nunca, por equipo).
+- Código: `src/components/Sales/CheckoutModalPOS/` (`parts/` tiene las cuentas de pantalla; `components/` lo que se ve).
 
 ## Tipos de venta
 

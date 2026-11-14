@@ -16,6 +16,7 @@
 | P-006 | Ordenar los `PLAN-*`, `REPORTE-*`, `M5-*`, `REBRAND-PLAN` y `CASO-DESCUADRE-*` que siguen en la raíz (moverlos a `docs/plans/` o `docs/reports/`) | Documentación, fase 4 | Pendiente (no se movieron: se citan por nombre en comentarios de `src/` y `tests/`, y se enlazan entre sí) |
 | P-007 | Arreglar el tema oscuro en Vender (precios y total casi invisibles, ERR-008) | CASO-003 | Descartado (2026-11-14): no se usará tema oscuro |
 | P-008 | Probar Vender con varias categorías y con las fotos reales de los productos | CASO-003 | Pendiente |
+| P-009 | Probar el cobro en una laptop táctil real (teclado numérico), la impresora térmica y el ticket PDF con referencia de pago, y el cuadre del cierre con ventas reales de varios días | CASO-004 | Pendiente |
 
 ---
 

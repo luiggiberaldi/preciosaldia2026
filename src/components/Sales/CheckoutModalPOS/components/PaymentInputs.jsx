@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-    DollarSign, Banknote, Smartphone, CreditCard, Wallet, Send, Bitcoin, Zap, Hash
+    DollarSign, Banknote, Smartphone, CreditCard, Wallet, Send, Bitcoin, Zap
 } from 'lucide-react';
 
 const ICON_MAP = { CreditCard, Smartphone, Banknote, Wallet, Send, Bitcoin, DollarSign };
@@ -38,11 +38,15 @@ const getBrandStyles = (name, type) => {
  */
 const InputPago = React.memo(React.forwardRef(({
     label, icon: Icon, value, onChange, onAutoFill, moneda, onKeyDown,
-    requiereRef, refPago, onChangeRef, tasa, isSelected, onFocus, onFocusRef
+    requiereRef, pideRef = false, refFormat = 'digits', refSelected = false, methodId,
+    refPago, onChangeRef, tasa, isSelected, onFocus, onFocusRef, isTouch = false
 }, ref) => {
     const brand = getBrandStyles(label, moneda);
     const isActive = value && parseFloat(value) > 0;
-    const showRef = requiereRef && isActive;
+    // Referencia (últimos 4): aparece en la fila del título solo si el método tiene monto. CASO-058.
+    const showRef = (pideRef || requiereRef) && isActive;
+    const refLen = String(refPago || '').length;
+    const refPendiente = requiereRef && refLen < 4;
     const equivalenciaUSD = moneda === 'BS' && isActive && tasa > 0
         ? (parseFloat(value) / tasa).toFixed(2)
         : null;
@@ -53,10 +57,43 @@ const InputPago = React.memo(React.forwardRef(({
                 <label className={`text-[10px] font-bold uppercase tracking-wider transition-colors ${isActive ? brand.text : 'text-slate-400'}`}>
                     {label}
                 </label>
+                <div className="flex items-center gap-2 min-w-0">
+                    {/* Equivalencia en USD (solo BS), junto al título para no sumar alto */}
+                    {equivalenciaUSD && (
+                        <span className="text-xs font-black text-blue-700 dark:text-blue-300">≈ ${equivalenciaUSD}</span>
+                    )}
+                    {showRef && (
+                        <label className="flex items-center gap-1">
+                            <span className={`text-[11px] font-black ${refPendiente ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500'}`}>
+                                Ref{requiereRef ? '' : ' (opc.)'}
+                            </span>
+                            <input
+                                type="text"
+                                data-ref-for={methodId}
+                                // ERR-111: con letras (Zelle) se usa el teclado del sistema también en táctil;
+                                // el teclado propio solo tiene números.
+                                inputMode={refFormat === 'alnum' ? 'text' : (isTouch ? 'none' : 'numeric')}
+                                autoComplete="off"
+                                value={refPago || ''}
+                                onChange={(e) => {
+                                    const raw = e.target.value.toUpperCase();
+                                    const clean = (refFormat === 'alnum' ? raw.replace(/[^0-9A-Z]/g, '') : raw.replace(/\D/g, '')).slice(0, 4);
+                                    onChangeRef({ target: { value: clean } });
+                                }}
+                                onFocus={onFocusRef}
+                                placeholder="····"
+                                aria-label={`Referencia de ${label}, últimos 4`}
+                                className={`w-[5.25rem] h-8 px-1 rounded-lg border-2 text-center font-mono font-black text-sm tracking-[0.35em] outline-none bg-white dark:bg-slate-900 text-slate-800 dark:text-white transition-all
+                                    ${refSelected ? 'border-slate-700 ring-2 ring-slate-400/40' : refPendiente ? 'border-amber-400 bg-amber-50 dark:bg-amber-950/30' : 'border-emerald-300'}`}
+                            />
+                        </label>
+                    )}
+                </div>
             </div>
 
             <div className="flex flex-col">
-                <div className="relative flex-1">
+                <div className="flex items-stretch gap-2">
+                <div className="relative flex-1 min-w-0">
                     {/* Icono */}
                     <div className={`absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none transition-colors ${isActive ? brand.text : 'text-slate-300'}`}>
                         <Icon size={16} strokeWidth={isActive ? 2.5 : 2} />
@@ -66,7 +103,7 @@ const InputPago = React.memo(React.forwardRef(({
                     <input
                         ref={ref}
                         type="text"
-                        inputMode="decimal"
+                        inputMode={isTouch ? 'none' : 'decimal'}
                         onFocus={onFocus}
                         placeholder="0.00"
                         value={value}
@@ -82,13 +119,16 @@ const InputPago = React.memo(React.forwardRef(({
                                 e.preventDefault();
                                 if (onAutoFill) onAutoFill();
                             }
-                            if (e.key === 'Escape') {
+                            if (e.key === 'Escape' && value !== '' && value != null && String(value) !== '0') {
+                                // COBRO-002: con un monto escrito, Esc solo lo borra; no debe subir
+                                // hasta la ventana y cerrar todo el cobro. Con el campo vacío sí cierra.
                                 e.preventDefault();
+                                e.stopPropagation();
                                 onChange({ target: { value: '' } });
                             }
                             if (onKeyDown) onKeyDown(e);
                         }}
-                        className={`w-full h-14 pl-10 pr-20 rounded-xl border-2 outline-none transition-all font-bold text-lg text-slate-800 dark:text-white shadow-sm
+                        className={`w-full h-14 pl-9 pr-2 rounded-xl border-2 outline-none transition-all font-bold text-lg text-slate-800 dark:text-white shadow-sm
                             ${isSelected
                                 ? `${brand.border} ${brand.bg} ring-4 ${brand.activeRing}`
                                 : isActive
@@ -96,50 +136,23 @@ const InputPago = React.memo(React.forwardRef(({
                                     : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-300 focus:border-slate-400 focus:ring-4 focus:ring-slate-50 dark:focus:ring-slate-800'
                             }`}
                     />
-
-                    {/* Acciones derecha */}
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-                        <button
-                            onClick={onAutoFill}
-                            className={`p-1.5 rounded-lg transition-all active:scale-90 ${isActive ? 'text-slate-400 hover:text-amber-500 hover:bg-white/60' : 'text-slate-300 hover:text-amber-500 hover:bg-slate-100'}`}
-                            title="Llenar saldo restante"
-                            tabIndex={-1}
-                        >
-                            <Zap size={14} fill="currentColor" />
-                        </button>
-                        <span className={`text-[9px] px-1.5 py-0.5 font-black rounded-lg border flex items-center
-                            ${isActive ? `bg-white/60 ${brand.text} ${brand.border}` : 'bg-slate-100 text-slate-400 border-slate-200 dark:bg-slate-800 dark:border-slate-700'}`}>
-                            {moneda === 'BS' ? 'Bs' : moneda === 'COP' ? 'COP' : 'USD'}
-                        </span>
-                    </div>
-
-                    {/* Equivalencia en USD (solo BS) */}
-                    {equivalenciaUSD && (
-                        <div className="absolute -bottom-3 right-3 translate-y-full text-[9px] px-2 py-0.5 font-black text-blue-600 bg-white dark:bg-slate-900 rounded-full border-2 border-blue-100 shadow-md z-20 animate-in fade-in">
-                            ≈ ${equivalenciaUSD}
-                        </div>
-                    )}
+                    {/* La moneda ya la dice la tarjeta (Divisas / Bolívares / COP); se quitó la etiqueta interna para que quepan montos en Bs. */}
                 </div>
 
-                {/* Input de referencia */}
-                {requiereRef && (
-                    <div className={`transition-all duration-300 origin-top ${showRef ? 'max-h-16 opacity-100 mt-2' : 'max-h-0 opacity-0 overflow-hidden mt-0'}`}>
-                        <div className="relative h-11">
-                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><Hash size={13} /></div>
-                            <input
-                                type="text"
-                                className={`w-full h-full pl-8 pr-3 border-2 rounded-xl outline-none font-mono font-bold text-[11px] shadow-sm transition-all
-                                    ${isActive ? `${brand.border} bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 focus:ring-2 ${brand.activeRing}` : 'border-slate-200 dark:border-slate-700'}`}
-                                placeholder="# Referencia..."
-                                value={refPago || ''}
-                                onChange={onChangeRef}
-                                onFocus={onFocusRef}
-                                maxLength={8}
-                                tabIndex={showRef ? 0 : -1}
-                            />
-                        </div>
-                    </div>
-                )}
+                {/* «Completar»: llena lo que falta en la moneda de esta fila (igual que la tecla Espacio). CASO-056 fase 2. */}
+                <button
+                    type="button"
+                    onClick={onAutoFill}
+                    className={`shrink-0 h-14 min-w-[5.75rem] px-2 rounded-xl border-2 inline-flex items-center justify-center gap-1.5 text-sm font-black transition-all active:scale-95 ${brand.border} ${brand.text} bg-white dark:bg-slate-900 hover:brightness-95`}
+                    title="Llenar saldo restante"
+                    aria-label={`Completar lo que falta con ${label}`}
+                    tabIndex={-1}
+                >
+                    <Zap size={15} fill="currentColor" />
+                    Completar
+                </button>
+                </div>
+
             </div>
         </div>
     );
@@ -165,19 +178,21 @@ export default function PaymentInputs({
     isTouch = false,
     onFocusInput,
     activeInputId,
+    activeInputType = 'amount',
     onFocusRef,
     copEnabled = false,
     mobileCurrency = null,
 }) {
     const renderQuickCash = (id) => (
-        <div className="flex flex-wrap gap-1.5 mt-2 px-0.5">
+        <div className="grid grid-cols-6 gap-1.5 mt-2.5">
             {[1, 5, 10, 20, 50, 100].map(den => (
                 <button
                     key={den}
                     type="button"
                     onClick={() => sumarBillete(id, den)}
-                    className="flex-1 min-w-[32px] font-bold rounded-lg border border-slate-100 text-xs py-1.5 bg-white dark:bg-slate-900 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-emerald-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 active:scale-95 transition-all"
-                >{den}</button>
+                    aria-label={`Sumar billete de ${den} dólares`}
+                    className="min-h-[44px] px-1 font-black rounded-[10px] border-2 border-emerald-100 text-[13px] tracking-tight whitespace-nowrap bg-white dark:bg-slate-900 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-emerald-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 active:scale-95 transition-all"
+                >${den}</button>
             ))}
         </div>
     );
@@ -209,6 +224,10 @@ export default function PaymentInputs({
                                     moneda="USD"
                                     onKeyDown={e => handleInputKeyDown(e, idx, m.id, 'USD')}
                                     requiereRef={m.requiereRef}
+                                    pideRef={m.pideRef}
+                                    refFormat={m.refFormat}
+                                    methodId={m.id}
+                                    refSelected={activeInputId === m.id && activeInputType === 'ref'}
                                     refPago={referencias[m.id]}
                                     onChangeRef={e => handleRefChange(m.id, e.target.value)}
                                     tasa={tasa}
@@ -232,9 +251,6 @@ export default function PaymentInputs({
                         <div className="p-1 bg-blue-100 dark:bg-blue-900/50 rounded-lg"><Banknote size={14} strokeWidth={3} /></div>
                         Bolívares (Bs)
                     </h3>
-                    <span className="text-[10px] font-black bg-white dark:bg-slate-900 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded-lg border border-blue-100 dark:border-blue-900/30">
-                        {tasa.toFixed(2)} Bs/$
-                    </span>
                 </div>
                 <div className="space-y-4">
                     {metodosBs.map((m) => {
@@ -251,6 +267,10 @@ export default function PaymentInputs({
                                 moneda="BS"
                                 onKeyDown={e => handleInputKeyDown(e, idx, m.id, 'BS')}
                                 requiereRef={m.requiereRef}
+                                    pideRef={m.pideRef}
+                                    refFormat={m.refFormat}
+                                    methodId={m.id}
+                                    refSelected={activeInputId === m.id && activeInputType === 'ref'}
                                 refPago={referencias[m.id]}
                                 onChangeRef={e => handleRefChange(m.id, e.target.value)}
                                 tasa={tasa}
@@ -287,6 +307,10 @@ export default function PaymentInputs({
                                     moneda="COP"
                                     onKeyDown={e => handleInputKeyDown(e, idx, m.id, 'COP')}
                                     requiereRef={m.requiereRef}
+                                    pideRef={m.pideRef}
+                                    refFormat={m.refFormat}
+                                    methodId={m.id}
+                                    refSelected={activeInputId === m.id && activeInputType === 'ref'}
                                     refPago={referencias[m.id]}
                                     onChangeRef={e => handleRefChange(m.id, e.target.value)}
                                     tasa={tasa}

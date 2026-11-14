@@ -1,4 +1,5 @@
 import { formatBs, formatCop, formatUsd } from './calculatorUtils.js';
+import { refSuffix } from './paymentReference.js';
 import { mulR, divR, round0, round2 } from './dinero.js';
 import { getGranelUnitMode, formatSaleItemQuantity } from './granel.js';
 import { loadTaxConfig } from '../config/taxConfig.js';
@@ -145,7 +146,7 @@ export function buildTicketHtml(sale, bcvRate, paperConfig, settings) {
             : fmtUsd(p.amountUsd || 0);
         return `
             <tr>
-                <td style="font-size:11px;padding:2px 4px 2px 0;text-align:left;width:65%;word-break:break-word;vertical-align:top;">${escapeHtml(pIsInternalCredit ? 'Saldo a favor utilizado' : (p.methodLabel || 'Pago'))}</td>
+                <td style="font-size:11px;padding:2px 4px 2px 0;text-align:left;width:65%;word-break:break-word;vertical-align:top;">${escapeHtml(pIsInternalCredit ? 'Saldo a favor utilizado' : `${p.methodLabel || 'Pago'}${refSuffix(p)}`)}</td>
                 <td style="font-size:11px;font-weight:bold;text-align:right;width:35%;white-space:nowrap;vertical-align:top;">${val}</td>
             </tr>`;
     }).join('');

@@ -13,6 +13,9 @@ import { mulR, sumR } from '../utils/dinero';
 const total = mulR(priceUsd, qty);   // correcto
 ```
 
+4. **Un faltante de hasta $0,01 no se fía**: la venta pasa como pagada y la diferencia queda en `redondeoUsd` ([ERR-009](../../ERRORES.md)).
+5. **El vuelto real es el techo**: nunca se entrega, se deja en caja ni se acredita más vuelto del que existe (`checkoutProcessor`, FIN-034).
+
 ## Candado de escritura
 
 Todo lo que lee y luego escribe ventas, productos, clientes o la auditoría va dentro de `withLock('pos_write_lock', …)` (`'audit_log_lock'` para la auditoría). Evita que dos acciones se pisen.

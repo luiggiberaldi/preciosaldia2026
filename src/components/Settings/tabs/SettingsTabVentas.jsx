@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { SectionCard, Toggle } from '../../SettingsShared';
 import PaymentMethodsManager from '../PaymentMethodsManager';
+import TouchKeypadSetting from '../TouchKeypadSetting';
 import CasheaIcon from '../../CasheaIcon';
 import PrinterHardwareManager from '../PrinterHardwareManager';
 import { useProductContext } from '../../../context/ProductContext';
@@ -349,6 +350,9 @@ export default function SettingsTabVentas({
                         </div>
                     </SectionCard>
 
+                    {/* Teclado numérico del cobro (pantallas táctiles) */}
+                    <TouchKeypadSetting triggerHaptic={triggerHaptic} showToast={showToast} />
+
                     {/* Ticket de Venta */}
                     <SectionCard icon={DollarSign} title="IVA" subtitle="Impuesto al valor agregado sobre la venta" iconColor="text-emerald-600">
                         <div className="space-y-3">
@@ -553,7 +557,7 @@ export default function SettingsTabVentas({
                         <SectionCard
                             icon={HandCoins}
                             title="Cómo entrega la caja el cambio"
-                            subtitle="Ajusta la propuesta automática a lo que realmente hay en caja"
+                            subtitle="Lo usa el vuelto «Sugerido» del cobro, en PC y en celular"
                             iconColor="text-emerald-600"
                         >
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -630,6 +634,9 @@ export default function SettingsTabVentas({
                             </div>
                             <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2 leading-relaxed">
                                 Ejemplo: cambio de $6.20 · billete $1 · redondeo Bs 1 a favor del cliente → la caja entrega <strong>$6 + Bs 16</strong>.
+                            </p>
+                            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 leading-relaxed">
+                                En el cobro de PC el «Sugerido» da los Bs exactos con «a favor del cliente» (dar de más no se puede anotar en la venta); con «a favor de la tienda» redondea hacia abajo y la diferencia queda en caja.
                             </p>
                         </SectionCard>
 

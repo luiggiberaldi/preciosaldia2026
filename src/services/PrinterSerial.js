@@ -1,3 +1,4 @@
+import { refSuffix } from '../utils/paymentReference.js';
 /**
  * PrinterSerial — WebSerial ESC/POS thermal printer service
  * Compatible with 58mm and 80mm thermal printers.
@@ -304,7 +305,7 @@ class PrinterSerial {
             chunks.push(encode(line(w)));
             chunks.push(encode('Pagos:\n'));
             for (const p of sale.payments) {
-                let pmtLabel = p.methodLabel || p.methodId || 'Efectivo';
+                let pmtLabel = `${p.methodLabel || p.methodId || 'Efectivo'}${refSuffix(p)}`;
                 let pmtAmount = '';
                 if (p.methodId === 'saldo_favor' || p.currency === 'INTERNAL_CREDIT' || p.isInternalCredit) {
                     pmtLabel = 'Saldo a favor utilizado';

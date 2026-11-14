@@ -1,4 +1,5 @@
 import { formatBs } from '../../utils/calculatorUtils';
+import { refParen } from '../../utils/paymentReference';
 import { getGranelUnitMode, formatSaleItemQuantity } from '../../utils/granel';
 import { buildIvaTicketRows, isExemptLine } from '../../utils/ticketHtmlTemplate';
 
@@ -62,7 +63,7 @@ export function buildReceiptWhatsAppUrl(receipt, currentRate) {
             : isBs
             ? `Bs ${formatBs(p.amountBs ?? p.amountUsd * r.rate)}`
             : `USD ${parseFloat(p.amountUsd).toFixed(2)}`;
-        return `  ${p.methodLabel}: ${val}`;
+        return `  ${p.methodLabel}${refParen(p)}: ${val}`;
     }).join('\n');
 
     // IVA: EXENTO (E) / BASE IMPONIBLE n% / IVA n% (mismo desglose que el ticket impreso).

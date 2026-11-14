@@ -18,6 +18,7 @@ Un caso es un trabajo grande (varios archivos, visible para el usuario, o que to
 | [CASO-001](CASO-001-documentacion-estilo-farmacia.md) | Documentación estilo Farmacia | 2026-11-13 | Aplicado | Ley, errores, casos, pendientes, guardia suave y manual corto. |
 | [CASO-002](CASO-002-caja-apertura-y-fondo.md) | Caja: apertura duplicada y fondo real de la gaveta | 2026-11-13 | Aplicado | No abrir dos cajas, fondo real en el cobro y aviso legible de vuelto en Bs. |
 | [CASO-003](CASO-003-vender-estilo-farmacia.md) | Vender estilo Farmacia | 2026-11-14 | Aplicado | Fichas uniformes, buscador de 2 modos, cesta compacta, «Vaciar» en la cesta, más vendidos y hora de la tasa. |
+| [CASO-004](CASO-004-cobro-pos-estilo-farmacia.md) | Cobro «Procesar Pago» estilo Farmacia y vueltos | 2026-11-14 | Aplicado | Resumen único, COBRAR junto al total, vuelto en opciones de un toque con «Sugerido», F9/Enter, Biopago, referencia de pago, teclado táctil. ERR-009 a 012. |
 
 ## Antes de la ley
 

@@ -21,12 +21,23 @@ export const FACTORY_PAYMENT_METHODS = [
     { id: 'efectivo_bs', label: 'Efectivo en Bolívares', icon: '💵', Icon: Banknote, currency: 'BS', isFactory: true },
     { id: 'pago_movil', label: 'Pago Móvil', icon: '📱', Icon: Smartphone, currency: 'BS', isFactory: true },
     { id: 'punto_venta', label: 'Punto de Venta', icon: '💳', Icon: CreditCard, currency: 'BS', isFactory: true },
+    // Biopago (BDV): pago con huella en Bs. De fábrica desde 2026-11-14 (pedido del dueño).
+    { id: 'biopago', label: 'Biopago', icon: '👆', Icon: Fingerprint, currency: 'BS', isFactory: true },
     // Dólares
     { id: 'efectivo_usd', label: 'Efectivo en Dólares', icon: '💲', Icon: DollarSign, currency: 'USD', isFactory: true },
     // Pesos
     { id: 'efectivo_cop', label: 'Efectivo en Pesos', icon: '🟡', Icon: Coins, currency: 'COP', isFactory: true },
     { id: 'transferencia_cop', label: 'Transferencia COP', icon: '🏦', Icon: Store, currency: 'COP', isFactory: true },
 ];
+
+// ── REFERENCIA DE PAGO (últimos 4 dígitos) · COBRO fase 7 ──
+// De fábrica ningún método pide referencia (decisión del dueño, 2026-11-14); se enciende en Ajustes.
+// refMode: 'none' (no pide) · 'optional' (pide, no obliga) · 'required' (no cobra sin ella)
+// refFormat: 'digits' (solo números) · 'alnum' (letras y números, p. ej. Zelle)
+export const REF_MODES = ['none', 'optional', 'required'];
+export function normalizeRefMode(mode) {
+    return REF_MODES.includes(mode) ? mode : 'none';
+}
 
 // Alias para compatibilidad
 export const DEFAULT_PAYMENT_METHODS = FACTORY_PAYMENT_METHODS;
@@ -38,7 +49,7 @@ function _normLabel(s) {
     return (s || '').toLowerCase().trim()
         .replace(/[áàä]/g, 'a').replace(/[éèë]/g, 'e')
         .replace(/[íìï]/g, 'i').replace(/[óòö]/g, 'o').replace(/[úùü]/g, 'u')
-        .replace(/\s+/g, ' ');
+        .replace(/\s+/g, '');  // sin espacios: «Bio Pago» y «Biopago» son el mismo método
 }
 
 /** Obtener TODOS los métodos (activos e inactivos) */
@@ -47,7 +58,7 @@ export async function getAllPaymentMethods() {
 
     // Si no hay nada guardado aún, devolver los de fábrica activos
     if (saved.length === 0) {
-        return [...FACTORY_PAYMENT_METHODS].map(m => ({ ...m, isEnabled: true }));
+        return [...FACTORY_PAYMENT_METHODS].map(m => ({ ...m, isEnabled: true, refMode: normalizeRefMode(m.refMode), refFormat: m.refFormat || 'digits' }));
     }
 
     // 1. Fusionar métodos de fábrica con la config guardada
@@ -56,6 +67,8 @@ export async function getAllPaymentMethods() {
         return {
             ...factoryMethod,
             isEnabled: savedMethod ? savedMethod.isEnabled !== false : true,
+            refMode: normalizeRefMode(savedMethod?.refMode ?? factoryMethod.refMode),
+            refFormat: factoryMethod.refFormat || 'digits',
         };
     });
 
@@ -101,6 +114,8 @@ export async function getAllPaymentMethods() {
     const customMethods = dedupedCustom.map(m => ({
         ...m,
         isEnabled: m.isEnabled !== false,
+        refMode: normalizeRefMode(m.refMode),
+        refFormat: m.refFormat === 'alnum' ? 'alnum' : 'digits',
         Icon: ICON_COMPONENTS[m.icon] || null,
     }));
 
@@ -159,6 +174,14 @@ export async function togglePaymentMethodEnabled(id) {
     });
     await savePaymentMethods(updated);
     return await getAllPaymentMethods(); // Return correctly hydrated array
+}
+
+/** Cambiar si un método pide referencia: 'none' | 'optional' | 'required' */
+export async function setPaymentMethodRefMode(id, mode) {
+    const methods = await getAllPaymentMethods();
+    const updated = methods.map(m => (m.id === id ? { ...m, refMode: normalizeRefMode(mode) } : m));
+    await savePaymentMethods(updated);
+    return await getAllPaymentMethods();
 }
 
 // ── HELPERS ──
@@ -244,6 +267,7 @@ export const PAYMENT_ICONS = {
     efectivo_bs: Banknote,
     pago_movil: Smartphone,
     punto_venta: CreditCard,
+    biopago: Fingerprint,
     efectivo_usd: DollarSign,
     fiado: ShoppingCart,
     cashea: Smartphone,

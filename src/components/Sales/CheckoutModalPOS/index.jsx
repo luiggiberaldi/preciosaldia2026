@@ -1,15 +1,16 @@
-import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { showToast } from '../../Toast';
+import React, { useCallback, useEffect } from 'react';
 import { useProductContext } from '../../../context/ProductContext';
-import { round2, subR, mulR, divR, sumR, calculateChangeRemainder } from '../../../utils/dinero';
-import { FinancialEngine } from '../../../core/FinancialEngine';
+import { round2 } from '../../../utils/dinero';
 import { FINANCIAL_EPSILON } from '../../../utils/securityConstants';
-import { getCartIvaOpts } from '../../../config/taxConfig';
 
-// Hooks portados
-import { usePaymentState } from './hooks/usePaymentState';
-import { usePaymentCalculations } from './hooks/usePaymentCalculations';
-import { useClientWallet } from './hooks/useClientWallet';
+// Cálculo y estado del cobro, repartido en piezas (COBRO fase 2)
+import NumericKeypad from './components/NumericKeypad';
+import { applyKey } from './parts/keypadInput';
+import { useCoarsePointer } from '../../../hooks/useCoarsePointer';
+import { useCheckoutPosMethods } from './parts/useCheckoutPosMethods';
+import { useCheckoutPosAmounts } from './parts/useCheckoutPosAmounts';
+import { useCheckoutPosChange } from './parts/useCheckoutPosChange';
+import { useCheckoutPosPay } from './parts/useCheckoutPosPay';
 
 // Subcomponentes
 import PaymentHeader from './components/PaymentHeader';
@@ -58,48 +59,12 @@ export default function CheckoutModalPOS({
 }) {
     const { setCheckoutMode } = useProductContext();
 
-    // Separar métodos por tipo para los inputs
-    const metodosActivos = paymentMethods.filter(m => !m.disabled && m.enabled !== false && !m.isInternalCredit && !m.isVirtual);
-    const metodosDivisa = metodosActivos.filter(m => m.currency === 'USD');
-    const metodosBs = metodosActivos.filter(m => m.currency === 'BS').sort((a, b) => {
-        const isCashA = a.label?.toLowerCase().includes('efectivo');
-        const isCashB = b.label?.toLowerCase().includes('efectivo');
-        if (isCashA && !isCashB) return -1;
-        if (!isCashA && isCashB) return 1;
-        return 0;
-    });
-    const metodosCop = copEnabled ? metodosActivos.filter(m => m.currency === 'COP') : [];
-
-    // Re-mapeo: paymentMethods de bodega usan {id, label, currency} pero los hooks
-    // de Listo POS esperan {id, nombre, tipo}. Normalizamos aquí.
-    const metodosNormalizados = metodosActivos.map(m => ({
-        ...m,
-        nombre: m.label || m.nombre || m.id,
-        tipo: m.currency === 'BS' ? 'BS' : m.currency === 'COP' ? 'COP' : 'DIVISA',
-        icono: m.icon || m.icono || 'DollarSign',
-    }));
-    const metodosDivisaNorm = metodosNormalizados.filter(m => m.tipo === 'DIVISA');
-    const metodosBsNorm = metodosNormalizados.filter(m => m.tipo === 'BS').sort((a, b) => {
-        const isCashA = a.nombre.toLowerCase().includes('efectivo');
-        const isCashB = b.nombre.toLowerCase().includes('efectivo');
-        if (isCashA && !isCashB) return -1;
-        if (!isCashA && isCashB) return 1;
-        return 0;
-    });
-    const metodosCopNorm = copEnabled ? metodosNormalizados.filter(m => m.tipo === 'COP') : [];
-
-    // ─── STATE ─────────────────────────────────────────────
     const {
-        modo, setModo,
-        clienteSeleccionado, setClienteSeleccionado,
-        pagos, setPagos,
-        referencias, setReferencias,
-        pagoSaldoFavor, setPagoSaldoFavor,
-        activeInputId, setActiveInputId,
-        activeInputType, setActiveInputType,
-        inputRefs,
-        val,
-    } = usePaymentState(null, metodosNormalizados, false);
+        setClienteSeleccionado, clienteSeleccionado, metodosBsNorm, activeInputId, val, pagos,
+        metodosNormalizados, pagoSaldoFavor, metodosDivisaNorm, metodosCopNorm, modo, setModo, setPagos,
+        setReferencias, inputRefs, referencias, setPagoSaldoFavor, setActiveInputId, activeInputType,
+        setActiveInputType,
+    } = useCheckoutPosMethods({ paymentMethods, copEnabled });
 
     // Sync external selectedCustomerId con el estado interno
     useEffect(() => {
@@ -123,497 +88,92 @@ export default function CheckoutModalPOS({
         setSelectedCustomerId(id);
     }, [clienteSeleccionado, setSelectedCustomerId]);
 
-    // Cashea
-    const casheaEnabled = localStorage.getItem('cashea_enabled') === 'true';
-    const casheaMinAmount = parseFloat(localStorage.getItem('cashea_min_amount') || '0') || 0;
-    const [casheaActive, setCasheaActive] = useState(false);
-    const [casheaPercent, setCasheaPercent] = useState(60);
-
-    // Vuelto distribución
-    const [distVueltoUSD, setDistVueltoUSD] = useState('');
-    const [distVueltoBS, setDistVueltoBS] = useState('');
-    const [isChangeCredited, setIsChangeCredited] = useState(false);
-    // TIP: propina donada ("cliente deja el cambio").
-    const [isTipDonated, setIsTipDonated] = useState(false);
-    // TIP-002 (D6): propinas grandes exigen una segunda pulsación.
-    const [tipConfirmPending, setTipConfirmPending] = useState(false);
-    // Monto del vuelto que el cliente deja en caja. Puede ser parcial.
-    const [tipAmountUsd, setTipAmountUsd] = useState('');
-    // En móvil se muestra una sola familia de moneda a la vez para reducir
-    // desplazamiento y evitar errores de captura. Los valores no se pierden al
-    // cambiar de pestaña.
-    const [mobilePaymentCurrency, setMobilePaymentCurrency] = useState('USD');
-    const [showMobileChangeDetails, setShowMobileChangeDetails] = useState(false);
-    // La distribución se confirma en un segundo paso únicamente cuando existe vuelto.
-    const [changeConfirmation, setChangeConfirmation] = useState(null);
-
-    // Detectar si hay pagos ingresados en Bolívares o si un input de Bolívares está seleccionado
-    const isBsPaymentActive = useMemo(() => {
-        if (!cart || cart.length === 0) return false;
-        const hasDualItem = cart.some(i => i.pricingMode === 'dual_usd' && parseFloat(i.priceBsUsdRef) > 0);
-        if (!hasDualItem) return false;
-        const isBsInputActive = metodosBsNorm.some(m => m.id === activeInputId);
-        const hasBsPayment = metodosBsNorm.some(m => val(m.id) > 0);
-        return isBsInputActive || hasBsPayment;
-    }, [cart, metodosBsNorm, val, activeInputId]);
-
-    // Recalcular totales dinámicos si el pago es en Bolívares
-    const dynamicCartTotals = useMemo(() => {
-        if (!cart || cart.length === 0 || !cart.some(i => i.pricingMode === 'dual_usd' && parseFloat(i.priceBsUsdRef) > 0)) {
-            return { totalUsd: cartTotalUsd, totalBs: cartTotalBs, baseUsd: cartBaseUsd, ivaUsd: cartIvaUsd };
-        }
-        // IVA: misma configuración que la cesta, para que el total cobrado coincida con lo mostrado.
-        return FinancialEngine.buildCartTotals(cart, discountData, effectiveRate, tasaCop, isBsPaymentActive, getCartIvaOpts());
-    }, [cart, discountData, effectiveRate, tasaCop, isBsPaymentActive, cartTotalUsd, cartTotalBs, cartBaseUsd, cartIvaUsd]);
-
-    // AVISO-REPRECIO (PLAN-AVISO-REPRECIO-BS · Trabajo 1): el total cambia al
-    // aplicar el precio de referencia en Bs de los ítems con Doble Precio.
-    const repricedActive = isTicketRepriced({
-        isBsPaymentActive,
-        baseTotalUsd: cartTotalUsd,
-        newTotalUsd: dynamicCartTotals.totalUsd,
-    });
-    const casheaMeetsMinimum = casheaMinAmount <= 0 || dynamicCartTotals.totalUsd >= casheaMinAmount;
-
-    // M-2: paridad con el modo básico — bloquear el cobro si la tasa BCV es inválida.
-    // Sin esto el POS deja armar todo el pago y el rechazo llega recién en el procesador.
-    const rateError = !effectiveRate || effectiveRate <= 0;
-
-    // ─── CÁLCULOS ──────────────────────────────────────────
     const {
-        totalPagadoUSD,
-        totalPagadoBS,
-        totalPagadoGlobalUSD,
-        faltaPorPagar,
-        faltaPorPagarBS,
-        cambioUSD,
-        montoIGTF,
-        totalConIGTF,
-        totalConIGTFBS,
-        tasaSegura,
-        casheaAmountUsd,
-    } = usePaymentCalculations({
-        totalUSD: dynamicCartTotals.totalUsd,
-        totalBS: dynamicCartTotals.totalBs,
-        pagos,
-        tasa: effectiveRate,
-        metodosActivos: metodosNormalizados,
-        val,
-        pagoSaldoFavor,
-        casheaActive,
-        casheaPercent,
-        copEnabled,
-        tasaCop,
+        setIsChangeCredited, setIsTipDonated, setTipConfirmPending, setTipAmountUsd,
+        setDistVueltoUSD, setDistVueltoBS, setShowMobileChangeDetails, distVueltoUSD,
+        distVueltoBS, maxVueltoBS, maxVueltoUSD, isChangeCredited, walletRemainderUsd,
+        tasaSegura, cambioUSD, changeToDeliverUsd, isTipDonated, tipConfirmPending,
+        mobilePaymentCurrency, setMobilePaymentCurrency, cashKeptUsd, totalPagadoGlobalUSD,
+        totalPagadoBS, casheaAmountUsd, faltaPorPagar, rateError, casheaActive, casheaPercent,
+        setChangeConfirmation, dynamicCartTotals, faltaPorPagarBS, tipAmountUsd,
+        changeDestinationSelected, changeRemainder, showMobileChangeDetails, casheaEnabled,
+        casheaMeetsMinimum, setCasheaActive, setCasheaPercent, repricedActive, totalPagadoUSD,
+        changeAllocationComplete, changeConfirmation, plannedPhysicalUsd, plannedWalletUsd,
+        unallocatedChangeUsd,
+    } = useCheckoutPosAmounts({
+        cart, metodosBsNorm, activeInputId, val, cartTotalUsd, cartTotalBs, cartBaseUsd,
+        cartIvaUsd, discountData, effectiveRate, tasaCop, pagos, metodosNormalizados,
+        pagoSaldoFavor, copEnabled,
     });
 
-    // El resto del vuelto, después de lo dejado en caja, puede entregarse
-    // físicamente o acreditarse a la billetera.
-    const cashKeptUsd = round2(Math.min(
-        Math.max(0, parseFloat(tipAmountUsd) || 0),
-        cambioUSD
-    ));
-    const changeToDeliverUsd = round2(Math.max(0, subR(cambioUSD, cashKeptUsd)));
-    const declaredPhysicalUsd = round2(Math.min(
-        changeToDeliverUsd,
-        Math.max(0, parseFloat(distVueltoUSD) || 0) + divR(Math.max(0, parseFloat(distVueltoBS) || 0), tasaSegura)
-    ));
-    const walletRemainderUsd = round2(Math.max(0, subR(changeToDeliverUsd, declaredPhysicalUsd)));
-    const hasPhysicalDistribution = distVueltoUSD !== '' || distVueltoBS !== '';
-    const plannedPhysicalUsd = hasPhysicalDistribution
-        ? declaredPhysicalUsd
-        : (isChangeCredited ? 0 : changeToDeliverUsd);
-    const plannedWalletUsd = isChangeCredited ? walletRemainderUsd : 0;
-    const unallocatedChangeUsd = round2(Math.max(0, subR(
-        changeToDeliverUsd,
-        sumR(plannedPhysicalUsd, plannedWalletUsd)
-    )));
-    const changeDestinationSelected = changeToDeliverUsd <= FINANCIAL_EPSILON.PAYMENT_ZERO
-        || hasPhysicalDistribution
-        || isChangeCredited;
-    const changeAllocationComplete = changeDestinationSelected
-        && unallocatedChangeUsd <= FINANCIAL_EPSILON.PAYMENT_ZERO;
-    // Referencia dinámica para el cajero: muestra el remanente del mismo vuelto
-    // en ambas monedas, sin escribir automáticamente en el otro campo.
-    const changeRemainder = calculateChangeRemainder(
-        changeToDeliverUsd,
-        distVueltoUSD,
-        distVueltoBS,
-        tasaSegura,
-    );
-    // Cada moneda solo puede ocupar el espacio que deja la otra. Así nunca se
-    // puede declarar $2 + Bs 2.085 cuando el vuelto real es $2,88.
-    const maxVueltoUSD = round2(Math.max(0, subR(
-        changeToDeliverUsd,
-        divR(Math.max(0, parseFloat(distVueltoBS) || 0), tasaSegura),
-    )));
-    const maxVueltoBS = round2(Math.max(0, mulR(
-        Math.max(0, subR(changeToDeliverUsd, Math.max(0, parseFloat(distVueltoUSD) || 0))),
-        tasaSegura,
-    )));
+    const {
+        tipCurrency, proyeccion, handleVueltoDistChange, handleCreditChange, toggleTipDonated,
+        handleTipAmountChange, maxTipUsd, elegirVuelto, completarVuelto,
+        autoCampo, restoLoDeja, restoABilletera, sugerido,
+    } = useCheckoutPosChange({
+        distVueltoUSD, distVueltoBS, maxVueltoBS, setDistVueltoBS, maxVueltoUSD,
+        setDistVueltoUSD, isChangeCredited, walletRemainderUsd, setIsChangeCredited, tasaSegura,
+        cambioUSD, setTipAmountUsd, setIsTipDonated, changeToDeliverUsd, clienteSeleccionado,
+        metodosNormalizados, val, isTipDonated, setTipConfirmPending, tipConfirmPending,
+        triggerHaptic, setShowMobileChangeDetails, metodosDivisaNorm, metodosBsNorm,
+        metodosCopNorm, mobilePaymentCurrency, setMobilePaymentCurrency, customers, modo,
+        cashKeptUsd, currentFloatUsd,
+    });
 
-    // Corrige también estados antiguos que pudieran haber quedado sobreasignados
-    // por la versión anterior de la interfaz.
+    const {
+        selectedCustomer, handleInputChange, llenarSaldo, handleRefChange, handleInputKeyDown,
+        sumarBillete, procesarPago, cobrarConTeclado,
+    } = useCheckoutPosPay({
+        customers, clienteSeleccionado, pagos, cart, discountData, effectiveRate, tasaCop,
+        totalPagadoGlobalUSD, totalPagadoBS, casheaAmountUsd, tasaSegura, pagoSaldoFavor,
+        faltaPorPagar, setPagos, setReferencias, inputRefs, rateError, modo, cambioUSD,
+        casheaActive, metodosNormalizados, val, referencias, casheaPercent, distVueltoUSD,
+        distVueltoBS, isTipDonated, cashKeptUsd, isChangeCredited, changeToDeliverUsd,
+        tipCurrency, setChangeConfirmation, onConfirmSale, triggerHaptic,
+        changeAllocationComplete, isProcessing, changeConfirmation,
+    });
+
+    // COBRO fase 7: en pantallas táctiles, teclado numérico propio (sin teclado de Windows).
+    const isTouch = useCoarsePointer();
+    const metodosMonto = [...metodosDivisaNorm, ...metodosBsNorm, ...(copEnabled ? metodosCopNorm : [])];
+    const CAMPOS_VUELTO = { __vuelto_usd: { id: '__vuelto_usd', nombre: 'Vuelto en dólares', moneda: 'usd' }, __vuelto_bs: { id: '__vuelto_bs', nombre: 'Vuelto en bolívares', moneda: 'bs' } };
+    const metodoActivo = CAMPOS_VUELTO[activeInputId] || metodosMonto.find(m => m.id === activeInputId) || null;
     useEffect(() => {
-        const currentUsd = Math.max(0, parseFloat(distVueltoUSD) || 0);
-        const currentBs = Math.max(0, parseFloat(distVueltoBS) || 0);
-        if (currentBs > maxVueltoBS + 0.01) {
-            setDistVueltoBS(maxVueltoBS.toString());
-        } else if (currentUsd > maxVueltoUSD + 0.01) {
-            setDistVueltoUSD(maxVueltoUSD.toString());
+        if (isTouch && !activeInputId && metodosMonto[0]) {
+            setActiveInputId(metodosMonto[0].id);
+            setActiveInputType('amount');
         }
-    }, [distVueltoUSD, distVueltoBS, maxVueltoUSD, maxVueltoBS]);
-
-    // Si se asigna todo el cambio a físico o caja, desactivar automáticamente la acreditación a billetera
-    useEffect(() => {
-        if (isChangeCredited && walletRemainderUsd <= FINANCIAL_EPSILON.PAYMENT_ZERO) {
-            setIsChangeCredited(false);
-        }
-    }, [isChangeCredited, walletRemainderUsd]);
-
-    // Límite máximo para propina / dejar en caja respetando el cambio físico ya asignado
-    const declaredPhysicalWithoutTip = round2(
-        Math.max(0, parseFloat(distVueltoUSD) || 0) +
-        divR(Math.max(0, parseFloat(distVueltoBS) || 0), tasaSegura)
-    );
-    const maxTipUsd = round2(Math.max(0, subR(cambioUSD, declaredPhysicalWithoutTip)));
-
-    const handleTipAmountChange = (valor) => {
-        const cleanVal = String(valor).replace(',', '.');
-        if (cleanVal !== '' && !/^\d*\.?\d*$/.test(cleanVal)) return;
-        const availableMax = maxTipUsd > 0.001 ? maxTipUsd : cambioUSD;
-        const amount = Math.min(Math.max(0, parseFloat(cleanVal) || 0), availableMax);
-        setTipAmountUsd(cleanVal === '' ? '' : amount.toString());
-        setIsTipDonated(amount > FINANCIAL_EPSILON.PAYMENT_ZERO);
-        setIsChangeCredited(false);
-    };
-
-    const handleVueltoDistChange = (moneda, valor) => {
-        let cleanVal = valor.replace(',', '.');
-        if (cleanVal !== '' && !/^\d*\.?\d*$/.test(cleanVal)) return;
-
-        const valNum = parseFloat(cleanVal) || 0;
-        
-        if (moneda === 'usd') {
-            const usdMax = round2(Math.min(valNum, maxVueltoUSD));
-            if (valNum > maxVueltoUSD) {
-                showToast(`Con el monto en Bs actual, solo quedan $${maxVueltoUSD.toFixed(2)} para entregar en dólares.`, 'warning');
-            }
-            setDistVueltoUSD(cleanVal === '' ? '' : usdMax.toString());
-            
-            const totalPhysical = sumR(usdMax, divR(Math.max(0, parseFloat(distVueltoBS) || 0), tasaSegura));
-            if (changeToDeliverUsd - totalPhysical <= 0.009) {
-                setIsChangeCredited(false);
-            }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isTouch]);
+    const handleKeypad = useCallback((key) => {
+        if (!metodoActivo) return;
+        if (activeInputType === 'ref' && !metodoActivo.moneda) {
+            // Referencia: solo dígitos, máximo 4; la coma no aplica.
+            const actual = String(referencias[metodoActivo.id] || '');
+            let next = actual;
+            if (key === 'clear') next = '';
+            else if (key === 'back') next = actual.slice(0, -1);
+            else if (/^\d$/.test(key) && actual.length < 4) next = actual + key;
+            handleRefChange(metodoActivo.id, next);
+        } else if (metodoActivo.moneda) {
+            const actual = metodoActivo.moneda === 'usd' ? distVueltoUSD : distVueltoBS;
+            handleVueltoDistChange(metodoActivo.moneda, applyKey(actual, key));
         } else {
-            const maxBs = maxVueltoBS;
-            const bsMax = round2(Math.min(valNum, maxBs));
-            if (valNum > maxBs) {
-                showToast(`El vuelto total en bolívares es Bs ${Math.round(maxBs).toLocaleString('es-VE')}`, 'warning');
-            }
-            setDistVueltoBS(cleanVal === '' ? '' : bsMax.toString());
-            
-            const totalPhysical = sumR(Math.max(0, parseFloat(distVueltoUSD) || 0), divR(bsMax, tasaSegura));
-            if (changeToDeliverUsd - totalPhysical <= 0.009) {
-                setIsChangeCredited(false);
-            }
+            handleInputChange(metodoActivo.id, applyKey(pagos[metodoActivo.id], key));
         }
-    };
-    const handleCreditChange = () => {
-        if (!clienteSeleccionado) {
-            showToast('Selecciona un cliente para abonar el vuelto a cuenta', 'warning');
-            return;
-        }
-        if (walletRemainderUsd <= FINANCIAL_EPSILON.PAYMENT_ZERO) {
-            showToast('No queda vuelto para acreditar: el resto ya está en caja o fue asignado como vuelto físico.', 'warning');
-            return;
-        }
-        // El resto, después de lo dejado en caja y del desglose físico,
-        // va a la billetera. Se conservan los campos físicos para permitir
-        // combinaciones: caja + vuelto físico + saldo a favor.
-        setIsChangeCredited(true);
-    };
-
-    // ── TIP-004 (D7): la moneda de la propina se deriva de la composición REAL
-    // del efectivo en la gaveta, comparando magnitudes en una misma unidad (Bs).
-    // No del orden de los métodos: $1 junto a Bs 5.000 no hace la propina "USD".
-    // Solo cuenta EFECTIVO: un pago móvil no puede producir vuelto físico.
-    // D8: no hay camino COP para la propina; el fallback es USD.
-    const tipCurrency = useMemo(() => {
-        const efectivoBs = metodosNormalizados
-            .filter(m => m.tipo === 'BS' && String(m.id).startsWith('efectivo'))
-            .reduce((s, m) => sumR(s, val(m.id)), 0);
-        const efectivoUsdEnBs = mulR(
-            metodosNormalizados
-                .filter(m => m.tipo === 'DIVISA' && String(m.id).startsWith('efectivo'))
-                .reduce((s, m) => sumR(s, val(m.id)), 0),
-            tasaSegura
-        );
-        return efectivoBs > efectivoUsdEnBs ? 'BS' : 'USD';
-    }, [metodosNormalizados, val, tasaSegura]);
-
-    // ── TIP-002 (D6): propinas por encima del umbral exigen doble pulsación.
-    const toggleTipDonated = () => {
-        if (isTipDonated) {
-            setIsTipDonated(false);
-            setTipAmountUsd('');
-            setTipConfirmPending(false);
-            return;
-        }
-        // El monto a asignar a caja es el resto no distribuido físicamente
-        const targetTip = maxTipUsd > 0.001 ? maxTipUsd : cambioUSD;
-
-        if (targetTip > FINANCIAL_EPSILON.TIP_MAX_AUTO_USD && !tipConfirmPending) {
-            setTipConfirmPending(true);
-            showToast(
-                `Propina de $${targetTip.toFixed(2)}. Pulsa de nuevo para confirmar.`,
-                'warning'
-            );
-            return;
-        }
-        
-        setIsChangeCredited(false);
-        setTipConfirmPending(false);
-        setTipAmountUsd(targetTip.toFixed(2));
-        setIsTipDonated(true);
         triggerHaptic && triggerHaptic();
-    };
+    }, [metodoActivo, pagos, handleInputChange, handleVueltoDistChange, distVueltoUSD, distVueltoBS, triggerHaptic, activeInputType, referencias, handleRefChange]);
 
-    // Limpiar vuelto cuando baja
+    // COBRO fase 6: F9 cobra dentro del cobro (antes solo lo abría desde Vender).
     useEffect(() => {
-        if (cambioUSD <= 0) {
-            setDistVueltoUSD('');
-            setDistVueltoBS('');
-            setTipAmountUsd('');
-            setIsTipDonated(false);
-            setShowMobileChangeDetails(false);
-        }
-    }, [cambioUSD]);
-
-    // TIP-005 (T-5): apagar la propina si el vuelto desaparece. Sin esto el flag
-    // sobrevive a una corrección del pago y la propina se re-arma sola cuando el
-    // vuelto vuelve a subir, sin que el operador la reconfirme.
-    useEffect(() => {
-        if (cambioUSD <= FINANCIAL_EPSILON.PAYMENT_ZERO) {
-            setIsTipDonated(false);
-            setTipAmountUsd('');
-            setTipConfirmPending(false);
-        }
-    }, [cambioUSD]);
-
-    // Si el monto del vuelto cambia, caduca cualquier confirmación pendiente:
-    // el operador debe volver a ver la cifra antes de donarla.
-    useEffect(() => {
-        setTipConfirmPending(false);
-    }, [cambioUSD]);
-
-    // Mantener una pestaña válida si la configuración no tiene USD.
-    useEffect(() => {
-        const available = [
-            metodosDivisaNorm.length > 0 && 'USD',
-            metodosBsNorm.length > 0 && 'BS',
-            metodosCopNorm.length > 0 && 'COP',
-        ].filter(Boolean);
-        if (available.length > 0 && !available.includes(mobilePaymentCurrency)) {
-            setMobilePaymentCurrency(available[0]);
-        }
-    }, [metodosDivisaNorm.length, metodosBsNorm.length, metodosCopNorm.length, mobilePaymentCurrency]);
-
-    // ─── WALLET ─────────────────────────────────────────────
-    const { proyeccion } = useClientWallet(
-        clienteSeleccionado, customers, modo, cambioUSD,
-        isChangeCredited, distVueltoUSD, distVueltoBS, tasaSegura, cashKeptUsd
-    );
-
-    const selectedCustomer = customers.find(c => c.id === clienteSeleccionado);
-
-    // ─── HANDLERS DE INPUT ──────────────────────────────────
-    const llenarSaldo = (id, moneda) => {
-        const actual = parseFloat(pagos[id] || 0);
-        let valorFinal = 0;
-        if (moneda === 'USD') {
-            const usdTotals = FinancialEngine.buildCartTotals(cart, discountData, effectiveRate, tasaCop, false, getCartIvaOpts());
-            const remUsd = Math.max(0, subR(usdTotals.totalUsd, totalPagadoGlobalUSD));
-            valorFinal = round2(actual + remUsd);
-        } else if (moneda === 'BS') {
-            const bsTotals = FinancialEngine.buildCartTotals(cart, discountData, effectiveRate, tasaCop, true, getCartIvaOpts());
-            // FIN-038: descontar también Cashea y el saldo a favor aplicado,
-            // que ya cubren parte del total pero no están en totalPagadoBS.
-            const cubiertoBs = sumR([
-                totalPagadoBS,
-                mulR(casheaAmountUsd, tasaSegura),
-                mulR(parseFloat(pagoSaldoFavor) || 0, tasaSegura),
-            ]);
-            const remBs = Math.max(0, subR(bsTotals.totalBs, cubiertoBs));
-            valorFinal = round2(actual + remBs);
-        } else if (moneda === 'COP' && tasaCop > 0) {
-            valorFinal = round2(actual + (faltaPorPagar * tasaCop));
-        }
-        setPagos(prev => ({ ...prev, [id]: valorFinal }));
-    };
-
-    const sumarBillete = (id, monto) => {
-        const actual = parseFloat(pagos[id] || 0);
-        const nuevo = round2(actual + monto);
-        setPagos(prev => ({ ...prev, [id]: nuevo }));
-    };
-
-    const handleInputChange = (id, v) => {
-        if (v === '' || /^\d*\.?\d*$/.test(v)) {
-            setPagos(prev => ({ ...prev, [id]: v }));
-        }
-    };
-
-    const handleRefChange = (id, v) => setReferencias(prev => ({ ...prev, [id]: v }));
-
-    const handleInputKeyDown = (e, index) => {
-        if (e.key === 'Enter' || e.key === 'ArrowDown') {
+        const onKey = (e) => {
+            if (e.key !== 'F9') return;
             e.preventDefault();
-            const next = inputRefs.current[index + 1];
-            if (next) next.focus({ preventScroll: true });
-        }
-        if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            const prev = inputRefs.current[index - 1];
-            if (prev) prev.focus({ preventScroll: true });
-        }
-    };
-
-    // ─── PROCESAR PAGO ──────────────────────────────────────
-    const procesarPago = (imprimir = false) => {
-        try {
-            // Validaciones
-            // M-2: la tasa se valida PRIMERO — sin tasa válida nada de lo demás tiene sentido.
-            if (rateError) {
-                showToast('Tasa BCV inválida. Configúrala antes de cobrar.', 'error');
-                return;
-            }
-            if (modo === 'contado' && faltaPorPagar > 0.01) {
-                showToast(`Faltan $${faltaPorPagar.toFixed(2)} por cobrar`, 'error');
-                return;
-            }
-            if (modo === 'credito' && !clienteSeleccionado) {
-                showToast('Selecciona un cliente para vender a crédito', 'warning');
-                return;
-            }
-            // En una venta fiada, pagar más que el total no es un abono válido:
-            // el excedente no debe desaparecer ni convertirse silenciosamente en deuda.
-            // Cambia a Contado para entregar/acreditar el vuelto, o usa Cartera > Abono
-            // si la intención era pagar una deuda anterior.
-            if (modo === 'credito' && cambioUSD > 0.01) {
-                showToast(`El pago excede la venta en $${cambioUSD.toFixed(2)}. Cambia a Contado para gestionar el vuelto.`, 'warning');
-                return;
-            }
-            if (parseFloat(pagoSaldoFavor || 0) > 0 && !clienteSeleccionado) {
-                showToast('Selecciona un cliente para usar saldo a favor', 'error');
-                return;
-            }
-            if (casheaActive && !clienteSeleccionado) {
-                showToast('Selecciona un cliente para financiar con Cashea', 'warning');
-                return;
-            }
-
-            // Verificar referencias
-            for (const m of metodosNormalizados) {
-                if (val(m.id) > 0 && m.requiereRef && (!referencias[m.id] || referencias[m.id].length < 4)) {
-                    showToast(`Ingresa la referencia para ${m.nombre}`, 'warning');
-                    return;
-                }
-            }
-
-            // Construir pagos finales en formato que onConfirmSale espera
-            const payments = metodosNormalizados
-                .filter(m => val(m.id) > 0)
-                .map(m => {
-                    const amount = round2(val(m.id));
-                    const currency = m.tipo === 'BS' ? 'BS' : m.tipo === 'COP' ? 'COP' : 'USD';
-                    return {
-                        id: crypto.randomUUID(),
-                        methodId: m.id,
-                        methodLabel: m.nombre,
-                        currency,
-                        amountInput: amount,
-                        amountInputCurrency: currency,
-                        amountUsd: currency === 'USD' ? amount
-                            : currency === 'COP' ? (tasaCop > 0 ? amount / tasaCop : 0)
-                            : (tasaSegura > 0 ? amount / tasaSegura : 0),
-                        amountBs: currency === 'BS' ? amount
-                            : currency === 'COP' ? (tasaCop > 0 && tasaSegura > 0 ? (amount / tasaCop) * tasaSegura : 0)
-                            : (tasaSegura > 0 ? amount * tasaSegura : 0),
-                        referencia: referencias[m.id] || '',
-                    };
-                });
-
-            // Añadir Cashea virtual
-            if (casheaActive && casheaAmountUsd > 0) {
-                payments.push({
-                    id: crypto.randomUUID(),
-                    methodId: 'cashea',
-                    methodLabel: 'Cashea',
-                    currency: 'USD',
-                    amountInput: casheaAmountUsd,
-                    amountInputCurrency: 'USD',
-                    amountUsd: casheaAmountUsd,
-                    amountBs: mulR(casheaAmountUsd, tasaSegura),
-                    isCashea: true,
-                    casheaPercent: 100 - casheaPercent,
-                });
-            }
-
-            // Añadir saldo a favor
-            if (parseFloat(pagoSaldoFavor) > 0) {
-                payments.push({
-                    id: crypto.randomUUID(),
-                    methodId: 'saldo_favor',
-                    methodLabel: 'Saldo a Favor',
-                    currency: 'USD',
-                    amountInput: parseFloat(pagoSaldoFavor),
-                    amountInputCurrency: 'USD',
-                    amountUsd: parseFloat(pagoSaldoFavor),
-                    amountBs: parseFloat(pagoSaldoFavor) * tasaSegura,
-                    isSaldoFavor: true,
-                });
-            }
-
-            const hasExplicitSplit = distVueltoUSD !== '' || distVueltoBS !== '';
-            // TIP-002 (D3): propina donada ⟹ no se entrega vuelto. El procesador
-            // lo vuelve a forzar, pero se manda coherente desde aquí.
-            const tipEfectiva = isTipDonated && cashKeptUsd > FINANCIAL_EPSILON.PAYMENT_ZERO;
-            const saleOptions = {
-                // FIN-034: si el operador tocó cualquiera de los dos campos de desglose,
-                // se respetan tal cual (el vacío vale 0). El botón "Todo" del campo Bs deja
-                // distVueltoUSD en '' — leerlo como "no especificado" duplicaba el vuelto.
-                changeUsdGiven: hasExplicitSplit
-                    ? (parseFloat(distVueltoUSD) || 0)
-                    : (isChangeCredited ? 0 : changeToDeliverUsd),
-                changeBsGiven: hasExplicitSplit
-                    ? (parseFloat(distVueltoBS) || 0)
-                    : 0,
-                esCredito: modo === 'credito',
-                clienteId: clienteSeleccionado || null,
-                esCashea: casheaActive,
-                vueltoCredito: isChangeCredited,
-                // TIP-001: una sola moneda canónica. amountUsd es el monto real;
-                // amountBs lo recalcula el procesador si la moneda nativa es Bs.
-                tipDonated: tipEfectiva
-                    ? { amountUsd: cashKeptUsd, amountBs: tipCurrency === 'BS' ? round2(mulR(cashKeptUsd, tasaSegura)) : 0, currency: tipCurrency }
-                    : null,
-                changeAllocationExplicit: hasExplicitSplit || tipEfectiva || isChangeCredited,
-            };
-
-            // Si hay vuelto, se revisa la distribución en un modal final. No se
-            // registra nada hasta que el cajero confirme explícitamente.
-            if (cambioUSD > FINANCIAL_EPSILON.PAYMENT_ZERO) {
-                setChangeConfirmation({ payments, saleOptions, imprimir });
-                return;
-            }
-
-            onConfirmSale(payments, saleOptions, imprimir);
-            triggerHaptic && triggerHaptic();
-        } catch (err) {
-            console.error('Error al procesar pago POS:', err);
-            showToast('Error al procesar el pago. Revisa la consola.', 'error');
-        }
-    };
+            cobrarConTeclado();
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    });
 
     const deudaCliente = modo === 'credito' ? faltaPorPagar : 0;
     // TIP: si el cliente dona el vuelto, no hay nada que repartir → siempre válido.
@@ -640,7 +200,7 @@ export default function CheckoutModalPOS({
                 role="dialog"
                 aria-modal="true"
                 aria-label="Modal de pago profesional"
-                className="bg-white dark:bg-slate-950 w-full max-w-6xl h-[100dvh] sm:h-auto rounded-none sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[100dvh] sm:max-h-[95vh] animate-in zoom-in-95 duration-200"
+                className="bg-white dark:bg-slate-950 w-full max-w-6xl h-[100dvh] sm:h-auto lg:min-h-[34rem] rounded-none sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[100dvh] sm:max-h-[95vh] animate-in zoom-in-95 duration-200"
             >
                 <PaymentHeader
                     modo={modo}
@@ -705,6 +265,18 @@ export default function CheckoutModalPOS({
                         setCasheaPercent={setCasheaPercent}
                         casheaAmountUsd={casheaAmountUsd}
                         effectiveRate={effectiveRate}
+                        elegirVuelto={elegirVuelto}
+                        completarVuelto={completarVuelto}
+                        autoCampo={autoCampo}
+                        restoLoDeja={restoLoDeja}
+                        restoABilletera={restoABilletera}
+                        sugerido={sugerido}
+                        isTouch={isTouch}
+                        onFocusChangeField={(id) => { setActiveInputId(id); setActiveInputType('amount'); }}
+                        activeChangeField={activeInputId}
+                        footer={
+                            <PaymentFooter placement="side" modo={modo} faltaPorPagar={faltaPorPagar} clienteSeleccionado={clienteSeleccionado} totalPagadoGlobalUSD={totalPagadoGlobalUSD} cambioUSD={cambioUSD} onProcesar={procesarPago} isProcessing={isProcessing} rateError={rateError} changeAllocationComplete={changeAllocationComplete} totalUsd={dynamicCartTotals.totalUsd} />
+                        }
                     />
                     <div className="order-1 lg:order-2 flex-1 min-h-0 flex flex-col bg-white dark:bg-slate-950 overflow-hidden">
                         <div className="flex-1 min-h-0 overflow-y-auto p-2.5 sm:p-5 pb-5">
@@ -755,15 +327,18 @@ export default function CheckoutModalPOS({
                                     </button>
                                 ))}
                             </div>
-                            <PaymentInputs metodosDivisa={metodosDivisaNorm} mobileCurrency={mobilePaymentCurrency} metodosBs={metodosBsNorm} metodosCop={metodosCopNorm} pagos={pagos} handleInputChange={handleInputChange} llenarSaldo={llenarSaldo} referencias={referencias} handleRefChange={handleRefChange} inputRefs={inputRefs} handleInputKeyDown={handleInputKeyDown} tasa={tasaSegura} sumarBillete={sumarBillete} isTouch={false} onFocusInput={(id) => { setActiveInputId(id); setActiveInputType('amount'); }} activeInputId={activeInputId} onFocusRef={(id) => { setActiveInputId(id); setActiveInputType('ref'); }} copEnabled={copEnabled} />
-                        </div>
-
-                        <div className="hidden lg:block">
-                            <PaymentFooter modo={modo} faltaPorPagar={faltaPorPagar} clienteSeleccionado={clienteSeleccionado} totalPagadoGlobalUSD={totalPagadoGlobalUSD} cambioUSD={cambioUSD} onProcesar={procesarPago} isProcessing={isProcessing} rateError={rateError} changeAllocationComplete={changeAllocationComplete} />
+                            <PaymentInputs metodosDivisa={metodosDivisaNorm} mobileCurrency={mobilePaymentCurrency} metodosBs={metodosBsNorm} metodosCop={metodosCopNorm} pagos={pagos} handleInputChange={handleInputChange} llenarSaldo={llenarSaldo} referencias={referencias} handleRefChange={handleRefChange} inputRefs={inputRefs} handleInputKeyDown={handleInputKeyDown} tasa={tasaSegura} sumarBillete={sumarBillete} isTouch={isTouch} onFocusInput={(id) => { setActiveInputId(id); setActiveInputType('amount'); }} activeInputId={activeInputId} activeInputType={activeInputType} onFocusRef={(id) => { setActiveInputId(id); setActiveInputType('ref'); }} copEnabled={copEnabled} />
+                            {isTouch && (
+                                <NumericKeypad
+                                    activeLabel={activeInputType === 'ref' && metodoActivo && !metodoActivo.moneda ? `Referencia de ${metodoActivo.nombre}` : metodoActivo?.nombre}
+                                    onKey={handleKeypad}
+                                    disabled={!metodoActivo}
+                                />
+                            )}
                         </div>
                     </div>
                     <div className="order-3 lg:hidden sticky bottom-0 z-20 shrink-0">
-                        <PaymentFooter modo={modo} faltaPorPagar={faltaPorPagar} clienteSeleccionado={clienteSeleccionado} totalPagadoGlobalUSD={totalPagadoGlobalUSD} cambioUSD={cambioUSD} onProcesar={procesarPago} isProcessing={isProcessing} rateError={rateError} changeAllocationComplete={changeAllocationComplete} />
+                        <PaymentFooter modo={modo} faltaPorPagar={faltaPorPagar} clienteSeleccionado={clienteSeleccionado} totalPagadoGlobalUSD={totalPagadoGlobalUSD} cambioUSD={cambioUSD} onProcesar={procesarPago} isProcessing={isProcessing} rateError={rateError} changeAllocationComplete={changeAllocationComplete} totalUsd={dynamicCartTotals.totalUsd} />
                     </div>
                 </div>
             </div>

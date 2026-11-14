@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { AlertTriangle, Banknote, CheckCircle, HandCoins, Wallet, X } from 'lucide-react';
 import AvisoFondoGaveta from '../../AvisoFondoGaveta';
 import { evaluarFondoParaVuelto } from '../../../../utils/fondoGaveta';
+import { round2 } from '../../../../utils/dinero';
 
 const money = value => `$${Number(value || 0).toFixed(2)}`;
-const formatBs = value => `Bs ${Number(value || 0).toLocaleString('es-VE', { minimumFractionDigits: 2 })}`;
+const formatBs = value => `Bs ${round2(Number(value || 0)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function ChangeConfirmationModal({
     cambioUSD,
@@ -29,6 +30,19 @@ export default function ChangeConfirmationModal({
     onOpenAporte = null,
     onCreditShortfall = null,
 }) {
+    // COBRO-002: Esc cierra solo este modal, no el cobro entero (la vista de Vender
+    // escucha Esc en la ventana). Se atiende en la fase de captura, antes que ella.
+    useEffect(() => {
+        const onKey = (e) => {
+            if (e.key !== 'Escape') return;
+            e.preventDefault();
+            e.stopPropagation();
+            onCancel();
+        };
+        window.addEventListener('keydown', onKey, true);
+        return () => window.removeEventListener('keydown', onKey, true);
+    }, [onCancel]);
+
     const hasExplicitPhysical = distVueltoUSD !== '' || distVueltoBS !== '';
     const fondo = evaluarFondoParaVuelto({
         usdGiven: distVueltoUSD,
@@ -148,6 +162,7 @@ export default function ChangeConfirmationModal({
                         type="button"
                         onClick={onConfirm}
                         disabled={isProcessing || !changeAllocationComplete}
+                        autoFocus={!isProcessing && changeAllocationComplete}
                         className="min-h-[48px] flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-black text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300 dark:disabled:bg-slate-700"
                     >
                         {isProcessing ? 'PROCESANDO...' : <><CheckCircle size={18} /> {faltaEfectivo ? 'Confirmar igual' : 'Confirmar venta'}</>}

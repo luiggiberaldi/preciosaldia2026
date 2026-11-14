@@ -1,4 +1,5 @@
 import React from 'react';
+import { refParen } from '../../utils/paymentReference';
 import { CheckCircle, Wallet, Send, X, Printer } from 'lucide-react';
 import { formatBs, formatCop, formatUsd } from '../../utils/calculatorUtils';
 import { printThermalTicket } from '../../utils/ticketGenerator';
@@ -262,7 +263,7 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Pagos Recibidos</p>
                                 {receipt.payments.filter(p => p.methodId !== 'cashea' && !p.isCashea).map(p => (
                                     <div key={p.id} className="flex justify-between text-slate-600 mb-1">
-                                        <span>{p.methodLabel}:</span>
+                                        <span>{p.methodLabel}{refParen(p)}:</span>
                                         <span className="font-bold">{p.amountInputCurrency === 'USD' ? '$' : p.amountInputCurrency === 'COP' ? 'COP' : 'Bs'} {p.amountInput}</span>
                                     </div>
                                 ))}

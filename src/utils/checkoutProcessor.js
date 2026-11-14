@@ -190,6 +190,8 @@ export async function processSaleTransaction({
     }
 
     const fiadoAmountUsd = remainingUsd > 0.01 ? remainingUsd : 0;
+    // COBRO-001: un faltante de hasta $0,01 no se fía; queda anotado para poder rastrearlo.
+    const redondeoUsd = remainingUsd > 0 && remainingUsd <= 0.01 ? remainingUsd : 0;
     const tipoVenta = casheaUsd > 0 ? 'VENTA_CASHEA' : (fiadoAmountUsd > 0 ? 'VENTA_FIADA' : 'VENTA');
 
     // ── TIP-001 / TIP-003 / TIP-004: propina donada ("cliente deja el cambio") ──
@@ -334,6 +336,7 @@ export async function processSaleTransaction({
         casheaUsd: casheaUsd,
         // TIP-001: propina donada, ya normalizada a una sola moneda canónica.
         tipDonated: tipDonated,
+        redondeoUsd,
         ...(remoteSale ? { remoteSale } : {}),
     };
 
