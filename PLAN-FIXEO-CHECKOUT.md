@@ -1,7 +1,7 @@
 # PLAN DE FIXEO — MODOS DE COBRO (POS Y BÁSICO)
 
 **Documento ejecutable.** Escrito para que un LLM de baja capacidad (o cualquier IDE agéntico) lo ejecute paso a paso sin ambigüedad.
-**Reporte de origen:** [`AUDITORIA-CHECKOUT.md`](AUDITORIA-CHECKOUT.md)
+**Reporte de origen:** [`AUDITORIA-CHECKOUT.md`](docs/auditorias/AUDITORIA-CHECKOUT.md)
 **Fecha:** 2026-08-04
 **Fases:** 13 · **Archivos tocados:** 7 · **Tests nuevos:** 6
 

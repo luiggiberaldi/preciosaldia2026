@@ -1,7 +1,7 @@
 # PLAN DE FIXEO — MÓDULO CASHEA
 
 **Documento ejecutable.** Escrito para que un LLM de baja capacidad (o cualquier IDE agéntico) lo ejecute paso a paso sin ambigüedad.
-**Reporte de origen:** [`AUDITORIA-CASHEA.md`](AUDITORIA-CASHEA.md)
+**Reporte de origen:** [`AUDITORIA-CASHEA.md`](docs/auditorias/AUDITORIA-CASHEA.md)
 **Fecha:** 2026-08-04
 
 ---

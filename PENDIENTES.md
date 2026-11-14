@@ -1,0 +1,48 @@
+# PENDIENTES — cambios por hacer en Bodega
+
+> **Para el agente:** si te piden "busca los cambios pendientes", empieza aquí. Cada entrada tiene un ID `P-NNN`, un estado y los pasos. Al terminar una: estado `Hecho (fecha)`, enlaza la bitácora y el caso, y muévela a **Hechos**. Nunca borres una entrada.
+>
+> Existe por la regla 7 de [docs/LEY-DOCUMENTACION.md](docs/LEY-DOCUMENTACION.md): lo que no se decide en el momento se anota aquí con fecha.
+
+## Resumen
+
+| ID | Qué | Origen | Estado |
+|---|---|---|---|
+| P-001 | Guardar (commit) los cambios de caja, inicio y documentación que están sin commit | Auditoría de apertura y de documentación, 2026-11-13 | Pendiente |
+| P-002 | Decidir si el guardia de documentación pasa de "avisa" a "frena" | Documentación, fase 2 | Pendiente (esperar ~2 semanas de uso) |
+| P-003 | Decidir si se agrega el límite de 600 líneas por archivo y la revisión de imports | Auditoría de documentación de Farmacia | Pendiente (no es documentación) |
+| P-004 | Decidir si se versionan las entregas en la bitácora (hoy `2.0.5`) | Auditoría de documentación de Farmacia | Pendiente |
+| P-005 | Recordatorio: la corrección de caja de Bodega debe replicarse en Farmacia | CASO-002 | Pendiente (ya anotada en Farmacia como su P-001) |
+| P-006 | Ordenar los `PLAN-*`, `REPORTE-*`, `M5-*`, `REBRAND-PLAN` y `CASO-DESCUADRE-*` que siguen en la raíz (moverlos a `docs/plans/` o `docs/reports/`) | Documentación, fase 4 | Pendiente (no se movieron: se citan por nombre en comentarios de `src/` y `tests/`, y se enlazan entre sí) |
+
+---
+
+## P-001 · Guardar lo pendiente
+
+El árbol de trabajo tiene muchos archivos modificados sin commit (caja, ajustes, usuarios, inicio y la documentación nueva). Hay que guardarlos en commits aparte, por tema. Nadie lo ha hecho aún a propósito: cada commit lo decide el dueño.
+
+## P-002 · Guardia en modo "frena"
+
+Hoy `bun run docs:check` solo avisa. Pasarlo a frenar commits solo para lo grave (enlaces rotos, error resuelto sin solución) después de unas 2 semanas de uso limpio. Cambia `githooks/pre-commit` y `ci.yml`.
+
+## P-003 · Controles de código
+
+Farmacia tiene `check-max-lines` (600 líneas) y `check-imports`. Es otra decisión, no de documentación.
+
+## P-004 · Versiones
+
+Farmacia exige que la versión de `package.json` coincida con la bitácora. En Bodega sería un cambio de hábito; decidir con el dueño.
+
+## P-005 · Corrección de caja en Farmacia
+
+La corrección de caja ya existe aquí en Bodega (CASO-002). Farmacia la tiene anotada en su propio `PENDIENTES.md` (P-001); este punto solo recuerda el vínculo.
+
+## P-006 · Archivos sueltos en la raíz
+
+Las auditorías (`AUDITORIA-*`) ya están en `docs/auditorias/`. Quedan en la raíz ~20 planes y reportes. Antes de moverlos hay que actualizar los comentarios de `src/` y `tests/` que los citan por nombre y los enlaces entre planes.
+
+---
+
+## Hechos
+
+_(vacío)_

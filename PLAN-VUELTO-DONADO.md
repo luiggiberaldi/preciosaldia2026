@@ -1,6 +1,6 @@
 # PLAN LITERAL — Portar "Cliente deja el cambio" (propina donada a caja) a `preciosaldia-bodega`
 
-**Auditoría de origen:** [`AUDITORIA-VUELTO-DONADO.md`](AUDITORIA-VUELTO-DONADO.md)
+**Auditoría de origen:** [`AUDITORIA-VUELTO-DONADO.md`](docs/auditorias/AUDITORIA-VUELTO-DONADO.md)
 **Ejecutor previsto:** LLM flash. Cada fase es literal: se busca un texto exacto y se reemplaza por otro exacto.
 **Fases:** 0 → 12. Se ejecutan **en orden**. No se salta ninguna.
 

@@ -23,7 +23,7 @@
 > `VENTA_CASHEA` no revierte la `casheaDeuda`** (`voidSaleProcessor.js` solo devuelve
 > `deuda` y `favor`), dejando la cuenta por cobrar viva para siempre.
 >
-> **El plan ejecutable, ya corregido con todo esto, es [`PLAN-FIXEO-CASHEA.md`](PLAN-FIXEO-CASHEA.md).**
+> **El plan ejecutable, ya corregido con todo esto, es [`PLAN-FIXEO-CASHEA.md`](../../PLAN-FIXEO-CASHEA.md).**
 > Usa este reporte como diagnóstico; usa el plan como fuente de verdad para ejecutar.
 
 ---

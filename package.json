@@ -27,6 +27,8 @@
     "test:e2e:stock-delta": "playwright test tests/e2e/stock-delta-flow.e2e.spec.js",
     "test:e2e:producto-acciones": "playwright test tests/e2e/supervisor-product-actions.e2e.spec.js",
     "test:supervisor-echo": "vitest run tests/supervisorSyncEcho.test.jsx",
+    "docs:check": "node scripts/docs-check.mjs",
+    "docs:check:staged": "node scripts/docs-check.mjs --staged",
     "hooks:install": "git config core.hooksPath githooks",
     "prepare": "git config core.hooksPath githooks || exit 0",
     "lint:supervisor": "eslint src/App.jsx src/components/PairingScanScreen.jsx src/components/Settings/PairingManager.jsx src/hooks/useCloudSync.js src/hooks/useMonitorSync.js src/hooks/useRemoteCommands.js src/views/OwnerMonitorView.jsx src/components/Monitor src/services/supervisor*.js tests/supervisor*.test.js",

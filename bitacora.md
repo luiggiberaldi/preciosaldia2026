@@ -212,3 +212,40 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
   bloque aparte que NO suma al total, con aviso «La caja no está subiendo datos a la nube
   desde…» cuando tarda.
 - Pruebas: `tests/purchasesPendingSync.test.js`, `tests/purchasesPendingSyncView.test.jsx`.
+
+---
+
+## 2026-11-13 — (reconstruido) Cambios del 31-oct al 13-nov
+
+**Contexto:** la bitácora quedó sin entradas desde el 29-oct. Esta entrada resume, desde `git log`, lo que se guardó en ese tiempo. No se inventó nada: solo los títulos de los commits.
+**Cambios (commits, de más viejo a más nuevo):**
+- 2026-11-01: asistente con contexto de productos, ventas, clientes, reportes y proveedores; cupo por dispositivo; día de Caracas; prueba e2e del widget.
+- 2026-11-04: en productos, el margen elegido se mantiene a cualquier nivel de precio y la ficha muestra el margen y los Bs reales tras redondear a centavos.
+- 2026-11-07: ticket y recibo con IVA desglosado y productos exentos marcados con (E); cierre de caja con IVA desglosado y «Tasa activa».
+- 2026-11-08: opción «Mis precios ya incluyen IVA».
+- 2026-11-13: inicio con barra lateral, pantalla completa y encabezado estilo Farmacia.
+**Casos y errores:** ninguno (aún no existía la ley).
+**Verificación:** no verificado; solo se leyó el historial de git.
+
+---
+
+## 2026-11-13 — Auditoría y arreglo de la apertura de caja
+
+**Contexto:** el dueño vio «Efectivo esperado −2.159,35 Bs». Informe: `C:\Users\luigg\Desktop\AUDITORIA-APERTURA-CAJA-2026-11-13.md` (fuera del repo).
+**Cambios:** no se pueden abrir dos cajas a la vez (`useCheckoutFlow.js`); regla única del fondo real de la gaveta (`cashShift.js`, `fondoGaveta.js`, `usePosCartTotals`); aviso legible de efectivo insuficiente para el vuelto (`AvisoFondoGaveta.jsx` y componentes del cobro). Marcas en el código: `CAJA-APERTURA-001`, `CAJA-FONDO-001`, `CAJA-FONDO-002`.
+**Casos y errores:** [CASO-002](docs/casos/CASO-002-caja-apertura-y-fondo.md); ERR-001, ERR-002, ERR-003.
+**Verificación:** las pruebas están en el informe; no se volvieron a correr al escribir esta entrada. Cambios sin commit.
+
+---
+
+## 2026-11-13 — Documentación estilo Farmacia (fases 1 a 4)
+
+**Contexto:** el dueño pidió copiar el modelo de documentación de Farmacia en versión ligera. Caso: [CASO-001](docs/casos/CASO-001-documentacion-estilo-farmacia.md).
+**Cambios:**
+- Fase 1: `docs/LEY-DOCUMENTACION.md`, `docs/ERRORES.md` (con 3 errores de caja de hoy y 3 reconstruidos de informes), `docs/casos/` (índice, CASO-001, CASO-002), `PENDIENTES.md`, sección en `AGENT.md`.
+- Fase 2: `scripts/docs-check.mjs`, `tests/docsCheck.test.js`, script `docs:check`, llamada en `githooks/pre-commit` y en `.github/workflows/ci.yml`. Solo avisa.
+- Fase 3: manual corto en `docs/sistema/`.
+- Fase 4: auditorías de la raíz movidas a `docs/auditorias/`.
+**Casos y errores:** CASO-001.
+- Fase 4 (detalle): movidas las 10 `AUDITORIA-*.md` de la raíz y `docs/AUDITORIA-MODO-SUPERVISOR.md` a `docs/auditorias/` con los enlaces ajustados; el enlace absoluto roto del README a `ROLLBACK-STABLE-BASELINE.md` se hizo relativo. Los `PLAN-*` y reportes de la raíz **no** se movieron (P-006).
+**Verificación:** `node scripts/docs-check.mjs --ci` → «Documentación al día»; `npx vitest run tests/docsCheck.test.js` → 20 de 20. No se corrió la batería completa ni ESLint. Sin commit. Quedan 10 enlaces rotos antiguos dentro de `docs/auditorias/` (rutas absolutas de otro equipo y un test inexistente), no revisados por el guardia.

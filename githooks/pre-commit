@@ -12,6 +12,9 @@
 # Desactivar el gate:     git config --unset core.hooksPath
 # ─────────────────────────────────────────────────────────────────────
 
+echo "[pre-commit] Ley de documentación (modo suave: solo avisa)..."
+node scripts/docs-check.mjs --staged || true
+
 STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(js|jsx)$' || true)
 
 if [ -n "$STAGED_FILES" ]; then

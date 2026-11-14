@@ -45,6 +45,10 @@ jobs:
       - name: Instalar dependencias
         run: bun install --frozen-lockfile
 
+      - name: Documentación (modo suave, solo avisa)
+        run: node scripts/docs-check.mjs --ci
+        continue-on-error: true
+
       - name: Lint
         run: bun run lint
 
