@@ -18,6 +18,8 @@ Si no está escrito, no pasó. Es como el cuaderno de una tienda: si no se anota
 | Plan antes de hacer algo grande | `docs/plans/AAAA-MM-DD-slug.md` | Recomendado |
 | Auditoría | `docs/auditorias/AUDITORIA-TEMA.md` | Recomendado |
 | Informe o postmortem | `docs/reports/AAAA-MM-DD-slug.md` | Recomendado |
+| Propuesta (idea o diagnóstico antes de un plan) | `docs/propuestas/AAAA-MM-DD-slug.md` | Recomendado |
+| Mockup (maqueta de pantalla en HTML) | `docs/mockups/AAAA-MM-DD-slug.html` | Recomendado |
 
 Un cambio pequeño (un texto, un color) solo lleva bitácora. No hace falta un caso por cada botón.
 
@@ -40,7 +42,8 @@ Un cambio pequeño (un texto, un color) solo lleva bitácora. No hace falta un c
 
 - `CHANGES.md` e `ISSUES.md` (raíz): foto de la auditoría de marzo 2026 (130 issues, todos cerrados). No se editan; los errores nuevos van a `ERRORES.md`.
 - `docs/plans/` y `docs/reports/`: se mantienen con su nombre `AAAA-MM-DD-slug.md`.
-- `docs/auditorias/`: las auditorías anteriores a esta ley. Los `PLAN-*` y reportes que siguen en la raíz se ordenarán después (P-006).
+- `docs/propuestas/` y `docs/mockups/`: creadas el 2026-11-14 para guardar dentro del repo las propuestas y maquetas que antes quedaban sueltas en el Escritorio.
+- `docs/auditorias/`: las auditorías anteriores a esta ley y las nuevas (`AUDITORIA-TEMA-AAAA-MM-DD.md`). **Ningún informe, plan, propuesta o mockup de Bodega se deja en el Escritorio:** se guarda aquí desde el principio. Los `PLAN-*` y reportes que siguen en la raíz se ordenarán después (P-006).
 
 ## Versiones
 

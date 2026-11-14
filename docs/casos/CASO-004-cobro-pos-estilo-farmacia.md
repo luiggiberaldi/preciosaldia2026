@@ -2,7 +2,7 @@
 
 **Fecha:** 2026-11-14
 **Estado:** Aplicado (sin commit)
-**Auditoría y plan (fuera del repo, en el Escritorio):** `AUDITORIA-COBRO-VUELTOS-BODEGA-VS-FARMACIA-2026-11-14.md` y `PLAN-COBRO-BODEGA-ALINEAR-CON-FARMACIA-2026-11-14.md`.
+**Auditoría y plan:** [AUDITORIA-COBRO-VUELTOS-BODEGA-VS-FARMACIA-2026-11-14.md](../auditorias/AUDITORIA-COBRO-VUELTOS-BODEGA-VS-FARMACIA-2026-11-14.md) y [2026-11-14-plan-cobro-bodega-alinear-con-farmacia.md](../plans/2026-11-14-plan-cobro-bodega-alinear-con-farmacia.md).
 
 ## Qué pidió el dueño
 Contrastar el cobro de PC de Bodega con el de Farmacia (con capturas) y la lógica de vueltos; hacer un plan completo y ejecutarlo fase a fase. Decisiones del dueño:

@@ -4,7 +4,7 @@
 **Estado:** Aplicado y guardado (commit «fix(caja): …» del 2026-11-13)
 
 ## Qué pidió el dueño
-Auditar la apertura de caja tras ver «Efectivo esperado −2.159,35 Bs». Informe completo: `C:\Users\luigg\Desktop\AUDITORIA-APERTURA-CAJA-2026-11-13.md` (fuera del repo).
+Auditar la apertura de caja tras ver «Efectivo esperado −2.159,35 Bs». Informe completo: [AUDITORIA-APERTURA-CAJA-2026-11-13.md](../auditorias/AUDITORIA-APERTURA-CAJA-2026-11-13.md).
 
 ## Decisiones del dueño
 - Si el vuelto pide más Bs de los que hay: **avisar grande y dar opciones, sin bloquear el cobro**. No redondear a un billete de más.

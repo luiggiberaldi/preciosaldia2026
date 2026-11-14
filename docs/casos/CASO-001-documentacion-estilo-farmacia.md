@@ -4,7 +4,7 @@
 **Estado:** Aplicado (sin commit al escribir esto)
 
 ## Qué pidió el dueño
-Copiar a Bodega el modelo de documentación de Farmacia, empezando por una auditoría (`C:\Users\luigg\Desktop\AUDITORIA-DOCUMENTACION-FARMACIA-2026-11-13.md`, fuera del repo) y luego «aplicarlas todas fase por fase».
+Copiar a Bodega el modelo de documentación de Farmacia, empezando por una auditoría ([AUDITORIA-DOCUMENTACION-FARMACIA-2026-11-13.md](../auditorias/AUDITORIA-DOCUMENTACION-FARMACIA-2026-11-13.md)) y luego «aplicarlas todas fase por fase».
 
 ## Qué se hizo
 - **Fase 1:** [ley](../LEY-DOCUMENTACION.md), [ERRORES.md](../ERRORES.md), [índice de casos](INDICE.md), [PENDIENTES.md](../../PENDIENTES.md), sección en `AGENT.md` y entradas en la bitácora.

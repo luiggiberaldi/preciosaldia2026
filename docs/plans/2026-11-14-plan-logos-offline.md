@@ -1,7 +1,7 @@
 # Plan: logos e imágenes que funcionan sin internet (Bodega)
 
 Fecha: 14-11-2026 · Rama: `feat/inicio-estilo-farmacia`
-Origen: `C:\Users\luigg\Desktop\PROPUESTA-LOGOS-OFFLINE-BODEGA-2026-11-14.md` (diagnóstico con capturas).
+Origen: [docs/propuestas/2026-11-14-propuesta-logos-offline.md](../propuestas/2026-11-14-propuesta-logos-offline.md) (diagnóstico; las capturas siguen en `C:\Users\luigg\Desktop\PROPUESTA-LOGOS-OFFLINE-BODEGA-capturas`).
 Referencia (solo lectura): Precios al Día Farmacia, `C:\Users\luigg\Desktop\precios al dia farmacia\preciosaldia-farmacia`.
 
 ## Resumen

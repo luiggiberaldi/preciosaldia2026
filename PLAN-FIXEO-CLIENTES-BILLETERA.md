@@ -1,7 +1,7 @@
 # PLAN DE FIXEO Y MEJORA — CLIENTES, BILLETERA, ABONOS Y DEUDAS
 
 **Documento ejecutable.** Cada fase se puede hacer sola, en orden, con su prueba y su commit.
-**Origen:** verificación de punta a punta del 2026-11-14 (`C:\Users\luigg\Desktop\VERIFICACION-CLIENTES-E2E-2026-11-14.md`, commit `3b4a2d1`).
+**Origen:** verificación de punta a punta del 2026-11-14 ([docs/reports/2026-11-14-verificacion-clientes-e2e.md](docs/reports/2026-11-14-verificacion-clientes-e2e.md), commit `3b4a2d1`).
 **Caso a abrir:** CASO-005 (`docs/casos/CASO-005-clientes-billetera.md`).
 **Fases:** 10 · **Prioridad:** F1 primero (puede tocar dinero), luego en el orden escrito.
 

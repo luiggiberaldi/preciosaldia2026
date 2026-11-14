@@ -4,7 +4,7 @@
 **Estado:** Aplicado (sin commit)
 
 ## Qué pidió el dueño
-Auditar la zona de Vender de Precios al Día Farmacia y traer a Bodega lo que sirve, fase a fase, preguntando en el proceso. Informe y plan fuera del repo: `C:\Users\luigg\Desktop\AUDITORIA-VENDER-BODEGA-VS-FARMACIA-2026-11-13.md` y `C:\Users\luigg\Desktop\PLAN-VENDER-BODEGA-ALINEAR-CON-FARMACIA-2026-11-13.md` (este último tiene todas las medidas antes y después).
+Auditar la zona de Vender de Precios al Día Farmacia y traer a Bodega lo que sirve, fase a fase, preguntando en el proceso. Informe y plan: [AUDITORIA-VENDER-BODEGA-VS-FARMACIA-2026-11-13.md](../auditorias/AUDITORIA-VENDER-BODEGA-VS-FARMACIA-2026-11-13.md) y [2026-11-13-plan-vender-bodega-alinear-con-farmacia.md](../plans/2026-11-13-plan-vender-bodega-alinear-con-farmacia.md) (este último tiene todas las medidas antes y después).
 
 Durante el trabajo el dueño pidió además:
 - «Se ve todo muy apretado» → fichas uniformes medianas (en vez de las compactas del primer intento).

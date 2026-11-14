@@ -231,7 +231,7 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 
 ## 2026-11-13 — Auditoría y arreglo de la apertura de caja
 
-**Contexto:** el dueño vio «Efectivo esperado −2.159,35 Bs». Informe: `C:\Users\luigg\Desktop\AUDITORIA-APERTURA-CAJA-2026-11-13.md` (fuera del repo).
+**Contexto:** el dueño vio «Efectivo esperado −2.159,35 Bs». Informe: [docs/auditorias/AUDITORIA-APERTURA-CAJA-2026-11-13.md](docs/auditorias/AUDITORIA-APERTURA-CAJA-2026-11-13.md).
 **Cambios:** no se pueden abrir dos cajas a la vez (`useCheckoutFlow.js`); regla única del fondo real de la gaveta (`cashShift.js`, `fondoGaveta.js`, `SalesView.jsx` y `useDashboardMetrics.js`); aviso legible de efectivo insuficiente para el vuelto (`AvisoFondoGaveta.jsx` y componentes del cobro), con «Registrar aporte», «Dejar en saldo a favor» y «Confirmar igual» en la confirmación final; aviso al abrir con 0 Bs y explicación del número rojo en el Inicio. Marcas en el código: `CAJA-APERTURA-001`, `CAJA-FONDO-001`, `CAJA-FONDO-002`.
 **Casos y errores:** [CASO-002](docs/casos/CASO-002-caja-apertura-y-fondo.md); ERR-001, ERR-002, ERR-003.
 **Verificación:** 124 de 124 pruebas de caja y cobro (incluye 12 nuevas: `tests/fondoGaveta.test.js`, `tests/aperturaDuplicada.test.js`). Batería completa: 2.241 de 2.244; fallan 3 de licencias (`licenseMonitoringMissing`, `licensePolicy`), ajenas a este cambio. Probado en el navegador: apertura con 0 Bs, vuelto en Bs sin Bs, aporte que quita el aviso, Inicio con USD 30,00 y 144,84 Bs. Guardado el 2026-11-13.
@@ -254,7 +254,7 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 
 ## 2026-11-14 — Vender estilo Farmacia (fases 1 a 7)
 
-**Contexto:** el dueño pidió auditar Vender de Farmacia y traer lo útil a Bodega, fase a fase. Informe y plan con medidas antes/después, fuera del repo: `C:\Users\luigg\Desktop\AUDITORIA-VENDER-BODEGA-VS-FARMACIA-2026-11-13.md` y `C:\Users\luigg\Desktop\PLAN-VENDER-BODEGA-ALINEAR-CON-FARMACIA-2026-11-13.md`.
+**Contexto:** el dueño pidió auditar Vender de Farmacia y traer lo útil a Bodega, fase a fase. Informe y plan con medidas antes/después: [docs/auditorias/AUDITORIA-VENDER-BODEGA-VS-FARMACIA-2026-11-13.md](docs/auditorias/AUDITORIA-VENDER-BODEGA-VS-FARMACIA-2026-11-13.md) y [docs/plans/2026-11-13-plan-vender-bodega-alinear-con-farmacia.md](docs/plans/2026-11-13-plan-vender-bodega-alinear-con-farmacia.md).
 **Cambios:**
 - Hora de la tasa en el cuadro «TASA BCV» (`src/utils/rateStamp.js`, `SalesView.jsx`).
 - Fichas uniformes con recuadro de imagen fijo e iniciales si no hay foto; rejilla que se acomoda al ancho (mín. 170 px); poco stock en ámbar; aviso de producto sin precio; botones de 38 px; nombres completos sin «…» (`CategoryBar.jsx`, `src/utils/productInitials.js`, `tailwind.config.js` con pantalla `short`).
@@ -278,7 +278,7 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 **Contexto:** después de cambiar el cobro y los vueltos (CASO-004) se revisó todo el flujo de clientes: fiado total y parcial, abonos ($, Bs, mixto, mayor que la deuda), vuelto a la billetera, compras con saldo a favor, anulaciones, cambio de tasa, centavos, «Recalcular deudas» y cierre.
 **Cambios:** recibo con «Vuelto a su billetera» (ERR-013); Vender ya no muestra el saldo viejo del cliente tras cobrar (ERR-014, `useSalesData.js`); el resumen del cierre cuenta el vuelto a billetera como saldo generado (ERR-015, `closeDaySummary.js`).
 **Pruebas nuevas:** `tests/clientesBilleteraFlujo.test.js` (6) y `tests/e2e/clientes-billetera.e2e.spec.js` (3).
-**Verificación:** pruebas de cartera, caja y cierre 320 de 320; e2e nuevo 3 de 3; recorrido a mano en el navegador a 1366×768 con datos de prueba. Informe: `VERIFICACION-CLIENTES-E2E-2026-11-14.md` (Escritorio).
+**Verificación:** pruebas de cartera, caja y cierre 320 de 320; e2e nuevo 3 de 3; recorrido a mano en el navegador a 1366×768 con datos de prueba. Informe: [docs/reports/2026-11-14-verificacion-clientes-e2e.md](docs/reports/2026-11-14-verificacion-clientes-e2e.md).
 
 ## 2026-11-14 — Clientes F1: «Reparar cartera» con datos frescos (ERR-016)
 
@@ -315,3 +315,10 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 **Plan:** `PLAN-FIXEO-CLIENTES-BILLETERA.md`, fase F6 (decisión D1: el fiado se sigue contando entero; se muestra aparte lo cubierto).
 **Cambios:** `receivablesReport.js` calcula por fiado `cubiertoConFavorUsd` con la foto `walletSnapshot.favorAntes` (menos lo pagado con saldo en la misma venta; Cashea y ventas viejas = 0) y el total `fiadoCubiertoConFavorUsd`; la vista agrega la sub-fila «De eso, cubierto con saldo a favor». Reportes e Inicio la muestran con sangría. `closeDaySummary.js`: la misma fila bajo «Fiado a clientes» en el PDF y el ticket.
 **Verificación:** pruebas nuevas en `clientesBilleteraFlujo.test.js` (3), `closeDaySummary.test.js` (2) y `receivablesReport.test.js` (1); 102/102 de cartera, cierre y reportes; e2e «Fiado a un cliente con saldo a favor…» pasa con captura revisada.
+
+## 2026-11-14 — Documentos del Escritorio pasados al repo
+
+**Contexto:** varias sesiones dejaron auditorías, planes, propuestas y un mockup de Bodega sueltos en el Escritorio, fuera del repo. El dueño pidió tenerlos todos dentro del proyecto, ordenados según la ley de documentación.
+**Cambios:** movidos (no copiados) 13 archivos: 6 auditorías a `docs/auditorias/` (Ajustes, apertura de caja, cobro y vueltos, documentación de Farmacia, nómina de Donde Juancho, Vender); 3 planes a `docs/plans/` (`2026-11-13-plan-vender-bodega-alinear-con-farmacia.md`, `2026-11-14-plan-cobro-bodega-alinear-con-farmacia.md`, `2026-11-13-plan-preciosaldia-multicaja.md`); 2 informes a `docs/reports/` (`2026-11-13-reporte-cliente-dos-sedes-v2.md`, `2026-11-14-verificacion-clientes-e2e.md`); la propuesta de logos sin internet a `docs/propuestas/` y el mockup del aviso de actualización a `docs/mockups/` (carpetas nuevas, registradas en `docs/LEY-DOCUMENTACION.md`). Enlaces arreglados en esta bitácora, CASO-001 a CASO-004, `PLAN-FIXEO-CLIENTES-BILLETERA.md`, `docs/plans/2026-11-14-plan-logos-offline.md` y dentro de los documentos movidos. Quedan en el Escritorio, a propósito: `REPORTE-CLIENTE-DOS-SEDES.md` (versión 1, recomendaba Listo POS Lite; la reemplaza la v2), `propuesta.html` (de Synaptica, otro proyecto) y la carpeta de capturas de logos.
+**Casos y errores:** ninguno.
+**Verificación:** `bun run docs:check`: sin enlaces rotos; sus únicos avisos (ERR-012 sin fila en la tabla y módulos por revisar) vienen de cambios de otras sesiones. Sin cambios de código, así que no se corrió ESLint.
