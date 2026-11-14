@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { fetchBcvRates } from './api/bcvRatesHelper.js';
 // Fuente única del system prompt — la misma que usa api/chat.js en Vercel.
+import { RELEASE_NOTES } from './src/data/releaseNotes.js';
 import { buildChatSystemMessage, CHAT_TEMPERATURE, CHAT_MAX_TOKENS } from './src/services/chatSystemPrompt.js';
 
 // Versión del package.json para cacheId estable (INFRA-006).
@@ -22,6 +23,14 @@ export default defineConfig(({ mode }) => {
     base: process.env.ELECTRON_BUILD === 'true' ? './' : '/',
     plugins: [
       react(),
+      // Publica las novedades como /release-notes.json (sin caché) para que la versión
+      // ya instalada pueda mostrar qué trae la actualización ANTES de aplicarla.
+      {
+        name: 'pda-release-notes',
+        generateBundle() {
+          this.emitFile({ type: 'asset', fileName: 'release-notes.json', source: JSON.stringify(RELEASE_NOTES) });
+        },
+      },
     VitePWA({
       registerType: 'prompt', // SW prompt: no fuerza recargas abruptas durante operaciones POS (A-001/B-003).
       includeAssets: [
