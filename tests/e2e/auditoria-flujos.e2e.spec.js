@@ -705,7 +705,8 @@ test('F12b pago con saldo a favor en modo POS', async ({ page }) => {
     await usarTodo.click();
 
     // La venta queda cubierta sin efectivo: el POS habilita el cobro.
-    const pagar = page.getByRole('button', { name: /PAGAR \(LISTO\)/ });
+    // CASO-004: el botón del cobro POS ahora dice «COBRAR $5.00» (antes «PAGAR (LISTO)»).
+    const pagar = page.getByRole('button', { name: /COBRAR \$5\.00|PAGAR \(LISTO\)/ });
     await expect(pagar).toBeEnabled({ timeout: 10_000 });
     await pagar.click();
     await expect(page.getByText('Tasa BCV Aplicada')).toBeVisible({ timeout: 15_000 });

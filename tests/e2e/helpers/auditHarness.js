@@ -153,15 +153,20 @@ export const TABS = {
     ajustes: 'Ajustes',
 };
 
+/**
+ * Botón del menú principal. [data-tour="tab-*"] existe dos veces en la página:
+ * en la barra lateral de PC (`SideNav.jsx`) y en la barra inferior del celular
+ * (`App.jsx`); solo una está visible según el ancho. Se toma la visible.
+ */
+export const navTab = (page, tab) => page.locator(`[data-tour="tab-${tab}"]:visible`).first();
+
 export async function startApp(page) {
     await page.goto('/');
-    // La nav inferior expone [data-tour="tab-*"] único: el nombre «Inicio»
-    // también existe en la barra de pestañas superior y rompe el modo estricto.
-    await expect(page.locator('[data-tour="tab-inicio"]')).toBeVisible({ timeout: 30_000 });
+    await expect(navTab(page, 'inicio')).toBeVisible({ timeout: 30_000 });
 }
 
 export async function goTo(page, tab) {
-    await page.locator(`[data-tour="tab-${tab}"]`).click();
+    await navTab(page, tab).click();
 }
 
 /**

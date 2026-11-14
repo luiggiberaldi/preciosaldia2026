@@ -39,7 +39,7 @@ Regla para todas las fases: **pantalla nunca decide el dinero**. Toda validació
 
 **Hecho cuando:** la prueba pasa y la reparación no puede bajar ni subir un saldo que el ledger guardado no respalde.
 
-## F2 — Reparar las pruebas e2e antiguas de clientes (gravedad: media, sin esto no hay red de seguridad)
+## F2 — Reparar las pruebas e2e antiguas de clientes ✅ HECHO
 
 **Problema:** `auditoria-flujos` F3–F13 y `reportes-fiado` fallan por selectores duplicados: `[data-tour="tab-inicio"]` existe en `SideNav.jsx` y en la barra inferior de `App.jsx`; en `reportes-fiado`, `$80.00` sale 2 veces.
 
@@ -112,7 +112,7 @@ Guía: `side-session-notes/…/PORTAR-A-FARMACIA-clientes-billetera.md`. Llevar 
 | Fase | Qué | Gravedad / valor | Tamaño | Depende de |
 |---|---|---|---|---|
 | F1 ✅ | Reparar cartera con datos frescos y candado | Alta (posible dinero) | Pequeño | — |
-| F2 | Arreglar e2e antiguas | Media | Pequeño | — |
+| F2 ✅ | Arreglar e2e antiguas | Media | Pequeño | — |
 | F3 | Aviso al anular con deuda | Media | Pequeño | — |
 | F4 | Cierre: pagado con saldo a favor | Baja | Pequeño | — |
 | F5 | Abono mixto | Mejora | Mediano | — |

@@ -285,3 +285,9 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 **Plan:** `PLAN-FIXEO-CLIENTES-BILLETERA.md`, fase F1.
 **Cambios:** `rebuildAllCustomersFromLedger()` en `customerWalletService.js` (lee dentro de `pos_write_lock`, solo toca descuadrados); `ReportsView.jsx` la usa y, al anular, aplica `updatedCustomers`.
 **Verificación:** `tests/ledgerRepairFresh.test.js` 5/5; e2e «Reconstruir…» pasa; pruebas de cartera y reportes 90/90. La e2e «cartera desviada…» falla también sin este cambio (Reportes tarda más de 15 s en la primera carga en frío): queda para F2.
+
+## 2026-11-14 — Clientes F2: pruebas e2e antiguas de clientes otra vez en verde
+
+**Plan:** `PLAN-FIXEO-CLIENTES-BILLETERA.md`, fase F2.
+**Cambios (solo pruebas):** `tests/e2e/helpers/auditHarness.js` toma el botón visible del menú (`navTab`; `[data-tour="tab-*"]` existe en la barra lateral y en la inferior). `reportes-fiado`: espera de Reportes a 45 s (en frío tardaba más de 15 s) y montos de proveedor que salen dos veces con `.first()`. `auditoria-flujos` F12b: el botón del cobro POS se llama «COBRAR $5.00» desde CASO-004 (solo esa línea; los cambios de F8 de otra sesión no se incluyeron).
+**Verificación:** F3, F3b, F12, F12b, F13, `reportes-fiado` (3) y `clientes-billetera` (3) pasan.

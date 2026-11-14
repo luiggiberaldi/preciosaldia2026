@@ -23,7 +23,8 @@ test.use({
 async function goToReports(page) {
     await page.goto('/');
     await page.getByRole('button', { name: 'Reportes', exact: true }).click();
-    await expect(page.locator('[data-view="reportes"]')).toBeVisible({ timeout: 15_000 });
+    // En frío (primer test de la corrida) Vite compila Reportes: puede pasar de 15 s.
+    await expect(page.locator('[data-view="reportes"]')).toBeVisible({ timeout: 45_000 });
 }
 
 test('cobranzas mayores al fiado: la sección aparece con neto negativo y sin overflow', async ({ page }) => {
@@ -35,9 +36,9 @@ test('cobranzas mayores al fiado: la sección aparece con neto negativo y sin ov
     await reports.getByRole('button', { name: 'Gastos', exact: true }).click();
     await expect(reports.getByRole('button', { name: 'PDF de ventas y caja' })).toHaveCount(0);
     const supplierReport = reports.getByTestId('supplier-period-report');
-    await expect(supplierReport.getByText('$80.00')).toBeVisible();
-    await expect(supplierReport.getByText('-$45.00')).toBeVisible();
-    await expect(supplierReport.getByText('$35.00')).toBeVisible();
+    await expect(supplierReport.getByText('$80.00').first()).toBeVisible(); // sale en el total y en la fila
+    await expect(supplierReport.getByText('-$45.00').first()).toBeVisible();
+    await expect(supplierReport.getByText('$35.00').first()).toBeVisible();
     const supplierPdfButton = supplierReport.getByRole('button', { name: 'PDF de compras y pagos' });
     await expect(supplierPdfButton).toBeVisible();
     const supplierDownload = page.waitForEvent('download');
