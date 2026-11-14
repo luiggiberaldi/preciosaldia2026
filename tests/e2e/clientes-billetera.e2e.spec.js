@@ -165,3 +165,22 @@ test('Crédito parcial → abono mayor que la deuda → compra con el saldo a fa
     expect(movs.at(-1).balanceAfterUsd).toBe(1);
     expect(movs.map(m => m.type)).toEqual(['VENTA_FIADA', 'ABONO_DEUDA', 'SALDO_FAVOR_USADO']);
 });
+
+test('Anular desde Inicio una venta pagada con saldo a favor: la confirmación dice cómo queda la cuenta y el saldo vuelve (F3)', async ({ page }) => {
+    await iniciar(page);
+    // Juan tiene $18,50 a favor: compra $5 con «Todo» el saldo.
+    await abrirCobro(page, ['Caraota E2E']);
+    await elegirCliente(page, 'Juan E2E');
+    await page.getByTitle('Aplicar el máximo saldo a favor permitido').click();
+    await botonCobrar(page).click();
+    await confirmarYCerrarRecibo(page);
+    await expect.poll(async () => (await cliente(page, 'Juan E2E'))?.favor, { timeout: 15_000 }).toBe(13.5);
+
+    await irA(page, 'inicio');
+    await page.getByText('Juan E2E').first().click();       // abre el detalle de la venta en el historial
+    await page.getByRole('button', { name: /Anular/ }).first().click();
+    const detalles = page.getByTestId('confirm-details');
+    await expect(detalles).toContainText('Cuenta de Juan E2E: $13.50 a favor → $18.50 a favor.');
+    await page.getByRole('button', { name: 'Sí, anular' }).click();
+    await expect.poll(async () => (await cliente(page, 'Juan E2E'))?.favor, { timeout: 15_000 }).toBe(18.5);
+});

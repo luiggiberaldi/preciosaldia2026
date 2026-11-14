@@ -1,6 +1,7 @@
 // v1.2.0: Rebrand al design system "Precios al Día" — shadow-tone-sm en cards, font-display en totales, text-accent para Bs (BCV-derived), reveal-on-scroll.
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { processVoidSale } from '../utils/voidSaleProcessor';
+import { useVoidImpact } from '../hooks/useVoidImpact';
 import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
 import { BarChart3, TrendingUp, Package, AlertTriangle, ShoppingCart, Settings, Wallet, LockIcon } from 'lucide-react';
@@ -96,6 +97,8 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [voidSaleTarget, setVoidSaleTarget] = useState(null);
+    // F3: cómo queda la cuenta del cliente si se anula (se muestra en la confirmación).
+    const voidImpactLines = useVoidImpact(voidSaleTarget, bcvRate);
     const [isCashReconOpen, setIsCashReconOpen] = useState(false);
     const [isAporteOpen, setIsAporteOpen] = useState(false);
     const [ticketPendingSale, setTicketPendingSale] = useState(null);
@@ -893,6 +896,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 isOpen={!!voidSaleTarget}
                 onClose={() => setVoidSaleTarget(null)}
                 onConfirm={confirmVoidSale}
+                details={voidImpactLines}
                 title={`Anular venta #${voidSaleTarget?.id?.substring(0, 6).toUpperCase() || ''}`}
                 message={`Esta acción:\n• Marcará la venta como ANULADA\n• Devolverá el stock a la bodega\n• Revertirá deudas o saldos a favor\n\nEsta acción no se puede deshacer.`}
                 confirmText="Sí, anular"

@@ -291,3 +291,9 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 **Plan:** `PLAN-FIXEO-CLIENTES-BILLETERA.md`, fase F2.
 **Cambios (solo pruebas):** `tests/e2e/helpers/auditHarness.js` toma el botón visible del menú (`navTab`; `[data-tour="tab-*"]` existe en la barra lateral y en la inferior). `reportes-fiado`: espera de Reportes a 45 s (en frío tardaba más de 15 s) y montos de proveedor que salen dos veces con `.first()`. `auditoria-flujos` F12b: el botón del cobro POS se llama «COBRAR $5.00» desde CASO-004 (solo esa línea; los cambios de F8 de otra sesión no se incluyeron).
 **Verificación:** F3, F3b, F12, F12b, F13, `reportes-fiado` (3) y `clientes-billetera` (3) pasan.
+
+## 2026-11-14 — Clientes F3: la confirmación de anular dice cómo queda la cuenta del cliente
+
+**Plan:** `PLAN-FIXEO-CLIENTES-BILLETERA.md`, fase F3 (decisión D4: anular se permite, con aviso).
+**Cambios:** `buildVoidReversalMovements` exportada desde `voidSaleProcessor.js` (misma regla para anular y para la vista previa); `src/utils/voidImpact.js` (impacto y texto); `src/hooks/useVoidImpact.js` (lee cliente y ledger frescos); `ConfirmModal.jsx` acepta `details` (líneas destacadas, ámbar si empiezan con «⚠»); Inicio y Reportes las muestran al anular. Ej.: «Cuenta de María: al día → debe $5.00» y «⚠ El cliente quedará debiendo $5.00 (Bs 200,00): ya usó el saldo a favor que le dio esta venta».
+**Verificación:** `tests/voidImpact.test.js` 6/6 (la vista previa coincide con la anulación real); e2e `clientes-billetera` 4/4 (nueva: anular desde Inicio una venta pagada con saldo); pruebas de anulación y cartera 51/51.

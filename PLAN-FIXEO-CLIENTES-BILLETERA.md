@@ -49,7 +49,7 @@ Regla para todas las fases: **pantalla nunca decide el dinero**. Toda validació
 
 **Hecho cuando:** las 7 pruebas pasan (o las que fallen muestran un error real de la app, que se anota como ERR nuevo).
 
-## F3 — Aviso al anular una venta que deja deuda (P4, decisión D4)
+## F3 — Aviso al anular una venta que deja deuda (P4, decisión D4) ✅ HECHO
 
 1. Nuevo `src/utils/voidImpact.js` → `previewVoidCustomerImpact(sale, customer, ledger)`: devuelve el saldo antes y después de anular usando los mismos movimientos que `processVoidSale` (reutilizar la lógica: extraer de `voidSaleProcessor.js` la función que arma `reversalMovements` y exportarla).
 2. `DashboardView.jsx` (modal «Anular venta», ~línea 896) y `ReportsView.jsx` (~línea 504): si `despues < 0` y `antes >= 0`, añadir al mensaje: «El cliente quedará debiendo $X (Bs Y): ya usó el saldo que generó esta venta».
@@ -113,7 +113,7 @@ Guía: `side-session-notes/…/PORTAR-A-FARMACIA-clientes-billetera.md`. Llevar 
 |---|---|---|---|---|
 | F1 ✅ | Reparar cartera con datos frescos y candado | Alta (posible dinero) | Pequeño | — |
 | F2 ✅ | Arreglar e2e antiguas | Media | Pequeño | — |
-| F3 | Aviso al anular con deuda | Media | Pequeño | — |
+| F3 ✅ | Aviso al anular con deuda | Media | Pequeño | — |
 | F4 | Cierre: pagado con saldo a favor | Baja | Pequeño | — |
 | F5 | Abono mixto | Mejora | Mediano | — |
 | F6 | Fiado cubierto con saldo en reportes | Baja | Mediano | — |

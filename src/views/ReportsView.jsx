@@ -10,6 +10,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import { getLocalISODate, getDateRange } from '../utils/dateHelpers';
 import { calculateReportsData, groupSalesByCierreId } from '../utils/reportsProcessor';
 import { processVoidSale } from '../utils/voidSaleProcessor';
+import { useVoidImpact } from '../hooks/useVoidImpact';
 import { CUSTOMER_LEDGER_KEY } from '../utils/customerLedger';
 import { rebuildAllCustomersFromLedger } from '../services/customerWalletService';
 import { reconcileCustomersWithLedger } from '../utils/pocketReconciliation';
@@ -60,6 +61,8 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
     const [historySearch, setHistorySearch] = useState('');
     const [historyFilter, setHistoryFilter] = useState('all'); // all, completed, voided
     const [voidSaleTarget, setVoidSaleTarget] = useState(null);
+    // F3: cómo queda la cuenta del cliente si se anula (se muestra en la confirmación).
+    const voidImpactLines = useVoidImpact(voidSaleTarget, bcvRate);
     const [recycleOffer, setRecycleOffer] = useState(null);
 
     const { handleExportPDF } = useReportExport({ triggerHaptic });
@@ -506,6 +509,7 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                 isOpen={!!voidSaleTarget}
                 onClose={() => setVoidSaleTarget(null)}
                 onConfirm={confirmVoidSale}
+                details={voidImpactLines}
                 title={`Anular venta #${voidSaleTarget?.id?.substring(0, 6).toUpperCase() || ''}`}
                 message={'Esta accion:\n- Marcara la venta como ANULADA\n- Devolvera el stock a la bodega\n- Revertira deudas o saldos a favor\n\nEsta accion no se puede deshacer.'}
                 confirmText="Si, anular"
