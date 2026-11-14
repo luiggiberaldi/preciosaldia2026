@@ -531,7 +531,11 @@ export default function ReportsMetricsTab({
                                                                 <span className="text-slate-500 dark:text-slate-400 truncate">
                                                                     {cobranza.cliente}
                                                                     {cobranza.saleNumber ? ` · #${cobranza.saleNumber}` : ''}
-                                                                    {cobranza.methodId ? ` · ${toTitleCase(getPaymentLabel(cobranza.methodId))}` : ''}
+                                                                    {(() => {
+                                                                        // F5: un abono mixto muestra todos sus métodos («Efectivo $ + Pago Móvil»).
+                                                                        const ids = cobranza.methodIds?.length ? cobranza.methodIds : (cobranza.methodId ? [cobranza.methodId] : []);
+                                                                        return ids.length ? ` · ${ids.map(id => toTitleCase(getPaymentLabel(id))).join(' + ')}` : '';
+                                                                    })()}
                                                                 </span>
                                                                 <span className="text-slate-600 dark:text-slate-300 font-medium shrink-0">
                                                                     {formatBs(cobranza.montoBs)} Bs

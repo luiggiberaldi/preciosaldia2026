@@ -64,7 +64,7 @@ Regla para todas las fases: **pantalla nunca decide el dinero**. Toda validació
 4. `src/utils/dailyCloseGenerator.js`: verificar que la fila nueva sale en el PDF (2 columnas).
 5. Pruebas: ampliar `tests/closeDaySummary.test.js` y `tests/clientesBilleteraFlujo.test.js` (jornada con $4 de saldo usado → fila $4, cobrado en caja = cobrado − 4).
 
-## F5 — Abono mixto en una sola ventana (P3, decisión D2)
+## F5 — Abono mixto en una sola ventana (P3, decisión D2) ✅ HECHO
 
 1. `src/components/Customers/TransactionModal.jsx`: en «Recibir Abono», modo «$ y Bs» con dos campos y método por campo; vista previa con el total en $ y el saldo resultante.
 2. `src/utils/customerTransactionProcessor.js`: aceptar `payments: [{ currency, amount, methodId }]` (mantener la firma vieja de un solo monto). Un solo registro `COBRO_DEUDA` con varios `payments`, un solo movimiento `ABONO_DEUDA` por el total en USD (`sumR` de cada parte convertida con `divR`), `saldoFavorGeneradoUsd` sobre el total.
@@ -83,7 +83,8 @@ Regla para todas las fases: **pantalla nunca decide el dinero**. Toda validació
 1. Selector de cliente en el cobro (`CheckoutCustomerPicker.jsx`): mostrar deuda en rojo además de «Favor $X», y en Bs a la tasa del día (D3).
 2. Ventana de abono: botón «Pagar total» también en $ cuando el modo es Bs (hoy solo en la moneda activa) y aviso cuando la tasa cambió desde la venta fiada: «La deuda es $10; hoy son Bs 500 (cuando se fió eran Bs 400)».
 3. Detalle del cliente (`CustomersView.jsx`): revisar que el historial nombre en español sencillo cada movimiento del ledger (`VUELTO_ACREDITADO` → «Vuelto guardado», `SALDO_FAVOR_USADO` → «Pagó con su saldo», `ANULACION` → «Anulación de …»).
-4. «Billetera: elige cliente» (`ChangeCard.jsx`): al tocarlo sin cliente, abrir directamente el selector de cliente además del aviso.
+4. Ventana «Ajustar Cuenta» (`TransactionModal.jsx`): a 1366×768 en modo «$ y Bs» es más alta que la pantalla y el título queda cortado arriba (visto en F5). Hacerla desplazable con el botón fijo abajo.
+5. «Billetera: elige cliente» (`ChangeCard.jsx`): al tocarlo sin cliente, abrir directamente el selector de cliente además del aviso.
 
 Cada punto con su prueba de componente o e2e; capturas a 1366×768 y 375 px.
 
@@ -115,7 +116,7 @@ Guía: `side-session-notes/…/PORTAR-A-FARMACIA-clientes-billetera.md`. Llevar 
 | F2 ✅ | Arreglar e2e antiguas | Media | Pequeño | — |
 | F3 ✅ | Aviso al anular con deuda | Media | Pequeño | — |
 | F4 ✅ | Cierre: pagado con saldo a favor | Baja | Pequeño | — |
-| F5 | Abono mixto | Mejora | Mediano | — |
+| F5 ✅ | Abono mixto | Mejora | Mediano | — |
 | F6 | Fiado cubierto con saldo en reportes | Baja | Mediano | — |
 | F7 | Mejoras de pantalla del cliente | Mejora | Mediano | F3 |
 | F8 | E2E faltantes | Seguridad | Mediano | F2, F3, F4 |

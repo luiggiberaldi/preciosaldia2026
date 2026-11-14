@@ -241,8 +241,10 @@ export default function CustomersView({ triggerHaptic, isActive }) {
         setCasheaModalCustomer(null);
     };
 
-    const handleTransaction = async () => {
-        if (!transactionAmount || isNaN(transactionAmount) || parseFloat(transactionAmount) <= 0) return;
+    // F5: `extra.payments` llega en el abono mixto ($ + Bs).
+    const handleTransaction = async (extra = null) => {
+        const mixedPayments = Array.isArray(extra?.payments) ? extra.payments : null;
+        if (!mixedPayments && (!transactionAmount || isNaN(transactionAmount) || parseFloat(transactionAmount) <= 0)) return;
         triggerHaptic();
 
         const transactionResult = await processCustomerTransaction({
@@ -253,7 +255,8 @@ export default function CustomersView({ triggerHaptic, isActive }) {
             paymentMethod,
             bcvRate: effectiveRate,
             tasaCop,
-            copEnabled
+            copEnabled,
+            payments: mixedPayments,
         });
 
         if (transactionResult?.error) {
@@ -262,7 +265,10 @@ export default function CustomersView({ triggerHaptic, isActive }) {
         }
         await saveCustomers(transactionResult.newCustomers);
         showToast(`Operación de ${transactionModal.type} exitosa`, 'success');
-        auditLog('CLIENTE', transactionModal.type === 'ABONO' ? 'ABONO_REGISTRADO' : 'CREDITO_REGISTRADO', `${transactionModal.type} de ${transactionAmount} ${currencyMode} para ${transactionModal.customer?.name}`);
+        const detalle = mixedPayments
+            ? mixedPayments.filter(p => Number(p.amount) > 0).map(p => `${p.amount} ${p.currency}`).join(' + ')
+            : `${transactionAmount} ${currencyMode}`;
+        auditLog('CLIENTE', transactionModal.type === 'ABONO' ? 'ABONO_REGISTRADO' : 'CREDITO_REGISTRADO', `${transactionModal.type} de ${detalle} para ${transactionModal.customer?.name}`);
 
         // Cerrar modal
         setTransactionModal({ isOpen: false, type: null, customer: null });

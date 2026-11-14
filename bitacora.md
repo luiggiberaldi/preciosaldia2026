@@ -303,3 +303,9 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 **Plan:** `PLAN-FIXEO-CLIENTES-BILLETERA.md`, fase F4.
 **Cambios:** `closeDaySummary.js` calcula `saldoFavorUsadoUsd` y, si es mayor que 0, agrega bajo «Cobrado» las filas «De eso, pagado con saldo a favor» y «Entró hoy a caja y bancos» (columna izquierda del PDF carta; etiquetas cortas para el ticket de 58 mm) y cambia la ayuda de «Cobrado». `dailyCloseGenerator.js`: la nota bajo el resumen lo aclara. Sin pagos con saldo, el cierre queda igual que antes.
 **Verificación:** pruebas de cierre, motor y reportes pasan (3 nuevas en `closeDaySummary.test.js`, con medidas de PDF y ticket); PDF de muestra generado en el navegador y revisado: cobrado $14 → con saldo $4 → entró a caja $10.
+
+## 2026-11-14 — Clientes F5: abono mixto ($ + Bs) en una sola ventana
+
+**Plan:** `PLAN-FIXEO-CLIENTES-BILLETERA.md`, fase F5 (decisión D2).
+**Cambios:** `customerTransactionProcessor.js` acepta `payments` (varias partes) y arma siempre el abono desde sus partes: un solo `COBRO_DEUDA` con un pago por moneda y un solo movimiento `ABONO_DEUDA` por el total en $. `TransactionModal.jsx`: pestaña «$ y Bs» (solo en «Recibir Abono») con un campo y un método por moneda, total en $ y aviso de sobrante. `CustomersView.jsx` pasa los pagos. `receivablesReport.js` guarda `methodIds` y Reportes muestra «Efectivo $ + Pago Móvil» en el detalle de cobranzas.
+**Verificación:** 4 pruebas nuevas en `clientesBilleteraFlujo.test.js` (mixto, sobrante, un solo campo, vacío); e2e «Abono mixto…» pasa con captura revisada; unitarias de cartera/cierre/motor 146/146; e2e de clientes y reportes 8/8 (una pasó al reintento: carga en frío de Reportes con otras sesiones usando el mismo servidor).

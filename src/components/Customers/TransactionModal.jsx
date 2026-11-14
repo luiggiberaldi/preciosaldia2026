@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, ArrowDownRight, ArrowUpRight, CheckCircle2, Save } from 'lucide-react';
 import { procesarImpactoCliente } from '../../utils/financialLogic';
 import { formatUsd, formatBs, formatCop } from '../../utils/calculatorUtils';
@@ -21,13 +21,46 @@ export default function TransactionModal({
     copPrimary,
     handleTransaction
 }) {
+    // F5 (abono mixto): la parte en Bs y el método de cada parte. La parte en $
+    // reutiliza transactionAmount.
+    const [mixBs, setMixBs] = useState('');
+    const [mixUsdMethod, setMixUsdMethod] = useState('efectivo_usd');
+    const [mixBsMethod, setMixBsMethod] = useState('efectivo_bs');
+    const isOpen = transactionModal.isOpen;
+    useEffect(() => { if (!isOpen) setMixBs(''); }, [isOpen]);
+    // «Agregar Deuda» no tiene modo mixto.
+    useEffect(() => {
+        if (currencyMode === 'MIXTO' && transactionModal.type !== 'ABONO') setCurrencyMode('USD');
+    }, [currencyMode, transactionModal.type, setCurrencyMode]);
+
     if (!transactionModal.isOpen || !transactionModal.customer) return null;
 
+    const isMixto = currencyMode === 'MIXTO' && transactionModal.type === 'ABONO';
+    const mixUsdNum = Math.max(0, parseFloat(transactionAmount) || 0);
+    const mixBsNum = Math.max(0, parseFloat(mixBs) || 0);
+
     // Calcular preview del saldo resultante en tiempo real
-    const rawAmt = parseFloat(transactionAmount) || 0;
+    const rawAmt = isMixto ? mixUsdNum + mixBsNum : (parseFloat(transactionAmount) || 0);
     let amtUsd = rawAmt;
+    if (isMixto) amtUsd = mixUsdNum + (bcvRate > 0 ? mixBsNum / bcvRate : 0);
     if (currencyMode === 'BS' && bcvRate > 0) amtUsd = rawAmt / bcvRate;
     if (currencyMode === 'COP' && tasaCop > 0) amtUsd = rawAmt / tasaCop;
+    const methodsOf = (currency) => activePaymentMethods.filter(m => m.currency === currency);
+    const methodOptions = (currency) => methodsOf(currency).map(method => {
+        const IconComponent = getPaymentIcon(method.id);
+        return { value: method.id, label: method.label, icon: IconComponent ? <IconComponent size={15} className="text-slate-500 dark:text-slate-400" /> : null };
+    });
+    const pickMethod = (currency, current) => (methodsOf(currency).some(m => m.id === current) ? current : (methodsOf(currency)[0]?.id || ''));
+    const submit = () => {
+        if (!isMixto) return handleTransaction();
+        return handleTransaction({
+            payments: [
+                { currency: 'USD', amount: mixUsdNum, methodId: pickMethod('USD', mixUsdMethod) },
+                { currency: 'BS', amount: mixBsNum, methodId: pickMethod('BS', mixBsMethod) },
+            ],
+        });
+    };
+    const mixLabel = [mixUsdNum > 0 ? `$${formatUsd(mixUsdNum)}` : null, mixBsNum > 0 ? `Bs ${formatBs(mixBsNum)}` : null].filter(Boolean).join(' + ') || '$0.00';
     const currentCustomer = transactionModal.customer;
 
     let previewCustomer = null;
@@ -108,6 +141,15 @@ export default function TransactionModal({
                         >
                             Bs
                         </button>
+                        {transactionModal.type === 'ABONO' && (
+                            <button
+                                type="button"
+                                onClick={() => { setCurrencyMode('MIXTO'); setTransactionAmount(''); setMixBs(''); }}
+                                className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${currencyMode === 'MIXTO' ? 'bg-white dark:bg-slate-900 shadow-sm text-slate-800 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                            >
+                                $ y Bs
+                            </button>
+                        )}
                         {copEnabled && (
                             <button
                                 type="button"
@@ -119,8 +161,41 @@ export default function TransactionModal({
                         )}
                     </div>
 
+                    {/* F5: abono mixto — un campo en $ y otro en Bs, cada uno con su método */}
+                    {isMixto && (
+                        <div className="space-y-3" data-testid="abono-mixto">
+                            {[
+                                { key: 'USD', label: 'Parte en dólares', symbol: '$', value: transactionAmount, set: setTransactionAmount, method: mixUsdMethod, setMethod: setMixUsdMethod },
+                                { key: 'BS', label: 'Parte en bolívares', symbol: 'Bs', value: mixBs, set: setMixBs, method: mixBsMethod, setMethod: setMixBsMethod },
+                            ].map(part => (
+                                <div key={part.key}>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1">{part.label}</label>
+                                    <div className="relative">
+                                        <span className={`absolute left-4 top-1/2 -translate-y-1/2 font-black ${part.key === 'BS' ? 'text-brand' : 'text-emerald-500'}`}>{part.symbol}</span>
+                                        <input
+                                            type="number"
+                                            aria-label={part.label}
+                                            value={part.value}
+                                            onChange={(e) => part.set(e.target.value)}
+                                            placeholder="0.00"
+                                            className={`w-full form-input bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-3 ${part.key === 'BS' ? 'pl-12' : 'pl-10'} text-xl font-black text-slate-800 dark:text-white focus:ring-2 focus:ring-brand/50`}
+                                        />
+                                    </div>
+                                    <div className="mt-1.5">
+                                        <CustomSelect value={pickMethod(part.key, part.method)} onChange={part.setMethod} options={methodOptions(part.key)} openUp={part.key === 'BS'} />
+                                    </div>
+                                </div>
+                            ))}
+                            <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg p-2 flex items-center justify-between">
+                                <span className="text-xs font-bold text-slate-500">Total del abono:</span>
+                                <span className="text-sm font-black text-slate-800 dark:text-white" data-testid="abono-mixto-total">${formatUsd(amtUsd)} USD</span>
+                            </div>
+                            <p className="text-[10px] font-medium text-slate-400 text-center">Tasa BCV: {formatBs(bcvRate)} Bs/$</p>
+                        </div>
+                    )}
+
                     {/* Input de monto */}
-                    <div>
+                    {!isMixto && <div>
                         <div className="relative">
                             <span className={`absolute left-4 top-1/2 -translate-y-1/2 font-black text-lg ${currencyMode === 'BS' ? 'text-brand' : 'text-emerald-500'}`}>
                                 {currencyMode === 'BS' ? 'Bs' : '$'}
@@ -202,10 +277,16 @@ export default function TransactionModal({
                                 El abono supera la deuda actual. Se aplican <strong>${formatUsd(amtUsd - excedenteAbonoUsd)}</strong> a la deuda y el sobrante de <strong>${formatUsd(excedenteAbonoUsd)}</strong> quedará como saldo a favor del cliente.
                             </div>
                         )}
-                    </div>
+                    </div>}
+
+                    {isMixto && excedenteAbonoUsd > 0.01 && (
+                        <div className="rounded-lg border border-amber-200 dark:border-amber-800/30 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-center text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                            El abono supera la deuda actual. Se aplican <strong>${formatUsd(amtUsd - excedenteAbonoUsd)}</strong> a la deuda y el sobrante de <strong>${formatUsd(excedenteAbonoUsd)}</strong> quedará como saldo a favor del cliente.
+                        </div>
+                    )}
 
                     {/* Metodo de pago (solo para abonos) */}
-                    {transactionModal.type === 'ABONO' && (() => {
+                    {transactionModal.type === 'ABONO' && !isMixto && (() => {
                         const filteredMethods = activePaymentMethods.filter(m => m.currency === currencyMode);
                         return (
                         <div>
@@ -263,15 +344,17 @@ export default function TransactionModal({
 
                 <div className="p-5 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 rounded-b-3xl">
                     <button
-                        onClick={handleTransaction}
-                        disabled={!transactionAmount || parseFloat(transactionAmount) <= 0}
+                        onClick={submit}
+                        disabled={isMixto ? amtUsd <= 0 : (!transactionAmount || parseFloat(transactionAmount) <= 0)}
                         className={`w-full py-3.5 text-white font-bold rounded-xl active:scale-95 transition-all text-sm flex justify-center items-center gap-2 ${transactionModal.type === 'ABONO'
                             ? 'bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-500/50'
                             : 'bg-red-500 hover:bg-red-600 disabled:bg-red-500/50'
                             }`}
                     >
                         <Save size={18} />
-                        {transactionModal.type === 'ABONO'
+                        {isMixto
+                            ? `Abonar ${mixLabel}`
+                            : transactionModal.type === 'ABONO'
                             ? `Abonar ${currencyMode === 'BS' ? 'Bs' : currencyMode === 'COP' ? 'COP' : '$'}${transactionAmount || '0.00'}`
                             : `Cargar Deuda ${currencyMode === 'BS' ? 'Bs' : currencyMode === 'COP' ? 'COP' : '$'}${transactionAmount || '0.00'}`
                         }

@@ -109,6 +109,10 @@ export function computeReceivablesMovements(sales = [], { from = null, to = null
             cobranzasUsd = round2(cobranzasUsd + montoUsd);
             saldoFavorGeneradoUsd = round2(saldoFavorGeneradoUsd + saldoFavor);
             const methodId = sale.payments?.[0]?.methodId || sale.paymentMethod || null;
+            // F5: un abono mixto trae varios pagos; se listan todos sus métodos.
+            const methodIds = Array.isArray(sale.payments) && sale.payments.length > 0
+                ? [...new Set(sale.payments.map(p => p?.methodId).filter(Boolean))]
+                : (methodId ? [methodId] : []);
             cobranzas.push({
                 saleId: sale.id || null,
                 saleNumber: sale.saleNumber ?? null,
@@ -119,6 +123,7 @@ export function computeReceivablesMovements(sales = [], { from = null, to = null
                 montoUsd,
                 montoBs: rate > 0 ? round2(montoUsd * rate) : round2(sale.totalBs || 0),
                 methodId,
+                methodIds,
                 // Sobrante de un abono mayor que la deuda: se convierte en saldo a favor.
                 saldoFavorGeneradoUsd: saldoFavor,
             });

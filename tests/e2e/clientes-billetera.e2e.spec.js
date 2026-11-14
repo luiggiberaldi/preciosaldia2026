@@ -184,3 +184,44 @@ test('Anular desde Inicio una venta pagada con saldo a favor: la confirmación d
     await page.getByRole('button', { name: 'Sí, anular' }).click();
     await expect.poll(async () => (await cliente(page, 'Juan E2E'))?.favor, { timeout: 15_000 }).toBe(18.5);
 });
+
+test('Abono mixto: $2 + Bs 200 saldan una deuda de $7 en un solo abono (F5)', async ({ page }) => {
+    await iniciar(page);
+    await irA(page, 'clientes');
+    await page.locator('button:has-text("Nuevo Contacto")').first().click();
+    await page.getByPlaceholder('Ej. María Pérez').fill('Pedro Mixto');
+    await page.getByRole('button', { name: /Guardar Cliente/ }).click();
+    await expect.poll(async () => Boolean(await cliente(page, 'Pedro Mixto')), { timeout: 15_000 }).toBe(true);
+
+    // Deuda de $7 con «Agregar Deuda».
+    await page.getByPlaceholder('Buscar cliente...').fill('Pedro');
+    await page.getByText('Pedro Mixto').first().click();
+    await page.getByText('Ajustar Cuenta').first().click();
+    await page.getByRole('button', { name: /Agregar Deuda/ }).click();
+    await page.getByRole('button', { name: 'USD', exact: true }).click();
+    await page.getByPlaceholder('0.00').last().fill('7');
+    await page.getByRole('button', { name: /^Cargar Deuda/ }).click();
+    await expect.poll(async () => (await cliente(page, 'Pedro Mixto'))?.deuda, { timeout: 15_000 }).toBe(7);
+
+    // Abono mixto (el detalle se cierra tras cada operación: se vuelve a abrir).
+    await page.getByText('Pedro Mixto').first().click();
+    await page.getByText('Ajustar Cuenta').first().click();
+    await page.getByRole('button', { name: /Recibir Abono/ }).click();
+    await page.getByRole('button', { name: '$ y Bs', exact: true }).click();
+    await page.getByLabel('Parte en dólares').fill('2');
+    await page.getByLabel('Parte en bolívares').fill('200');
+    await expect(page.getByTestId('abono-mixto-total')).toHaveText('$7.00 USD');
+    const abonar = page.getByRole('button', { name: /^Abonar \$2\.00 \+ Bs 200,00/ });
+    await expect(abonar).toBeEnabled();
+    if (process.env.CLIENTES_SHOTS) await page.screenshot({ path: `${process.env.CLIENTES_SHOTS}/abono-mixto.png` });
+    await abonar.click();
+
+    await expect.poll(async () => (await cliente(page, 'Pedro Mixto'))?.deuda, { timeout: 15_000 }).toBe(0);
+    let abono;
+    await expect.poll(async () => {
+        abono = ((await readIdb(page, 'bodega_sales_v1')) || []).find(s => s.tipo === 'COBRO_DEUDA' && s.customerName === 'Pedro Mixto');
+        return Boolean(abono);
+    }, { timeout: 15_000 }).toBe(true);
+    expect(abono.totalUsd).toBe(7);
+    expect(abono.payments.map(p => [p.methodId, p.currency, p.amount])).toEqual([['efectivo_usd', 'USD', 2], ['efectivo_bs', 'BS', 200]]);
+});

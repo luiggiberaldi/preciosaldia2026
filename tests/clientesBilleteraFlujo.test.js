@@ -277,3 +277,62 @@ describe('Cambio de tasa y centavos', () => {
         expect(reconcileCustomersWithLedger(memoryStore.get(CUSTOMERS), ledger()).ok).toBe(true);
     });
 });
+
+// F5 del PLAN-FIXEO-CLIENTES-BILLETERA: abono mixto ($ + Bs) en un solo registro.
+describe('Abono mixto ($ + Bs)', () => {
+    const abonoMixto = (payments, rate = 40) => processCustomerTransaction({
+        type: 'ABONO', customer: cliente(), bcvRate: rate, tasaCop: 0, copEnabled: false,
+        transactionAmount: '', currencyMode: 'MIXTO', paymentMethod: '',
+        payments,
+    });
+
+    it('$2 + Bs 200 a tasa 40 saldan una deuda de $7 con UN solo abono y dos pagos', async () => {
+        await vender({ totalUsd: 7, payments: [], changeBreakdown: { esCredito: true } });
+        const r = await abonoMixto([
+            { currency: 'USD', amount: '2', methodId: 'efectivo_usd' },
+            { currency: 'BS', amount: '200', methodId: 'pago_movil' },
+        ]);
+        expect(r.error).toBeUndefined();
+        expect(saldo()).toEqual({ deuda: 0, favor: 0 });
+        expect(r.sale).toMatchObject({ tipo: 'COBRO_DEUDA', totalUsd: 7, totalBs: 280, saldoFavorGeneradoUsd: 0, paymentMethod: 'efectivo_usd' });
+        expect(r.sale.payments).toEqual([
+            expect.objectContaining({ methodId: 'efectivo_usd', currency: 'USD', amount: 2, amountUsd: 2, amountBs: 80 }),
+            expect.objectContaining({ methodId: 'pago_movil', currency: 'BS', amount: 200, amountUsd: 5, amountBs: 200 }),
+        ]);
+        const abonos = ledger().filter(m => m.type === 'ABONO_DEUDA');
+        expect(abonos).toHaveLength(1);
+        expect(abonos[0].amountUsd).toBe(7);
+        // Caja: el efectivo $ sube 2; el pago móvil va a su método (no es efectivo).
+        const breakdown = FinancialEngine.calculatePaymentBreakdown(ventas());
+        expect(breakdown.efectivo_usd.total).toBe(2);
+        expect(breakdown.pago_movil.total).toBe(200);
+        expect(computeReceivablesMovements(ventas()).cobranzas[0]).toMatchObject({ montoUsd: 7, methodIds: ['efectivo_usd', 'pago_movil'] });
+    });
+
+    it('si sobra, el sobrante queda a favor', async () => {
+        await vender({ totalUsd: 3, payments: [], changeBreakdown: { esCredito: true } });
+        const r = await abonoMixto([
+            { currency: 'USD', amount: '2', methodId: 'efectivo_usd' },
+            { currency: 'BS', amount: '80', methodId: 'efectivo_bs' },
+        ]);
+        expect(r.sale.saldoFavorGeneradoUsd).toBe(1);
+        expect(saldo()).toEqual({ deuda: 0, favor: 1 });
+    });
+
+    it('con solo un campo lleno queda como abono normal en esa moneda', async () => {
+        await vender({ totalUsd: 5, payments: [], changeBreakdown: { esCredito: true } });
+        const r = await abonoMixto([
+            { currency: 'USD', amount: '', methodId: 'efectivo_usd' },
+            { currency: 'BS', amount: '120', methodId: 'efectivo_bs' },
+        ]);
+        expect(r.sale.payments).toEqual([expect.objectContaining({ methodId: 'efectivo_bs', currency: 'BS', amount: 120, amountUsd: 3, amountBs: 120 })]);
+        expect(r.sale.totalBs).toBe(120);
+        expect(saldo()).toEqual({ deuda: 2, favor: 0 });
+    });
+
+    it('con los dos campos vacíos no registra nada', async () => {
+        const r = await abonoMixto([{ currency: 'USD', amount: '' }, { currency: 'BS', amount: '0' }]);
+        expect(r.error).toBe('Monto inválido');
+        expect(ventas()).toHaveLength(0);
+    });
+});
