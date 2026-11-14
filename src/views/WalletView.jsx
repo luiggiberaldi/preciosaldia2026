@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Trash2, Send, CreditCard, Landmark, DollarSign, X, Bitcoin, Smartphone, QrCode, Pencil, Crown } from 'lucide-react';
 import { useSecurity } from '../hooks/useSecurity';
 import { storageService } from '../utils/storageService';
+import PaymentQr from '../components/PaymentQr';
 
 // ✅ LISTA OFICIAL DE BANCOS VENEZOLANOS (2025)
 const VENEZUELA_BANKS = [
@@ -425,11 +426,7 @@ export default function WalletView({ rates }) {
                         ) : (
                             <div className="flex flex-col items-center justify-center space-y-4 py-4 animate-in fade-in slide-in-from-right-4 pb-6">
                                 <div className="bg-white p-4 rounded-2xl shadow-inner border border-slate-200">
-                                    <img
-                                        src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(getQRData(showShareModal))}&color=0f172a&bgcolor=ffffff`}
-                                        alt="Código QR de Pago"
-                                        className="w-48 h-48 mix-blend-multiply"
-                                    />
+                                    <PaymentQr text={getQRData(showShareModal)} className="w-48 h-48 mix-blend-multiply" />
                                 </div>
                                 <p className="text-xs text-center text-slate-400 max-w-[200px]">
                                     Muestra este código a tu cliente para que lo escanee directamente.
