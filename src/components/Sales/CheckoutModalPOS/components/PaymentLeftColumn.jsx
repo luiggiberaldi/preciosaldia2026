@@ -4,14 +4,15 @@ import { round2 } from '../../../../utils/dinero';
 import TransactionSummary from './TransactionSummary';
 import CheckoutCustomerPicker from '../../CheckoutCustomerPicker';
 import CasheaIcon from '../../../CasheaIcon';
+import AvisoFondoGaveta from '../../AvisoFondoGaveta';
 
 /**
  * PaymentLeftColumn — Columna izquierda del modo POS.
  * Contiene: resumen de totales, selector de cliente, estado de pago (falta/vuelto/crédito), Cashea.
  */
 const PaymentLeftColumn = ({
-    currentFloatUsd = 0,
-    currentFloatBs = 0,
+    currentFloatUsd = null,
+    currentFloatBs = null,
     totalUSD,
     totalBS,
     baseUsd = 0,
@@ -399,14 +400,13 @@ const PaymentLeftColumn = ({
                             </div>
 
                             {/* FASE 4: aviso de fondo de caja (paridad con el modo básico). */}
-                            {(Number(distVueltoUSD) > currentFloatUsd + 0.05 || Number(distVueltoBS) > currentFloatBs + 1) && (
-                                <div className="w-full mt-2 p-1.5 rounded bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 flex items-start gap-1">
-                                    <AlertTriangle size={10} className="text-orange-500 shrink-0 mt-0.5" />
-                                    <p className="text-[9px] font-bold text-orange-600 dark:text-orange-400 leading-tight">
-                                        El cambio declarado excede el fondo de caja disponible.
-                                    </p>
-                                </div>
-                            )}
+                            {/* CAJA-FONDO-002: aviso legible de efectivo insuficiente. */}
+                            <AvisoFondoGaveta
+                                usdGiven={distVueltoUSD}
+                                bsGiven={distVueltoBS}
+                                floatUsd={currentFloatUsd}
+                                floatBs={currentFloatBs}
+                            />
                         </div>
                     )}
 

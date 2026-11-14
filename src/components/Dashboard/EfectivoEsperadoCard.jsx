@@ -50,6 +50,13 @@ export default function EfectivoEsperadoCard({
                                 {formatBs(expectedBs)} Bs
                             </p>
                         </div>
+                        {(expectedUsd < 0 || expectedBs < 0) && (
+                            // CAJA-FONDO-002: explicar el número rojo en vez de dejarlo solo.
+                            <p data-testid="efectivo-negativo-ayuda" className="basis-full -mt-3 text-[11px] font-semibold text-red-600 dark:text-red-400 leading-snug">
+                                Se entregó más vuelto en {expectedBs < 0 && expectedUsd < 0 ? '$ y Bs' : expectedBs < 0 ? 'Bs' : '$'} del que había en la gaveta.
+                                Registra un aporte con el dinero que se puso de otro lado.
+                            </p>
+                        )}
                         {showCop && (
                             <div>
                                 <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Pesos</p>

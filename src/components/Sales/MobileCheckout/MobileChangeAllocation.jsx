@@ -1,6 +1,7 @@
 import React from 'react';
 import { HandCoins, CheckCircle, Wallet, AlertTriangle, X, Scissors, Minus, Plus } from 'lucide-react';
 import { formatBs } from '../../../utils/calculatorUtils';
+import AvisoFondoGaveta from '../AvisoFondoGaveta';
 
 /**
  * MobileChangeAllocation — Fase 2 (vuelto progresivo) + VUELTO-REALISTA.
@@ -60,9 +61,9 @@ export default function MobileChangeAllocation({
     isChangeCredited,
     setIsChangeCredited,
     hasCustomer = false,
-    // Fondo de caja
-    currentFloatUsd = 0,
-    currentFloatBs = 0,
+    // Fondo de caja (CAJA-FONDO-002: null = desconocido, no se avisa)
+    currentFloatUsd = null,
+    currentFloatBs = null,
 }) {
     // ────────────────────────────────────────────────────────────────────
     // MODO INLINE: fila progresiva del footer
@@ -234,7 +235,6 @@ export default function MobileChangeAllocation({
     // ────────────────────────────────────────────────────────────────────
     if (mode !== 'sheet' || !open) return null;
 
-    const exceedsFloat = Number(changeUsdGiven) > currentFloatUsd + 0.05 || Number(changeBsGiven) > currentFloatBs + 1;
     const sheetIncomplete = changeRemainder.remainingUsd > 0.005 && !isChangeCredited;
 
     return (
@@ -439,14 +439,12 @@ export default function MobileChangeAllocation({
                     </div>
 
                     {/* 5) Aviso de fondo de caja */}
-                    {exceedsFloat && (
-                        <div className="p-2 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 flex items-start gap-1.5">
-                            <AlertTriangle size={12} className="text-orange-500 shrink-0 mt-0.5" />
-                            <p className="text-[10px] font-bold text-orange-700 dark:text-orange-400 leading-tight">
-                                El cambio declarado excede el fondo de caja disponible.
-                            </p>
-                        </div>
-                    )}
+                    <AvisoFondoGaveta
+                        usdGiven={changeUsdGiven}
+                        bsGiven={changeBsGiven}
+                        floatUsd={currentFloatUsd}
+                        floatBs={currentFloatBs}
+                    />
 
                     {/* CTA del sheet */}
                     <button

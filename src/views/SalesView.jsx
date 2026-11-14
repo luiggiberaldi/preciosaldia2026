@@ -31,7 +31,7 @@ import KeyboardHelpModal from '../components/Sales/KeyboardHelpModal';
 import DiscountModal from '../components/Sales/DiscountModal';
 import CashAdvanceModal from '../components/Sales/CashAdvanceModal';
 import CajaCerradaOverlay from '../components/Sales/CajaCerradaOverlay';
-import { getLocalISODate } from '../utils/dateHelpers';
+import { calcularFondoEnGaveta } from '../utils/fondoGaveta';
 import AperturaCajaModal from '../components/Dashboard/AperturaCajaModal';
 import AporteCajaModal from '../components/Sales/AporteCajaModal';
 import { useAuthStore } from '../hooks/store/useAuthStore';
@@ -375,20 +375,10 @@ export default function SalesView({ triggerHaptic, isActive }) {
         value: discount?.value
     };
 
-    // ── Current cash float (for soft change warning in CheckoutModal) ──
-    const currentFloat = useMemo(() => {
-        const todayStr = getLocalISODate(new Date());
-        const todayOpen = salesData.filter(s => {
-            if (s.cajaCerrada) return false;
-            const saleDay = s.timestamp ? getLocalISODate(new Date(s.timestamp)) : todayStr;
-            return saleDay === todayStr;
-        });
-        const bd = FinancialEngine.calculatePaymentBreakdown(todayOpen);
-        return {
-            usd: bd['efectivo_usd']?.total ?? 0,
-            bs:  bd['efectivo_bs']?.total  ?? 0,
-        };
-    }, [salesData]);
+    // ── Efectivo en gaveta ahora (avisos de vuelto en el cobro) ──
+    // CAJA-FONDO-001: misma cuenta que el "Efectivo esperado" del Inicio: sigue el
+    // turno abierto (no la fecha) y resta los vueltos ya entregados.
+    const currentFloat = useMemo(() => calcularFondoEnGaveta(salesData), [salesData]);
 
     // GRANEL-001-UI: cuenta ARTÍCULOS distintos de la cesta, nunca suma cantidades
     // (sumar item.qty mostraba decimales "1.355" para productos a granel).
@@ -1045,6 +1035,8 @@ export default function SalesView({ triggerHaptic, isActive }) {
                     copEnabled, copPrimary, tasaCop,
                     currentFloatUsd: currentFloat.usd,
                     currentFloatBs: currentFloat.bs,
+                    // CAJA-FONDO-002: registrar un aporte desde el aviso de efectivo insuficiente.
+                    onOpenAporte: canRegistrarAporte ? () => setIsAporteOpen(true) : null,
                     onSwitchMode: setCheckoutMode,
                     isProcessing,
                 };

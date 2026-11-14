@@ -21,6 +21,8 @@
 
 El árbol de trabajo tiene muchos archivos modificados sin commit (caja, ajustes, usuarios, inicio y la documentación nueva). Hay que guardarlos en commits aparte, por tema. Nadie lo ha hecho aún a propósito: cada commit lo decide el dueño.
 
+- 2026-11-13: **la parte de caja ya se guardó** (commit «fix(caja): …», CASO-002), con el visto bueno del dueño. Siguen sin guardar ajustes, usuarios e inicio.
+
 ## P-002 · Guardia en modo "frena"
 
 Hoy `bun run docs:check` solo avisa. Pasarlo a frenar commits solo para lo grave (enlaces rotos, error resuelto sin solución) después de unas 2 semanas de uso limpio. Cambia `githooks/pre-commit` y `ci.yml`.

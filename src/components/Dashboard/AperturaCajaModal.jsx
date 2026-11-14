@@ -108,6 +108,12 @@ export default function AperturaCajaModal({ isOpen, onClose, onConfirm, copEnabl
                                 className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl pl-10 pr-4 py-3 text-sm font-bold text-brand-dark dark:text-brand focus:outline-none focus:ring-2 focus:ring-brand/30 transition-all"
                             />
                         </div>
+                        {/* CAJA-FONDO-002: aviso suave, no bloquea (hay negocios que solo dan vuelto en $). */}
+                        {!(parseFloat(bs) > 0) && (
+                            <p data-testid="apertura-sin-bs" className="mt-1.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400 leading-snug">
+                                Sin bolívares en la gaveta no podrás dar vuelto en Bs.
+                            </p>
+                        )}
                     </div>
 
                     {/* COP Opening - at the end when NOT copPrimary */}

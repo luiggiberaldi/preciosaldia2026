@@ -232,9 +232,9 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 ## 2026-11-13 — Auditoría y arreglo de la apertura de caja
 
 **Contexto:** el dueño vio «Efectivo esperado −2.159,35 Bs». Informe: `C:\Users\luigg\Desktop\AUDITORIA-APERTURA-CAJA-2026-11-13.md` (fuera del repo).
-**Cambios:** no se pueden abrir dos cajas a la vez (`useCheckoutFlow.js`); regla única del fondo real de la gaveta (`cashShift.js`, `fondoGaveta.js`, `usePosCartTotals`); aviso legible de efectivo insuficiente para el vuelto (`AvisoFondoGaveta.jsx` y componentes del cobro). Marcas en el código: `CAJA-APERTURA-001`, `CAJA-FONDO-001`, `CAJA-FONDO-002`.
+**Cambios:** no se pueden abrir dos cajas a la vez (`useCheckoutFlow.js`); regla única del fondo real de la gaveta (`cashShift.js`, `fondoGaveta.js`, `SalesView.jsx` y `useDashboardMetrics.js`); aviso legible de efectivo insuficiente para el vuelto (`AvisoFondoGaveta.jsx` y componentes del cobro), con «Registrar aporte», «Dejar en saldo a favor» y «Confirmar igual» en la confirmación final; aviso al abrir con 0 Bs y explicación del número rojo en el Inicio. Marcas en el código: `CAJA-APERTURA-001`, `CAJA-FONDO-001`, `CAJA-FONDO-002`.
 **Casos y errores:** [CASO-002](docs/casos/CASO-002-caja-apertura-y-fondo.md); ERR-001, ERR-002, ERR-003.
-**Verificación:** las pruebas están en el informe; no se volvieron a correr al escribir esta entrada. Cambios sin commit.
+**Verificación:** 124 de 124 pruebas de caja y cobro (incluye 12 nuevas: `tests/fondoGaveta.test.js`, `tests/aperturaDuplicada.test.js`). Batería completa: 2.241 de 2.244; fallan 3 de licencias (`licenseMonitoringMissing`, `licensePolicy`), ajenas a este cambio. Probado en el navegador: apertura con 0 Bs, vuelto en Bs sin Bs, aporte que quita el aviso, Inicio con USD 30,00 y 144,84 Bs. Guardado el 2026-11-13.
 
 ---
 

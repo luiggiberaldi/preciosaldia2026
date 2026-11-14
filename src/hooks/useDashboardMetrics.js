@@ -5,7 +5,7 @@ import { sumR, mulR } from '../utils/dinero';
 import { getLocalISODate } from '../utils/dateHelpers';
 import { isLowStockProduct, isGranelProduct, calculateItemStockDeduction } from '../utils/granel';
 import { computeInventoryValuation } from '../utils/inventoryValuation'; // BULTOS-001
-import { CASH_SHIFT_TYPES, findOpenCashShift, isRecordInOpenCashShift } from '../utils/cashShift';
+import { findOpenCashShift, isRecordInOpenCashShift, isShiftCashMovement } from '../utils/cashShift';
 
 /**
  * Hook de métricas del Dashboard.
@@ -46,13 +46,9 @@ export function useDashboardMetrics(sales, customers, products, bcvRate) {
 
     // Movimientos reales de caja para el cuadre (Ventas + Abonos + Egresos + Apertura)
     const todayCashFlow = useMemo(() =>
-        salesWithLocalDate.filter(s => {
-            if (s.status === 'ANULADA') return false;
-            if (!CASH_SHIFT_TYPES.has(s.tipo)) return false;
-            if ((s.tipo === 'PAGO_PROVEEDOR' || s.tipo === 'GASTO_INTERNO') && s.afectaCaja === false) return false;
-            return isInActiveShift(s);
-        }),
-        [salesWithLocalDate, isInActiveShift]
+        // CAJA-FONDO-001: regla compartida con el fondo en gaveta del cobro.
+        salesWithLocalDate.filter(s => isShiftCashMovement(s, activeOpening, today)),
+        [salesWithLocalDate, activeOpening, today]
     );
 
     // Detecta la apertura abierta, aunque haya comenzado en una fecha anterior.

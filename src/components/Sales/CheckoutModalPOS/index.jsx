@@ -18,6 +18,7 @@ import PaymentLeftColumn from './components/PaymentLeftColumn';
 import PaymentInputs from './components/PaymentInputs';
 import PaymentFooter from './components/PaymentFooter';
 import ChangeConfirmationModal from './components/ChangeConfirmationModal';
+import { evaluarFondoParaVuelto } from '../../../utils/fondoGaveta';
 import WalletSection from './components/WalletSection';
 import RepriceNotice from '../RepriceNotice';
 import { isTicketRepriced } from '../../../utils/reprice.js';
@@ -46,8 +47,10 @@ export default function CheckoutModalPOS({
     copPrimary = false,
     tasaCop = 0,
     onUseSaldoFavor,
-    currentFloatUsd = 0,
-    currentFloatBs = 0,
+    // CAJA-FONDO-002: null = fondo desconocido (venta remota): no se avisa.
+    currentFloatUsd = null,
+    currentFloatBs = null,
+    onOpenAporte = null,
     onSwitchMode,
     isProcessing = false,
     // Ventas remotas del supervisor: solo contado (sin pestaña Crédito).
@@ -778,6 +781,21 @@ export default function CheckoutModalPOS({
                     changeAllocationComplete={changeAllocationComplete}
                     changeDestinationSelected={changeDestinationSelected}
                     isChangeCredited={isChangeCredited}
+                    currentFloatUsd={currentFloatUsd}
+                    currentFloatBs={currentFloatBs}
+                    onOpenAporte={onOpenAporte}
+                    onCreditShortfall={clienteSeleccionado ? () => {
+                        // CAJA-FONDO-002: lo que no hay en la gaveta queda como saldo a
+                        // favor; se vuelve a la pantalla de cobro para cobrar de nuevo.
+                        const fondo = evaluarFondoParaVuelto({
+                            usdGiven: distVueltoUSD, bsGiven: distVueltoBS,
+                            floatUsd: currentFloatUsd, floatBs: currentFloatBs,
+                        });
+                        if (fondo.faltaBs > 0) setDistVueltoBS('');
+                        if (fondo.faltaUsd > 0) setDistVueltoUSD('');
+                        setIsChangeCredited(true);
+                        setChangeConfirmation(null);
+                    } : null}
                     onCancel={() => setChangeConfirmation(null)}
                     onConfirm={() => {
                         const pending = changeConfirmation;

@@ -13,7 +13,7 @@ Cada error encontrado va aquí, con su solución. Reglas en [LEY-DOCUMENTACION.m
 | ERR-005 | Señales del Supervisor rechazadas por reloj del cliente | 2026-10-20 | Resuelto | — |
 | ERR-006 | Explosión de egress en sync_documents | 2026-10-23 | Resuelto | — |
 
-ERR-004 a ERR-006 se reconstruyeron desde informes ya existentes; el detalle completo está en esos informes. ERR-001 a ERR-003 están arreglados en el árbol de trabajo, aún sin commit.
+ERR-004 a ERR-006 se reconstruyeron desde informes ya existentes; el detalle completo está en esos informes. ERR-001 a ERR-003 se arreglaron y guardaron el 2026-11-13 (commit «fix(caja): …», ver CASO-002).
 
 ---
 

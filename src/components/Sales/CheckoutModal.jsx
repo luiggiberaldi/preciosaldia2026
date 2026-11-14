@@ -12,6 +12,8 @@ import PaymentWarningModal from './PaymentWarningModal';
 import ChangeConfirmationModal from './CheckoutModalPOS/components/ChangeConfirmationModal';
 import { MobileChangeAllocation, PaymentStatusSummary } from './MobileCheckout';
 import RepriceNotice from './RepriceNotice';
+import AvisoFondoGaveta from './AvisoFondoGaveta';
+import { evaluarFondoParaVuelto } from '../../utils/fondoGaveta';
 
 /**
  * CheckoutModal — Zona de Cobro con Barras de Pago (Estilo Listo POS)
@@ -38,8 +40,11 @@ export default function CheckoutModal({
     copEnabled,
     copPrimary,
     tasaCop,
-    currentFloatUsd = 0,
-    currentFloatBs = 0,
+    // CAJA-FONDO-002: null = fondo desconocido (venta remota): no se avisa.
+    currentFloatUsd = null,
+    currentFloatBs = null,
+    // Abre el registro de aporte (solo si el usuario puede registrarlo).
+    onOpenAporte = null,
     isProcessing = false
 }) {
     const [confirmFiar, setConfirmFiar] = useState(false);
@@ -193,6 +198,23 @@ export default function CheckoutModal({
         triggerHaptic && triggerHaptic();
         setChangeUsdGiven(changeToDeliverUsd.toFixed(2));
         setChangeBsGiven('');
+    };
+
+    // CAJA-FONDO-002: falta efectivo en la gaveta → la parte que no hay se deja
+    // como saldo a favor del cliente. Vuelve a la pantalla de cobro porque los
+    // datos de la venta pendiente ya no coinciden: el cajero cobra de nuevo.
+    const creditFloatShortfall = () => {
+        triggerHaptic && triggerHaptic();
+        const fondo = evaluarFondoParaVuelto({
+            usdGiven: changeUsdGiven,
+            bsGiven: changeBsGiven,
+            floatUsd: currentFloatUsd,
+            floatBs: currentFloatBs,
+        });
+        if (fondo.faltaBs > 0) setChangeBsGiven('');
+        if (fondo.faltaUsd > 0) setChangeUsdGiven('');
+        setIsChangeCredited(true);
+        setChangeConfirmation(null);
     };
 
     const tipToggle = () => {
@@ -742,17 +764,13 @@ export default function CheckoutModal({
                             </div>
                             {/* Estado del vuelto: ya lo comunica la barra superior y el CTA deshabilitado. */}
 
-                            {/* FLOAT WARNINGS */}
-                            {(parseFloat(changeUsdGiven) > currentFloatUsd + 0.05 || parseFloat(changeBsGiven) > currentFloatBs + 1) && (
-                                <div className="p-1 rounded bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 flex items-start gap-1">
-                                    <AlertTriangle size={10} className="text-orange-500 shrink-0 mt-0.5" />
-                                    <div className="flex-1">
-                                        <p className="text-[9px] font-bold text-orange-600 dark:text-orange-400 leading-tight">
-                                            Excede fondo de caja.
-                                        </p>
-                                    </div>
-                                </div>
-                            )}
+                            {/* CAJA-FONDO-002: aviso legible de efectivo insuficiente en gaveta */}
+                            <AvisoFondoGaveta
+                                usdGiven={changeUsdGiven}
+                                bsGiven={changeBsGiven}
+                                floatUsd={currentFloatUsd}
+                                floatBs={currentFloatBs}
+                            />
                             </>
                         </div>
                     )}
@@ -966,6 +984,10 @@ export default function CheckoutModal({
                     isChangeCredited={isChangeCredited}
                     realisticSplit={realisticSplit}
                     onDeliverAllUsd={deliverAllUsdChange}
+                    currentFloatUsd={currentFloatUsd}
+                    currentFloatBs={currentFloatBs}
+                    onOpenAporte={onOpenAporte}
+                    onCreditShortfall={selectedCustomerId ? creditFloatShortfall : null}
                     onCancel={() => setChangeConfirmation(null)}
                     onConfirm={() => {
                         const pending = changeConfirmation;
