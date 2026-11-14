@@ -24,7 +24,8 @@ describe('Supervisor responsive controls', () => {
     });
 
     it('usa el icono oficial de la PWA en el header del Supervisor', () => {
-        expect(ownerMonitor).toContain('src="/pwa-192x192.png"');
+        // Ruta relativa («./»): con «/» inicial no se encuentra en Electron (base './').
+        expect(ownerMonitor).toContain('src="./pwa-192x192.png"');
         expect(ownerMonitor).toContain('aria-hidden="true"');
     });
 

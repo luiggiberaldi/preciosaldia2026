@@ -612,7 +612,8 @@ export default defineConfig(({ mode }) => {
     environment: 'jsdom',
     setupFiles: ['./tests/setup.js'],
     include: ['tests/**/*.{test,spec}.{js,jsx}'],
-    exclude: ['tests/e2e/**'],
+    // e2e-offline: Playwright contra el build (npm run test:e2e:offline), no Vitest.
+    exclude: ['tests/e2e/**', 'tests/e2e-offline/**'],
     coverage: {
       reporter: ['text', 'html', 'lcov'],
       include: ['src/utils/**', 'src/core/**'],
