@@ -1125,7 +1125,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                 <div className="flex min-w-0 w-full items-center gap-2.5 sm:flex-1 sm:gap-3">
                     <div className="h-9 w-9 shrink-0 overflow-hidden rounded-2xl shadow-lg shadow-emerald-500/20 sm:h-10 sm:w-10">
                         <img
-                            src="/pwa-192x192.png"
+                            src="./pwa-192x192.png"
                             alt=""
                             aria-hidden="true"
                             className="h-full w-full object-cover"

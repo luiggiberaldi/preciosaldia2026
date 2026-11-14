@@ -43,6 +43,10 @@ export default defineConfig(({ mode }) => {
         'pwa-512x512.png',
         'pwa-maskable-192.png',
         'pwa-maskable-512.png',
+        // Logos de fábrica y avatar del asistente: sin esto no se ven sin internet.
+        'logo.png',
+        'logodark.png',
+        'bot-avatar.png',
       ],
       workbox: {
         cleanupOutdatedCaches: true,
