@@ -23,9 +23,9 @@ function SalesChart({ weekData, onDayClick, selectedDate, copEnabled, copPrimary
     return (
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-100 dark:border-slate-800 shadow-sm mb-5 transition-all">
             {/* Header */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-10">
                 <div>
-                    <h3 className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                    <h3 className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
                         <BarChart3 size={13} className="text-brand" /> Actividad Semanal
                     </h3>
                     <p className="text-sm font-outfit font-bold text-slate-700 dark:text-slate-200 mt-0.5">
@@ -40,7 +40,12 @@ function SalesChart({ weekData, onDayClick, selectedDate, copEnabled, copPrimary
             </div>
 
             {/* Chart Area */}
-            <div className="relative h-32 flex items-end justify-between gap-2 px-1 mb-5 z-10">
+            <div className="relative h-40 flex items-end justify-between gap-2 px-1 mb-5 z-10">
+                {weekTotal === 0 && (
+                    <p className="absolute inset-x-0 top-[28%] text-center text-[11px] font-medium text-slate-500 dark:text-slate-400 pointer-events-none z-20">
+                        Sin ventas esta semana
+                    </p>
+                )}
                 {/* Horizontal Grid Lines (background) */}
                 <div className="absolute inset-0 flex flex-col justify-between pointer-events-none z-0">
                     <div className="w-full border-t border-dashed border-slate-100 dark:border-slate-800/40"></div>
@@ -63,15 +68,13 @@ function SalesChart({ weekData, onDayClick, selectedDate, copEnabled, copPrimary
                         >
                             {/* Hover tooltip */}
                             <span 
-                                className={`absolute -top-7 text-[9px] font-bold px-2 py-1 rounded transition-all duration-200 scale-90 opacity-0 group-hover:opacity-100 group-hover:scale-100 bg-slate-800 dark:bg-slate-700 text-white dark:text-slate-100 shadow-md pointer-events-none z-20 whitespace-nowrap ${
-                                    isSelected ? 'opacity-100 scale-100 bg-brand text-white dark:bg-brand-dark' : ''
-                                }`}
+                                className="absolute -top-7 text-[9px] font-bold px-2 py-1 rounded transition-all duration-200 scale-90 opacity-0 group-hover:opacity-100 group-hover:scale-100 bg-slate-800 dark:bg-slate-700 text-white dark:text-slate-100 shadow-md pointer-events-none z-20 whitespace-nowrap"
                             >
                                 {fmtBarLabel(day.total)}
                             </span>
 
                             {/* Capsule Track */}
-                            <div className="w-2.5 md:w-4 h-[75%] bg-slate-100/60 dark:bg-slate-800/30 rounded-full relative overflow-hidden flex flex-col justify-end group-hover:bg-slate-200/50 dark:group-hover:bg-slate-800/50 transition-colors">
+                            <div className="w-2.5 md:w-4 h-[75%] bg-slate-200/70 dark:bg-slate-800/50 rounded-full relative overflow-hidden flex flex-col justify-end group-hover:bg-slate-300/60 dark:group-hover:bg-slate-800/50 transition-colors">
                                 {/* Capsule Fill */}
                                 <div
                                     className={`w-full rounded-full transition-all duration-500 ease-out origin-bottom ${
@@ -91,9 +94,9 @@ function SalesChart({ weekData, onDayClick, selectedDate, copEnabled, copPrimary
 
                             {/* Day label */}
                             <span className={`text-[10px] font-bold mt-2 transition-colors ${
-                                isSelected ? 'text-brand dark:text-brand font-black'
-                                : isToday ? 'text-emerald-600 dark:text-emerald-400 font-extrabold'
-                                : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-400'
+                                isToday ? 'text-emerald-600 dark:text-emerald-400 font-extrabold'
+                                : isSelected ? 'text-slate-900 dark:text-white font-black underline decoration-brand decoration-2 underline-offset-4'
+                                : 'text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-400'
                             }`}>
                                 {isToday ? 'Hoy' : dayName}
                             </span>
@@ -105,15 +108,15 @@ function SalesChart({ weekData, onDayClick, selectedDate, copEnabled, copPrimary
             {/* Summary row */}
             <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
                 <div>
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider">
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">
                         Total de la semana
                     </span>
                     {isCop && (
                         <div className="flex gap-2 mt-0.5">
                             {copPrimary
-                                ? <span className="text-[10px] text-slate-400 font-medium">${weekTotal.toFixed(2)}</span>
-                                : <span className="text-[10px] text-slate-400 font-medium">{formatCop(weekTotal * tasaCop)} COP</span>}
-                            {bcvRate > 0 && <span className="text-[10px] text-slate-400 font-medium">{formatBs(weekTotal * bcvRate)} Bs</span>}
+                                ? <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">${weekTotal.toFixed(2)}</span>
+                                : <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">{formatCop(weekTotal * tasaCop)} COP</span>}
+                            {bcvRate > 0 && <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">{formatBs(weekTotal * bcvRate)} Bs</span>}
                         </div>
                     )}
                 </div>

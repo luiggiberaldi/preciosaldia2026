@@ -24,7 +24,7 @@ export default function DashboardSummary({
     const doLogout = () => { triggerHaptic && triggerHaptic(); logout(); };
 
     return (
-        <div data-testid="dashboard-header" className={`sticky top-0 z-30 w-full transition-all duration-200 -mx-3 sm:-mx-5 lg:-mx-6 xl:-mx-8 px-2.5 sm:px-4 md:px-5 lg:px-6 xl:px-8 py-1.5 sm:py-2 md:py-2.5 mb-3 sm:mb-4 bg-surface-50/95 dark:bg-surface-950/95 backdrop-blur-md border-b-2 ${isScrolled ? 'border-brand/50 shadow-sm' : 'border-brand/30'}`}>
+        <div data-testid="dashboard-header" className={`dash-header sticky top-0 z-30 w-full transition-all duration-200 -mx-3 sm:-mx-5 lg:-mx-6 xl:-mx-8 px-2.5 sm:px-4 md:px-5 lg:px-6 xl:px-8 py-1.5 sm:py-2 md:py-2.5 mb-3 sm:mb-4 bg-surface-50/95 dark:bg-surface-950/95 backdrop-blur-md border-b-2 ${isScrolled ? 'border-brand/50 shadow-sm' : 'border-brand/30'}`}>
 
             {/* ─── Teléfono (< 768px): una sola fila, sin desbordar ─── */}
             <div className="flex md:hidden items-center justify-between gap-1.5 sm:gap-2 w-full min-w-0">
@@ -117,13 +117,14 @@ export default function DashboardSummary({
                     </button>
                 </div>
 
-                {/* Centro: logo */}
+                {/* Centro: logo. Se decide por el ancho REAL del encabezado (consulta de contenedor en
+                    index.css), no por el de la ventana: con la barra lateral abierta queda mucho menos
+                    espacio. Si no cabe el logo ancho, va el ícono «D». */}
                 <div className="flex items-center justify-center justify-self-center px-1 lg:px-2 shrink min-w-0">
-                    <BrandLogo
-                        src={logoSrc}
-                        box="h-[42px] lg:h-[46px] 2xl:h-[62px]"
-                        img="h-[66px] lg:h-[72px] 2xl:h-[96px]"
-                    />
+                    <img src="./apple-touch-icon.png" alt="Precios Al Día" className="dash-logo-icon h-10 w-10 rounded-xl object-contain shrink-0" />
+                    <div className="dash-logo-word">
+                        <BrandLogo src={logoSrc} box="dash-logo-box" img="dash-logo-img" />
+                    </div>
                 </div>
 
                 {/* Derecha: Vender (F1), conexión y usuario */}

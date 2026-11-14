@@ -665,6 +665,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                         copPrimary={copPrimary}
                         tasaCop={tasaCop}
                     />
+                    <div className={Object.keys(paymentBreakdown || {}).length === 0 ? 'md:col-span-2' : ''}>
                     <SalesChart
                         weekData={weekData}
                         selectedDate={selectedChartDate}
@@ -680,6 +681,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                             }, 50);
                         }}
                     />
+                    </div>
                 </div>
 
                 {/* Historial de ventas — integrado en la columna izquierda para eliminar espacios vacíos */}
