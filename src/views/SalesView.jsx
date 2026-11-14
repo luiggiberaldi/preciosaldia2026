@@ -45,6 +45,8 @@ import { buildReceiptWhatsAppUrl } from '../components/Sales/ReceiptShareHelper'
 // Extracted hooks
 import { useSalesData } from '../hooks/useSalesData';
 import { useCheckoutFlow } from '../hooks/useCheckoutFlow';
+import { formatRateStamp } from '../utils/rateStamp';
+import { topHotProducts } from '../utils/hotProducts';
 
 export default function SalesView({ triggerHaptic, isActive }) {
     const { playAdd, playRemove, playCheckout, playError } = useSounds();
@@ -80,19 +82,20 @@ export default function SalesView({ triggerHaptic, isActive }) {
     const searchInputRef = useRef(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedIndex, setSelectedIndex] = useState(0);
-    // Modos de vista del buscador: hybrid (desplegable + grid) | list (solo
-    // desplegable) | grid (galería táctil). Persistido por caja.
+    // Modos de vista del buscador: hybrid = «Teclado y escáner» (desplegable + fichas) |
+    // grid = «Pantalla táctil» (solo fichas). Persistido por caja. El antiguo modo «lista»
+    // se quitó a pedido del dueño: si estaba guardado, se abre en «Teclado y escáner».
     const [posSearchViewMode, setPosSearchViewModeState] = useState(() => {
         try {
             const stored = localStorage.getItem('pos_search_view_mode');
-            return ['hybrid', 'list', 'grid'].includes(stored) ? stored : 'hybrid';
+            return ['hybrid', 'grid'].includes(stored) ? stored : 'hybrid';
         } catch {
             return 'hybrid';
         }
     });
 
     const handleSetPosSearchViewMode = (mode) => {
-        if (!['hybrid', 'list', 'grid'].includes(mode)) return;
+        if (!['hybrid', 'grid'].includes(mode)) return;
         setPosSearchViewModeState(mode);
         try {
             localStorage.setItem('pos_search_view_mode', mode);
@@ -409,6 +412,9 @@ export default function SalesView({ triggerHaptic, isActive }) {
 
     // Return focus after closing modals
     useEffect(() => { if (!showCheckout && !showReceipt && searchInputRef.current) searchInputRef.current.focus(); }, [showCheckout, showReceipt]);
+
+    // Cesta vacía: atajos a los productos que más se agregan en esta caja (como Farmacia).
+    const frequentProducts = useMemo(() => (cart.length === 0 ? topHotProducts((products || []).filter((p) => Number(p.priceUsdt ?? p.priceUsd) > 0 || Number(p.priceCop) > 0), 6) : []), [cart.length, products]);
 
     // Global keybinds (F9 = checkout, F7 = hold/park, Escape = close modals)
     useEffect(() => {
@@ -873,6 +879,9 @@ export default function SalesView({ triggerHaptic, isActive }) {
                                             : formatBs(effectiveRate).replace('.', ',')}
                                     </span>
                                     {!useAutoRate && <span className="text-[8px] bg-brand-light dark:bg-surface-800/30 text-brand-dark dark:text-brand px-1 rounded font-bold">MAN</span>}
+                                    {useAutoRate && formatRateStamp(rates?.lastUpdate) && (
+                                        <span className="text-[8px] font-bold text-slate-400 leading-none" title="Última actualización de la tasa">{formatRateStamp(rates?.lastUpdate)}</span>
+                                    )}
                                 </button>
                                 )}
                             </div>
@@ -925,6 +934,8 @@ export default function SalesView({ triggerHaptic, isActive }) {
                         copEnabled={copEnabled}
                         copPrimary={copPrimary}
                         tasaCop={tasaCop}
+                        frequentProducts={frequentProducts}
+                        onAddFrequent={addToCart}
                     />
                 </div>
 

@@ -11,6 +11,7 @@ import PrinterHardwareManager from '../PrinterHardwareManager';
 import { useProductContext } from '../../../context/ProductContext';
 import { loadTaxConfig, saveTaxConfig as saveTaxConfigLocal, resetTaxConfig as resetTaxConfigLocal, IVA_FACTORY_RATE, normalizeIvaRate } from '../../../config/taxConfig';
 import { pushLocalSync } from '../../../hooks/useCloudSync';
+import { useCartCompact, setCartCompactMode } from '../../../config/salesFeatures';
 
 // El IVA viaja al supervisor: las ventas remotas se cobran con el mismo total.
 const publishTaxConfig = (config) => { pushLocalSync('tax_config_v1', JSON.stringify(config)); return config; };
@@ -50,6 +51,7 @@ export default function SettingsTabVentas({
     paperWidth, setPaperWidth,
 }) {
     const { checkoutMode, setCheckoutMode, granelUnitMode, setGranelUnitMode } = useProductContext();
+    const { mode: cartCompactMode } = useCartCompact();
 
     // ── SUB-PESTAÑA ACTIVA CON PERSISTENCIA ──
     const [activeSubTab, setActiveSubTab] = useState(() => {
@@ -511,6 +513,26 @@ export default function SettingsTabVentas({
                             <p className="text-[10px] text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800/40 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
                                 💡 En <strong>Gramos / ml</strong>, el inventario canónico se conserva intacto en kilogramos sin alterar los reportes.
                             </p>
+                        </div>
+                    </SectionCard>
+
+                    {/* Cesta compacta (igual que en Farmacia) */}
+                    <SectionCard icon={LayoutGrid} title="Cesta" subtitle="Cuántos artículos caben en la lista" iconColor="text-sky-500">
+                        <div className="space-y-2">
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                                La cesta compacta usa una sola línea por artículo. Automática: se activa sola en pantallas bajas (laptops chicas). En teléfono y tablet la cesta siempre es compacta.
+                            </p>
+                            <div role="group" aria-label="Modo de la cesta" className="flex flex-wrap gap-1.5">
+                                {[['auto', 'Automática'], ['always', 'Siempre compacta'], ['never', 'Siempre amplia']].map(([id, label]) => (
+                                    <button
+                                        key={id} type="button" aria-pressed={cartCompactMode === id}
+                                        onClick={() => { setCartCompactMode(id); triggerHaptic?.(); }}
+                                        className={`rounded-xl px-3 py-1.5 text-xs font-black transition-colors ${cartCompactMode === id
+                                            ? 'bg-brand text-white'
+                                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}
+                                    >{label}</button>
+                                ))}
+                            </div>
                         </div>
                     </SectionCard>
                 </div>

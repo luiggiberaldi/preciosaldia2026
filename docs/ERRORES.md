@@ -12,6 +12,8 @@ Cada error encontrado va aquí, con su solución. Reglas en [LEY-DOCUMENTACION.m
 | ERR-004 | Stock de bultos descontaba bultos en vez de unidades | 2026-10-21 | Resuelto | — |
 | ERR-005 | Señales del Supervisor rechazadas por reloj del cliente | 2026-10-20 | Resuelto | — |
 | ERR-006 | Explosión de egress en sync_documents | 2026-10-23 | Resuelto | — |
+| ERR-007 | Un producto sin precio se agregaba a la cesta a $0.00 | 2026-11-14 | Resuelto | CASO-003 |
+| ERR-008 | Tema oscuro: precios de las fichas y total de la cesta casi invisibles | 2026-11-14 | Descartado | CASO-003 |
 
 ERR-004 a ERR-006 se reconstruyeron desde informes ya existentes; el detalle completo está en esos informes. ERR-001 a ERR-003 se arreglaron y guardaron el 2026-11-13 (commit «fix(caja): …», ver CASO-002).
 
@@ -79,3 +81,26 @@ ERR-004 a ERR-006 se reconstruyeron desde informes ya existentes; el detalle com
 - **Causa:** el 92,7 % venía de las respuestas JSON de esa tabla.
 - **Solución:** ver `REPORTE-CAUSA-RAIZ-EGRESS-Y-SOLUCION.md` (raíz).
 - **Cómo comprobarlo:** revisar el egress diario en la consola de Supabase.
+
+## ERR-007 — Un producto sin precio se agregaba a la cesta a $0.00
+
+- **Fecha:** 2026-11-14
+- **Estado:** Resuelto
+- **Dónde:** Vender, fichas de la rejilla (`src/components/Sales/CategoryBar.jsx`)
+- **Síntoma:** al tocar la ficha de un producto sin precio, entraba a la cesta a $0.00 sin ningún aviso. Se podía cobrar regalado sin darse cuenta.
+- **Causa:** la ficha llamaba directo a «agregar a la cesta» sin revisar el precio. Farmacia ya lo había resuelto.
+- **Solución:** `handleAdd` revisa el precio (de caja o de unidad). Si no hay, sale el aviso «no tiene precio. Asígnalo en Inventario antes de venderlo» y no se agrega. La ficha lleva borde rojo.
+- **Cómo comprobarlo:** crear un producto con precio 0 y tocar su ficha en Vender: aparece el aviso y la cesta no cambia.
+- **Relacionados:** CASO-003.
+
+## ERR-008 — Tema oscuro: precios de las fichas y total de la cesta casi invisibles
+
+- **Fecha:** 2026-11-14
+- **Estado:** Descartado (2026-11-14: el dueño decidió que el sistema no usará tema oscuro)
+- **Dónde:** Vender en tema oscuro (`CategoryBar.jsx`, `CartPanel.jsx`; colores en `src/styles/tokens.css`)
+- **Síntoma:** con el tema oscuro, la ficha sigue clara (casi blanca) y el precio en $ y el total de la cesta salen en blanco: no se leen.
+- **Causa (probable):** en tema oscuro la paleta `slate` se invierte (tokens), así que `dark:bg-slate-900` termina claro, mientras `dark:text-white` sigue blanco. Ya pasaba antes de CASO-003 (mismas clases en el último commit).
+- **Qué se intentó:** nada todavía; Bodega abre en tema claro de fábrica, por eso no se notaba.
+- **Decisión:** el dueño dijo «el sistema no utilizará tema oscuro». No se arregla; Bodega trabaja solo en tema claro (el de fábrica). Si algún día se activa el tema oscuro, este error hay que resolverlo antes.
+- **Cómo comprobarlo:** Ajustes → tema oscuro, ir a Vender y mirar el precio de cualquier ficha sin bulto/unidad y el «TOTAL $» de la cesta.
+- **Relacionados:** CASO-003, P-007.

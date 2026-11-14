@@ -249,3 +249,19 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 **Casos y errores:** CASO-001.
 - Fase 4 (detalle): movidas las 10 `AUDITORIA-*.md` de la raíz y `docs/AUDITORIA-MODO-SUPERVISOR.md` a `docs/auditorias/` con los enlaces ajustados; el enlace absoluto roto del README a `ROLLBACK-STABLE-BASELINE.md` se hizo relativo. Los `PLAN-*` y reportes de la raíz **no** se movieron (P-006).
 **Verificación:** `node scripts/docs-check.mjs --ci` → «Documentación al día»; `npx vitest run tests/docsCheck.test.js` → 20 de 20. No se corrió la batería completa ni ESLint. Sin commit. Quedan 10 enlaces rotos antiguos dentro de `docs/auditorias/` (rutas absolutas de otro equipo y un test inexistente), no revisados por el guardia.
+
+---
+
+## 2026-11-14 — Vender estilo Farmacia (fases 1 a 7)
+
+**Contexto:** el dueño pidió auditar Vender de Farmacia y traer lo útil a Bodega, fase a fase. Informe y plan con medidas antes/después, fuera del repo: `C:\Users\luigg\Desktop\AUDITORIA-VENDER-BODEGA-VS-FARMACIA-2026-11-13.md` y `C:\Users\luigg\Desktop\PLAN-VENDER-BODEGA-ALINEAR-CON-FARMACIA-2026-11-13.md`.
+**Cambios:**
+- Hora de la tasa en el cuadro «TASA BCV» (`src/utils/rateStamp.js`, `SalesView.jsx`).
+- Fichas uniformes con recuadro de imagen fijo e iniciales si no hay foto; rejilla que se acomoda al ancho (mín. 170 px); poco stock en ámbar; aviso de producto sin precio; botones de 38 px; nombres completos sin «…» (`CategoryBar.jsx`, `src/utils/productInitials.js`, `tailwind.config.js` con pantalla `short`).
+- Barra de categorías: se esconden «Todos/General» si hay una sola categoría; ayuda = botón «?»; una sola fila (`CategoryBar.jsx`).
+- Buscador con 2 modos: «Teclado y escáner» y «Pantalla táctil»; se quitó «Lista» (`SearchBar.jsx`, `SalesView.jsx`, `RemoteSalePanel.jsx`).
+- Ajustes → Ventas → «Cesta» (Automática / Siempre compacta / Siempre amplia), cesta compacta con precio por unidad cuando hay 2 o más, siempre compacta en teléfono; «Vaciar» en el encabezado de la cesta (`src/config/salesFeatures.js`, `SettingsTabVentas.jsx`, `CartPanel.jsx`).
+- Más vendidos primero y «Productos frecuentes» en la cesta vacía (`src/utils/hotProducts.js`, `CategoryBar.jsx`, `CartPanel.jsx`, `SalesView.jsx`).
+- Decisión del dueño: el sistema no usará tema oscuro.
+**Casos y errores:** [CASO-003](docs/casos/CASO-003-vender-estilo-farmacia.md); ERR-007 (resuelto), ERR-008 (descartado); P-007 (descartado), P-008.
+**Verificación:** batería completa 2.241 de 2.244 (16 omitidas); fallan las mismas 3 de licencias de antes (`licenseMonitoringMissing` ×2, `licensePolicy` ×1), ajenas a este cambio. Pruebas nuevas: `rateStamp`, `productInitials`, `salesFeaturesCartCompact`, `hotProducts`; ajustada `posSearchViewModes`. ESLint sin errores en los archivos tocados. `docs:check` al día. Probado en el navegador a 1366×768, 1920×1080, 1024×768, 768 y 375 con 2.400 productos de prueba. No verificado: varias categorías y fotos reales (P-008). Sin commit.

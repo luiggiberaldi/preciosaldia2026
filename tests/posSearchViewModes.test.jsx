@@ -61,17 +61,16 @@ const baseCategoryProps = (overrides = {}) => ({
 });
 
 describe('Modos de vista del buscador (híbrido / lista / galería)', () => {
-    it('SearchBar ofrece los 3 modos y notifica el cambio', () => {
+    it('SearchBar ofrece 2 modos (teclado y escáner / pantalla táctil) y notifica el cambio', () => {
         const onViewModeChange = vi.fn();
         render(<SearchBar {...baseSearchProps} posSearchViewMode="hybrid" onViewModeChange={onViewModeChange} />);
 
-        fireEvent.click(screen.getByTitle('Modo Lista: Desplegable ultra-rápido para teclado'));
-        fireEvent.click(screen.getByTitle('Modo Galería: Cuadrícula visual para pantalla táctil'));
-        fireEvent.click(screen.getByTitle('Modo Híbrido: Desplegable rápido + Cuadrícula táctil'));
+        expect(screen.queryByLabelText('Vista lista')).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Modo pantalla táctil' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Modo teclado y escáner' }));
 
-        expect(onViewModeChange).toHaveBeenNthCalledWith(1, 'list');
-        expect(onViewModeChange).toHaveBeenNthCalledWith(2, 'grid');
-        expect(onViewModeChange).toHaveBeenNthCalledWith(3, 'hybrid');
+        expect(onViewModeChange).toHaveBeenNthCalledWith(1, 'grid');
+        expect(onViewModeChange).toHaveBeenNthCalledWith(2, 'hybrid');
     });
 
     it('en modo galería el desplegable NO renderiza aunque haya resultados', () => {

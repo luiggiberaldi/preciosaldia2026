@@ -14,6 +14,8 @@
 | P-004 | Decidir si se versionan las entregas en la bitácora (hoy `2.0.5`) | Auditoría de documentación de Farmacia | Pendiente |
 | P-005 | Recordatorio: la corrección de caja de Bodega debe replicarse en Farmacia | CASO-002 | Pendiente (ya anotada en Farmacia como su P-001) |
 | P-006 | Ordenar los `PLAN-*`, `REPORTE-*`, `M5-*`, `REBRAND-PLAN` y `CASO-DESCUADRE-*` que siguen en la raíz (moverlos a `docs/plans/` o `docs/reports/`) | Documentación, fase 4 | Pendiente (no se movieron: se citan por nombre en comentarios de `src/` y `tests/`, y se enlazan entre sí) |
+| P-007 | Arreglar el tema oscuro en Vender (precios y total casi invisibles, ERR-008) | CASO-003 | Descartado (2026-11-14): no se usará tema oscuro |
+| P-008 | Probar Vender con varias categorías y con las fotos reales de los productos | CASO-003 | Pendiente |
 
 ---
 
@@ -42,6 +44,16 @@ La corrección de caja ya existe aquí en Bodega (CASO-002). Farmacia la tiene a
 ## P-006 · Archivos sueltos en la raíz
 
 Las auditorías (`AUDITORIA-*`) ya están en `docs/auditorias/`. Quedan en la raíz ~20 planes y reportes. Antes de moverlos hay que actualizar los comentarios de `src/` y `tests/` que los citan por nombre y los enlaces entre planes.
+
+## P-007 · Tema oscuro en Vender
+
+**Descartado (2026-11-14):** el dueño decidió que el sistema no usará tema oscuro. Se deja la nota por si algún día se activa.
+
+ERR-008: en tema oscuro las fichas siguen claras y el precio en $ y el total de la cesta salen en blanco. Ya pasaba antes de CASO-003; Bodega abre en tema claro de fábrica. Propuesta: revisar las clases `dark:` de `CategoryBar.jsx` y `CartPanel.jsx` contra los tokens invertidos de `src/styles/tokens.css` (medio día). Si no se hace: quien active el tema oscuro no podrá leer precios al vender.
+
+## P-008 · Vender con varias categorías y fotos reales
+
+En CASO-003 no se pudo ver en pantalla el caso con varias categorías (los datos de prueba solo tenían «General») ni las fichas con fotos reales (las de prueba fallan y salen iniciales). Probarlo con el inventario real del dueño antes de publicar.
 
 ---
 
