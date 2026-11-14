@@ -6,6 +6,9 @@
  *  2. Máximo 4 mejoras, en lenguaje de bodega (nada técnico), título corto + una frase.
  *  3. La prueba tests/releaseNotes.test.js falla si falta la nota de la versión actual.
  *
+ * `icono` es un nombre de la lista ICONOS de UpdateBanner.jsx: carrito, paquete, factura, rayo,
+ * dinero, inicio, ajustes, grafico, escudo, estrella (si no existe, se usa estrella).
+ *
  * Orden: la más nueva primero. `fecha` en formato AAAA-MM-DD.
  */
 export const RELEASE_NOTES = [
@@ -13,17 +16,17 @@ export const RELEASE_NOTES = [
     version: '2.0.5',
     fecha: '2026-10-29',
     mejoras: [
-      { icono: '🛒', titulo: 'Vende desde el monitor', texto: 'Ahora puedes vender y anular ventas desde tu teléfono, aunque no estés en la caja.' },
-      { icono: '📦', titulo: 'Compras de mercancía', texto: 'Registra lo que compras a tus proveedores y se actualiza el inventario.' },
-      { icono: '🧾', titulo: 'Facturas de proveedores', texto: 'Carga facturas con foto, marca las pagadas y saca el reporte en PDF por período.' },
+      { icono: 'carrito', titulo: 'Vende desde el monitor', texto: 'Ahora puedes vender y anular ventas desde tu teléfono, aunque no estés en la caja.' },
+      { icono: 'paquete', titulo: 'Compras de mercancía', texto: 'Registra lo que compras a tus proveedores y se actualiza el inventario.' },
+      { icono: 'factura', titulo: 'Facturas de proveedores', texto: 'Carga facturas con foto, marca las pagadas y saca el reporte en PDF por período.' },
     ],
   },
   {
     version: '2.0.4',
     fecha: '2026-10-22',
     mejoras: [
-      { icono: '⚡', titulo: 'Inventario más rápido', texto: 'Cargar o ajustar muchos productos a la vez ya no hace lenta la caja.' },
-      { icono: '📦', titulo: 'Bultos más claros', texto: 'El inventario por bultos y unidades se entiende mejor.' },
+      { icono: 'rayo', titulo: 'Inventario más rápido', texto: 'Cargar o ajustar muchos productos a la vez ya no hace lenta la caja.' },
+      { icono: 'paquete', titulo: 'Bultos más claros', texto: 'El inventario por bultos y unidades se entiende mejor.' },
     ],
   },
 ];

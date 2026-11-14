@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Rocket, ShoppingCart, Package, Receipt, Zap, Banknote, Home, Settings, BarChart3, ShieldCheck, Sparkles } from 'lucide-react';
 import { RELEASE_NOTES } from '../data/releaseNotes';
 import {
     notasPendientes,
@@ -7,6 +7,9 @@ import {
     leerUltimaVersionVista,
     guardarUltimaVersionVista,
 } from '../utils/releaseNotes';
+
+// Nombre (texto) -> ícono. Las notas llegan como JSON, por eso se guardan por nombre.
+const ICONOS = { carrito: ShoppingCart, paquete: Package, factura: Receipt, rayo: Zap, dinero: Banknote, inicio: Home, ajustes: Settings, grafico: BarChart3, escudo: ShieldCheck, estrella: Sparkles };
 
 const CURRENT_VERSION = import.meta.env.VITE_APP_VERSION || '0.0.0';
 
@@ -120,7 +123,7 @@ export function UpdateBanner() {
                 className="w-full sm:max-w-md max-h-[90dvh] overflow-y-auto bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-t-3xl sm:rounded-3xl shadow-2xl px-5 pt-5 sm:p-6"
             >
                 <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-2xl bg-teal-600 text-white grid place-items-center text-xl shrink-0">🚀</div>
+                    <div className="w-11 h-11 rounded-2xl bg-teal-600 text-white grid place-items-center shrink-0"><Rocket size={22} strokeWidth={2.2} /></div>
                     <div className="min-w-0">
                         <h2 id="update-modal-title" className="font-black text-lg leading-tight">
                             {updateReady ? 'Nueva actualización disponible' : '¡Ya tienes lo nuevo!'}
@@ -138,15 +141,17 @@ export function UpdateBanner() {
                     <div className="mt-4">
                         <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">Qué hay de nuevo</h3>
                         <ul className="grid gap-2">
-                            {latest.mejoras.slice(0, 4).map((m) => (
+                            {latest.mejoras.slice(0, 4).map((m) => {
+                                const Icono = ICONOS[m.icono] || Sparkles;
+                                return (
                                 <li key={m.titulo} className="flex gap-3 items-start p-3 rounded-2xl border border-slate-200 dark:border-slate-800">
-                                    <span className="w-8 h-8 rounded-xl bg-teal-100 dark:bg-teal-500/15 grid place-items-center shrink-0">{m.icono}</span>
+                                    <span className="w-8 h-8 rounded-xl bg-teal-100 dark:bg-teal-500/15 grid place-items-center shrink-0 text-teal-700 dark:text-teal-300"><Icono size={17} strokeWidth={2.2} /></span>
                                     <span className="text-sm leading-snug">
                                         <b className="block">{m.titulo}</b>
                                         <span className="text-slate-500 dark:text-slate-400">{m.texto}</span>
                                     </span>
                                 </li>
-                            ))}
+                            );})}
                         </ul>
                         {older.length > 0 && (
                             <div className="mt-3 pt-3 border-t border-dashed border-slate-200 dark:border-slate-800 text-sm text-slate-500 dark:text-slate-400">
