@@ -2,6 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Store, Coins, Check, Tag } from 'lucide-react';
 import { SectionCard, Toggle } from '../../SettingsShared';
+import BrandLogoSettings from '../BrandLogoSettings';
 import { generarPreviewLabel } from '../../../utils/labelGenerator';
 
 
@@ -229,6 +230,7 @@ export default function SettingsTabNegocio({
                             />
                             <p className="text-[10px] text-slate-400 mt-1">Te contactaremos por WhatsApp sobre tu licencia, soporte y novedades.</p>
                         </div>
+                        <BrandLogoSettings />
                         <button
                             onClick={handleSaveBusinessData}
                             className="w-full flex items-center justify-center gap-2 py-3 bg-brand-light dark:bg-surface-800/20 text-brand-dark dark:text-brand font-bold text-xs uppercase tracking-wider rounded-xl hover:bg-brand-light dark:hover:bg-surface-800/40 transition-colors active:scale-[0.98]"

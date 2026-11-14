@@ -54,3 +54,16 @@ test('sin internet las letras de la app siguen disponibles', async ({ page, cont
     });
     expect(missing).toEqual([]);
 });
+
+test('sin internet se ve el logo propio del negocio (Ajustes › Negocio)', async ({ page, context }) => {
+    // PNG de 1×1 px: el logo propio vive en el equipo (localStorage), no depende de la red.
+    const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await seedAudit(page, { extraInitScripts: [`localStorage.setItem('business_logo', '${PNG_1PX}');`] });
+    await openOnlineThenOffline(page, context);
+
+    const logo = page.locator('[data-testid="dashboard-header"] img[alt="Logo del negocio"]:visible');
+    await expect(logo).toBeVisible();
+    expect(await logo.getAttribute('src')).toBe(PNG_1PX);
+    expect(await brokenVisibleImages(page)).toEqual([]);
+});

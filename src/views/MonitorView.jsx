@@ -1,10 +1,12 @@
 import React, { useState, useRef } from 'react';
 import { showToast } from '../components/Toast';
 import SafeImg from '../components/SafeImg';
+import { useBrandLogo } from '../utils/brandLogo';
 import { RefreshCw, TrendingUp, TrendingDown, WifiOff, Clock, Maximize, Minimize, Camera, Loader2, AlertTriangle, Sun, Moon } from 'lucide-react';
 import html2canvas from 'html2canvas';
 
 export default function MonitorView({ rates: propRates, loading, isOffline, onRefresh, toggleTheme, theme, copyLogs, addLog, triggerHaptic, onClose }) {
+    const { logoSrc: brandLogoSrc } = useBrandLogo();
 
     const rates = {
         bcv: { price: 0, change: 0, source: 'BCV Oficial', ...propRates?.bcv },
@@ -132,7 +134,7 @@ export default function MonitorView({ rates: propRates, loading, isOffline, onRe
             <div className="flex flex-col items-center mt-12 gap-2 relative z-10">
                 <button onClick={handleSecretDebug} className="active:scale-95 transition-transform outline-none">
                     <SafeImg
-                        src="./logo.png"
+                        src={brandLogoSrc}
                         alt="PreciosAlDía"
                         className="h-20 w-auto object-contain drop-shadow-sm"
                         fallback={<span className="block h-20 leading-[5rem] text-4xl font-black text-slate-800 font-outfit">Precios Al Día</span>}

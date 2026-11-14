@@ -3,6 +3,7 @@ import { getAuditLog, getAuditCount, clearAuditLog, exportAuditLog } from '../..
 import { showToast } from '../Toast';
 import { useAuthStore } from '../../hooks/store/useAuthStore';
 import { jsPDF } from 'jspdf';
+import { getLogoSrc, loadLogoImage, fitLogo } from '../../utils/brandLogo';
 import {
     FileText, Download, Trash2, Filter, Shield, ShoppingCart,
     Package, Users, Settings, Database, Clock, ChevronDown, AlertTriangle,
@@ -70,11 +71,10 @@ async function generateAuditPDF(entries, dateFrom, dateTo) {
 
     // ── Logo ──
     try {
-        const img = new Image();
-        img.src = './logo.png';
-        await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
-        doc.addImage(img, 'PNG', CX - 23, y, 46, 11);
-        y += 14;
+        const img = await loadLogoImage(getLogoSrc());
+        const { w: logoW, h: logoH } = fitLogo(img.naturalWidth, img.naturalHeight, 46, 11);
+        doc.addImage(img, 'PNG', CX - logoW / 2, y, logoW, logoH);
+        y += logoH + 3;
     } catch (_) { y += 2; }
 
     // ── Titulo ──

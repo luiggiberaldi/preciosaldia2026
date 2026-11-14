@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf';
+import { getLogoSrc, loadLogoImage, fitLogo } from './brandLogo';
 import { refSuffix } from './paymentReference.js';
 import { formatBs, formatCop, formatUsd } from './calculatorUtils';
 import {
@@ -68,11 +69,9 @@ export async function generateTicketPDF(sale, bcvRate) {
     //  LOGO
     // ════════════════════════════════════
     try {
-        const img = new Image();
-        img.src = './logo.png';
-        await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
-        const logoW = 50;
-        const logoH = 12; // ~4:1 aspect ratio matching original
+        const img = await loadLogoImage(getLogoSrc());
+        // Caja de 50×12 mm: el logo propio conserva su proporción (no se deforma).
+        const { w: logoW, h: logoH } = fitLogo(img.naturalWidth, img.naturalHeight, 50, 12);
         doc.addImage(img, 'PNG', CX - logoW / 2, y, logoW, logoH);
         y += logoH + 4;
     } catch (_) { y += 2; }

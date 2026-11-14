@@ -6,10 +6,12 @@ import { ensureSupervisorSession } from '../../services/supervisorAuth';
 import { readPairingRow, getActivePairingSlots } from '../../services/supervisorPairingState';
 import UserCard from './UserCard';
 import SafeImg, { APP_ICON_SRC } from '../SafeImg';
+import { useBrandLogo } from '../../utils/brandLogo';
 import LoginPinModal from './LoginPinModal';
 import EmergencyPinResetModal from './EmergencyPinResetModal';
 
 export default function LockScreen({ onOpenPairing, onOpenPairingIssuer = () => {}, adminLoginRequest = 0, installPrompt, onInstall, showIOSButton, onShowIOSInstall, onOpenRemotion }) {
+  const { logoSrc: brandLogoSrc } = useBrandLogo();
   const { usuarios, login, loginDirect, requireCajeroPin, requireAdminPin, resetPinEmergency } = useAuthStore();
   const [selectedUser, setSelectedUser] = useState(null);
   const [showEmergencyModal, setShowEmergencyModal] = useState(false);
@@ -157,7 +159,7 @@ export default function LockScreen({ onOpenPairing, onOpenPairingIssuer = () => 
         <div className="text-center mb-8 sm:mb-14">
           <div className="flex justify-center mb-4 sm:mb-6">
             <SafeImg
-              src="./logo.png"
+              src={brandLogoSrc}
               alt="Logo"
               onClick={handleLogoClick}
               className="h-16 sm:h-28 md:h-32 w-auto max-w-[270px] sm:max-w-none object-contain drop-shadow-md cursor-pointer select-none active:scale-95 transition-transform"

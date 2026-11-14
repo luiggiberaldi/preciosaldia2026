@@ -3,6 +3,7 @@ import { refSuffix } from './paymentReference.js';
 import { mulR, divR, round0, round2 } from './dinero.js';
 import { getGranelUnitMode, formatSaleItemQuantity } from './granel.js';
 import { loadTaxConfig } from '../config/taxConfig.js';
+import { getLogoSrc } from './brandLogo.js';
 
 /** Línea exenta: la venta guardó su % de IVA y es 0. */
 export function isExemptLine(item) {
@@ -319,7 +320,7 @@ export function buildTicketHtml(sale, bcvRate, paperConfig, settings) {
 <body>
     <!-- Logo -->
     <div class="center" style="margin-bottom:6px;">
-        <img src="./logo.png" alt="Logo" style="max-width:${cssLogoW};max-height:16mm;" onerror="this.style.display='none'">
+        <img src="${getLogoSrc()}" alt="Logo" style="max-width:${cssLogoW};max-height:16mm;" onerror="this.style.display='none'">
     </div>
 
     <!-- Info del Negocio -->

@@ -8,6 +8,7 @@ import React, { useState } from 'react';
 import { Home, ShoppingCart, Store, Users, ChevronRight, ChevronLeft, X } from 'lucide-react';
 import { useReveal } from '../hooks/useReveal';
 import SafeImg, { APP_ICON_SRC } from './SafeImg';
+import { useBrandLogo } from '../utils/brandLogo';
 
 const STEPS = [
     {
@@ -56,6 +57,7 @@ const STEPS = [
 ];
 
 export default function OnboardingOverlay({ isPremium = false }) {
+    const { logoSrc: brandLogoSrc } = useBrandLogo();
     const [done, setDone] = useState(
         () => localStorage.getItem('pda_onboarding_done') === 'true'
     );
@@ -124,7 +126,7 @@ export default function OnboardingOverlay({ isPremium = false }) {
                             {/* Logo */}
                             <div className="relative mx-auto mb-5 animate-slide-up">
                                 <SafeImg
-                                    src="./logo.png"
+                                    src={brandLogoSrc}
                                     alt="PreciosAlDía Bodega"
                                     className="w-44 h-auto mx-auto drop-shadow-lg"
                                     fallback={<img src={APP_ICON_SRC} alt="PreciosAlDía Bodega" className="w-20 h-20 mx-auto rounded-2xl drop-shadow-lg" />}

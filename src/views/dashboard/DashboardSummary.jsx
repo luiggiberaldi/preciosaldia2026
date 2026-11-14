@@ -1,6 +1,7 @@
 // Encabezado del inicio, traído de Precios al Día Farmacia (src/views/dashboard/DashboardSummary.jsx).
 // Diferencias con Farmacia: usa el logo de Bodega (claro/oscuro) y todavía no tiene la campana
-// de avisos ni el logo propio del negocio (ver docs/plans/2026-11-13-plan-inicio-estilo-farmacia.md).
+// de avisos (ver docs/plans/2026-11-13-plan-inicio-estilo-farmacia.md). El logo propio del negocio
+// (Ajustes › Negocio) reemplaza al logo ancho; en el teléfono sigue el ícono «D».
 import { formatBs } from '../../utils/calculatorUtils';
 import { ShoppingCart, LogOut } from 'lucide-react';
 import SyncStatus from '../../components/SyncStatus';
@@ -9,20 +10,21 @@ import SafeImg, { APP_ICON_SRC } from '../../components/SafeImg';
 // El logo de fábrica (600x130) trae el lema «Actualizado donde vayas» abajo: el contenedor
 // mide ~64 % del alto de la imagen y así solo se ve «Precios Al Día».
 // Si el logo no carga (sin internet, archivo dañado) va el ícono «D», que siempre está guardado.
-function BrandLogo({ src, box, img }) {
+// El logo propio del negocio se muestra completo (sin recorte), con la misma altura de la caja.
+function BrandLogo({ src, box, img, isCustom }) {
     return (
         <SafeImg
             src={src}
-            alt="Precios Al Día"
-            wrapperClassName={`overflow-hidden shrink-0 flex items-start ${box}`}
-            className={`w-auto object-contain drop-shadow-sm ${img}`}
+            alt={isCustom ? 'Logo del negocio' : 'Precios Al Día'}
+            wrapperClassName={isCustom ? `shrink-0 flex items-center ${box}` : `overflow-hidden shrink-0 flex items-start ${box}`}
+            className={isCustom ? 'h-full w-auto max-w-[240px] object-contain drop-shadow-sm' : `w-auto object-contain drop-shadow-sm ${img}`}
             fallback={<img src={APP_ICON_SRC} alt="Precios Al Día" className="h-10 w-10 rounded-xl object-contain shrink-0" />}
         />
     );
 }
 
 export default function DashboardSummary({
-    isScrolled, logoSrc, triggerHaptic, setShowMonitor, bcvRate, onNavigate,
+    isScrolled, logoSrc, logoIsCustom, triggerHaptic, setShowMonitor, bcvRate, onNavigate,
     requireLogin, usuarioActivo, logout, timeString, formattedDate, copEnabled, tasaCop
 }) {
     const goSell = () => { if (onNavigate) { triggerHaptic && triggerHaptic(); onNavigate('ventas'); } };
@@ -129,7 +131,7 @@ export default function DashboardSummary({
                 <div className="flex items-center justify-center justify-self-center px-1 lg:px-2 shrink min-w-0">
                     <img src="./apple-touch-icon.png" alt="Precios Al Día" className="dash-logo-icon h-10 w-10 rounded-xl object-contain shrink-0" />
                     <div className="dash-logo-word">
-                        <BrandLogo src={logoSrc} box="dash-logo-box" img="dash-logo-img" />
+                        <BrandLogo src={logoSrc} isCustom={logoIsCustom} box="dash-logo-box" img="dash-logo-img" />
                     </div>
                 </div>
 

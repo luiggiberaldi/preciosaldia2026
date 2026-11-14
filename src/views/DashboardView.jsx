@@ -32,6 +32,7 @@ import { TicketClientModal, DeleteHistoryModal, RecycleOfferModal } from '../com
 import { useReveal } from '../hooks/useReveal';
 import MonitorView from './MonitorView';
 import DashboardSummary from './dashboard/DashboardSummary';
+import { useBrandLogo } from '../utils/brandLogo';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { useGastosInternos } from '../hooks/useGastosInternos';
 import GastosInternosModal from '../components/GastosInternos/GastosInternosModal';
@@ -77,6 +78,8 @@ const extractAdvancesFromSales = (salesArray) => {
 };
 
 export default function DashboardView({ rates, triggerHaptic, onNavigate, theme, toggleTheme, isActive, isDemo, demoTimeLeft }) {
+    // Logo del negocio (Ajustes › Negocio) o, si no hay, el de fábrica claro/oscuro.
+    const { logoSrc, isCustom: logoIsCustom } = useBrandLogo({ dark: theme === 'dark' });
     const { notifyCierrePendiente, requestPermission } = useNotifications();
     const { deviceId } = useSecurity();
     const requireLogin = useAuthStore(s => s.requireLogin);
@@ -517,7 +520,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             {/* Encabezado compacto (estilo Farmacia): hora + tasa BCV | logo | Vender (F1) + conexión + usuario.
                 La navegación (Vender, Inventario, Clientes…) vive en la barra lateral en PC y abajo en el teléfono. */}
             <DashboardSummary {...{
-                isScrolled, logoSrc: theme === 'dark' ? './logodark.png' : './logo.png', triggerHaptic, setShowMonitor, bcvRate, onNavigate,
+                isScrolled, logoSrc, logoIsCustom, triggerHaptic, setShowMonitor, bcvRate, onNavigate,
                 requireLogin, usuarioActivo, logout: () => useAuthStore.getState().logout(), timeString, formattedDate, copEnabled, tasaCop
             }} />
 

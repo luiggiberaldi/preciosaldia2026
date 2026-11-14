@@ -45,6 +45,7 @@ export const LS_KEYS = Object.freeze([
   'bodega_custom_rate',
   'bodega_inventory_view',
   'bodega_use_auto_rate',
+  'business_logo', // logo propio (data URL, máx. ~300 KB): src/utils/brandLogo.js
   'business_name',
   'business_phone',
   'business_rif',
