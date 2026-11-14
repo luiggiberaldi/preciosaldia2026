@@ -272,3 +272,10 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 **Cambios:** resumen único y botón COBRAR junto al total; «Completar» y atajos de 44 px; vuelto en opciones de un toque con «Sugerido» ($ en billetes + resto en Bs) y reparto automático; confirmación del vuelto siempre; F9/Enter cobran; `redondeoUsd`; Esc ya no cierra el cobro; Bs con 2 decimales; Biopago de fábrica; referencia de pago por método (de fábrica en «No»); teclado numérico táctil; `index.jsx` partido en `parts/`. Detalle y archivos en el caso.
 **Casos y errores:** CASO-004, ERR-009 a ERR-012.
 **Verificación:** pruebas del cobro 157 de 157; batería completa 2296 pasan, 3 fallan (licencias, ya fallaban antes); navegador `tests/e2e/cobro-pos.e2e.spec.js` 17 de 17 a 1366×768 y 1024×768. No verificado: laptop táctil real, impresora térmica y PDF con referencia, cuadre con ventas reales.
+
+## 2026-11-14 — Verificación de punta a punta del flujo de clientes (billetera, abonos, deudas)
+
+**Contexto:** después de cambiar el cobro y los vueltos (CASO-004) se revisó todo el flujo de clientes: fiado total y parcial, abonos ($, Bs, mixto, mayor que la deuda), vuelto a la billetera, compras con saldo a favor, anulaciones, cambio de tasa, centavos, «Recalcular deudas» y cierre.
+**Cambios:** recibo con «Vuelto a su billetera» (ERR-013); Vender ya no muestra el saldo viejo del cliente tras cobrar (ERR-014, `useSalesData.js`); el resumen del cierre cuenta el vuelto a billetera como saldo generado (ERR-015, `closeDaySummary.js`).
+**Pruebas nuevas:** `tests/clientesBilleteraFlujo.test.js` (6) y `tests/e2e/clientes-billetera.e2e.spec.js` (3).
+**Verificación:** pruebas de cartera, caja y cierre 320 de 320; e2e nuevo 3 de 3; recorrido a mano en el navegador a 1366×768 con datos de prueba. Informe: `VERIFICACION-CLIENTES-E2E-2026-11-14.md` (Escritorio).

@@ -18,6 +18,9 @@ Cada error encontrado va aquí, con su solución. Reglas en [LEY-DOCUMENTACION.m
 | ERR-010 | La confirmación del vuelto mostraba Bs con 3 decimales | 2026-11-14 | Resuelto | CASO-004 |
 | ERR-011 | `Esc` en un campo del cobro cerraba todo el cobro | 2026-11-14 | Resuelto | CASO-004 |
 | ERR-012 | «Todo en $» anotaba dólares con centavos que no existen | 2026-11-14 | Resuelto (mitigado) | CASO-004 |
+| ERR-013 | El recibo en pantalla no decía que el vuelto fue a la billetera | 2026-11-14 | Resuelto | — |
+| ERR-014 | Vender mostraba el saldo del cliente de antes de la última venta | 2026-11-14 | Resuelto | — |
+| ERR-015 | El cierre contaba como «saldo a favor generado» solo el sobrante de abonos | 2026-11-14 | Resuelto | — |
 
 ERR-004 a ERR-006 se reconstruyeron desde informes ya existentes; el detalle completo está en esos informes. ERR-001 a ERR-003 se arreglaron y guardaron el 2026-11-13 (commit «fix(caja): …», ver CASO-002).
 
@@ -152,3 +155,36 @@ ERR-004 a ERR-006 se reconstruyeron desde informes ya existentes; el detalle com
 - **Solución:** opción «Sugerido: $3 + Bs …» en el cobro de PC, con los ajustes de Caja & Vuelto; «Todo en $» con centavos avisa. No se bloquea (decisión del dueño).
 - **Cómo comprobarlo:** `tests/cobroSugerido.test.js` y la prueba «Sugerido» de `tests/e2e/cobro-pos.e2e.spec.js`.
 - **Relacionados:** CASO-004.
+
+## ERR-013 — El recibo en pantalla no decía que el vuelto fue a la billetera
+
+- **Fecha:** 2026-11-14
+- **Estado:** Resuelto
+- **Dónde:** `src/components/Sales/ReceiptModal.jsx`.
+- **Síntoma:** venta de $5 pagada con $10 y vuelto «A su billetera»: el recibo mostraba «Efectivo en Dólares $10» y nada más. El cliente no veía a dónde fueron sus $5. El ticket impreso sí lo decía («Saldo a favor acreditado»).
+- **Causa:** el recibo de pantalla no leía `vueltoParaMonedero`.
+- **Solución:** línea «Vuelto a su billetera: $X» (`data-testid="recibo-vuelto-billetera"`).
+- **Cómo comprobarlo:** `tests/e2e/clientes-billetera.e2e.spec.js` («Vuelto A su billetera…»).
+- **Relacionados:** verificación de clientes del 2026-11-14.
+
+## ERR-014 — Vender mostraba el saldo del cliente de antes de la última venta
+
+- **Fecha:** 2026-11-14
+- **Estado:** Resuelto
+- **Dónde:** `src/hooks/useSalesData.js` (`handleReloadContent`).
+- **Síntoma:** María tenía $3 a favor, compró con vuelto de $5 a su billetera. En el siguiente cobro el sistema seguía mostrando «$3,00» (lo guardado era $8). Pasaba igual al gastar el saldo: seguía mostrando el saldo viejo. Se corregía al cambiar de pestaña o recargar. No se perdía dinero: el cobro revisa el saldo real antes de guardar.
+- **Causa:** al cobrar, la venta se guarda antes que el saldo del cliente. La recarga que dispara la venta (50 ms después) leía el saldo todavía viejo y pisaba el nuevo.
+- **Solución:** escribir la lista de clientes también recarga, y solo se aplica la recarga más reciente.
+- **Cómo comprobarlo:** `tests/e2e/clientes-billetera.e2e.spec.js` («Vuelto A su billetera…», al final). Sin el arreglo falla 2 de 2 veces.
+- **Relacionados:** verificación de clientes del 2026-11-14.
+
+## ERR-015 — El cierre contaba como «saldo a favor generado» solo el sobrante de abonos
+
+- **Fecha:** 2026-11-14
+- **Estado:** Resuelto
+- **Dónde:** `src/utils/closeDaySummary.js` (resumen del PDF del cierre).
+- **Síntoma:** en un día con $5 de vuelto a billetera y $3 de sobrante de un abono, el Inicio y Reportes decían «Saldo a favor generado USD 8» y el resumen del cierre decía $3.
+- **Causa:** el resumen tomaba el dato de cuentas por cobrar (solo abonos) en lugar de la regla del motor (`getGeneratedWalletCredit`).
+- **Solución:** el resumen usa `getGeneratedWalletCredit` en todas las ventas no anuladas.
+- **Cómo comprobarlo:** `tests/clientesBilleteraFlujo.test.js` («ERR-015…»).
+- **Relacionados:** verificación de clientes del 2026-11-14.

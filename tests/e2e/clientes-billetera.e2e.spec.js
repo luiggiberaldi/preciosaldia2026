@@ -1,0 +1,167 @@
+/**
+ * clientes-billetera.e2e.spec.js — Flujo de clientes en el cobro de PC («Procesar Pago»).
+ *
+ * Cubre (2026-11-14, verificación de clientes):
+ *  - Vuelto a la billetera del cliente («A su billetera») y el botón apagado sin cliente.
+ *  - Venta a crédito parcial en «Procesar Pago» → deuda.
+ *  - Abono mayor que la deuda desde Clientes → deuda 0 y saldo a favor por el sobrante.
+ *  - Compra pagada con ese saldo a favor → el saldo baja y la venta no trae efectivo.
+ *  - Cartera y ledger siguen cuadrando al final.
+ *
+ * Reusa el arnés de la auditoría (caja abierta, tasa 40, «Juan E2E» con $18,50 a favor).
+ * Ejecutar: bunx playwright test tests/e2e/clientes-billetera.e2e.spec.js
+ */
+import { test, expect } from '@playwright/test';
+import { seedAudit, readIdb } from './helpers/auditHarness';
+
+test.use({ viewport: { width: 1366, height: 768 }, hasTouch: false, isMobile: false });
+test.setTimeout(150_000);
+
+const buscador = (page) => page.locator('input[placeholder="Buscar producto..."]:visible').first();
+// Con un cliente con saldo a favor, el primer campo «0.00» es el del saldo: se paga con los billetes.
+const billete = (page, den) => page.getByRole('button', { name: `Sumar billete de ${den} dólares` });
+const irA = (page, tab) => page.locator(`[data-testid="sidenav-${tab}"]`).click();
+const botonCobrar = (page) => page.getByRole('button', { name: /COBRAR \$|PAGAR|CONFIRMA EL CAMBIO|FALTAN|FIAR TOTALMENTE|PROCESAR CON ABONO/ }).last();
+
+async function iniciar(page) {
+    await seedAudit(page, {
+        reseedOnReload: false,
+        extraInitScripts: [`try { localStorage.setItem('checkout_mode', 'pos'); localStorage.removeItem('checkout_shell_v2'); localStorage.setItem('checkout_smallest_usd_bill','1'); localStorage.setItem('checkout_bs_round_step','0'); } catch (_) {}`],
+    });
+    await page.goto('/');
+    await expect(page.locator('[data-tour="tab-ventas"]').first()).toBeVisible({ timeout: 30_000 });
+}
+
+async function abrirCobro(page, productos) {
+    await page.locator('[data-testid="sidenav-ventas"]').click();
+    await expect(page.getByRole('heading', { name: 'Caja Cerrada' })).toHaveCount(0, { timeout: 15_000 });
+    for (const nombre of productos) {
+        const b = buscador(page);
+        await b.fill(nombre);
+        await page.waitForTimeout(500);
+        await b.press('Enter');
+        await expect(b).toHaveValue('', { timeout: 8_000 });
+    }
+    await page.keyboard.press('F9');
+    await expect(page.getByText('Procesar Pago').first()).toBeVisible({ timeout: 20_000 });
+}
+
+async function elegirCliente(page, nombre) {
+    await page.getByRole('button', { name: /Consumidor Final/ }).first().click();
+    await page.getByText(nombre).first().click();
+}
+
+async function confirmarYCerrarRecibo(page, revisarRecibo = null) {
+    const confirmar = page.getByRole('button', { name: /Confirmar venta|Confirmar igual|Vuelto entregado|Confirmar fiado/ });
+    if (await confirmar.count()) await confirmar.first().click();
+    await expect(page.getByText('Tasa BCV Aplicada')).toBeVisible({ timeout: 15_000 });
+    if (revisarRecibo) await revisarRecibo();
+    const nuevaVenta = page.getByRole('button', { name: /Nueva Venta/ });
+    if (await nuevaVenta.count()) await nuevaVenta.first().click();
+    else await page.getByLabel('Cerrar').first().click();
+    await expect(page.getByText('Tasa BCV Aplicada')).toHaveCount(0, { timeout: 10_000 });
+}
+
+const cliente = async (page, nombre) => ((await readIdb(page, 'bodega_customers_v1')) || []).find(c => c.name === nombre);
+
+test('Sin cliente, la opción de billetera del vuelto está apagada', async ({ page }) => {
+    await iniciar(page);
+    await abrirCobro(page, ['Caraota E2E']); // $5
+    await billete(page, 10).click();
+    const billetera = page.getByRole('button', { name: /Billetera: elige cliente/ });
+    await expect(billetera).toBeVisible();
+    await billetera.click();
+    await expect(page.getByText('Elige un cliente para pasar el vuelto a su billetera')).toBeVisible();
+    await expect(botonCobrar(page)).toContainText('CONFIRMA EL CAMBIO');
+});
+
+test('Vuelto «A su billetera»: $5 de vuelto suben el saldo a favor de Juan de $18,50 a $23,50', async ({ page }) => {
+    await iniciar(page);
+    await abrirCobro(page, ['Caraota E2E']); // $5
+    await elegirCliente(page, 'Juan E2E');
+    await billete(page, 10).click();
+    await page.getByRole('button', { name: 'A su billetera' }).click();
+    await expect(botonCobrar(page)).toContainText('COBRAR $5.00');
+    await botonCobrar(page).click();
+    // ERR-013: el recibo en pantalla dice a dónde fue el vuelto.
+    await confirmarYCerrarRecibo(page, () => expect(page.getByTestId('recibo-vuelto-billetera')).toContainText('$5.00'));
+
+    await expect.poll(async () => (await cliente(page, 'Juan E2E'))?.favor, { timeout: 15_000 }).toBe(23.5);
+    const venta = ((await readIdb(page, 'bodega_sales_v1')) || []).find(s => s.tipo === 'VENTA');
+    expect(venta.vueltoParaMonedero).toBe(5);
+    expect(venta.changeUsd || 0).toBe(0);
+    expect(venta.changeBs || 0).toBe(0);
+    expect(venta.changeAllocation).toMatchObject({ creditedUsd: 5, deliveredUsd: 0 });
+
+    // ERR-014: el siguiente cobro ya muestra el saldo nuevo (antes podía quedar el viejo, $18,50).
+    await abrirCobro(page, ['Harina E2E']);
+    await elegirCliente(page, 'Juan E2E');
+    await expect(page.getByText('$23.50').first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('$18.50')).toHaveCount(0);
+});
+
+test('Crédito parcial → abono mayor que la deuda → compra con el saldo a favor', async ({ page }) => {
+    await iniciar(page);
+
+    // Cliente nueva desde Clientes.
+    await irA(page, 'clientes');
+    await page.locator('button:has-text("Nuevo Contacto")').first().click();
+    await page.getByPlaceholder('Ej. María Pérez').fill('María Prueba');
+    await page.getByRole('button', { name: /Guardar Cliente/ }).click();
+    await expect.poll(async () => Boolean(await cliente(page, 'María Prueba')), { timeout: 15_000 }).toBe(true);
+
+    // Venta $5 a crédito: paga $2, quedan $3 de deuda.
+    await abrirCobro(page, ['Caraota E2E']);
+    await page.getByRole('button', { name: /Crédito/ }).first().click();
+    await elegirCliente(page, 'María Prueba');
+    await billete(page, 1).click();
+    await billete(page, 1).click();
+    await expect(page.getByText('Queda debiendo').first()).toBeVisible();
+    await expect(botonCobrar(page)).toContainText('PROCESAR CON ABONO');
+    await botonCobrar(page).click();
+    await confirmarYCerrarRecibo(page);
+    await expect.poll(async () => (await cliente(page, 'María Prueba'))?.deuda, { timeout: 15_000 }).toBe(3);
+    const fiada = ((await readIdb(page, 'bodega_sales_v1')) || []).find(s => s.tipo === 'VENTA_FIADA');
+    expect(fiada.fiadoUsd).toBe(3);
+
+    // Abono de $5 con deuda $3: deuda 0 y $2 a favor.
+    await irA(page, 'clientes');
+    await page.getByPlaceholder('Buscar cliente...').fill('María');
+    await page.getByText('María Prueba').first().click();
+    await page.getByText('Ajustar Cuenta').first().click();
+    await page.getByRole('button', { name: /Recibir Abono/ }).click();
+    await page.getByRole('button', { name: 'USD', exact: true }).click();
+    await page.getByPlaceholder('0.00').last().fill('5');
+    await page.getByRole('button', { name: /^Abonar / }).click();
+    await expect.poll(async () => {
+        const c = await cliente(page, 'María Prueba');
+        return c && { deuda: c.deuda, favor: c.favor };
+    }, { timeout: 15_000 }).toEqual({ deuda: 0, favor: 2 });
+    await expect.poll(async () => ((await readIdb(page, 'bodega_sales_v1')) || []).find(s => s.tipo === 'COBRO_DEUDA')?.saldoFavorGeneradoUsd,
+        { timeout: 15_000 }).toBe(2);
+
+    // Compra de $1 (Harina) pagada con el saldo a favor.
+    await abrirCobro(page, ['Harina E2E']);
+    await elegirCliente(page, 'María Prueba');
+    const usarTodo = page.getByTitle('Aplicar el máximo saldo a favor permitido');
+    await expect(usarTodo).toBeVisible({ timeout: 15_000 });
+    await usarTodo.click();
+    await expect(botonCobrar(page)).toBeEnabled({ timeout: 10_000 });
+    await botonCobrar(page).click();
+    await confirmarYCerrarRecibo(page);
+    await expect.poll(async () => (await cliente(page, 'María Prueba'))?.favor, { timeout: 15_000 }).toBe(1);
+
+    let venta;
+    await expect.poll(async () => {
+        venta = ((await readIdb(page, 'bodega_sales_v1')) || []).find(s => s.tipo === 'VENTA' && s.customerName === 'María Prueba');
+        return Boolean(venta);
+    }, { timeout: 15_000 }).toBe(true);
+    expect(venta.payments.map(p => p.methodId)).toEqual(['saldo_favor']);
+
+    // La cartera guardada coincide con el último saldo del ledger.
+    const ledger = (await readIdb(page, 'bodega_customer_ledger_v1')) || [];
+    const maria = await cliente(page, 'María Prueba');
+    const movs = ledger.filter(m => m.customerId === maria.id);
+    expect(movs.at(-1).balanceAfterUsd).toBe(1);
+    expect(movs.map(m => m.type)).toEqual(['VENTA_FIADA', 'ABONO_DEUDA', 'SALDO_FAVOR_USADO']);
+});

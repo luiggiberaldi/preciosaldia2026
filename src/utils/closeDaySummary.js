@@ -18,6 +18,7 @@
 
 import { round2, sumR, mulR, divR, subR } from './dinero';
 import { computeReceivablesMovements } from './receivablesReport';
+import { getGeneratedWalletCredit } from './customerLedger';
 
 const SALE_TYPES = new Set(['VENTA', 'VENTA_FIADA', 'VENTA_CASHEA']);
 
@@ -59,6 +60,11 @@ export function buildCloseDaySummary({
     carteraUsd = null,
 } = {}) {
     const receivables = computeReceivablesMovements(allSales);
+    // ERR-015: saldo a favor generado = vuelto enviado a la billetera + sobrante
+    // de abonos (la misma regla del Inicio). Antes solo contaba los abonos.
+    const saldoFavorGeneradoUsd = round2(sumR(
+        (Array.isArray(allSales) ? allSales : []).map(s => getGeneratedWalletCredit(s))
+    ));
 
     // Desglose del crédito otorgado por contraparte: cliente (fiado) vs
     // financiador (Cashea). Se toma de los movimientos, no del bucket del motor,
@@ -140,15 +146,15 @@ export function buildCloseDaySummary({
             bs: cobranzasBs,
         });
     }
-    if (receivables.saldoFavorGeneradoUsd > 0) {
+    if (saldoFavorGeneradoUsd > 0) {
         push({
             key: 'saldo_favor',
             label: 'Saldo a favor generado',
             short: 'Saldo a favor',
-            hint: 'No es ingreso: queda acreditado al cliente',
+            hint: 'Vuelto a la billetera y sobrante de abonos. No es ingreso: queda acreditado al cliente',
             level: 1,
             tone: 'muted',
-            usd: round2(receivables.saldoFavorGeneradoUsd),
+            usd: saldoFavorGeneradoUsd,
             bs: 0,
         });
     }
@@ -198,7 +204,7 @@ export function buildCloseDaySummary({
         casheaUsd,
         cobranzasUsd,
         cobranzasBs,
-        saldoFavorGeneradoUsd: receivables.saldoFavorGeneradoUsd,
+        saldoFavorGeneradoUsd,
         gananciaUsd,
         gananciaBs,
         carteraUsd: cartera,

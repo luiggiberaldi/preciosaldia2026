@@ -315,6 +315,14 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                                     </div>
                                 )}
 
+                                {/* ERR-013: el vuelto enviado a la billetera del cliente (el ticket impreso ya lo decía). */}
+                                {receipt.tipo !== 'COBRO_DEUDA' && Number(receipt.vueltoParaMonedero) > 0.001 && (
+                                    <div data-testid="recibo-vuelto-billetera" className="flex justify-between text-sky-700 dark:text-sky-400 font-bold mt-2 pt-2 border-t border-slate-200">
+                                        <span className="flex items-center gap-1.5"><Wallet size={14} /> Vuelto a su billetera:</span>
+                                        <span>${Number(receipt.vueltoParaMonedero).toFixed(2)}</span>
+                                    </div>
+                                )}
+
                                 {receipt.fiadoUsd > 0 && (
                                     <div className="flex justify-between text-amber-600 font-bold mt-2 pt-2 border-t border-slate-200">
                                         <span>Pendiente (Fiado):</span>
