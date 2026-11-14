@@ -225,3 +225,24 @@ test('Abono mixto: $2 + Bs 200 saldan una deuda de $7 en un solo abono (F5)', as
     expect(abono.totalUsd).toBe(7);
     expect(abono.payments.map(p => [p.methodId, p.currency, p.amount])).toEqual([['efectivo_usd', 'USD', 2], ['efectivo_bs', 'BS', 200]]);
 });
+
+test('Fiado a un cliente con saldo a favor: Reportes muestra cuánto cubrió el saldo (F6)', async ({ page }) => {
+    await iniciar(page);
+    // Juan tiene $18,50 a favor: se le fían $5 (Crédito, sin pago).
+    await abrirCobro(page, ['Caraota E2E']);
+    await page.getByRole('button', { name: /Crédito/ }).first().click();
+    await elegirCliente(page, 'Juan E2E');
+    await expect(botonCobrar(page)).toContainText('FIAR TOTALMENTE');
+    await botonCobrar(page).click();
+    await confirmarYCerrarRecibo(page);
+    await expect.poll(async () => (await cliente(page, 'Juan E2E'))?.favor, { timeout: 15_000 }).toBe(13.5);
+
+    await irA(page, 'reportes');
+    const fila = page.locator('[data-view="reportes"]').getByTestId('cxc-fiado_cubierto');
+    await expect(fila).toBeVisible({ timeout: 45_000 });
+    await expect(fila).toContainText('De eso, cubierto con saldo a favor');
+    await expect(fila).toContainText('USD 5.00');
+    if (process.env.CLIENTES_SHOTS) {
+        await fila.locator('xpath=ancestor::div[contains(@class,"rounded")][1]').screenshot({ path: `${process.env.CLIENTES_SHOTS}/fiado-cubierto.png` });
+    }
+});

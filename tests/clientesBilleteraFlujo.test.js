@@ -198,6 +198,8 @@ describe('Flujo de clientes de punta a punta (tasa 40 Bs/$)', () => {
 
         const cxc = computeReceivablesMovements(todas);
         expect(cxc.fiadoOtorgadoUsd).toBe(15); // 10 + 5 (el de 8 se anuló)
+        // F6: del fiado de $5 del paso 6, $2 los cubrió el saldo a favor que tenía.
+        expect(cxc.fiadoCubiertoConFavorUsd).toBe(2);
         expect(cxc.cobranzasUsd).toBe(14);     // 5 + 5 + 2 + 2 (el de 3 se anuló)
         expect(cxc.saldoFavorGeneradoUsd).toBe(0);
 
@@ -275,6 +277,41 @@ describe('Cambio de tasa y centavos', () => {
         // pero la segunda compra se pagó con un saldo que ya no existe: debe $5.
         expect(saldo()).toEqual({ deuda: 5, favor: 0 });
         expect(reconcileCustomersWithLedger(memoryStore.get(CUSTOMERS), ledger()).ok).toBe(true);
+    });
+});
+
+// F6 del PLAN-FIXEO-CLIENTES-BILLETERA (decisión D1): fiado cubierto con saldo a favor.
+describe('Fiado cubierto con saldo a favor (reportes y cierre)', () => {
+    const aVuelto = { changeUsdGiven: 0, changeBsGiven: 0, vueltoCredito: true, changeAllocationExplicit: true };
+
+    it('fiado de $5 con $2 a favor: fiado otorgado 5, cubierto 2, la deuda sube solo 3', async () => {
+        await vender({ totalUsd: 8, payments: [usd(10, 40)], changeBreakdown: aVuelto }); // +$2 a favor
+        await vender({ totalUsd: 5, payments: [], changeBreakdown: { esCredito: true } });
+        expect(saldo()).toEqual({ deuda: 3, favor: 0 });
+        const cxc = computeReceivablesMovements(ventas());
+        expect(cxc.fiadoOtorgadoUsd).toBe(5);
+        expect(cxc.fiadoCubiertoConFavorUsd).toBe(2);
+        expect(cxc.fiados[0].cubiertoConFavorUsd).toBe(2);
+        const cierre = buildCloseDaySummary({ allSales: ventas(), bcvRate: 40 });
+        expect(cierre.rows.find(r => r.key === 'fiado_cubierto')).toMatchObject({ usd: 2, bs: 80 });
+    });
+
+    it('si en la misma venta paga con saldo y fía el resto, solo cubre el saldo que sobra', async () => {
+        await vender({ totalUsd: 7, payments: [usd(10, 40)], changeBreakdown: aVuelto }); // +$3 a favor
+        // Venta de $5: paga $1 con saldo y fía $4. Quedaban $2 de saldo para el fiado.
+        const r = await vender({ totalUsd: 5, payments: [favor(1, 40)], changeBreakdown: { esCredito: true } });
+        expect(r.success).toBe(true);
+        expect(saldo()).toEqual({ deuda: 2, favor: 0 });
+        const cxc = computeReceivablesMovements(ventas());
+        expect(cxc.fiadoOtorgadoUsd).toBe(4);
+        expect(cxc.fiadoCubiertoConFavorUsd).toBe(2);
+    });
+
+    it('sin saldo a favor antes del fiado no aparece la fila', async () => {
+        await vender({ totalUsd: 5, payments: [], changeBreakdown: { esCredito: true } });
+        const cxc = computeReceivablesMovements(ventas());
+        expect(cxc.fiadoCubiertoConFavorUsd).toBe(0);
+        expect(buildCloseDaySummary({ allSales: ventas(), bcvRate: 40 }).rows.some(r => r.key === 'fiado_cubierto')).toBe(false);
     });
 });
 

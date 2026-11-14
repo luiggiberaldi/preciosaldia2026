@@ -309,3 +309,9 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 **Plan:** `PLAN-FIXEO-CLIENTES-BILLETERA.md`, fase F5 (decisión D2).
 **Cambios:** `customerTransactionProcessor.js` acepta `payments` (varias partes) y arma siempre el abono desde sus partes: un solo `COBRO_DEUDA` con un pago por moneda y un solo movimiento `ABONO_DEUDA` por el total en $. `TransactionModal.jsx`: pestaña «$ y Bs» (solo en «Recibir Abono») con un campo y un método por moneda, total en $ y aviso de sobrante. `CustomersView.jsx` pasa los pagos. `receivablesReport.js` guarda `methodIds` y Reportes muestra «Efectivo $ + Pago Móvil» en el detalle de cobranzas.
 **Verificación:** 4 pruebas nuevas en `clientesBilleteraFlujo.test.js` (mixto, sobrante, un solo campo, vacío); e2e «Abono mixto…» pasa con captura revisada; unitarias de cartera/cierre/motor 146/146; e2e de clientes y reportes 8/8 (una pasó al reintento: carga en frío de Reportes con otras sesiones usando el mismo servidor).
+
+## 2026-11-14 — Clientes F6: reportes y cierre dicen cuánto del fiado cubrió el saldo a favor
+
+**Plan:** `PLAN-FIXEO-CLIENTES-BILLETERA.md`, fase F6 (decisión D1: el fiado se sigue contando entero; se muestra aparte lo cubierto).
+**Cambios:** `receivablesReport.js` calcula por fiado `cubiertoConFavorUsd` con la foto `walletSnapshot.favorAntes` (menos lo pagado con saldo en la misma venta; Cashea y ventas viejas = 0) y el total `fiadoCubiertoConFavorUsd`; la vista agrega la sub-fila «De eso, cubierto con saldo a favor». Reportes e Inicio la muestran con sangría. `closeDaySummary.js`: la misma fila bajo «Fiado a clientes» en el PDF y el ticket.
+**Verificación:** pruebas nuevas en `clientesBilleteraFlujo.test.js` (3), `closeDaySummary.test.js` (2) y `receivablesReport.test.js` (1); 102/102 de cartera, cierre y reportes; e2e «Fiado a un cliente con saldo a favor…» pasa con captura revisada.

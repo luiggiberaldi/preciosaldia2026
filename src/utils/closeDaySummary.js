@@ -178,6 +178,21 @@ export function buildCloseDaySummary({
 
     if (fiadoUsd > 0) {
         push({ key: 'fiado', label: 'Fiado a clientes', hint: 'Créditos del día entregados a clientes', short: 'Créditos: Fiado', level: 1, tone: 'credit', usd: fiadoUsd, bs: round2(sumR(fiadoMovs.map(f => f.montoBs))) });
+        // F6: parte del fiado que se cubrió con saldo a favor (no sumó deuda).
+        const cubiertoUsd = round2(receivables.fiadoCubiertoConFavorUsd || 0);
+        if (cubiertoUsd > 0) {
+            const rateOf = (f) => (f.montoUsd > 0 ? f.montoBs / f.montoUsd : 0);
+            push({
+                key: 'fiado_cubierto',
+                label: 'De eso, cubierto con saldo a favor',
+                hint: 'No sumó deuda: lo pagó el saldo que el cliente ya tenía',
+                short: 'Fiado con saldo',
+                level: 1,
+                tone: 'muted',
+                usd: cubiertoUsd,
+                bs: round2(sumR(fiadoMovs.map(f => mulR(f.cubiertoConFavorUsd || 0, rateOf(f))))),
+            });
+        }
     }
     if (casheaUsd > 0) {
         push({ key: 'cashea', label: 'Cashea (financiado)', hint: 'Créditos del día financiados por Cashea', short: 'Créditos: Cashea', level: 1, tone: 'credit', usd: casheaUsd, bs: round2(sumR(casheaMovs.map(f => f.montoBs))) });

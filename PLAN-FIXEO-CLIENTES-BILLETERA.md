@@ -71,7 +71,7 @@ Regla para todas las fases: **pantalla nunca decide el dinero**. Toda validació
 3. Verificar que `FinancialEngine` reparte cada pago a su método (ya recorre `payments`) y que Reportes «Detalle de cobranzas» muestra los dos métodos (hoy toma `payments[0]`: corregir en `receivablesReport.js`).
 4. Pruebas: unitaria (deuda $7, abono $2 + Bs 200 a tasa 40 → deuda 0, favor 0; caja USD +2, Bs +200) y e2e en `clientes-billetera.e2e.spec.js`.
 
-## F6 — Reportes: fiado cubierto con saldo a favor (P2, decisión D1)
+## F6 — Reportes: fiado cubierto con saldo a favor (P2, decisión D1) ✅ HECHO
 
 1. `src/utils/receivablesReport.js`: en cada fiado, `cubiertoConFavorUsd = min(walletSnapshot.favorAntes, fiadoUsd)` (ventas sin `walletSnapshot` = 0). Total del período `fiadoCubiertoConFavorUsd`.
 2. Reportes y Dashboard: bajo «Fiado otorgado», línea «de eso, cubierto con saldo a favor: $X» solo si X > 0.
@@ -117,7 +117,7 @@ Guía: `side-session-notes/…/PORTAR-A-FARMACIA-clientes-billetera.md`. Llevar 
 | F3 ✅ | Aviso al anular con deuda | Media | Pequeño | — |
 | F4 ✅ | Cierre: pagado con saldo a favor | Baja | Pequeño | — |
 | F5 ✅ | Abono mixto | Mejora | Mediano | — |
-| F6 | Fiado cubierto con saldo en reportes | Baja | Mediano | — |
+| F6 ✅ | Fiado cubierto con saldo en reportes | Baja | Mediano | — |
 | F7 | Mejoras de pantalla del cliente | Mejora | Mediano | F3 |
 | F8 | E2E faltantes | Seguridad | Mediano | F2, F3, F4 |
 | F9 | Portar a Farmacia | — | Mediano | F1–F4 |

@@ -254,6 +254,43 @@ describe('buildCloseDaySummary — resumen del día del cierre', () => {
     });
 });
 
+// F6 (PLAN-FIXEO-CLIENTES-BILLETERA): fiado cubierto con saldo a favor.
+describe('buildCloseDaySummary — fiado cubierto con saldo a favor (F6)', () => {
+    const DIA_F6 = {
+        ...DIA,
+        allSales: [...diaCompleto.filter(s => s.id !== 'v-fiada'), fiada({ walletSnapshot: { favorAntes: 12.5, deudaAntes: 0 } })],
+    };
+
+    it('bajo «Fiado a clientes» sale «De eso, cubierto con saldo a favor» a la tasa de la venta', () => {
+        const s = buildCloseDaySummary(DIA_F6);
+        expect(rowOf(s, 'fiado').usd).toBe(20);
+        expect(rowOf(s, 'fiado_cubierto')).toMatchObject({ usd: 12.5, bs: 10619.5, level: 1 });
+        const derecha = s.columns[1].rows.map(r => r.key);
+        expect(derecha.indexOf('fiado_cubierto')).toBe(derecha.indexOf('fiado') + 1);
+    });
+
+    it('la fila cabe en la columna del PDF carta y en el ticket de 58 mm', () => {
+        const row = rowOf(buildCloseDaySummary(DIA_F6), 'fiado_cubierto');
+        const money = new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        expect(row.short.length).toBeLessThanOrEqual(22);
+        const carta = new jsPDF('p', 'mm', 'letter');
+        carta.setFont('helvetica', 'normal');
+        carta.setFontSize(7);
+        const labelW = carta.getTextWidth(row.label);
+        const usdW = carta.getTextWidth(`$${money.format(row.usd)}`);
+        carta.setFontSize(5.8);
+        const bsW = carta.getTextWidth(`Bs ${money.format(row.bs)}`);
+        const x = 15 + 90 + 5.9; // columna derecha
+        expect(x + 3 + 3 + labelW + 2).toBeLessThanOrEqual(x + 90 - 5 - usdW - bsW);
+        const ticket = new jsPDF('p', 'mm', [58, 400]);
+        ticket.setFont('helvetica', 'normal');
+        ticket.setFontSize(5.8);
+        const shortW = ticket.getTextWidth(row.short);
+        ticket.setFont('helvetica', 'bold');
+        expect(4 + 2.5 + shortW + 1.5 + ticket.getTextWidth(`$${money.format(row.usd)}`)).toBeLessThanOrEqual(44.5);
+    });
+});
+
 // F4 (PLAN-FIXEO-CLIENTES-BILLETERA): lo pagado con saldo a favor es parte de
 // «Cobrado», pero no entró hoy a la caja. El resumen lo separa.
 describe('buildCloseDaySummary — pagado con saldo a favor (F4)', () => {

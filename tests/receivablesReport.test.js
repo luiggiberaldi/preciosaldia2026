@@ -104,6 +104,19 @@ describe('buildReceivablesView — tres cifras distintas, ninguna llamada "Por C
         expect(view.hasMovement).toBe(false);
     });
 
+    it('F6: fiado cubierto con saldo a favor sale como sub-fila bajo «Fiado otorgado»', () => {
+        const venta = {
+            id: 'f1', tipo: 'VENTA_FIADA', status: 'COMPLETADA', totalUsd: 5, totalBs: 200, rate: 40,
+            fiadoUsd: 5, walletSnapshot: { favorAntes: 2, deudaAntes: 0 }, payments: [],
+        };
+        const view = buildReceivablesView(computeReceivablesMovements([venta]), {});
+        expect(view.rows.map(r => r.key)).toEqual(['fiado_otorgado', 'fiado_cubierto', 'cobranzas', 'neto']);
+        expect(view.rows[1]).toMatchObject({ amountUsd: 2, isSub: true, label: 'De eso, cubierto con saldo a favor' });
+        // Cashea no pasa por la cartera del cliente: nunca se cubre con saldo.
+        const cashea = { ...venta, id: 'c1', tipo: 'VENTA_CASHEA', casheaUsd: 5 };
+        expect(computeReceivablesMovements([cashea]).fiadoCubiertoConFavorUsd).toBe(0);
+    });
+
     it('computeCarteraUsd suma deuda y deuda Cashea, ignorando el saldo a favor', () => {
         expect(computeCarteraUsd(CARTERA_FIXTURE.customers)).toBe(CARTERA_FIXTURE.expectedCarteraUsd);
         expect(computeCarteraUsd([])).toBe(0);

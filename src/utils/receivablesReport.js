@@ -55,6 +55,25 @@ function safeRate(sale) {
     return 0;
 }
 
+const isInternalCreditPayment = (p) => p && (p.methodId === 'saldo_favor' || p.isInternalCredit === true || p.currency === 'INTERNAL_CREDIT');
+
+/**
+ * F6 (PLAN-FIXEO-CLIENTES-BILLETERA, decisión D1): parte de un fiado que se cubrió
+ * con el saldo a favor que el cliente ya tenía (la cartera es neta: ese fiado no
+ * sumó deuda). Usa la foto `walletSnapshot.favorAntes` que guarda la venta; primero
+ * se descuenta lo pagado con saldo en la misma venta (se aplica antes que el fiado).
+ * Ventas viejas sin foto y Cashea (no pasa por la cartera del cliente) = 0.
+ */
+function fiadoCoveredByCredit(sale, fiadoUsd) {
+    if (sale?.tipo !== 'VENTA_FIADA') return 0;
+    const favorAntes = Number(sale.walletSnapshot?.favorAntes) || 0;
+    if (favorAntes <= 0) return 0;
+    const usadoEnLaVenta = sumR((Array.isArray(sale.payments) ? sale.payments : [])
+        .filter(isInternalCreditPayment)
+        .map(p => Number(p.amountUsd) || 0));
+    return round2(Math.min(fiadoUsd, Math.max(0, favorAntes - usadoEnLaVenta)));
+}
+
 /**
  * Movimientos de cuentas por cobrar del período.
  *
@@ -72,6 +91,7 @@ export function computeReceivablesMovements(sales = [], { from = null, to = null
     let fiadoOtorgadoUsd = 0;
     let cobranzasUsd = 0;
     let saldoFavorGeneradoUsd = 0;
+    let fiadoCubiertoConFavorUsd = 0;
 
     (Array.isArray(sales) ? sales : []).forEach(sale => {
         if (isVoided(sale)) return;
@@ -88,7 +108,10 @@ export function computeReceivablesMovements(sales = [], { from = null, to = null
             if (montoUsd <= 0) return;
             const rate = safeRate(sale);
             fiadoOtorgadoUsd = round2(fiadoOtorgadoUsd + montoUsd);
+            const cubiertoConFavorUsd = fiadoCoveredByCredit(sale, montoUsd);
+            fiadoCubiertoConFavorUsd = round2(fiadoCubiertoConFavorUsd + cubiertoConFavorUsd);
             fiados.push({
+                cubiertoConFavorUsd,
                 saleId: sale.id || null,
                 saleNumber: sale.saleNumber ?? null,
                 timestamp: sale.timestamp || null,
@@ -135,6 +158,7 @@ export function computeReceivablesMovements(sales = [], { from = null, to = null
         cobranzasUsd,
         netoUsd: round2(fiadoOtorgadoUsd - cobranzasUsd),
         saldoFavorGeneradoUsd,
+        fiadoCubiertoConFavorUsd,
         movimientoCount: fiados.length + cobranzas.length,
         fiados,
         cobranzas,
@@ -175,6 +199,15 @@ export function buildReceivablesView(receivables, { carteraUsd = null } = {}) {
             amountUsd: round2(data.fiadoOtorgadoUsd),
             count: data.fiados?.length || 0,
         },
+        // F6: solo si hubo fiados cubiertos con saldo a favor (sub-fila con sangría).
+        ...(round2(data.fiadoCubiertoConFavorUsd || 0) > 0 ? [{
+            key: 'fiado_cubierto',
+            label: 'De eso, cubierto con saldo a favor',
+            hint: 'No sumó deuda: lo pagó el saldo que el cliente ya tenía',
+            amountUsd: round2(data.fiadoCubiertoConFavorUsd),
+            count: null,
+            isSub: true,
+        }] : []),
         {
             key: 'cobranzas',
             label: 'Cobranzas',
