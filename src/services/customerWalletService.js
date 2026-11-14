@@ -7,6 +7,7 @@ import {
     getCustomerBalance,
     hasLedgerSource,
     normalizeCustomer,
+    rebuildCustomersFromLedger,
     snapshotCustomerBalance,
     transitionCustomerBalance,
 } from '../utils/customerLedger.js';
@@ -175,6 +176,36 @@ export async function rebuildCustomerSnapshot(customerId) {
         const updatedCustomers = customers.map(c => c.id === customerId ? updatedCustomer : c);
         await storageService.setItem(CUSTOMERS_KEY, updatedCustomers);
         return { updatedCustomer, updatedCustomers, ledger };
+    });
+}
+
+/**
+ * «Reparar cartera» (Reportes): deja el saldo guardado de cada cliente igual al
+ * último saldo de su ledger. ERR-016: lee clientes y ledger frescos DENTRO del
+ * candado (nunca lo que una pantalla tenga en memoria, que puede venir de antes
+ * de una venta hecha en otra pestaña) y solo reescribe a los descuadrados.
+ * No borra ni modifica movimientos.
+ */
+export async function rebuildAllCustomersFromLedger() {
+    return withLock('pos_write_lock', async () => {
+        const customers = await storageService.getItem(CUSTOMERS_KEY, []);
+        const ledger = await storageService.getItem(CUSTOMER_LEDGER_KEY, []);
+        const list = Array.isArray(customers) ? customers : [];
+        const rebuilt = rebuildCustomersFromLedger(list, ledger);
+        const repairedIds = [];
+        const updatedCustomers = list.map((customer, index) => {
+            const next = rebuilt[index];
+            const same = getCustomerBalance(customer) === getCustomerBalance(next)
+                && (Number(customer?.deuda) || 0) === next.deuda
+                && (Number(customer?.favor) || 0) === next.favor;
+            if (same) return customer;
+            repairedIds.push(customer.id);
+            return { ...next, accountVersion: (Number(customer?.accountVersion) || 0) + 1 };
+        });
+        if (repairedIds.length > 0) {
+            await storageService.setItem(CUSTOMERS_KEY, updatedCustomers);
+        }
+        return { customers: updatedCustomers, ledger: Array.isArray(ledger) ? ledger : [], repairedIds };
     });
 }
 

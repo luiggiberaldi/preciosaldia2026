@@ -110,3 +110,23 @@ test('cartera desviada del ledger: aparece la alerta de conciliación sin el bot
     }));
     expect(dims.scrollWidth).toBeLessThanOrEqual(dims.clientWidth + 1);
 });
+
+test('con «Recalcular deudas» activado, «Reconstruir» deja el saldo igual al ledger (ERR-016)', async ({ page }) => {
+    await page.addInitScript(`try { localStorage.setItem('reportes_reparacion_ledger', 'true'); } catch (_) {}`);
+    await seedReportesFiado(page, { customerDeudaUsd: 2.5 });
+    await goToReports(page);
+
+    await expect(page.getByText('Cartera descuadrada con el ledger')).toBeVisible();
+    await page.getByLabel('Ver detalle').click();
+    await page.getByRole('button', { name: /Reconstruir 1 saldo/ }).click();
+
+    await expect(page.getByText('Cartera descuadrada con el ledger')).toHaveCount(0, { timeout: 10_000 });
+    const deuda = await page.evaluate(() => new Promise((resolve) => {
+        const req = indexedDB.open('BodegaApp');
+        req.onsuccess = () => {
+            const get = req.result.transaction('bodega_app_data').objectStore('bodega_app_data').get('bodega_customers_v1');
+            get.onsuccess = () => resolve(get.result?.[0]?.deuda);
+        };
+    }));
+    expect(deuda).toBe(0);
+});

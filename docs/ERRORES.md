@@ -21,6 +21,7 @@ Cada error encontrado va aquí, con su solución. Reglas en [LEY-DOCUMENTACION.m
 | ERR-013 | El recibo en pantalla no decía que el vuelto fue a la billetera | 2026-11-14 | Resuelto | — |
 | ERR-014 | Vender mostraba el saldo del cliente de antes de la última venta | 2026-11-14 | Resuelto | — |
 | ERR-015 | El cierre contaba como «saldo a favor generado» solo el sobrante de abonos | 2026-11-14 | Resuelto | — |
+| ERR-016 | «Reparar cartera» guardaba la lista de clientes que tenía la pantalla | 2026-11-14 | Resuelto | — |
 
 ERR-004 a ERR-006 se reconstruyeron desde informes ya existentes; el detalle completo está en esos informes. ERR-001 a ERR-003 se arreglaron y guardaron el 2026-11-13 (commit «fix(caja): …», ver CASO-002).
 
@@ -188,3 +189,14 @@ ERR-004 a ERR-006 se reconstruyeron desde informes ya existentes; el detalle com
 - **Solución:** el resumen usa `getGeneratedWalletCredit` en todas las ventas no anuladas.
 - **Cómo comprobarlo:** `tests/clientesBilleteraFlujo.test.js` («ERR-015…»).
 - **Relacionados:** verificación de clientes del 2026-11-14.
+
+## ERR-016 — «Reparar cartera» guardaba la lista de clientes que tenía la pantalla
+
+- **Fecha:** 2026-11-14
+- **Estado:** Resuelto
+- **Dónde:** `src/views/ReportsView.jsx` (`handleRepairLedger`) → ahora `rebuildAllCustomersFromLedger` en `src/services/customerWalletService.js`.
+- **Síntoma (posible, solo con el interruptor técnico «Recalcular deudas» encendido):** con Reportes abierto en una pestaña y la caja cobrando en otra, pulsar «Reconstruir saldos» guardaba la lista de clientes de cuando se abrió Reportes. Se perdían abonos y saldos nuevos, y hasta clientes creados después. En la misma pestaña el riesgo era mínimo porque Reportes se recarga al guardar.
+- **Causa:** la reparación usaba los datos en memoria y guardaba sin el candado de escritura `pos_write_lock`. El aviso de «se guardó algo» no cruza pestañas.
+- **Solución:** la reparación lee clientes y ledger de nuevo dentro del candado y solo reescribe a los clientes descuadrados. También: anular desde Reportes ahora actualiza los clientes en pantalla.
+- **Cómo comprobarlo:** `tests/ledgerRepairFresh.test.js` (5, incluida la que muestra el comportamiento viejo) y la prueba «Reconstruir…» de `tests/e2e/reportes-fiado.e2e.spec.js`.
+- **Relacionados:** PLAN-FIXEO-CLIENTES-BILLETERA, fase F1.

@@ -279,3 +279,9 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 **Cambios:** recibo con «Vuelto a su billetera» (ERR-013); Vender ya no muestra el saldo viejo del cliente tras cobrar (ERR-014, `useSalesData.js`); el resumen del cierre cuenta el vuelto a billetera como saldo generado (ERR-015, `closeDaySummary.js`).
 **Pruebas nuevas:** `tests/clientesBilleteraFlujo.test.js` (6) y `tests/e2e/clientes-billetera.e2e.spec.js` (3).
 **Verificación:** pruebas de cartera, caja y cierre 320 de 320; e2e nuevo 3 de 3; recorrido a mano en el navegador a 1366×768 con datos de prueba. Informe: `VERIFICACION-CLIENTES-E2E-2026-11-14.md` (Escritorio).
+
+## 2026-11-14 — Clientes F1: «Reparar cartera» con datos frescos (ERR-016)
+
+**Plan:** `PLAN-FIXEO-CLIENTES-BILLETERA.md`, fase F1.
+**Cambios:** `rebuildAllCustomersFromLedger()` en `customerWalletService.js` (lee dentro de `pos_write_lock`, solo toca descuadrados); `ReportsView.jsx` la usa y, al anular, aplica `updatedCustomers`.
+**Verificación:** `tests/ledgerRepairFresh.test.js` 5/5; e2e «Reconstruir…» pasa; pruebas de cartera y reportes 90/90. La e2e «cartera desviada…» falla también sin este cambio (Reportes tarda más de 15 s en la primera carga en frío): queda para F2.
