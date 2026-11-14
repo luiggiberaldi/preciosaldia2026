@@ -42,3 +42,15 @@ for (const c of CASES) {
     });
 }
 
+test('sin internet las letras de la app siguen disponibles', async ({ page, context }) => {
+    await seedAudit(page);
+    await openOnlineThenOffline(page, context);
+    await page.evaluate(() => document.fonts.ready);
+    // document.fonts.load devuelve las letras que sí cargó: vacío = no se pudo cargar.
+    const missing = await page.evaluate(async () => {
+        const fonts = ['700 16px Outfit', '400 16px "Work Sans"', '400 16px "JetBrains Mono"'];
+        const loaded = await Promise.all(fonts.map((f) => document.fonts.load(f).catch(() => [])));
+        return fonts.filter((f, i) => loaded[i].length === 0);
+    });
+    expect(missing).toEqual([]);
+});

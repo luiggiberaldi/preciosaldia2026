@@ -50,30 +50,15 @@ export default defineConfig(({ mode }) => {
       ],
       workbox: {
         cleanupOutdatedCaches: true,
+        // Letras autoalojadas (@fontsource) en el precache: se ven sin internet desde la primera carga.
+        globPatterns: ['**/*.{js,css,html,woff2}'],
         skipWaiting: false, // No forzar skipWaiting automático para evitar pérdida de datos en caja.
         clientsClaim: true,
         cacheId: `preciosaldia-bodega-v${APP_VERSION}`,
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/^\/api\//],
+        // Las letras ya no vienen de Google Fonts (van en el precache): no hacen falta reglas para ellas.
         runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts-cache',
-              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-          {
-            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'gstatic-fonts-cache',
-              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
           {
             urlPattern: /\/storage\/v1\/object\/public\/product-images\/.*/i,
             handler: 'CacheFirst',
