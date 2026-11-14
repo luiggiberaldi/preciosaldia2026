@@ -211,6 +211,9 @@ describe('Flujo de clientes de punta a punta (tasa 40 Bs/$)', () => {
         expect(cierre.invariante.ok).toBe(true);
         // ERR-015: el vuelto de $2 que quedó en la billetera aparece como saldo generado (como en el Inicio).
         expect(cierre.saldoFavorGeneradoUsd).toBe(2);
+        // F4: los $4 pagados con saldo a favor salen aparte bajo «Cobrado».
+        expect(cierre.saldoFavorUsadoUsd).toBe(4);
+        expect(cierre.rows.find(r => r.key === 'cobrado_caja').usd).toBe(8);
         expect(breakdown._saldo_favor_generado.total).toBe(2);
     });
 

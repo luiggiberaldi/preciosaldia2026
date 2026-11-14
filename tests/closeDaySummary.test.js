@@ -253,3 +253,65 @@ describe('buildCloseDaySummary — resumen del día del cierre', () => {
         });
     });
 });
+
+// F4 (PLAN-FIXEO-CLIENTES-BILLETERA): lo pagado con saldo a favor es parte de
+// «Cobrado», pero no entró hoy a la caja. El resumen lo separa.
+describe('buildCloseDaySummary — pagado con saldo a favor (F4)', () => {
+    const conFavor = contado({
+        id: 'v-favor', totalUsd: 6, totalBs: 5097.36,
+        payments: [
+            { methodId: 'saldo_favor', currency: 'USD', amountUsd: 4, amountBs: 3398.24, isSaldoFavor: true },
+            { methodId: 'efectivo_usd', currency: 'USD', amountUsd: 2, amountBs: 1699.12 },
+        ],
+    });
+    const anuladaConFavor = contado({
+        id: 'v-favor-anulada', status: 'ANULADA',
+        payments: [{ methodId: 'saldo_favor', currency: 'USD', amountUsd: 5, amountBs: 4247.8 }],
+    });
+    const DIA_FAVOR = { ...DIA, allSales: [...diaCompleto, conFavor, anuladaConFavor], todayTotalUsd: 61, todayTotalBs: 51823.16 };
+
+    it('agrega «De eso, pagado con saldo a favor» y «Entró hoy a caja y bancos» bajo Cobrado', () => {
+        const s = buildCloseDaySummary(DIA_FAVOR);
+        expect(s.saldoFavorUsadoUsd).toBe(4); // la anulada no cuenta
+        expect(rowOf(s, 'cobrado').usd).toBe(20); // 61 − 41 de créditos (20 fiado + 21 Cashea)
+        expect(rowOf(s, 'cobrado_saldo_favor')).toMatchObject({ usd: 4, bs: 3398.24, level: 1 });
+        expect(rowOf(s, 'cobrado_caja').usd).toBe(16);
+        expect(rowOf(s, 'cobrado').hint).toContain('no entró hoy a la caja');
+        expect(s.columns[0].rows.map(r => r.key)).toEqual(['ventas_netas', 'cobrado', 'cobrado_saldo_favor', 'cobrado_caja', 'a_credito']);
+        expect(s.invariante.ok).toBe(true);
+    });
+
+    it('sin pagos con saldo a favor no aparecen las filas nuevas', () => {
+        const s = buildCloseDaySummary(DIA);
+        expect(s.saldoFavorUsadoUsd).toBe(0);
+        expect(rowOf(s, 'cobrado_saldo_favor')).toBeUndefined();
+        expect(rowOf(s, 'cobrado_caja')).toBeUndefined();
+        expect(rowOf(s, 'cobrado').hint).toContain('puede estar en la caja');
+    });
+
+    it('las filas nuevas caben en la columna del PDF carta y en el ticket de 58 mm', () => {
+        const s = buildCloseDaySummary(DIA_FAVOR);
+        const money = new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const carta = new jsPDF('p', 'mm', 'letter');
+        const ticket = new jsPDF('p', 'mm', [58, 400]);
+        ['cobrado_saldo_favor', 'cobrado_caja'].forEach(key => {
+            const row = rowOf(s, key);
+            expect(row.short.length, key).toBeLessThanOrEqual(22);
+            // PDF carta: columna de 90 mm (misma medida que G13).
+            carta.setFont('helvetica', 'normal');
+            carta.setFontSize(7);
+            const labelW = carta.getTextWidth(row.label);
+            const usdW = carta.getTextWidth(`$${money.format(Math.abs(row.usd))}`);
+            carta.setFontSize(5.8);
+            const bsW = row.bs ? carta.getTextWidth(`Bs ${money.format(Math.abs(row.bs))}`) : 0;
+            expect(15 + 3 + 3 + labelW + 2, key).toBeLessThanOrEqual(15 + 90 - 5 - usdW - bsW);
+            // Ticket de 58 mm (misma medida que G12).
+            ticket.setFont('helvetica', 'normal');
+            ticket.setFontSize(5.8);
+            const shortW = ticket.getTextWidth(row.short);
+            ticket.setFont('helvetica', 'bold');
+            const valueW = ticket.getTextWidth(`$${money.format(Math.abs(row.usd))}`);
+            expect(4 + 2.5 + shortW + 1.5 + valueW, key).toBeLessThanOrEqual(44.5);
+        });
+    });
+});

@@ -38,6 +38,27 @@ function salesFromTransactions(allSales = []) {
     };
 }
 
+const isInternalCreditPayment = (p) => p && (p.methodId === 'saldo_favor' || p.isInternalCredit === true || p.currency === 'INTERNAL_CREDIT');
+
+/**
+ * F4 (PLAN-FIXEO-CLIENTES-BILLETERA): lo pagado hoy con saldo a favor. Es parte
+ * de «Cobrado» (la venta sí se cobró) pero ese dinero entró a la caja el día que
+ * se generó el saldo (vuelto a billetera o sobrante de abono), no hoy.
+ */
+function internalCreditUsed(allSales = []) {
+    let usd = 0;
+    let bs = 0;
+    (Array.isArray(allSales) ? allSales : []).forEach(sale => {
+        if (!sale || sale.status === 'ANULADA' || !SALE_TYPES.has(sale.tipo)) return;
+        (Array.isArray(sale.payments) ? sale.payments : []).filter(isInternalCreditPayment).forEach(p => {
+            const pUsd = num(p.amountUsd);
+            usd = sumR([usd, pUsd]);
+            bs = sumR([bs, num(p.amountBs) || (num(sale.rate) > 0 ? mulR(pUsd, num(sale.rate)) : 0)]);
+        });
+    });
+    return { usd: round2(usd), bs: round2(bs) };
+}
+
 /**
  * Resumen de cierre del día.
  *
@@ -87,6 +108,9 @@ export function buildCloseDaySummary({
     const cobradoUsd = round2(subR(ventasNetasUsd, creditosUsd));
     const cobradoBs = round2(subR(ventasNetasBs, creditosBs));
 
+    const saldoFavorUsado = internalCreditUsed(allSales);
+    const saldoFavorUsadoUsd = saldoFavorUsado.usd;
+
     const cobranzasUsd = round2(receivables.cobranzasUsd);
     const cobranzasBs = round2(sumR(receivables.cobranzas.map(c => c.montoBs)));
 
@@ -111,12 +135,36 @@ export function buildCloseDaySummary({
         key: 'cobrado',
         label: 'Cobrado de esas ventas',
         short: 'Cobrado',
-        hint: 'Efectivo y otros medios: es lo que puede estar en la caja',
+        hint: saldoFavorUsadoUsd > 0
+            ? 'Incluye lo pagado con saldo a favor, que no entró hoy a la caja'
+            : 'Efectivo y otros medios: es lo que puede estar en la caja',
         level: 1,
         tone: 'muted',
         usd: cobradoUsd,
         bs: cobradoBs,
     });
+    if (saldoFavorUsadoUsd > 0) {
+        push({
+            key: 'cobrado_saldo_favor',
+            label: 'De eso, pagado con saldo a favor',
+            short: 'Con saldo a favor',
+            hint: 'El dinero entró el día que se generó el saldo (vuelto o abono)',
+            level: 1,
+            tone: 'muted',
+            usd: saldoFavorUsadoUsd,
+            bs: saldoFavorUsado.bs,
+        });
+        push({
+            key: 'cobrado_caja',
+            label: 'Entró hoy a caja y bancos',
+            short: 'Entró a caja/bancos',
+            hint: 'Cobrado menos lo pagado con saldo a favor',
+            level: 1,
+            tone: 'muted',
+            usd: round2(subR(cobradoUsd, saldoFavorUsadoUsd)),
+            bs: round2(subR(cobradoBs, saldoFavorUsado.bs)),
+        });
+    }
     push({
         key: 'a_credito',
         label: 'A crédito (por cobrar)',
@@ -185,7 +233,7 @@ export function buildCloseDaySummary({
 
     // Reparto en dos columnas para el PDF carta: a la izquierda el devengado
     // (qué se vendió y cuánto se cobró), a la derecha el crédito y el resultado.
-    const SPLIT_KEYS = new Set(['ventas_netas', 'cobrado', 'a_credito']);
+    const SPLIT_KEYS = new Set(['ventas_netas', 'cobrado', 'cobrado_saldo_favor', 'cobrado_caja', 'a_credito']);
     const columns = [
         { title: 'Ventas y Cobros', rows: rows.filter(r => SPLIT_KEYS.has(r.key)) },
         { title: 'Créditos y Resultado', rows: rows.filter(r => !SPLIT_KEYS.has(r.key)) },
@@ -205,6 +253,7 @@ export function buildCloseDaySummary({
         cobranzasUsd,
         cobranzasBs,
         saldoFavorGeneradoUsd,
+        saldoFavorUsadoUsd,
         gananciaUsd,
         gananciaBs,
         carteraUsd: cartera,

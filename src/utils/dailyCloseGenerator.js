@@ -833,8 +833,11 @@ export async function generateDailyClosePDF({
             doc.setFont('helvetica', 'italic');
             doc.setFontSize(6.4);
             doc.setTextColor(...MUTED);
+            // F4: con pagos con saldo a favor, la nota aclara que esa parte tampoco entró hoy.
             const noteLines = doc.splitTextToSize(
-                'Solo lo cobrado de las ventas y las cobranzas entraron a la caja. FIADO y CASHEA son cuentas por cobrar: no forman parte del efectivo esperado del arqueo.',
+                daySummary.saldoFavorUsadoUsd > 0
+                    ? 'Entró a la caja lo cobrado de las ventas (menos lo pagado con saldo a favor, que entró el día que se generó) y las cobranzas. FIADO y CASHEA son cuentas por cobrar: no forman parte del efectivo esperado del arqueo.'
+                    : 'Solo lo cobrado de las ventas y las cobranzas entraron a la caja. FIADO y CASHEA son cuentas por cobrar: no forman parte del efectivo esperado del arqueo.',
                 RIGHT - M
             );
             doc.text(noteLines, M, y);

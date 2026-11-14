@@ -24,7 +24,7 @@ La caja es como una **gaveta con un cuaderno**: abrir es escribir arriba «empie
 
 ## Cerrar caja
 
-`CierreCajaWizard` tiene 3 pasos: **Resumen**, **Conteo** (se cuenta el efectivo a mano) y **Resultado** (semáforo con tolerancias por moneda, `FINANCIAL_EPSILON`). El resumen del día (`closeDaySummary.js`) explica por qué la caja no coincide con el total vendido: las ventas fiadas y de Cashea suman al ingreso pero no entran a la gaveta. Garantiza `cobrado + créditos = ventas netas`. El PDF se genera con `dailyCloseGenerator.js`. La fila «Saldo a favor generado» suma el vuelto enviado a la billetera y el sobrante de abonos, con la misma regla del Inicio (`getGeneratedWalletCredit`, ERR-015).
+`CierreCajaWizard` tiene 3 pasos: **Resumen**, **Conteo** (se cuenta el efectivo a mano) y **Resultado** (semáforo con tolerancias por moneda, `FINANCIAL_EPSILON`). El resumen del día (`closeDaySummary.js`) explica por qué la caja no coincide con el total vendido: las ventas fiadas y de Cashea suman al ingreso pero no entran a la gaveta. Garantiza `cobrado + créditos = ventas netas`. El PDF se genera con `dailyCloseGenerator.js`. La fila «Saldo a favor generado» suma el vuelto enviado a la billetera y el sobrante de abonos, con la misma regla del Inicio (`getGeneratedWalletCredit`, ERR-015). Si hubo ventas pagadas con saldo a favor, bajo «Cobrado» salen «De eso, pagado con saldo a favor» y «Entró hoy a caja y bancos»: ese dinero entró el día que se generó el saldo, no hoy (F4 del plan de clientes).
 
 ## Lo que se aprendió
 

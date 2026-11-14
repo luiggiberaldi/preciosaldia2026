@@ -56,7 +56,7 @@ Regla para todas las fases: **pantalla nunca decide el dinero**. Toda validació
 3. Mostrar también, siempre que haya cliente: «Saldo de {cliente}: antes $A → después $B».
 4. Pruebas: `tests/voidImpact.test.js` (vuelto gastado → deuda; fiado → baja deuda; pago con saldo → sube favor; abono con sobrante → baja favor).
 
-## F4 — Cierre: fila «Pagado con saldo a favor» (P1)
+## F4 — Cierre: fila «Pagado con saldo a favor» (P1) ✅ HECHO
 
 1. `src/utils/closeDaySummary.js`: calcular `saldoFavorUsadoUsd` = suma de pagos `saldo_favor`/`isInternalCredit` de ventas no anuladas.
 2. Nueva fila nivel 1 bajo «Cobrado de esas ventas»: «De eso, pagado con saldo a favor» (`tone: 'muted'`), y fila «Cobrado en caja y bancos» = cobrado − saldo usado. Mantener la invariante `cobrado + créditos = ventas netas`.
@@ -114,7 +114,7 @@ Guía: `side-session-notes/…/PORTAR-A-FARMACIA-clientes-billetera.md`. Llevar 
 | F1 ✅ | Reparar cartera con datos frescos y candado | Alta (posible dinero) | Pequeño | — |
 | F2 ✅ | Arreglar e2e antiguas | Media | Pequeño | — |
 | F3 ✅ | Aviso al anular con deuda | Media | Pequeño | — |
-| F4 | Cierre: pagado con saldo a favor | Baja | Pequeño | — |
+| F4 ✅ | Cierre: pagado con saldo a favor | Baja | Pequeño | — |
 | F5 | Abono mixto | Mejora | Mediano | — |
 | F6 | Fiado cubierto con saldo en reportes | Baja | Mediano | — |
 | F7 | Mejoras de pantalla del cliente | Mejora | Mediano | F3 |

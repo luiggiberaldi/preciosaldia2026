@@ -297,3 +297,9 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 **Plan:** `PLAN-FIXEO-CLIENTES-BILLETERA.md`, fase F3 (decisión D4: anular se permite, con aviso).
 **Cambios:** `buildVoidReversalMovements` exportada desde `voidSaleProcessor.js` (misma regla para anular y para la vista previa); `src/utils/voidImpact.js` (impacto y texto); `src/hooks/useVoidImpact.js` (lee cliente y ledger frescos); `ConfirmModal.jsx` acepta `details` (líneas destacadas, ámbar si empiezan con «⚠»); Inicio y Reportes las muestran al anular. Ej.: «Cuenta de María: al día → debe $5.00» y «⚠ El cliente quedará debiendo $5.00 (Bs 200,00): ya usó el saldo a favor que le dio esta venta».
 **Verificación:** `tests/voidImpact.test.js` 6/6 (la vista previa coincide con la anulación real); e2e `clientes-billetera` 4/4 (nueva: anular desde Inicio una venta pagada con saldo); pruebas de anulación y cartera 51/51.
+
+## 2026-11-14 — Clientes F4: el cierre separa lo pagado con saldo a favor
+
+**Plan:** `PLAN-FIXEO-CLIENTES-BILLETERA.md`, fase F4.
+**Cambios:** `closeDaySummary.js` calcula `saldoFavorUsadoUsd` y, si es mayor que 0, agrega bajo «Cobrado» las filas «De eso, pagado con saldo a favor» y «Entró hoy a caja y bancos» (columna izquierda del PDF carta; etiquetas cortas para el ticket de 58 mm) y cambia la ayuda de «Cobrado». `dailyCloseGenerator.js`: la nota bajo el resumen lo aclara. Sin pagos con saldo, el cierre queda igual que antes.
+**Verificación:** pruebas de cierre, motor y reportes pasan (3 nuevas en `closeDaySummary.test.js`, con medidas de PDF y ticket); PDF de muestra generado en el navegador y revisado: cobrado $14 → con saldo $4 → entró a caja $10.
