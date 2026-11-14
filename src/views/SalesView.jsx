@@ -410,6 +410,15 @@ export default function SalesView({ triggerHaptic, isActive }) {
     // Auto-focus search
     useEffect(() => { if (!isLoading && searchInputRef.current) searchInputRef.current.focus(); }, [isLoading]);
 
+    // Con el cobro abierto la pantalla (Móvil/PC) no cambia aunque se redimensione la ventana:
+    // cambiar de componente borraría los montos ya escritos. Solo se recalcula al abrir el cobro
+    // o si el cajero cambia el modo a mano (onSwitchMode → checkoutMode).
+    const checkoutOpenKey = showCheckout ? (checkoutMode || 'auto') : null;
+    const [checkoutOpenMode, setCheckoutOpenMode] = useState({ key: null, mode: null });
+    if (checkoutOpenMode.key !== checkoutOpenKey) {
+        setCheckoutOpenMode({ key: checkoutOpenKey, mode: checkoutOpenKey ? effectiveCheckoutMode : null });
+    }
+
     // Return focus after closing modals
     useEffect(() => { if (!showCheckout && !showReceipt && searchInputRef.current) searchInputRef.current.focus(); }, [showCheckout, showReceipt]);
 
@@ -1051,7 +1060,7 @@ export default function SalesView({ triggerHaptic, isActive }) {
                     onSwitchMode: setCheckoutMode,
                     isProcessing,
                 };
-                const activeMode = effectiveCheckoutMode || 'basic';
+                const activeMode = checkoutOpenMode.mode || effectiveCheckoutMode || 'basic';
                 return activeMode === 'pos'
                     ? <CheckoutModalPOS {...sharedProps} />
                     : <CheckoutModal {...sharedProps} />;

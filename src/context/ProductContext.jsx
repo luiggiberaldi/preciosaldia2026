@@ -7,6 +7,7 @@ import { useRateContext } from './RateContext';
 import { showToast } from '../components/Toast';
 import { Modal } from '../components/Modal';
 import { AlertTriangle, ShieldAlert, RotateCcw } from 'lucide-react';
+import { resolveCheckoutMode, isWideViewport } from '../utils/checkoutMode';
 import { isGranelProduct, adjustStockValue, normalizeStockValue, useGranelUnitMode } from '../utils/granel.js'; // GRANEL-001
 import { computeInventoryValuation } from '../utils/inventoryValuation'; // BULTOS-001
 import { withLock } from '../utils/withLock';
@@ -103,20 +104,22 @@ export function ProductProvider({ children }) {
     // GRANEL UNIT MODE — 'kg_lt' (Decimal) | 'gr_ml' (Entero)
     const [granelUnitMode, setGranelUnitMode] = useGranelUnitMode();
 
-    // Resuelve dinámicamente si el modal de cobro activo debe ser 'basic' (Móvil) o 'pos' (PC).
-    // FASE 5 — feature flag `checkout_shell_v2`: en 'true' fuerza el modo 'basic'
-    // (shell móvil del rediseño) incluso en pantallas ≥1024px. Palanca de
-    // rollback/soporte en campo: apagar el flag restaura el comportamiento previo.
-    const effectiveCheckoutMode = useMemo(() => {
-        if (checkoutMode === 'basic') return 'basic';
-        if (checkoutMode === 'pos' && localStorage.getItem('checkout_shell_v2') !== 'true') return 'pos';
-        if (typeof window === 'undefined') return 'basic';
-
-        const isMobile = window.innerWidth < 1024 ||
-            /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator?.userAgent || '');
-
-        return isMobile ? 'basic' : 'pos';
-    }, [checkoutMode]);
+    // Resuelve si el cobro activo debe ser 'basic' (Móvil) o 'pos' (PC). La regla vive en
+    // utils/checkoutMode.js. En 'auto' se vuelve a decidir cuando la ventana cruza los 1024 px
+    // (maximizar, girar la tablet); solo guardamos si es ancha o no para no re-renderizar
+    // la app en cada píxel. FASE 5 — `checkout_shell_v2` = 'true' fuerza Móvil siempre.
+    const [isWide, setIsWide] = useState(isWideViewport);
+    useEffect(() => {
+        if (typeof window === 'undefined') return undefined;
+        const onResize = () => setIsWide(isWideViewport());
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
+    const effectiveCheckoutMode = useMemo(() => resolveCheckoutMode(checkoutMode, {
+        isWide,
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent || '' : '',
+        shellV2: localStorage.getItem('checkout_shell_v2') === 'true',
+    }), [checkoutMode, isWide]);
 
     // Initial Load
     useEffect(() => {
