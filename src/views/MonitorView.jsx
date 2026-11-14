@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { showToast } from '../components/Toast';
+import SafeImg from '../components/SafeImg';
 import { RefreshCw, TrendingUp, TrendingDown, WifiOff, Clock, Maximize, Minimize, Camera, Loader2, AlertTriangle, Sun, Moon } from 'lucide-react';
 import html2canvas from 'html2canvas';
 
@@ -130,7 +131,12 @@ export default function MonitorView({ rates: propRates, loading, isOffline, onRe
             {/* Encabezado Kiosco */}
             <div className="flex flex-col items-center mt-12 gap-2 relative z-10">
                 <button onClick={handleSecretDebug} className="active:scale-95 transition-transform outline-none">
-                    <img src="./logo.png" alt="PreciosAlDía" className="h-20 w-auto object-contain drop-shadow-sm" />
+                    <SafeImg
+                        src="./logo.png"
+                        alt="PreciosAlDía"
+                        className="h-20 w-auto object-contain drop-shadow-sm"
+                        fallback={<span className="block h-20 leading-[5rem] text-4xl font-black text-slate-800 font-outfit">Precios Al Día</span>}
+                    />
                 </button>
                 <p className="text-slate-700 text-sm font-medium -mt-2 font-outfit">Actualizado donde vayas</p>
                 <div className="bg-white/80 px-4 py-1.5 rounded-full border border-slate-200 backdrop-blur-md shadow-sm mt-2">

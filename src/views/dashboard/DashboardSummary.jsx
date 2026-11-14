@@ -4,14 +4,20 @@
 import { formatBs } from '../../utils/calculatorUtils';
 import { ShoppingCart, LogOut } from 'lucide-react';
 import SyncStatus from '../../components/SyncStatus';
+import SafeImg, { APP_ICON_SRC } from '../../components/SafeImg';
 
 // El logo de fábrica (600x130) trae el lema «Actualizado donde vayas» abajo: el contenedor
 // mide ~64 % del alto de la imagen y así solo se ve «Precios Al Día».
+// Si el logo no carga (sin internet, archivo dañado) va el ícono «D», que siempre está guardado.
 function BrandLogo({ src, box, img }) {
     return (
-        <div className={`overflow-hidden shrink-0 flex items-start ${box}`}>
-            <img src={src} alt="Precios Al Día" className={`w-auto object-contain drop-shadow-sm ${img}`} />
-        </div>
+        <SafeImg
+            src={src}
+            alt="Precios Al Día"
+            wrapperClassName={`overflow-hidden shrink-0 flex items-start ${box}`}
+            className={`w-auto object-contain drop-shadow-sm ${img}`}
+            fallback={<img src={APP_ICON_SRC} alt="Precios Al Día" className="h-10 w-10 rounded-xl object-contain shrink-0" />}
+        />
     );
 }
 

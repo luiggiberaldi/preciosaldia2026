@@ -10,6 +10,17 @@ import { processDeterministicOfflineQuery } from '../services/deterministicBotEn
 import { getChatSuggestions } from '../services/chatSuggestions';
 import { recordChatFeedback } from '../services/chatFeedback';
 import { renderChatMarkdown } from './Chat/ChatMarkdown';
+import SafeImg from './SafeImg';
+
+// Avatar del asistente; si no carga, el ícono Bot dibujado (no depende de ningún archivo).
+const BotAvatar = ({ className, iconSize }) => (
+    <SafeImg
+        src="./bot-avatar.png"
+        alt="Bot"
+        className={className}
+        fallback={<span className={`${className} flex items-center justify-center text-emerald-600`}><Bot size={iconSize} /></span>}
+    />
+);
 
 // Historial que se envía a la IA: el servidor acepta hasta 20 mensajes (con el contexto del POS delante).
 const MAX_HISTORY_MESSAGES = 12;
@@ -313,7 +324,7 @@ export default function AIAssistantWidget() {
                     <div className="px-4 py-3 bg-slate-100/90 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
                         <div className="flex items-center gap-2.5">
                             <div className="relative w-9 h-9 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 p-0.5 shadow-md shrink-0">
-                                <img src="./bot-avatar.png" alt="Bot Avatar" className="w-full h-full object-contain rounded-xl bg-white dark:bg-slate-900" />
+                                <BotAvatar className="w-full h-full object-contain rounded-xl bg-white dark:bg-slate-900" iconSize={18} />
                                 <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900 animate-pulse" />
                             </div>
                             <div>
@@ -353,7 +364,7 @@ export default function AIAssistantWidget() {
                                         ? 'bg-emerald-600 text-white shadow-sm' 
                                         : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-0.5'
                                 }`}>
-                                    {m.role === 'user' ? <User size={13} /> : <img src="./bot-avatar.png" alt="Bot" className="w-full h-full object-contain rounded-lg" />}
+                                    {m.role === 'user' ? <User size={13} /> : <BotAvatar className="w-full h-full object-contain rounded-lg" iconSize={14} />}
                                 </div>
                                 <div className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed shadow-sm ${
                                     m.role === 'user'
@@ -373,7 +384,7 @@ export default function AIAssistantWidget() {
                         {isTyping && messages[messages.length - 1].content === "" && (
                             <div className="flex items-start gap-2.5">
                                 <div className="w-7 h-7 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-0.5 flex items-center justify-center shrink-0 overflow-hidden">
-                                    <img src="./bot-avatar.png" alt="Bot" className="w-full h-full object-contain rounded-lg" />
+                                    <BotAvatar className="w-full h-full object-contain rounded-lg" iconSize={14} />
                                 </div>
                                 <div className="bg-white dark:bg-slate-800 rounded-2xl rounded-tl-none px-3.5 py-2.5 flex gap-1 items-center border border-slate-200 dark:border-slate-700">
                                     <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
@@ -495,7 +506,7 @@ export default function AIAssistantWidget() {
                     title="Asistente Bot 2.0"
                 >
                     <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center p-0.5">
-                        <img src="./bot-avatar.png" alt="Bot" className="w-full h-full object-contain rounded-full" />
+                        <BotAvatar className="w-full h-full object-contain rounded-full" iconSize={22} />
                     </div>
                 </button>
             )}

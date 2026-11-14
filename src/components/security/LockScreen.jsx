@@ -5,6 +5,7 @@ import { supabaseCloud } from '../../config/supabaseCloud';
 import { ensureSupervisorSession } from '../../services/supervisorAuth';
 import { readPairingRow, getActivePairingSlots } from '../../services/supervisorPairingState';
 import UserCard from './UserCard';
+import SafeImg, { APP_ICON_SRC } from '../SafeImg';
 import LoginPinModal from './LoginPinModal';
 import EmergencyPinResetModal from './EmergencyPinResetModal';
 
@@ -155,12 +156,21 @@ export default function LockScreen({ onOpenPairing, onOpenPairingIssuer = () => 
         {/* Header */}
         <div className="text-center mb-8 sm:mb-14">
           <div className="flex justify-center mb-4 sm:mb-6">
-            <img
+            <SafeImg
               src="./logo.png"
               alt="Logo"
               onClick={handleLogoClick}
               className="h-16 sm:h-28 md:h-32 w-auto max-w-[270px] sm:max-w-none object-contain drop-shadow-md cursor-pointer select-none active:scale-95 transition-transform"
               title="Precios Al Día"
+              fallback={(
+                <img
+                  src={APP_ICON_SRC}
+                  alt="Logo"
+                  onClick={handleLogoClick}
+                  className="h-16 w-16 sm:h-28 sm:w-28 rounded-2xl object-contain drop-shadow-md cursor-pointer select-none active:scale-95 transition-transform"
+                  title="Precios Al Día"
+                />
+              )}
             />
           </div>
           <h1 className="text-xl sm:text-3xl font-light tracking-[0.15em] text-slate-600">
