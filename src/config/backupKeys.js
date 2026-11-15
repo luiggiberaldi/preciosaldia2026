@@ -24,8 +24,10 @@ export const IDB_KEYS = Object.freeze([
   'bodega_accounts_v2',
   'bodega_customers_v1',
   'bodega_customer_ledger_v1',
+  'bodega_employees_v1',         // Nómina F2: fichas de empleados
   'bodega_merchandise_purchases_v1',
   'bodega_payment_methods_v1',
+  'bodega_payroll_entries_v1',   // Nómina F2: adelantos, pagos, bonos y descuentos
   'bodega_pending_cart_v1',
   'bodega_products_v1',
   'bodega_sales_v1',
