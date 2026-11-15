@@ -29,6 +29,10 @@ En `src/config/supervisorPolicy.js`, variables `VITE_SUPERVISOR_REMOTE_*_ENABLED
 
 Los datos viajan por `sync_documents`; un día con demasiada salida de datos (egress) ya ocurrió ([ERR-006](../../ERRORES.md)). Por eso los documentos grandes se dividen en piezas más pequeñas (ver `docs/plans/2026-10-21-plan-adelgazar-bodega-products-por-shards.md`) y hay un presupuesto de sincronización (`src/utils/syncDocBudget.js`).
 
+## Seguridad de las tablas compartidas
+
+Desde el 2026-11-15 (P-018) cada caja solo lee y marca **sus** solicitudes de respaldo (`backup_requests`), y la tabla `licenses` ya no se puede leer con la clave pública: las cajas consultan su licencia con los RPC `get_license_status` y `verify_activation_code`. La regla es la misma de `sync_documents`: `is_own_device_row(device_id)`. Ver `supabase/migrations/20261115_*.sql`.
+
 ## Archivos principales
 
 `src/config/supervisorPolicy.js`, `src/services/supervisor*.js`, `src/hooks/useRemoteCommands.js`, `src/hooks/useMonitorSync.js`, `src/views/OwnerMonitorView.jsx`, `src/components/Monitor/`, `supabase/migrations/`.
