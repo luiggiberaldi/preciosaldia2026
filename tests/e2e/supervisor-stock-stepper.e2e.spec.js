@@ -26,6 +26,8 @@ async function bootInventory(page) {
         localStorage.setItem('pda_paired_device_id', 'e2e-primary-device');
         localStorage.setItem('business_name', 'Negocio E2E Sintético');
         localStorage.setItem('pda_terms_accepted', 'true');
+        // Novedades ya vistas: la ventana «¡Ya tienes lo nuevo!» taparía la prueba.
+        localStorage.setItem('pda_last_seen_version', '9999.0.0');
         localStorage.setItem('pda_onboarding_done', 'true');
         localStorage.setItem('sounds_enabled', 'false');
     });
