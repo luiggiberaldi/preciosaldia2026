@@ -1,7 +1,7 @@
 # CASO-006 — Egress de Realtime: el supervisor deja de recibir documentos enteros
 
 **Fecha:** 2026-11-14
-**Estado:** En curso (código hecho en la rama `fix/egress-realtime`; migraciones **sin aplicar** en producción; **sin publicar**)
+**Estado:** En curso (código hecho en la rama `fix/egress-realtime`; migraciones **aplicadas** en producción el 15-nov-2026; app **sin publicar**)
 **Plan:** [2026-11-14-plan-fixeo-egress-realtime.md](../plans/2026-11-14-plan-fixeo-egress-realtime.md) · **Línea base:** [2026-11-14-baseline-egress-realtime.md](../reports/2026-11-14-baseline-egress-realtime.md)
 
 ## Qué pidió el dueño
@@ -34,7 +34,7 @@ Cambios de diseño respecto al plan, con su razón en el plan y en la bitácora:
 - Realtime con supervisores al día: de cientos de MB a pocos MB (avisos de ~150 B). Las descargas pasan a PostgREST, una por ráfaga y solo con la pestaña visible.
 
 ## Para publicar (en este orden)
-1. Aplicar en producción `supabase/migrations/20261114_realtime_backup_requests.sql` y `supabase/migrations/20261114_sync_document_events.sql`.
+1. ~~Aplicar en producción las dos migraciones~~ Hecho el 15-nov-2026 (ver Verificación).
 2. Unir la rama `fix/egress-realtime` y publicar la app (las cajas y los supervisores se actualizan solos).
 3. Guardar el secreto `SUPABASE_ACCESS_TOKEN` en GitHub para la alarma.
 
@@ -43,7 +43,7 @@ Cambios de diseño respecto al plan, con su razón en el plan y en la bitácora:
 - Supervisor nuevo + migración sin aplicar: detecta que falta la tabla de avisos y sigue como antes.
 
 ## Verificación
-Pruebas nuevas o ajustadas: `egressReportCore` 7, `auditSyncFamily` 10, `cloudSyncAuditProjection` 6, `cloudSyncSalesOpenTail` 3, `realtimePublicationGuardrails` 4, `monitorSyncNotifyEvents` 6, `syncDiagnostics`. Suite completa: 2373 bien, 20 omitidas y 1 falla ajena (`licensePolicy`, que compara copias en otras carpetas del Escritorio; ya fallaba antes, P-011). `vite build` bien. **No verificado en navegador con caja y supervisor reales ni en producción** (pendiente P-014).
+Pruebas nuevas o ajustadas: `egressReportCore` 7, `auditSyncFamily` 10, `cloudSyncAuditProjection` 6, `cloudSyncSalesOpenTail` 3, `realtimePublicationGuardrails` 4, `monitorSyncNotifyEvents` 6, `syncDiagnostics`. Suite completa: 2373 bien, 20 omitidas y 1 falla ajena (`licensePolicy`, que compara copias en otras carpetas del Escritorio; ya fallaba antes, P-011). `vite build` bien. **Producción, 15-nov-2026:** migraciones aplicadas. La publicación ahora tiene `backup_requests` y `sync_document_events` (además de `device_pairings`, `supervisor_commands` y `sync_documents`). Relleno: 481 avisos para 481 docs, 0 desfasados. RLS activa, `authenticated` solo SELECT, `anon` sin permisos. Prueba del trigger dentro de un bloque que se deshace: el aviso tomó la fecha nueva y el doc quedó igual. **No verificado en navegador con caja y supervisor reales** (pendiente P-014, tras publicar).
 
 ## Errores
 Ninguno de la app. Durante el trabajo: una edición dejó finales de línea mezclados y falló una prueba de texto de varias líneas; al normalizarlos pasó (no es un error de la app, no lleva ficha ERR).

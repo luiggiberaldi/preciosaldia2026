@@ -380,3 +380,12 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 **Problema:** `docs-check` avisaba «ERR-012: falta en la tabla resumen de ERRORES.md», pero la fila sí estaba. La regla de la tabla solo aceptaba una palabra sola en la columna de estado, y ERR-012 dice «Resuelto (mitigado)». La de la sección sí lo aceptaba porque lee solo la primera palabra. Además, como no veía la fila, tampoco comparaba su estado con el de la sección.
 **Cambio:** `scripts/docs-check.mjs` acepta una nota entre paréntesis después del estado en la tabla y compara solo la primera palabra, igual que con la sección. Se conserva el «mitigado», que es honesto: el cajero todavía puede elegir «Todo en $» con centavos (el dueño decidió avisar, no bloquear).
 **Verificación:** prueba nueva en `tests/docsCheck.test.js` (acepta la nota y sigue detectando un estado distinto aunque lleve nota): 21/21. `docs-check` sobre el repo ya no muestra ERR-012. El arreglo de ERR-012 sigue en pie: `tests/cobroSugerido.test.js` 11/11.
+
+## 2026-11-15 — Egress: migraciones aplicadas en producción
+
+**Qué:** con el visto bueno del dueño se aplicaron `supabase/migrations/20261114_realtime_backup_requests.sql` y `supabase/migrations/20261114_sync_document_events.sql` (Management API, `database/query`).
+**Antes:** la publicación tenía `device_pairings`, `supervisor_commands` y `sync_documents`; 481 docs.
+**Después:** se suman `backup_requests` y `sync_document_events`. 481 avisos (uno por doc), 0 desfasados, trigger `sync_documents_emit_event` activo, RLS activa, `authenticated` solo SELECT, `anon` sin permisos.
+**Prueba del trigger:** un bloque `DO` movió 1 s la fecha del doc más reciente, leyó el aviso (coincidía) y lanzó un error a propósito para deshacer todo. La fecha real quedó igual. Como se deshizo, Realtime no repartió nada.
+**Efecto hoy:** ninguno visible todavía. Las cajas y supervisores publicados no usan la tabla de avisos; el ahorro empieza al publicar la rama `fix/egress-realtime`.
+**Dato al margen:** los avisos más pesados son `bodega_products_v1` viejos (hasta 583 KB, de julio y octubre) de equipos que ya no escriben. No generan egress mientras nadie los reescriba.
