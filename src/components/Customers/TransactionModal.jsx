@@ -90,15 +90,16 @@ export default function TransactionModal({
 
     return (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-t-3xl sm:rounded-3xl shadow-xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200">
-                <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+            <div data-testid="ajustar-cuenta" className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-t-3xl sm:rounded-3xl shadow-xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 flex flex-col max-h-[100dvh] sm:max-h-[92vh]">
+                <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center shrink-0">
                     <h3 className="text-xl font-black text-slate-800 dark:text-white">Ajustar Cuenta</h3>
                     <button onClick={() => setTransactionModal({ isOpen: false, type: null, customer: null })} className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
                         <X size={20} />
                     </button>
                 </div>
 
-                <div className="p-5 space-y-4">
+                {/* F7: el centro se desplaza si no cabe; título y botón quedan fijos. */}
+                <div className="p-5 space-y-4 overflow-y-auto min-h-0 flex-1">
                     {/* Cliente + Saldo Actual */}
                     <div className="flex items-center justify-between">
                         <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
@@ -226,13 +227,21 @@ export default function TransactionModal({
                                 className="mt-2 w-full py-2 text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800/30 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-all active:scale-95 flex items-center justify-center gap-1.5"
                             >
                                 <CheckCircle2 size={14} />
+                                <span data-testid="pagar-total">
                                 Pagar Total: {currencyMode === 'BS' && bcvRate > 0
-                                    ? `Bs ${formatBs(currentCustomer.deuda * bcvRate)}`
+                                    ? `Bs ${formatBs(currentCustomer.deuda * bcvRate)} ($${formatUsd(currentCustomer.deuda)})`
                                     : currencyMode === 'COP' && tasaCop > 0
-                                    ? `${formatBs(currentCustomer.deuda * tasaCop)} COP`
+                                    ? `${formatBs(currentCustomer.deuda * tasaCop)} COP ($${formatUsd(currentCustomer.deuda)})`
                                     : `USD ${formatUsd(currentCustomer.deuda)}`
                                 }
+                                </span>
                             </button>
+                        )}
+                        {/* F7 (decisión D3): la deuda se lleva en dólares; en Bs cambia con la tasa. */}
+                        {transactionModal.type === 'ABONO' && (currentCustomer.deuda || 0) > 0.01 && currencyMode === 'BS' && (
+                            <p data-testid="deuda-en-dolares" className="mt-1.5 text-[10px] font-medium text-slate-500 dark:text-slate-400 text-center leading-snug">
+                                La deuda es de <strong>${formatUsd(currentCustomer.deuda)}</strong>. En bolívares cambia con la tasa del día.
+                            </p>
                         )}
                         {/* Conversion info */}
                         {currencyMode === 'BS' && transactionAmount && bcvRate > 0 && (
@@ -342,7 +351,7 @@ export default function TransactionModal({
 
                 </div>
 
-                <div className="p-5 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 rounded-b-3xl">
+                <div className="p-5 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 sm:rounded-b-3xl shrink-0">
                     <button
                         onClick={submit}
                         disabled={isMixto ? amtUsd <= 0 : (!transactionAmount || parseFloat(transactionAmount) <= 0)}

@@ -6,6 +6,14 @@ import { showToast } from '../../../Toast';
 import { useClientWallet } from '../hooks/useClientWallet';
 import { restoEnLaOtra, completarCampo, otroEsAutomatico, calcularSugerido } from './changeReparto';
 
+// F7: sin cliente, la opción de billetera abre el selector de cliente (además del aviso).
+// Hay dos selectores (PC y pantalla angosta, uno escondido): se toca el que se ve.
+function abrirSelectorCliente() {
+    const botones = globalThis.document?.querySelectorAll('[data-testid="customer-picker-toggle"]') || [];
+    const visible = Array.from(botones).find(b => b.getClientRects().length > 0);
+    if (visible && visible.getAttribute('aria-expanded') === 'false') visible.click();
+}
+
 export function useCheckoutPosChange({ 
     distVueltoUSD, distVueltoBS, maxVueltoBS, setDistVueltoBS, maxVueltoUSD,
     setDistVueltoUSD, isChangeCredited, walletRemainderUsd, setIsChangeCredited, tasaSegura,
@@ -148,6 +156,7 @@ export function useCheckoutPosChange({
     const restoABilletera = () => {
         if (!clienteSeleccionado) {
             showToast('Elige un cliente para pasar el vuelto a su billetera', 'warning');
+            abrirSelectorCliente();
             return;
         }
         vaciarCampoAuto();
@@ -311,6 +320,7 @@ export function useCheckoutPosChange({
         }
         if (opcion === 'billetera' && !clienteSeleccionado) {
             showToast('Elige un cliente para pasar el vuelto a su billetera', 'warning');
+            abrirSelectorCliente();
             return;
         }
         limpiar();

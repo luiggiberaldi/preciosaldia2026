@@ -1,5 +1,7 @@
 # PLAN DE FIXEO Y MEJORA — CLIENTES, BILLETERA, ABONOS Y DEUDAS
 
+> **Relevo (2026-11-14):** F1–F7 hechas. Dónde quedamos y qué sigue: [HANDOFF-PLAN-CLIENTES-BILLETERA.md](HANDOFF-PLAN-CLIENTES-BILLETERA.md).
+
 **Documento ejecutable.** Cada fase se puede hacer sola, en orden, con su prueba y su commit.
 **Origen:** verificación de punta a punta del 2026-11-14 ([docs/reports/2026-11-14-verificacion-clientes-e2e.md](docs/reports/2026-11-14-verificacion-clientes-e2e.md), commit `3b4a2d1`).
 **Caso a abrir:** CASO-005 (`docs/casos/CASO-005-clientes-billetera.md`).
@@ -78,7 +80,7 @@ Regla para todas las fases: **pantalla nunca decide el dinero**. Toda validació
 3. `closeDaySummary.js`: misma línea en «Fiado a clientes».
 4. Pruebas: fiado $5 con $2 a favor → fiado otorgado 5, cubierto 2.
 
-## F7 — Mejoras de pantalla del cliente
+## F7 — Mejoras de pantalla del cliente ✅ HECHO
 
 1. Selector de cliente en el cobro (`CheckoutCustomerPicker.jsx`): mostrar deuda en rojo además de «Favor $X», y en Bs a la tasa del día (D3).
 2. Ventana de abono: botón «Pagar total» también en $ cuando el modo es Bs (hoy solo en la moneda activa) y aviso cuando la tasa cambió desde la venta fiada: «La deuda es $10; hoy son Bs 500 (cuando se fió eran Bs 400)».
@@ -118,7 +120,7 @@ Guía: `side-session-notes/…/PORTAR-A-FARMACIA-clientes-billetera.md`. Llevar 
 | F4 ✅ | Cierre: pagado con saldo a favor | Baja | Pequeño | — |
 | F5 ✅ | Abono mixto | Mejora | Mediano | — |
 | F6 ✅ | Fiado cubierto con saldo en reportes | Baja | Mediano | — |
-| F7 | Mejoras de pantalla del cliente | Mejora | Mediano | F3 |
+| F7 ✅ | Mejoras de pantalla del cliente | Mejora | Mediano | F3 |
 | F8 | E2E faltantes | Seguridad | Mediano | F2, F3, F4 |
 | F9 | Portar a Farmacia | — | Mediano | F1–F4 |
 | F10 | Batería, docs y commits | — | Pequeño | todas |

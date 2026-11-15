@@ -29,11 +29,11 @@ async function iniciar(page) {
         extraInitScripts: [`try { localStorage.setItem('checkout_mode', 'pos'); localStorage.removeItem('checkout_shell_v2'); localStorage.setItem('checkout_smallest_usd_bill','1'); localStorage.setItem('checkout_bs_round_step','0'); } catch (_) {}`],
     });
     await page.goto('/');
-    await expect(page.locator('[data-tour="tab-ventas"]').first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[data-tour="tab-ventas"]:visible').first()).toBeVisible({ timeout: 30_000 });
 }
 
 async function abrirCobro(page, productos) {
-    await page.locator('[data-testid="sidenav-ventas"]').click();
+    await page.locator('[data-tour="tab-ventas"]:visible').first().click();
     await expect(page.getByRole('heading', { name: 'Caja Cerrada' })).toHaveCount(0, { timeout: 15_000 });
     for (const nombre of productos) {
         const b = buscador(page);
@@ -64,7 +64,9 @@ async function confirmarYCerrarRecibo(page, revisarRecibo = null) {
 
 const cliente = async (page, nombre) => ((await readIdb(page, 'bodega_customers_v1')) || []).find(c => c.name === nombre);
 
-test('Sin cliente, la opción de billetera del vuelto está apagada', async ({ page }) => {
+// En PC (≥1024 px) y en pantalla angosta hay un selector de cliente distinto: se prueban los dos.
+for (const ancho of [1366, 900]) test(`Sin cliente, la opción de billetera del vuelto está apagada (${ancho} px)`, async ({ page }) => {
+    await page.setViewportSize({ width: ancho, height: 768 });
     await iniciar(page);
     await abrirCobro(page, ['Caraota E2E']); // $5
     await billete(page, 10).click();
@@ -73,12 +75,19 @@ test('Sin cliente, la opción de billetera del vuelto está apagada', async ({ p
     await billetera.click();
     await expect(page.getByText('Elige un cliente para pasar el vuelto a su billetera')).toBeVisible();
     await expect(botonCobrar(page)).toContainText('CONFIRMA EL CAMBIO');
+    // F7: además del aviso, se abre el selector de cliente.
+    await expect(page.locator('[data-testid="customer-picker-toggle"]:visible')).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('button:visible', { hasText: 'Juan E2E' }).first()).toBeVisible();
+    if (process.env.CLIENTES_SHOTS) await page.screenshot({ path: `${process.env.CLIENTES_SHOTS}/billetera-sin-cliente-${ancho}.png` });
 });
 
 test('Vuelto «A su billetera»: $5 de vuelto suben el saldo a favor de Juan de $18,50 a $23,50', async ({ page }) => {
     await iniciar(page);
     await abrirCobro(page, ['Caraota E2E']); // $5
     await elegirCliente(page, 'Juan E2E');
+    // F7: el saldo del cliente se ve también en Bs a la tasa del día.
+    await expect(page.locator('[data-testid="customer-balance-chip"]:visible')).toHaveText('Favor $18.50 · Bs 740,00');
+    if (process.env.CLIENTES_SHOTS) await page.screenshot({ path: `${process.env.CLIENTES_SHOTS}/selector-chip.png` });
     await billete(page, 10).click();
     await page.getByRole('button', { name: 'A su billetera' }).click();
     await expect(botonCobrar(page)).toContainText('COBRAR $5.00');
@@ -128,8 +137,15 @@ test('Crédito parcial → abono mayor que la deuda → compra con el saldo a fa
     await irA(page, 'clientes');
     await page.getByPlaceholder('Buscar cliente...').fill('María');
     await page.getByText('María Prueba').first().click();
+    // F7: el historial explica el fiado parcial.
+    await expect(page.getByTestId('historial-fiado_parcial').first()).toHaveText('Pagó $2.00 · fió $3.00');
+    if (process.env.CLIENTES_SHOTS) await page.screenshot({ path: `${process.env.CLIENTES_SHOTS}/historial-notas.png` });
     await page.getByText('Ajustar Cuenta').first().click();
     await page.getByRole('button', { name: /Recibir Abono/ }).click();
+    // F7: en Bs, aviso de que la deuda se lleva en dólares.
+    await expect(page.getByTestId('deuda-en-dolares')).toContainText('La deuda es de $3.00');
+    // F7: «Pagar Total» en Bs muestra también los dólares.
+    await expect(page.getByTestId('pagar-total')).toHaveText('Pagar Total: Bs 120,00 ($3.00)');
     await page.getByRole('button', { name: 'USD', exact: true }).click();
     await page.getByPlaceholder('0.00').last().fill('5');
     await page.getByRole('button', { name: /^Abonar / }).click();
@@ -213,6 +229,9 @@ test('Abono mixto: $2 + Bs 200 saldan una deuda de $7 en un solo abono (F5)', as
     await expect(page.getByTestId('abono-mixto-total')).toHaveText('$7.00 USD');
     const abonar = page.getByRole('button', { name: /^Abonar \$2\.00 \+ Bs 200,00/ });
     await expect(abonar).toBeEnabled();
+    // F7: a 1366×768 el título y el botón se ven sin desplazar (el centro es el que se desplaza).
+    await expect(page.getByTestId('ajustar-cuenta').getByText('Ajustar Cuenta')).toBeInViewport();
+    await expect(abonar).toBeInViewport();
     if (process.env.CLIENTES_SHOTS) await page.screenshot({ path: `${process.env.CLIENTES_SHOTS}/abono-mixto.png` });
     await abonar.click();
 

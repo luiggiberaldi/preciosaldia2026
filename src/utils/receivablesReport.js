@@ -64,7 +64,7 @@ const isInternalCreditPayment = (p) => p && (p.methodId === 'saldo_favor' || p.i
  * se descuenta lo pagado con saldo en la misma venta (se aplica antes que el fiado).
  * Ventas viejas sin foto y Cashea (no pasa por la cartera del cliente) = 0.
  */
-function fiadoCoveredByCredit(sale, fiadoUsd) {
+export function fiadoCoveredByCredit(sale, fiadoUsd) {
     if (sale?.tipo !== 'VENTA_FIADA') return 0;
     const favorAntes = Number(sale.walletSnapshot?.favorAntes) || 0;
     if (favorAntes <= 0) return 0;

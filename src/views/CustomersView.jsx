@@ -10,6 +10,7 @@ import { applyCustomerMovement } from '../services/customerWalletService';
 import { CUSTOMER_MOVEMENT_TYPES, CUSTOMER_LEDGER_KEY } from '../utils/customerLedger';
 import { buildCustomerCreditLens, fiadoCustomerIds } from '../utils/customerCreditLens';
 import TransactionModal from '../components/Customers/TransactionModal';
+import { saleWalletNotes } from '../utils/customerBalanceText';
 import { processCustomerTransaction } from '../utils/customerTransactionProcessor';
 import { processCasheaRemittance } from '../utils/casheaRemittanceProcessor';
 import CasheaRemittanceModal from '../components/Customers/CasheaRemittanceModal';
@@ -1144,6 +1145,12 @@ function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, on
                                                         {isAnulada ? 'Saldo a favor revertido' : 'Saldo a favor generado por sobrante'}: +${formatUsd(sale.saldoFavorGeneradoUsd)}
                                                     </p>
                                                 )}
+                                                {/* F7: pago con saldo, fiado parcial y fiado cubierto con saldo. */}
+                                                {saleWalletNotes(sale).map(note => (
+                                                    <p key={note.key} data-testid={`historial-${note.key}`} className={`text-[10px] font-bold mt-1 ${isAnulada ? 'text-slate-400 line-through' : note.key === 'fiado_parcial' ? 'text-amber-600 dark:text-amber-400' : 'text-cyan-600 dark:text-cyan-400'}`}>
+                                                        {note.text}
+                                                    </p>
+                                                ))}
                                                 <p className="text-[9px] text-stone-400 mt-1">{dateStr} • {timeStr}</p>
                                             </div>
                                         </div>
