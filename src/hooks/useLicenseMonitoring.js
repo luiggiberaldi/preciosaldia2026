@@ -5,6 +5,14 @@ import { graceMillisFor, remainingDays } from '../config/licensePolicy';
 
 const PRODUCT_ID = 'bodega';
 
+/**
+ * Consultas seguidas que deben confirmar que la fila de licencia NO existe
+ * antes de quitar el acceso (licencia borrada en la Estación). Con el latido de
+ * 3 min son ~6 min: tolera una respuesta suelta rara sin dejar la caja premium
+ * para siempre.
+ */
+export const MISSING_LICENSE_LIMIT = 3;
+
 // Module scope: cache subscriptions when multiple hooks are mounted in parallel
 const activeSubscriptions = new Map(); // deviceId -> { channel, count, callbacks: Set<function> }
 
@@ -28,15 +36,30 @@ export function useLicenseMonitoring({
     useEffect(() => {
         if (!deviceId || !import.meta.env.VITE_SUPABASE_URL) return;
 
+        const revoke = (message) => {
+            localStorage.removeItem('pda_premium_token');
+            localStorage.removeItem('pda_license_cache');
+            onRevoked(message);
+        };
+
+        // Respuestas seguidas que confirmaron que la fila no existe.
+        let missingCount = 0;
+
         const verifyStatus = async () => {
             try {
                 let license = null;
+                // «No existe» solo cuenta si el RPC (SECURITY DEFINER, ve la fila
+                // aunque RLS la oculte) y el SELECT responden sin error y vacíos.
+                // Un error o una excepción nunca cuentan: sin red no se quita nada.
+                let rpcConfirmedEmpty = false;
                 try {
                     const { data, error: rpcErr } = await supabase.rpc('get_license_status', { p_device_id: deviceId });
-                    if (!rpcErr && data) {
+                    if (!rpcErr) {
                         const record = Array.isArray(data) ? data[0] : data;
                         if (record) {
                             license = record;
+                        } else {
+                            rpcConfirmedEmpty = true;
                         }
                     }
                 } catch (rpcEx) {
@@ -51,7 +74,19 @@ export function useLicenseMonitoring({
                         .eq('product_id', PRODUCT_ID)
                         .maybeSingle();
                     license = data;
+
+                    if (!license) {
+                        if (rpcConfirmedEmpty && !error) {
+                            missingCount++;
+                            if (missingCount >= MISSING_LICENSE_LIMIT && isPremium) {
+                                missingCount = 0;
+                                revoke("No encontramos la licencia de este equipo. Contacta al administrador.");
+                            }
+                        }
+                        return;
+                    }
                 }
+                missingCount = 0;
 
                 if (license && (license.is_active === false || license.type === 'revoked') && isPremium) {
                     localStorage.removeItem('pda_premium_token');
@@ -78,6 +113,15 @@ export function useLicenseMonitoring({
                             localStorage.removeItem('pda_premium_token');
                             localStorage.removeItem('pda_license_cache');
                             onRevoked("Tu suscripción mensual ha expirado y el período de gracia de 5 días ha finalizado. Por favor, regulariza tu pago.");
+                            return;
+                        }
+                    }
+
+                    // Permanente con vencimiento: licensePolicy.js lo respeta sin gracia.
+                    if (license.type === 'permanent' && license.expires_at) {
+                        const expiresAt = new Date(license.expires_at).getTime();
+                        if (Date.now() >= expiresAt && isPremium) {
+                            revoke("Tu licencia ha vencido. Contacta al administrador.");
                             return;
                         }
                     }
