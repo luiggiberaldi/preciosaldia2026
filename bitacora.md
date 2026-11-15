@@ -351,3 +351,10 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 **Decisiones del dueño:** ninguna todavía. Propuestas en el plan: cajas en la app de escritorio o Android (no PWA pura, por las restricciones del navegador con la red local), LAN para cobrar + nube para respaldo y Supervisor, y mismo repo con interruptor.
 **Casos y errores:** ninguno. El caso se abre al empezar F0.
 **Verificación:** no aplica (solo documento).
+
+## 2026-11-14 — Nómina: listas desplegables con bordes redondeados
+
+**Contexto:** el dueño pidió que el menú de «Se le paga» tenga bordes redondeados. Un `<select>` nativo no lo permite: su menú lo dibuja el sistema.
+**Cambios:** «Se le paga» (`Payroll/EmployeeFormModal.jsx`) y «Forma de pago» (`Payroll/PayrollEntryModal.jsx`) usan el `CustomSelect` de la app. `CustomSelect.jsx` acepta un `testId` opcional (no cambia nada para quien no lo pasa). La e2e `nomina` abre la lista y toca la opción.
+**Casos y errores:** CASO-005.
+**Verificación:** e2e `nomina` 2/2, con capturas revisadas de las dos listas abiertas. ESLint sin errores.

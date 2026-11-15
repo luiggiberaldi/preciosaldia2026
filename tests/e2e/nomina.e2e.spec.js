@@ -54,7 +54,11 @@ test('Nómina: adelanto en efectivo, pago en Bs, anular y caja de vuelta', async
     await page.getByTestId('employee-new').click();
     await page.getByTestId('employee-nombre').fill('María E2E');
     await page.getByTestId('employee-sueldo').fill('100');
-    await page.getByTestId('employee-frecuencia').selectOption('quincenal');
+    // Lista desplegable propia (bordes redondeados): se abre y se toca la opción.
+    await page.getByTestId('employee-frecuencia').click();
+    await page.screenshot({ path: 'test-results/nomina-lista-frecuencia.png' });
+    await page.getByTestId('employee-frecuencia-option-quincenal').click();
+    await expect(page.getByTestId('employee-frecuencia')).toHaveAttribute('data-value', 'quincenal');
     await page.getByTestId('payroll-pin').fill(PIN);
     await page.getByTestId('employee-save').click();
     const fila = page.getByTestId('payroll-employee-row').filter({ hasText: 'María E2E' });
@@ -66,7 +70,7 @@ test('Nómina: adelanto en efectivo, pago en Bs, anular y caja de vuelta', async
     await expect(page.getByTestId('payroll-detail-saldo')).toContainText('$100');
     await page.getByTestId('payroll-action-ADELANTO').click();
     await page.getByTestId('payroll-monto').fill('10');
-    await expect(page.getByTestId('payroll-metodo')).toHaveValue('efectivo_usd');
+    await expect(page.getByTestId('payroll-metodo')).toHaveAttribute('data-value', 'efectivo_usd');
 
     // PIN equivocado: no se registra nada.
     await page.getByTestId('payroll-pin').fill('999999');
@@ -88,7 +92,10 @@ test('Nómina: adelanto en efectivo, pago en Bs, anular y caja de vuelta', async
     await page.getByTestId('payroll-action-PAGO').click();
     await page.getByTestId('payroll-moneda-BS').click();
     await expect(page.getByTestId('payroll-monto')).toHaveValue('3600');
-    await page.getByTestId('payroll-metodo').selectOption('pago_movil');
+    await page.getByTestId('payroll-metodo').click();
+    await page.screenshot({ path: 'test-results/nomina-lista-metodo.png' });
+    await page.getByTestId('payroll-metodo-option-pago_movil').click();
+    await expect(page.getByTestId('payroll-metodo')).toHaveAttribute('data-value', 'pago_movil');
     await page.getByTestId('payroll-pin').fill(PIN);
     await page.getByTestId('payroll-entry-submit').click();
     await expect(page.getByTestId('payroll-entry-done')).toContainText('$90');

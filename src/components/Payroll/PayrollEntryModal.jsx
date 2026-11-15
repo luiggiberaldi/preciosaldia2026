@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Modal } from '../Modal';
 import PinField from './PinField';
+import CustomSelect from '../CustomSelect';
+import { selectBtnCls } from './EmployeeFormModal';
 import { ENTRY_TYPE_LABELS, MONEY_OUT_TYPES } from '../../utils/payrollModel';
 import { isCashMethodId } from '../../utils/gastoInterno';
 import { formatBs, formatUsd } from '../../utils/calculatorUtils';
@@ -130,9 +132,13 @@ export default function PayrollEntryModal({ isOpen, tipo, employee, balance, rat
                 {isMoney && (
                     <label className="block">
                         <span className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Forma de pago</span>
-                        <select className={inputCls} value={metodoId} onChange={e => setMetodoId(e.target.value)} data-testid="payroll-metodo">
-                            {methods.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-                        </select>
+                        <CustomSelect
+                            testId="payroll-metodo"
+                            value={metodoId}
+                            onChange={setMetodoId}
+                            options={methods.map(m => ({ value: m.id, label: m.label }))}
+                            buttonClassName={selectBtnCls}
+                        />
                         <span className="block text-xs text-slate-500 mt-1">
                             {efectivo ? 'Sale de la gaveta: necesita la caja abierta.' : 'No sale de la gaveta; igual aparece en el cierre como «Nómina».'}
                         </span>

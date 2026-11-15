@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Modal } from '../Modal';
 import PinField from './PinField';
+import CustomSelect from '../CustomSelect';
 import { FRECUENCIAS, FRECUENCIA_LABELS } from '../../utils/payrollModel';
 
 const EMPTY = { nombre: '', cedula: '', cargo: '', telefono: '', sueldoUsd: '', frecuencia: 'quincenal', fechaIngreso: '', nota: '' };
 
 const inputCls = 'w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white font-semibold';
+// Lista desplegable con bordes redondeados (un <select> nativo no los permite en su menú).
+export const selectBtnCls = '!bg-white dark:!bg-slate-800 !border-slate-200 dark:!border-slate-700 !shadow-none !px-3 !py-2.5 !text-base !text-slate-800 dark:!text-white';
 
 function Field({ label, children }) {
     return (
@@ -62,9 +65,13 @@ export default function EmployeeFormModal({ isOpen, employee, onClose, onSave })
                         <input className={inputCls} type="number" inputMode="decimal" min="0" step="0.01" value={form.sueldoUsd} onChange={set('sueldoUsd')} data-testid="employee-sueldo" />
                     </Field>
                     <Field label="Se le paga">
-                        <select className={inputCls} value={form.frecuencia} onChange={set('frecuencia')} data-testid="employee-frecuencia">
-                            {FRECUENCIAS.map(f => <option key={f} value={f}>{FRECUENCIA_LABELS[f]}</option>)}
-                        </select>
+                        <CustomSelect
+                            testId="employee-frecuencia"
+                            value={form.frecuencia}
+                            onChange={(v) => setForm(f => ({ ...f, frecuencia: v }))}
+                            options={FRECUENCIAS.map(f => ({ value: f, label: FRECUENCIA_LABELS[f] }))}
+                            buttonClassName={selectBtnCls}
+                        />
                     </Field>
                 </div>
                 {sueldoCambia && (
