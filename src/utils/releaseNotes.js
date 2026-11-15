@@ -39,6 +39,29 @@ export function formatearFecha(iso) {
 
 const LAST_SEEN_KEY = 'pda_last_seen_version';
 
+/**
+ * Última versión SIN novedades: las cajas que vienen de ella nunca guardaron
+ * `pda_last_seen_version`, porque el aviso con notas llegó en 2.0.6.
+ */
+export const VERSION_ANTES_DE_NOVEDADES = '2.0.5';
+
+/**
+ * Desde qué versión mostrar novedades.
+ *  - Con versión vista guardada: esa.
+ *  - Sin ella pero con la caja ya en uso (aceptó los términos): viene de una
+ *    versión sin aviso de novedades, así que se le muestran las de después.
+ *  - Instalación nueva: null (no hay nada «nuevo» que contarle).
+ */
+export function versionDesdeNovedades(vista, instalacionEnUso) {
+  if (vista) return vista;
+  return instalacionEnUso ? VERSION_ANTES_DE_NOVEDADES : null;
+}
+
+/** La caja ya se usaba antes de esta carga (aceptó los términos). */
+export function instalacionEnUso() {
+  try { return localStorage.getItem('pda_terms_accepted') === 'true'; } catch { return false; }
+}
+
 export function leerUltimaVersionVista() {
   try { return localStorage.getItem(LAST_SEEN_KEY); } catch { return null; }
 }

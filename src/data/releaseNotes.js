@@ -13,6 +13,16 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: '2.0.6',
+    fecha: '2026-11-15',
+    mejoras: [
+      { icono: 'inicio', titulo: 'Pantalla nueva', texto: 'Menú a un lado, pantalla completa y un inicio más claro.' },
+      { icono: 'carrito', titulo: 'Vender y cobrar más fácil', texto: 'Buscador mejorado, ventana de pago más clara y el vuelto bien anotado en $ y Bs.' },
+      { icono: 'dinero', titulo: 'Nómina de tus empleados', texto: 'En Gestión anota adelantos, pagos, bonos y lo que se lleva cada empleado.' },
+      { icono: 'factura', titulo: 'IVA en tus tickets', texto: 'Marca productos exentos y el IVA sale desglosado en el ticket y el cierre.' },
+    ],
+  },
+  {
     version: '2.0.5',
     fecha: '2026-10-29',
     mejoras: [

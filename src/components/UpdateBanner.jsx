@@ -6,6 +6,8 @@ import {
     formatearFecha,
     leerUltimaVersionVista,
     guardarUltimaVersionVista,
+    versionDesdeNovedades,
+    instalacionEnUso,
 } from '../utils/releaseNotes';
 
 // Nombre (texto) -> ícono. Las notas llegan como JSON, por eso se guardan por nombre.
@@ -27,9 +29,9 @@ export function UpdateBanner() {
     const [remoteNotes, setRemoteNotes] = useState(null);
     const [showOlder, setShowOlder] = useState(false);
     const [whatsNew, setWhatsNew] = useState(() => {
-        const seen = leerUltimaVersionVista();
-        if (!seen) { guardarUltimaVersionVista(CURRENT_VERSION); return []; }
-        return notasPendientes(RELEASE_NOTES, seen, CURRENT_VERSION);
+        const desde = versionDesdeNovedades(leerUltimaVersionVista(), instalacionEnUso());
+        if (!desde) { guardarUltimaVersionVista(CURRENT_VERSION); return []; }
+        return notasPendientes(RELEASE_NOTES, desde, CURRENT_VERSION);
     });
     const fetched = useRef(false);
 
