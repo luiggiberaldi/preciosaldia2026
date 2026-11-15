@@ -5,6 +5,14 @@ Aprendizajes reutilizables van a `inteligencia.md`.
 
 ---
 
+## 2026-11-15 — Licencias: aviso remoto de cambio de ID para separar un ID compartido (P-020)
+
+- Nuevo buzón `identity_migration_orders` (migración `20261115_identity_migration_orders.sql`, **aplicada**): tabla cerrada, solo service_role crea avisos; la caja solo ve y completa avisos de su propia sesión (`auth.uid()`).
+- La caja revisa su aviso al abrir y cada 30 min, solo si ya tiene sesión; si su ID actual es el viejo, adopta el nuevo con `migrateDeviceIdentity({ newDeviceId, expectedCurrentId })`. No borra datos ni toca la licencia del ID viejo.
+- Publicado en producción: commit `0552a69` en `main` (rama `fix/aviso-cambio-id`, desde la versión publicada, sin el resto del trabajo sin publicar). Vercel `dpl_3f3YT1jjNg6Gc3kfzsUrZZesXktp`.
+- Prueba real con el equipo de prueba (sesión `8c42499b`): `…36EE3855` → `…BED0F3A9` a las 20:24:55 UTC, aviso cumplido, licencia `ACTIV-BED0-F3A9` creada antes; el usuario confirmó ID, premium y datos en pantalla.
+- Cosméticos: licencia `ACTIV-49CF-C294` («cosméticos») y aviso para la sesión `8bc85903` creados; cambia al abrir o recargar la caja. Identificación: es la sesión que usa `…CB675980` sin tener su identidad ni subir respaldos; «bueno y sano» es `d20bcf79` (Telemic) y sube el respaldo (282 productos de víveres).
+
 ## 2026-09-29 — fix(respaldos): errores honestos en useAutoBackup, fallback muerto eliminado
 
 **Problema:** el pipeline de respaldos remotos era silencioso. `performBackup()` tragaba
@@ -358,3 +366,35 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 **Cambios:** «Se le paga» (`Payroll/EmployeeFormModal.jsx`) y «Forma de pago» (`Payroll/PayrollEntryModal.jsx`) usan el `CustomSelect` de la app. `CustomSelect.jsx` acepta un `testId` opcional (no cambia nada para quien no lo pasa). La e2e `nomina` abre la lista y toca la opción.
 **Casos y errores:** CASO-005.
 **Verificación:** e2e `nomina` 2/2, con capturas revisadas de las dos listas abiertas. ESLint sin errores.
+
+## 2026-11-15 — Licencias: la caja corta una licencia borrada o vencida, y la política se iguala con la Estación (P-011)
+
+**Contexto:** el dueño pidió resolver P-011, las 3 pruebas de licencias que llevaban días en rojo. No eran pruebas rotas: señalaban dos problemas reales.
+**Cambios:** `src/hooks/useLicenseMonitoring.js`: si la fila de licencia ya no existe (se borró en la Estación), la caja quita el acceso tras 3 consultas seguidas (`MISSING_LICENSE_LIMIT`, ~6 min con el latido de 3 min). Solo cuenta como «borrada» cuando el RPC `get_license_status` (SECURITY DEFINER) y el SELECT responden sin error y vacíos; sin red no se quita nada. Además, una permanente con vencimiento ya pasado se corta, como dice `licensePolicy.js`. `src/config/licensePolicy.js`: se trae la copia de la Estación Maestra (`139e33c`, 31-10), igual a la de Farmacia: precio de Farmacia ($300 / $20) y gracia mensual configurable. Para Bodega no cambia nada (no pasa `graceDays` y sus precios son los mismos). `tests/licensePolicy.test.js`: nuevo SHA anclado y precio de Farmacia.
+**Casos y errores:** P-011 pasa a Hechos.
+**Verificación:** suite completa 2401 pasan, 1 falla y 16 omitidas. La que falla es la comparación con los checkouts vecinos: el worktree `pad-egress-realtime` aún tiene la copia vieja de la política, y se igualará al unir `fix/egress-realtime`. ESLint 0 errores (los avisos ya estaban). No verificado en una caja real con una licencia borrada.
+
+## 2026-11-15 — Revisión de licencias y migraciones para cerrar la lectura pública (P-018)
+
+**Contexto:** el dueño pidió buscar licencias revocadas o eliminadas sospechosas y, con su permiso, se leyó la base en vivo en solo lectura (Management API, cada consulta en una transacción `read only`).
+**Hallazgos:** no se borró ninguna licencia desde el 22-10 (respaldo local comparado con 555 filas vivas); las 9 desactivaciones de pago desde entonces son pruebas del dueño; las 11 permanentes activas tienen el código normal y su fila en `cloud_licenses`; no hay duplicados ni intentos fallidos de entrar a la Estación. Lo grave es de seguridad: `licenses` y `backup_requests` son legibles con la clave pública, y `backup_requests` además se puede borrar. También se vio que `20261106_backup_identity_seed_and_monthly.sql` no está aplicada (P-019) y que `verify_activation_code` no compara el código, solo mira `cloud_licenses`.
+**Cambios:** nuevas `supabase/migrations/20261115_licenses_cerrar_lectura_publica.sql` y `20261115_backup_requests_solo_propias.sql` (sin aplicar), con su reversión en el encabezado. Nueva prueba `tests/licenseRlsMigrationsSql.test.js`. Entradas P-018 y P-019 en `PENDIENTES.md`.
+**Verificación:** `licenseRlsMigrationsSql` 7/7. El SQL no se probó contra una base: aplicarlo y verificar en una caja real es P-018.
+
+## 2026-11-15 — Seguridad: aplicadas en producción las migraciones de licenses y backup_requests (P-018)
+
+**Qué:** con el visto bueno del dueño se aplicaron `20261115_backup_requests_solo_propias.sql` y `20261115_licenses_cerrar_lectura_publica.sql` (Management API).
+**Después:** `backup_requests` queda con `backup_requests_admin_write`, `backup_requests_own_select` y `backup_requests_own_update`; `licenses` solo con `licenses_own_device_read`.
+**Prueba con la clave pública (anon):** leer `licenses` → `[]`; leer `backup_requests` → `[]`; un borrado no afecta filas; `get_license_status` de Bodega (1 argumento) y de Farmacia (2 argumentos) devuelven la permanente activa; `verify_activation_code` → `true`; equipo inexistente → `[]`. Filas intactas: 555 licencias y 43 solicitudes.
+**Falta:** ver en una caja real que abre premium y que un «Solicitar respaldo» de la Estación se completa.
+
+## 2026-11-15 — Documentación: planes y reportes de la raíz pasan a docs/ (P-006)
+
+**Cambios:** 26 archivos movidos con `git mv`, sin cambiarles el nombre (el código y las pruebas los citan por nombre): 20 `PLAN-*`, `REBRAND-PLAN` y `HANDOFF-PLAN-CLIENTES-BILLETERA` a `docs/plans/`; `REPORTE-*`, `M5-*` y `CASO-DESCUADRE-*` a `docs/reports/`. 60 enlaces corregidos con un script (los que apuntaban a estos archivos y los internos que partían de la raíz), más 2 menciones «(raíz)» en `docs/ERRORES.md` y 1 en `AGENT.md`.
+**Verificación:** revisión de todos los enlaces de los `.md` del repo antes y después: ningún enlace roto nuevo (quedan 13 rotos de antes, contra 25). Sin cambios de código.
+
+## 2026-11-15 — Nómina F6: mercancía que se lleva el empleado (P-012)
+
+**Decisiones del dueño:** el precio es una opción de Ajustes (costo o venta, de fábrica costo); pide PIN; F7 (resumen en el Supervisor) espera a que se publique `fix/egress-realtime`.
+**Cambios:** movimiento `MERCANCIA` en `utils/payrollModel.js` (`evaluateGoods`, `readGoodsValuation`, `goodsSummary`; resta del saldo y arrastra la deuda si se pasa). `registerGoods` en `services/payrollService.js` (stock + retiro de inventario sin tocar la gaveta + renglón, con vuelta atrás), y `voidEntry`/`recoverPayroll` devuelven el stock. Nueva tarjeta Ajustes › Negocio › Nómina y nueva pantalla `PayrollGoodsModal.jsx`; recibo con los productos. Clave `payroll_goods_valuation` en `LS_KEYS`. Detalle en CASO-005 § F6.
+**Verificación:** Vitest `payrollGoods` (nuevo) y nómina completa 101/101; Playwright `nomina.e2e.spec.js` 3/3 con capturas revisadas. ESLint sin errores. No verificado: impresora térmica real (P-010).
