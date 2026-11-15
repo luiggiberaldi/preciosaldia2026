@@ -17,6 +17,10 @@
 | P-007 | Arreglar el tema oscuro en Vender (precios y total casi invisibles, ERR-008) | CASO-003 | Descartado (2026-11-14): no se usará tema oscuro |
 | P-008 | Probar Vender con varias categorías y con las fotos reales de los productos | CASO-003 | Pendiente |
 | P-009 | Probar el cobro en una laptop táctil real (teclado numérico), la impresora térmica y el ticket PDF con referencia de pago, y el cuadre del cierre con ventas reales de varios días | CASO-004 | Pendiente |
+| P-010 | Probar la nómina en el equipo real: recibo en la impresora térmica, PDF enviado por WhatsApp, y el cierre de un día con un adelanto en efectivo y un pago por pago móvil | CASO-005 | Pendiente |
+| P-011 | Revisar 3 pruebas de licencias que fallan sin relación con la nómina: `licenseMonitoringMissing` (2; archivo nuevo de otra sesión, aún sin confirmar) y `licensePolicy` (compara contra la copia de otra carpeta del Escritorio) | CASO-005 | Pendiente |
+| P-012 | Fases opcionales de la nómina: F6 (mercancía que se lleva el empleado, descontada del sueldo) y F7 (resumen de solo lectura en el Supervisor) | CASO-005 | Pendiente (el dueño las dejó para después) |
+| P-013 | Multicaja por red local (LAN): una PC servidor con el stock, los fiados y los turnos de todas las cajas; Supervisor a través del servidor | Plan del 2026-11-14 | Pendiente (falta que el dueño decida P-L1 a P-L7) |
 
 ---
 
@@ -55,6 +59,16 @@ ERR-008: en tema oscuro las fichas siguen claras y el precio en $ y el total de 
 ## P-008 · Vender con varias categorías y fotos reales
 
 En CASO-003 no se pudo ver en pantalla el caso con varias categorías (los datos de prueba solo tenían «General») ni las fichas con fotos reales (las de prueba fallan y salen iniciales). Probarlo con el inventario real del dueño antes de publicar.
+
+## P-013 · Multicaja por red local (LAN)
+
+Plan completo: [docs/plans/2026-11-14-plan-multicaja-lan.md](docs/plans/2026-11-14-plan-multicaja-lan.md). Es la alternativa por red local al plan de la nube ([2026-11-13-plan-preciosaldia-multicaja.md](docs/plans/2026-11-13-plan-preciosaldia-multicaja.md)).
+
+- **Qué es:** la app de escritorio de una PC hace de servidor (con su propia base) y las demás cajas le piden todo por la red del local. Se puede vender sin internet; la nube queda para respaldos y el Modo Supervisor, que se vincula con el servidor.
+- **Por qué no como PWA pura:** el navegador no deja que una página HTTPS hable con `http://192.168.x.x`, y el modo sin internet exige HTTPS. Las cajas serían la app de escritorio o la app Android; la PWA sigue igual para el negocio de una caja.
+- **Usuarios actuales:** no cambia nada; todo va detrás del interruptor `modo = 'lan'`.
+- **Antes de empezar:** el dueño decide P-L1 a P-L7 (sección 12 del plan), entre ellas solo LAN o LAN + nube, el precio por caja y el certificado de firma del instalador.
+- **Tamaño:** unas 11,5 semanas (≈2,5–3 meses) en 8 fases.
 
 ---
 

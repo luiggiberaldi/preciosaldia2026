@@ -329,3 +329,25 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 **Cambios:** `src/utils/customerBalanceText.js` (nuevo): texto del saldo («Debe $5.00 · Bs 200,00» en rojo / «Favor $3.00 · Bs 120,00» en verde) y notas del historial («Pagó con su saldo a favor», «Pagó $2.00 · fió $3.00», «El fiado lo cubrió su saldo a favor»). `CheckoutCustomerPicker.jsx` usa ese texto en el cobro. `useCheckoutPosChange.js`: «Billetera: elige cliente» sin cliente abre el selector de cliente además del aviso (toca el selector que se ve: hay uno para PC y otro para pantalla angosta). `TransactionModal.jsx`: «Ajustar Cuenta» con título y botón fijos y el centro desplazable (a 1366×768 ya no se corta), aviso «La deuda es de $X. En bolívares cambia con la tasa del día» y «Pagar Total» en Bs muestra también los dólares. `CustomersView.jsx` muestra las notas en el historial. `receivablesReport.js` exporta `fiadoCoveredByCredit`.
 **Simplificado del plan:** el aviso «cuando se fió eran Bs 400» no se hizo (la deuda puede venir de varios fiados con tasas distintas); el historial se basa en las ventas, no en los movimientos del ledger, así que los nombres van como notas de cada venta.
 **Verificación:** `customerBalanceText.test.js` 7/7; cartera y reportes 74/74; e2e `clientes-billetera` 7/7 (nueva a 900 px para el selector de pantalla angosta), capturas revisadas: selector con el saldo en Bs, historial con «Pagó $2.00 · fió $3.00», abono «$ y Bs» entero a 1366×768.
+
+## 2026-11-14 — Plan de «Nómina simple» para Bodega
+
+**Contexto:** el dueño pidió el plan para añadir la nómina, partiendo del estudio de Donde Juancho pero corregida (sin sus errores E1–E3) y adaptada a Bodega.
+**Cambios:** nuevo `docs/plans/2026-11-14-plan-nomina-simple-bodega.md`, con fases F0–F4 del núcleo y F6–F7 opcionales. Decisiones del dueño D1–D8: la frecuencia la elige cada empleado; el sueldo va en $ y se paga en $ o Bs con la tasa de la tienda; los consumos de mercancía quedan para después; los adelantos los da solo el Administrador; solo se anula lo del turno abierto; no se paga más que el saldo sin confirmar (la diferencia se arrastra al periodo siguiente); nada en el Supervisor por ahora; bono y descuento manuales por defecto. Sin cambios de código.
+**Casos y errores:** ninguno todavía. El caso se abre al empezar F0.
+**Verificación:** no aplica (solo documento).
+
+## 2026-11-14 — Nómina simple en «Gestión» (fases F0 a F4)
+
+**Contexto:** el dueño pidió ejecutar el plan de nómina fase a fase. A mitad del trabajo decidió (D9) que la nómina va en la pestaña «Clientes», que pasa a llamarse «Gestión». También decidió que la tasa en Bs no se edita, que el recibo sale en ticket y en PDF y que los gastos viejos de «Personal» se dejan como están.
+**Cambios:** F0 «Gastos internos» con candado, lectura fresca, redondeo, actor, caja abierta para efectivo y confirmación al guardar (`utils/gastoInterno.js`, `services/gastosInternosService.js`, `hooks/useGastosInternos.js`). F1 modelo puro (`utils/payrollModel.js`). F2 servicio con PIN, idempotencia, anular sin movimiento al revés y recuperación tras un corte (`services/payrollService.js`), más las claves en `config/backupKeys.js`. F3 pestaña «Gestión» (`App.jsx`, `MiniNav.jsx`, `CommandPalette.jsx`, `OnboardingOverlay.jsx`), sub-pestañas `components/Gestion/GestionTabs.jsx`, pantalla `components/Payroll/*`, recibo `utils/payrollReceipt.js` y la categoría «Nómina» en Reportes y en el cierre. F4 e2e `tests/e2e/nomina.e2e.spec.js`. Ajuste al plan: el pago por pago móvil se guarda con `afectaCaja: true`, como todo gasto, para que salga en el cierre (el método decide si toca la gaveta). Detalle en CASO-005.
+**Casos y errores:** CASO-005. Sin errores nuevos de la app. P-010 (prueba en el equipo real), P-011 (3 pruebas de licencias que ya fallaban, ajenas a este trabajo) y P-012 (fases opcionales F6 y F7).
+**Verificación:** Vitest de nómina y gastos 45/45 (`gastosInternosService` 9, `payrollModel` 19, `payrollService` 14, `payrollUi` 3). E2E `nomina` 2/2, con capturas revisadas. Suite completa: 2393 pasan y 3 fallan, las de licencias de P-011. ESLint sin errores en los archivos tocados. No verificado: impresora térmica real ni PDF en el celular.
+
+## 2026-11-14 — Plan de multicaja por red local (LAN), anotado como pendiente
+
+**Contexto:** el dueño preguntó qué faltaba para tener multicaja por LAN, si se podía hacer como PWA, qué cambiaba para los usuarios actuales y si seguía el Modo Supervisor. Pidió dejar el plan escrito como pendiente.
+**Cambios:** nuevo `docs/plans/2026-11-14-plan-multicaja-lan.md` (fases F0–F7, barandas L1–L8, decisiones P-L1 a P-L7). Nueva entrada P-013 en `PENDIENTES.md`. Sin cambios de código.
+**Decisiones del dueño:** ninguna todavía. Propuestas en el plan: cajas en la app de escritorio o Android (no PWA pura, por las restricciones del navegador con la red local), LAN para cobrar + nube para respaldo y Supervisor, y mismo repo con interruptor.
+**Casos y errores:** ninguno. El caso se abre al empezar F0.
+**Verificación:** no aplica (solo documento).
