@@ -192,12 +192,32 @@ export function useAutoBackup(isPremium, isDemo, deviceId, backupAllowed = false
         performBackupRef.current = performBackup;
     }, [performBackup]);
 
+    // El respaldo programado ya no falla en silencio: el resultado se guarda
+    // localmente (diagnóstico en la caja) y los errores se registran en consola.
+    const runScheduledBackup = useCallback(async () => {
+        const result = await performBackupRef.current?.();
+        if (!result) return;
+        const skipped = !result.ok && /Ya respaldó hoy|Sin cambios|Sin datos|solo con licencia/.test(String(result.error));
+        if (skipped) return;
+        try {
+            localStorage.setItem('bodega_last_backup_attempt', JSON.stringify({
+                at: new Date().toISOString(),
+                ok: !!result.ok,
+                destination: result.destination || null,
+                error: result.ok ? null : String(result.error || 'error desconocido').slice(0, 300),
+            }));
+        } catch {
+            // Sin almacenamiento disponible: solo queda el registro en consola.
+        }
+        if (!result.ok) console.error('[AutoBackup] Respaldo programado falló:', result.error);
+    }, []);
+
     useEffect(() => {
         // Primer backup 30s después del arranque
-        initialTimerRef.current = setTimeout(() => performBackupRef.current?.(), 30000);
+        initialTimerRef.current = setTimeout(() => runScheduledBackup(), 30000);
 
         // Backup cada 30 minutos
-        intervalRef.current = setInterval(() => performBackupRef.current?.(), BACKUP_INTERVAL_MS);
+        intervalRef.current = setInterval(() => runScheduledBackup(), BACKUP_INTERVAL_MS);
 
         return () => {
             if (initialTimerRef.current) clearTimeout(initialTimerRef.current);
@@ -335,7 +355,10 @@ export function useAutoBackup(isPremium, isDemo, deviceId, backupAllowed = false
                 supabaseCloud.removeChannel(channel).catch(() => {});
             }
         };
-    }, [deviceId]);
+        // La licencia se verifica DESPUÉS de publicar deviceId (useSecurity): con
+        // solo [deviceId] el oyente salía en el primer render (sin licencia aún) y
+        // nunca se montaba. Ninguna solicitud de la Estación se completó jamás.
+    }, [deviceId, isDemo, backupAllowed]);
 }
 
 // Restaurar desde backup local (para emergencias).

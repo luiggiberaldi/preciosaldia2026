@@ -52,12 +52,24 @@ describe('cloud backup upload', () => {
         );
     });
 
-    it('does not write when the device session cannot be registered', async () => {
+    it('without a device session it skips the direct write and falls back to the relay', async () => {
         ensureDeviceSessionRegistered.mockResolvedValue({ ok: false, error: { message: 'identity failed' } });
+        relayUploadBackup.mockResolvedValue({ ok: true, relayed: true });
 
         const result = await uploadCompressedBackupToCloud('PDA-DEVICE-01', { compressed: true });
 
-        expect(result).toEqual({ ok: false, error: 'identity failed' });
+        expect(result).toEqual({ ok: true, destination: 'relay' });
+        expect(relayUploadBackup).toHaveBeenCalledWith('PDA-DEVICE-01', { compressed: true });
+        expect(query.upsert).not.toHaveBeenCalled();
+    });
+
+    it('reports both causes when the session and the relay fail', async () => {
+        ensureDeviceSessionRegistered.mockResolvedValue({ ok: false, error: { message: 'identity failed' } });
+        relayUploadBackup.mockResolvedValue({ ok: false, relayed: false, error: 'forbidden' });
+
+        const result = await uploadCompressedBackupToCloud('PDA-DEVICE-01', { compressed: true });
+
+        expect(result).toEqual({ ok: false, error: 'identity failed (relay: forbidden)' });
         expect(query.upsert).not.toHaveBeenCalled();
     });
 });
