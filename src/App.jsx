@@ -26,6 +26,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { useOfflineQueue } from './hooks/useOfflineQueue';
 import { useAutoBackup } from './hooks/useAutoBackup';
 import { useRemoteCommands } from './hooks/useRemoteCommands';
+import { useIdentityMigrationOrder } from './hooks/useIdentityMigrationOrder';
 import CommandPalette from './components/CommandPalette';
 import LockScreen from './components/security/LockScreen';
 import { useAutoLock } from './hooks/useAutoLock';
@@ -112,6 +113,9 @@ export default function App() {
 
   // Inicializar Sincronización Realtime con Supabase (device_id como clave)
   useCloudSync(isMonitorMode ? null : deviceId);
+
+  // Aviso remoto de cambio de ID dirigido a esta instalación (ID compartido).
+  useIdentityMigrationOrder(isMonitorMode ? null : deviceId);
 
   // Detectar iOS Safari (no standalone) para mostrar instrucciones manuales
   const isIOS = useMemo(() => /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream, []);
