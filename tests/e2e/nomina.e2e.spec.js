@@ -160,3 +160,60 @@ test('Gastos internos: un gasto de nómina no se anula desde la lista de gastos'
     await expect(page.locator('button[title="Anular gasto"]')).toHaveCount(0);
     await page.screenshot({ path: 'test-results/nomina-gastos-internos.png' });
 });
+
+// P-012 · F6: mercancía que se lleva el empleado, a precio de venta (opción de Ajustes).
+test('Nómina: mercancía del empleado baja stock y saldo, y al anular vuelve todo', async ({ page }) => {
+    await abrirNomina(page);
+    const stock = async (id) => ((await readIdb(page, 'bodega_products_v1')) || []).find(p => p.id === id)?.stock;
+    expect(await stock('p_caraota')).toBe(10);
+
+    // Ajustes › Negocio › Nómina: de fábrica es «costo»; se cambia a «venta».
+    await navTab(page, 'ajustes').click();
+    await page.getByTestId('settings-tab-negocio').click();
+    await expect(page.getByTestId('payroll-valuation-costo')).toHaveAttribute('aria-checked', 'true');
+    await page.getByTestId('payroll-valuation-venta').click();
+    await expect(page.getByTestId('payroll-valuation-venta')).toHaveAttribute('aria-checked', 'true');
+    expect(await page.evaluate(() => localStorage.getItem('payroll_goods_valuation'))).toBe('venta');
+    await page.getByTestId('payroll-valuation-venta').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: 'test-results/nomina-ajustes-mercancia.png' });
+    await navTab(page, 'clientes').click();
+    await page.getByTestId('gestion-tab-nomina').click();
+
+    await page.getByTestId('employee-new').click();
+    await page.getByTestId('employee-nombre').fill('Carla E2E');
+    await page.getByTestId('employee-sueldo').fill('50');
+    await page.getByTestId('payroll-pin').fill(PIN);
+    await page.getByTestId('employee-save').click();
+    await page.getByTestId('payroll-employee-row').filter({ hasText: 'Carla E2E' }).click();
+
+    // Se lleva 2 Caraotas a precio de venta ($5 c/u).
+    await page.getByTestId('payroll-action-MERCANCIA').click();
+    await expect(page.getByTestId('payroll-goods-valuation')).toContainText('precio de venta');
+    await page.getByTestId('payroll-goods-search').fill('caraota');
+    await page.getByTestId('payroll-goods-result').first().click();
+    await page.getByLabel('Cantidad de Caraota E2E').fill('2');
+    await expect(page.getByTestId('payroll-goods-total')).toContainText('$10');
+    await page.screenshot({ path: 'test-results/nomina-mercancia-form.png' });
+    await page.getByTestId('payroll-pin').fill(PIN);
+    await page.getByTestId('payroll-goods-submit').click();
+    await expect(page.getByTestId('payroll-goods-done')).toContainText('$10');
+    await page.getByRole('button', { name: 'Listo' }).click();
+
+    await expect(page.getByTestId('payroll-detail-saldo')).toContainText('$40');
+    await expect(page.getByTestId('payroll-detail')).toContainText('Mercancía');
+    await expect(page.getByTestId('payroll-entry-row').filter({ hasText: 'Mercancía' })).toContainText('2 × Caraota E2E');
+    expect(await stock('p_caraota')).toBe(8);
+    const [mov] = await nominaMovs(page);
+    expect(mov).toMatchObject({ isAutoconsumo: true, afectaCaja: false, category: 'nomina', totalUsd: -10, valoracion: 'venta' });
+    await page.screenshot({ path: 'test-results/nomina-mercancia-detalle.png', fullPage: true });
+
+    // Anular: el stock vuelve y el saldo también.
+    const filaMerc = page.getByTestId('payroll-entry-row').filter({ hasText: 'Mercancía' });
+    await filaMerc.getByTestId('payroll-entry-void').click();
+    await page.getByTestId('payroll-pin').fill(PIN);
+    await page.getByTestId('payroll-pin-confirm').click();
+    await expect(filaMerc).toContainText('ANULADO');
+    await expect(page.getByTestId('payroll-detail-saldo')).toContainText('$50');
+    expect(await stock('p_caraota')).toBe(10);
+    expect((await nominaMovs(page))[0]).toMatchObject({ status: 'ANULADA', stockDevuelto: true });
+});

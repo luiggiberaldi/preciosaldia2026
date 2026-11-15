@@ -9,7 +9,7 @@
 
 import { escapeHtml, openPrintWindow } from './printerUtils';
 import { formatBs, formatUsd } from './calculatorUtils';
-import { ENTRY_TYPE_LABELS, FRECUENCIA_LABELS, periodLabel } from './payrollModel';
+import { ENTRY_TYPE_LABELS, FRECUENCIA_LABELS, GOODS_TYPE, GOODS_VALUATION_LABELS, periodLabel } from './payrollModel';
 import { getPaymentLabel } from '../config/paymentMethods';
 
 function businessSettings() {
@@ -34,6 +34,10 @@ export function buildPayrollReceiptData({ entry, employee, saldoDespuesUsd, busi
         ['Concepto', ENTRY_TYPE_LABELS[entry.tipo] || entry.tipo],
     ];
     if (entry.metodoId) rows.push(['Forma de pago', methodLabel || getPaymentLabel(entry.metodoId) || entry.metodoId]);
+    if (entry.tipo === GOODS_TYPE && Array.isArray(entry.items)) {
+        rows.push(['Precio', GOODS_VALUATION_LABELS[entry.valoracion] || 'Precio de costo']);
+        for (const i of entry.items) rows.push([`${i.qty} × ${i.name}`, `$${formatUsd(i.subtotalUsd)}`]);
+    }
     const montoPrincipal = entry.moneda === 'BS' ? `Bs ${formatBs(entry.montoBs)}` : `$${formatUsd(entry.montoUsd)}`;
     const montoSecundario = entry.moneda === 'BS'
         ? `Equivale a $${formatUsd(entry.montoUsd)} (tasa ${entry.tasa})`
@@ -49,7 +53,7 @@ export function buildPayrollReceiptData({ entry, employee, saldoDespuesUsd, busi
         saldo: `Queda por pagar en el periodo: $${formatUsd(Math.max(0, saldoDespuesUsd ?? 0))}`,
         nota: entry.nota || '',
         anulado: entry.status === 'ANULADO',
-        firma: entry.tipo === 'ADELANTO' || entry.tipo === 'PAGO',
+        firma: entry.tipo === 'ADELANTO' || entry.tipo === 'PAGO' || entry.tipo === GOODS_TYPE,
         actor: entry.actor || '',
     };
 }

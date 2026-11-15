@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Store, Coins, Check, Tag } from 'lucide-react';
 import { SectionCard, Toggle } from '../../SettingsShared';
 import BrandLogoSettings from '../BrandLogoSettings';
+import PayrollSettingsCard from '../../Payroll/PayrollSettingsCard';
 import { generarPreviewLabel } from '../../../utils/labelGenerator';
 
 
@@ -273,6 +274,9 @@ export default function SettingsTabNegocio({
                     </div>
                 </div>
             </SectionCard>
+
+            {/* Nómina: precio de la mercancía de empleados (P-012, F6) */}
+            <PayrollSettingsCard triggerHaptic={triggerHaptic} />
 
             {/* Monedas COP */}
             <SectionCard icon={Coins} title="Peso Colombiano (COP)" subtitle="Habilitar pagos y cálculos en COP" iconColor="text-amber-500">

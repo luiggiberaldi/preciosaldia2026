@@ -24,11 +24,12 @@ import { withLock } from '../utils/withLock';
 import { writeVerifiedValue } from '../utils/verifiedWrite';
 import { findOpenCashShift, isRecordInOpenCashShift } from '../utils/cashShift';
 import { buildGastoInternoRecord, isCashMethodId } from '../utils/gastoInterno';
-import { SALES_KEY, POS_LOCK, appendSalesRecordsUnlocked, confirmSalesRecords } from './gastosInternosService';
+import { SALES_KEY, PRODUCTS_KEY, POS_LOCK, appendSalesRecordsUnlocked, confirmSalesRecords } from './gastosInternosService';
+import { isGranelProduct, adjustStockValue } from '../utils/granel';
 import {
-    EMPLOYEES_KEY, PAYROLL_ENTRIES_KEY, PAYROLL_CATEGORY, MONEY_OUT_TYPES, ENTRY_TYPE_LABELS,
+    EMPLOYEES_KEY, PAYROLL_ENTRIES_KEY, PAYROLL_CATEGORY, MONEY_OUT_TYPES, ENTRY_TYPE_LABELS, GOODS_TYPE,
     normalizeEmployeeInput, periodIdFor, nextPeriodId, computePeriodBalance, frozenSalaryUsd,
-    evaluateEntry, canVoidEntry, payrollMovementDescription,
+    evaluateEntry, evaluateGoods, readGoodsValuation, goodsSummary, canVoidEntry, payrollMovementDescription,
 } from '../utils/payrollModel';
 
 const newId = (prefix) => `${prefix}_${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${Math.random().toString(36).slice(2)}`}`;
@@ -46,6 +47,49 @@ function defaults(ctx = {}) {
         getRate: ctx.getRate || (() => 0),
         audit: ctx.audit || (() => {}),
         newId: ctx.newId || newId,
+        getValuation: ctx.getValuation || (() => readGoodsValuation()),
+        allowNegative: ctx.allowNegative || (() => {
+            try { return globalThis.localStorage?.getItem('allow_negative_stock') === 'true'; } catch { return false; }
+        }),
+    };
+}
+
+/** Mueve el stock de los productos de la lista: `sign` −1 retira, +1 devuelve. */
+function applyStock(products, items, sign, allowNegative) {
+    const byId = new Map(items.map(i => [i.id, i]));
+    return products.map(p => {
+        const item = byId.get(p?.id);
+        if (!item) return p;
+        const next = adjustStockValue(p.stock ?? 0, sign * item.qty, isGranelProduct(p));
+        return { ...p, stock: sign < 0 && !allowNegative ? Math.max(0, next) : next };
+    });
+}
+
+/** Renglón de deuda que pasa al periodo siguiente cuando un movimiento se pasa del saldo. */
+function buildArrastre({ c, employee, entries, periodoId, entryId, excedenteUsd, admin, nowIso, idempotencyKey }) {
+    const siguiente = nextPeriodId(periodoId);
+    return {
+        id: c.newId('nom'),
+        employeeId: employee.id,
+        periodoId: siguiente,
+        periodoOrigenId: periodoId,
+        arrastreDe: entryId,
+        sueldoPeriodoUsd: frozenSalaryUsd(entries, employee, siguiente),
+        tipo: 'DESCUENTO',
+        origen: 'ARRASTRE',
+        montoUsd: excedenteUsd,
+        moneda: 'USD',
+        montoBs: null,
+        tasa: null,
+        metodoId: null,
+        saleDeGaveta: null,
+        movimientoCajaId: null,
+        nota: `Deuda del periodo ${periodoId}`,
+        status: 'ACTIVO',
+        actor: actorName(admin),
+        actorId: admin?.id ?? null,
+        timestamp: nowIso,
+        idempotencyKey: `${idempotencyKey}:arrastre`,
     };
 }
 
@@ -248,30 +292,10 @@ export async function registerEntry(input, ctx = {}) {
         let arrastre = null;
         const nuevos = [entry];
         if (ev.excedenteUsd > 0) {
-            const siguiente = nextPeriodId(periodoId);
-            arrastre = {
-                id: c.newId('nom'),
-                employeeId: employee.id,
-                periodoId: siguiente,
-                periodoOrigenId: periodoId,
-                arrastreDe: entryId,
-                sueldoPeriodoUsd: frozenSalaryUsd(entries, employee, siguiente),
-                tipo: 'DESCUENTO',
-                origen: 'ARRASTRE',
-                montoUsd: ev.excedenteUsd,
-                moneda: 'USD',
-                montoBs: null,
-                tasa: null,
-                metodoId: null,
-                saleDeGaveta: null,
-                movimientoCajaId: null,
-                nota: `Deuda del periodo ${periodoId}`,
-                status: 'ACTIVO',
-                actor: actorName(admin),
-                actorId: admin?.id ?? null,
-                timestamp: nowIso,
-                idempotencyKey: `${input.idempotencyKey}:arrastre`,
-            };
+            arrastre = buildArrastre({
+                c, employee, entries, periodoId, entryId, excedenteUsd: ev.excedenteUsd, admin, nowIso,
+                idempotencyKey: input.idempotencyKey,
+            });
             nuevos.push(arrastre);
         }
 
@@ -300,8 +324,132 @@ export async function registerEntry(input, ctx = {}) {
 }
 
 /**
+ * Registra la mercancía que se lleva un empleado (F6, pide PIN): baja el stock,
+ * deja un retiro de inventario en las ventas (no toca la gaveta) y un renglón
+ * que resta del saldo. El precio sale de Ajustes › Nómina (costo o venta).
+ *
+ * Orden de escritura, igual que un adelanto: 1.º stock + movimiento, 2.º renglón.
+ * Si el renglón no se pudo guardar, se devuelve el stock y se anula el movimiento.
+ *
+ * @returns {Promise<{ entry, movement, arrastre, duplicate: boolean, sales: Array|null }>}
+ */
+export async function registerGoods(input, ctx = {}) {
+    const c = defaults(ctx);
+    const admin = await requireAdmin(c);
+
+    return c.lock(POS_LOCK, async () => {
+        const { employees, entries } = await readAll(c.storage);
+
+        const existing = entries.find(e => e.idempotencyKey && e.idempotencyKey === input?.idempotencyKey);
+        if (existing) return { entry: existing, movement: null, arrastre: null, duplicate: true, sales: null };
+
+        const employee = employees.find(e => e.id === input?.employeeId);
+        if (!employee) throw new Error('No se encontró el empleado.');
+        if (employee.activo === false) throw new Error('El empleado está desactivado.');
+
+        const now = c.now();
+        const nowIso = now.toISOString();
+        const periodoId = periodIdFor(now, employee.frecuencia);
+        const balance = computePeriodBalance(entries, employee, periodoId);
+        const tasa = Number(c.getRate()) || 0;
+        const allowNegative = !!c.allowNegative();
+        const products = asList(await c.storage.getItem(PRODUCTS_KEY, []));
+        const ev = evaluateGoods({ input, products, balance, tasa, valuation: c.getValuation(), allowNegative });
+
+        const entryId = c.newId('nom');
+        const resumen = goodsSummary(ev.items);
+        const nota = String(input.nota ?? '').trim().slice(0, 200);
+        const movement = {
+            id: c.newId('gasto_nom'),
+            timestamp: nowIso,
+            tipo: 'GASTO_INTERNO',
+            category: PAYROLL_CATEGORY,
+            // Es un retiro de inventario: el cierre lo muestra con los retiros y la
+            // gaveta no lo cuenta (no salió dinero).
+            isAutoconsumo: true,
+            isPayroll: true,
+            payrollEntryId: entryId,
+            employeeId: employee.id,
+            periodoId,
+            afectaCaja: false,
+            cajaCerrada: false,
+            valoracion: ev.valoracion,
+            description: `${payrollMovementDescription(GOODS_TYPE, employee, periodoId)}: ${resumen}`.slice(0, 200),
+            note: nota,
+            totalUsd: -ev.montoUsd,
+            totalBs: -ev.montoBs,
+            paymentMethod: 'autoconsumo',
+            payments: [{ methodId: 'autoconsumo', amountUsd: -ev.montoUsd, amountBs: -ev.montoBs, currency: 'USD', methodLabel: 'Mercancía de nómina' }],
+            items: ev.items.map(i => ({ id: i.id, name: i.name, qty: i.qty, costUsd: i.costUsd, priceUsd: i.priceUsd })),
+            actor: actorName(admin),
+            actorId: admin?.id ?? null,
+        };
+
+        // 1.º stock y movimiento (lectura fresca de productos dentro del candado).
+        await c.storage.setItem(PRODUCTS_KEY, applyStock(products, ev.items, -1, allowNegative));
+        let sales;
+        try {
+            sales = await appendSalesRecordsUnlocked(c.storage, [movement]);
+        } catch (err) {
+            const fresh = asList(await c.storage.getItem(PRODUCTS_KEY, []));
+            await c.storage.setItem(PRODUCTS_KEY, applyStock(fresh, ev.items, +1, true));
+            throw err;
+        }
+
+        const entry = {
+            id: entryId,
+            employeeId: employee.id,
+            periodoId,
+            sueldoPeriodoUsd: frozenSalaryUsd(entries, employee, periodoId),
+            tipo: GOODS_TYPE,
+            origen: 'MANUAL',
+            montoUsd: ev.montoUsd,
+            moneda: 'USD',
+            montoBs: ev.montoBs,
+            tasa: ev.tasa,
+            metodoId: null,
+            saleDeGaveta: false,
+            movimientoCajaId: movement.id,
+            valoracion: ev.valoracion,
+            items: ev.items.map(i => ({ id: i.id, name: i.name, qty: i.qty, unitUsd: i.unitUsd, subtotalUsd: i.subtotalUsd })),
+            nota,
+            saldoAntesUsd: ev.saldoAntesUsd,
+            status: 'ACTIVO',
+            actor: actorName(admin),
+            actorId: admin?.id ?? null,
+            timestamp: nowIso,
+            idempotencyKey: input.idempotencyKey,
+        };
+        const arrastre = ev.excedenteUsd > 0
+            ? buildArrastre({ c, employee, entries, periodoId, entryId, excedenteUsd: ev.excedenteUsd, admin, nowIso, idempotencyKey: input.idempotencyKey })
+            : null;
+
+        // 2.º el renglón, sobre la lista COMPLETA y fresca.
+        try {
+            await writeVerifiedValue(c.storage, PAYROLL_ENTRIES_KEY, [...entries, entry, ...(arrastre ? [arrastre] : [])]);
+        } catch (err) {
+            try {
+                const freshProducts = asList(await c.storage.getItem(PRODUCTS_KEY, []));
+                await c.storage.setItem(PRODUCTS_KEY, applyStock(freshProducts, ev.items, +1, true));
+                const freshSales = asList(await c.storage.getItem(SALES_KEY, []));
+                await c.storage.setItem(SALES_KEY, freshSales.map(s => (s.id === movement.id
+                    ? { ...s, status: 'ANULADA', voidedAt: nowIso, voidedBy: 'Vuelta atrás automática', stockDevuelto: true } : s)));
+            } catch { /* recoverPayroll lo arregla al abrir Nómina */ }
+            throw new Error('No se pudo guardar la mercancía del empleado. No se registró nada; intenta de nuevo.', { cause: err });
+        }
+
+        c.audit('NOMINA', GOODS_TYPE,
+            `Mercancía a ${employee.nombre} (${periodoId}), a ${ev.valoracion}: $${ev.montoUsd.toFixed(2)} · ${resumen}`
+            + (arrastre ? ` · queda debiendo $${arrastre.montoUsd.toFixed(2)}` : ''));
+
+        return { entry, movement, arrastre, duplicate: false, sales };
+    });
+}
+
+/**
  * Anula un movimiento (pide PIN). Marca el renglón, su deuda arrastrada y su
- * movimiento de caja. Solo dinero del turno abierto (decisión D5).
+ * movimiento de caja. Solo dinero del turno abierto (decisión D5). Si era
+ * mercancía, devuelve el stock.
  */
 export async function voidEntry(entryId, ctx = {}) {
     const c = defaults(ctx);
@@ -320,7 +468,16 @@ export async function voidEntry(entryId, ctx = {}) {
 
         let updatedSales = null;
         if (movement && movement.status !== 'ANULADA') {
-            const voidedMov = { ...movement, status: 'ANULADA', voidedAt: nowIso, voidedBy: actorName(admin), voidedById: admin?.id ?? null };
+            const isGoods = entry.tipo === GOODS_TYPE && Array.isArray(movement.items);
+            if (isGoods) {
+                // La mercancía vuelve al inventario (lectura fresca, dentro del candado).
+                const freshProducts = asList(await c.storage.getItem(PRODUCTS_KEY, []));
+                await c.storage.setItem(PRODUCTS_KEY, applyStock(freshProducts, movement.items, +1, true));
+            }
+            const voidedMov = {
+                ...movement, status: 'ANULADA', voidedAt: nowIso, voidedBy: actorName(admin), voidedById: admin?.id ?? null,
+                ...(isGoods ? { stockDevuelto: true } : {}),
+            };
             updatedSales = sales.map(s => (s.id === movement.id ? voidedMov : s));
             await c.storage.setItem(SALES_KEY, updatedSales);
             await confirmSalesRecords(c.storage, [voidedMov]);
@@ -355,12 +512,22 @@ export async function recoverPayroll(ctx = {}) {
         const huerfanos = sales.filter(s => s?.isPayroll && s.status !== 'ANULADA' && !entryIds.has(s.payrollEntryId));
         if (huerfanos.length) {
             const ids = new Set(huerfanos.map(h => h.id));
-            const fixed = sales.map(s => (ids.has(s.id) ? { ...s, status: 'ANULADA', voidedAt: nowIso, voidedBy: 'Recuperación automática' } : s));
+            // Mercancía a medias: el stock ya bajó, se devuelve.
+            const goods = huerfanos.filter(h => h.isAutoconsumo && Array.isArray(h.items)).flatMap(h => h.items);
+            if (goods.length) {
+                const freshProducts = asList(await c.storage.getItem(PRODUCTS_KEY, []));
+                await c.storage.setItem(PRODUCTS_KEY, applyStock(freshProducts, goods, +1, true));
+            }
+            const fixed = sales.map(s => (ids.has(s.id) ? {
+                ...s, status: 'ANULADA', voidedAt: nowIso, voidedBy: 'Recuperación automática',
+                ...(s.isAutoconsumo ? { stockDevuelto: true } : {}),
+            } : s));
             await c.storage.setItem(SALES_KEY, fixed);
             await confirmSalesRecords(c.storage, fixed.filter(s => ids.has(s.id)));
         }
 
-        const sinMovimiento = entries.filter(e => e.status === 'ACTIVO' && MONEY_OUT_TYPES.has(e.tipo) && e.movimientoCajaId && !salesIds.has(e.movimientoCajaId));
+        const sinMovimiento = entries.filter(e => e.status === 'ACTIVO' && (MONEY_OUT_TYPES.has(e.tipo) || e.tipo === GOODS_TYPE)
+            && e.movimientoCajaId && !salesIds.has(e.movimientoCajaId));
         if (sinMovimiento.length) {
             const ids = new Set(sinMovimiento.map(e => e.id));
             await writeVerifiedValue(c.storage, PAYROLL_ENTRIES_KEY, entries.map(e => (

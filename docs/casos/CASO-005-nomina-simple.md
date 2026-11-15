@@ -39,3 +39,18 @@ El plan decía guardar el pago por pago móvil con `afectaCaja: false`. Al leer 
 - Playwright: `nomina.e2e.spec.js` 2 de 2. Crea el empleado, da un adelanto de $10 en efectivo, rechaza un PIN equivocado, paga los $90 restantes en Bs por pago móvil (Bs 3.600 a tasa 40), deja el periodo «Pagado», anula el adelanto (la caja vuelve y el saldo reaparece) y lo comprueba de nuevo tras recargar. También revisa que el gasto de nómina no se pueda anular desde Gastos internos. Capturas en `test-results/nomina-*.png`.
 - Suite completa de Vitest: pasan 2393 pruebas. Fallan 3 de licencias que no dependen de este trabajo: `licenseMonitoringMissing` (2) y `licensePolicy`, que compara contra una copia en otra carpeta del Escritorio. En una corrida anterior también falló una vez «planRemoteSale G1»; en la siguiente pasó.
 - **No verificado:** impresora térmica real, PDF abierto en el celular y uso con una caja real (P-010).
+
+## F6 · Mercancía que se lleva el empleado (2026-11-15, P-012)
+
+**Qué pidió el dueño:** hacer P-012. Decidió que el precio de la mercancía sea **una opción en Ajustes** (costo o venta), que **pida el PIN** del Administrador como los adelantos y pagos, y que **F7** (resumen en el Supervisor) **espere** a que se publique el arreglo de egress.
+
+**Qué se hizo:**
+- Nuevo movimiento `MERCANCIA` en `utils/payrollModel.js`: resta del saldo como un descuento (`mercanciaUsd` en el saldo del periodo) y, si se pasa, pide confirmar y deja la deuda en el periodo siguiente (D6). `evaluateGoods` valida con los productos frescos: que existan, que no estén repetidos, la cantidad, el stock (salvo «permitir stock negativo») y que tengan precio a esa valoración.
+- `registerGoods` en `services/payrollService.js`, bajo el mismo candado: 1.º baja el stock y guarda un retiro de inventario en las ventas (`isAutoconsumo: true`, `afectaCaja: false`, categoría «Nómina»); 2.º el renglón. Si el renglón falla, devuelve el stock y anula el retiro. Idempotente.
+- Anular (`voidEntry`) devuelve el stock; solo si la caja de ese retiro sigue abierta, igual que un adelanto. `recoverPayroll` también devuelve el stock de un retiro que quedó sin renglón tras un corte.
+- Ajustes › Negocio › tarjeta «Nómina» (`components/Payroll/PayrollSettingsCard.jsx`), clave `payroll_goods_valuation`, de fábrica «costo». Entra en el respaldo (`LS_KEYS`); no va a la nube.
+- Pantalla: botón «Se lleva mercancía» en el detalle del empleado (`components/Payroll/PayrollGoodsModal.jsx`), línea «Mercancía» en el saldo, el detalle de productos en cada renglón y en el recibo (que pide firma).
+
+**Dónde se ve:** la gaveta no cambia. El cierre lo muestra con los retiros de inventario. Reportes › Gastos lo suma a «Nómina».
+
+**Verificación:** Vitest `payrollGoods` 17 pruebas nuevas, y nómina completa 101/101. Playwright `nomina.e2e.spec.js` 3/3: elige «Precio de venta» en Ajustes, 2 Caraotas a $5 → saldo de $50 a $40 y stock de 10 a 8; al anular, saldo $50 y stock 10. Capturas `test-results/nomina-mercancia-*.png` y `nomina-ajustes-mercancia.png`. **No verificado:** recibo en impresora térmica real (P-010).

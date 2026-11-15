@@ -148,7 +148,7 @@ Cada fase es **un commit aparte**, con sus pruebas y su entrada de bitácora. Es
 | **F3** | Renombrar «Clientes» a «Gestión» + sub-pestaña Nómina + recibo + «Nómina» en Reportes y cierre + bloqueo de anular desde Gastos internos | `App.jsx`, `MiniNav.jsx`, `CustomersView.jsx`, `components/Payroll/*` nuevos, `ReportsExpensesTab.jsx`, `dailyCloseGenerator.js`, lista de gastos | 2 días | Medio | F2 |
 | **F4** | Arnés e2e (Playwright): abrir caja → crear empleado → adelanto en efectivo → pago en Bs → cierre cuadra → anular → cierre vuelve a cuadrar → respaldo y restauración | `tests/e2e/nomina.e2e.spec.js` | 1 día | Bajo | F3 |
 | F5 | Revisión con el dueño en el equipo real (impresora térmica, tasa del día) | — | ½ día | — | F4 |
-| F6 *(opcional, D3)* | Mercancía que se lleva el empleado, descontada del sueldo (reutiliza `registrarAutoconsumo`) | — | 2 días | Medio (inventario) | F4 |
+| F6 *(opcional, D3)* — **hecha 2026-11-15** | Mercancía que se lleva el empleado, descontada del sueldo a costo o a venta según Ajustes, con PIN (ver CASO-005 § F6) | — | 2 días | Medio (inventario) | F4 |
 | F7 *(opcional, D7)* | Resumen de nómina de solo lectura en el Supervisor | — | Mediano | Medio (nube, lista blanca SQL y JS) | F4 |
 
 **Núcleo (F0–F4): unos 6–7 días de trabajo.** Orden: F0 → F1 → F2 → F3 → F4 → F5.

@@ -21,9 +21,9 @@ Es la **caja registradora de una bodega venezolana**. Vende, descuenta del inven
 | **Inicio** (`inicio`) | Resumen del día, apertura y cierre de caja, efectivo esperado | [Cierre de caja](modulos/CIERRE-DE-CAJA.md) |
 | **Vender** (`ventas`) | Cesta, cobro, vuelto, recibo | [Venta](modulos/VENTA.md) |
 | **Inventario** (`catalogo`) | Productos, precios, stock | [Inventario](modulos/INVENTARIO.md) |
-| **Clientes** (`clientes`) | Deudas (fiado), abonos, saldo a favor | — (sin documento aún) |
+| **Gestión** (`clientes`) | Clientes (fiado, abonos, saldo a favor), proveedores y **Nómina** (solo Administrador: adelantos, pagos, bonos, descuentos y mercancía que se lleva el empleado) | [CASO-005](../casos/CASO-005-nomina-simple.md) |
 | **Reportes** (`reportes`) | Ventas y ganancia por período. Solo Administrador | — |
-| **Ajustes** (`ajustes`) | Negocio, usuarios, sistema, licencia, supervisor. Solo Administrador | — |
+| **Ajustes** (`ajustes`) | Negocio (incluye Nómina: precio de la mercancía de empleados), usuarios, sistema, licencia, supervisor. Solo Administrador | — |
 
 Además existen la vista del dueño (**Supervisor / Monitor**) y la calculadora.
 

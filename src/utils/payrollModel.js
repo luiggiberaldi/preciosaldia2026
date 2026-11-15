@@ -24,12 +24,19 @@ export const PAYROLL_ENTRIES_KEY = 'bodega_payroll_entries_v1';
 export const FRECUENCIAS = ['semanal', 'quincenal', 'mensual'];
 export const FRECUENCIA_LABELS = { semanal: 'Semanal', quincenal: 'Quincenal', mensual: 'Mensual' };
 
-export const ENTRY_TYPES = ['ADELANTO', 'PAGO', 'BONO', 'DESCUENTO'];
-export const ENTRY_TYPE_LABELS = { ADELANTO: 'Adelanto', PAGO: 'Pago', BONO: 'Bono', DESCUENTO: 'Descuento' };
+export const ENTRY_TYPES = ['ADELANTO', 'PAGO', 'BONO', 'DESCUENTO', 'MERCANCIA'];
+export const ENTRY_TYPE_LABELS = { ADELANTO: 'Adelanto', PAGO: 'Pago', BONO: 'Bono', DESCUENTO: 'Descuento', MERCANCIA: 'Mercancía' };
 /** Tipos que sacan dinero (crean un movimiento de caja). */
 export const MONEY_OUT_TYPES = new Set(['ADELANTO', 'PAGO']);
 /** Tipos que bajan el saldo (si se pasan del saldo, la diferencia se arrastra). */
-export const REDUCING_TYPES = new Set(['ADELANTO', 'PAGO', 'DESCUENTO']);
+export const REDUCING_TYPES = new Set(['ADELANTO', 'PAGO', 'DESCUENTO', 'MERCANCIA']);
+/** Mercancía que se lleva el empleado (F6): baja el stock y el saldo, no toca la gaveta. */
+export const GOODS_TYPE = 'MERCANCIA';
+
+/** Ajustes › Nómina: a qué precio se descuenta la mercancía (F6, decisión del dueño 15-11-2026). */
+export const GOODS_VALUATION_KEY = 'payroll_goods_valuation';
+export const GOODS_VALUATIONS = ['costo', 'venta'];
+export const GOODS_VALUATION_LABELS = { costo: 'Precio de costo', venta: 'Precio de venta' };
 
 export const PAYROLL_CATEGORY = 'nomina';
 export const PAYROLL_CATEGORY_LABEL = 'Nómina';
@@ -211,7 +218,7 @@ export function frozenSalaryUsd(entries, employee, periodoId) {
 
 /**
  * Saldo del periodo. Se calcula, nunca se guarda.
- * saldo = sueldo + bonos − descuentos − adelantos − pagos + lo que se arrastró al periodo siguiente.
+ * saldo = sueldo + bonos − descuentos − mercancía − adelantos − pagos + lo que se arrastró al periodo siguiente.
  */
 export function computePeriodBalance(entries = [], employee, periodoId) {
     const own = entriesFor(entries, employee?.id, periodoId);
@@ -222,6 +229,7 @@ export function computePeriodBalance(entries = [], employee, periodoId) {
     const bonosUsd = sumOf('BONO');
     const descuentosUsd = sumOf('DESCUENTO', e => e.origen !== 'ARRASTRE');
     const arrastreRecibidoUsd = sumOf('DESCUENTO', e => e.origen === 'ARRASTRE');
+    const mercanciaUsd = sumOf(GOODS_TYPE);
     const adelantosUsd = sumOf('ADELANTO');
     const pagosUsd = sumOf('PAGO');
     const arrastreEnviadoUsd = sumR(...entries
@@ -229,7 +237,7 @@ export function computePeriodBalance(entries = [], employee, periodoId) {
         .map(e => e.montoUsd || 0));
 
     const saldoUsd = round2(
-        sueldoPeriodoUsd + bonosUsd - descuentosUsd - arrastreRecibidoUsd - adelantosUsd - pagosUsd + arrastreEnviadoUsd
+        sueldoPeriodoUsd + bonosUsd - descuentosUsd - mercanciaUsd - arrastreRecibidoUsd - adelantosUsd - pagosUsd + arrastreEnviadoUsd
     );
     const tienePago = active.some(e => e.tipo === 'PAGO');
     const estado = saldoUsd <= 0 && tienePago ? 'PAGADO' : (active.length > 0 ? 'EN_CURSO' : 'SIN_MOVIMIENTOS');
@@ -240,6 +248,7 @@ export function computePeriodBalance(entries = [], employee, periodoId) {
         bonosUsd,
         descuentosUsd,
         arrastreRecibidoUsd,
+        mercanciaUsd,
         adelantosUsd,
         pagosUsd,
         arrastreEnviadoUsd,
@@ -276,6 +285,7 @@ export function canChangeFrequency(entries, employee, now = new Date()) {
 export function evaluateEntry({ input, balance, tasa, isCashMethod = () => false }) {
     const tipo = input?.tipo;
     if (!ENTRY_TYPES.includes(tipo)) throw new Error('Tipo de movimiento no válido.');
+    if (tipo === GOODS_TYPE) throw new Error('La mercancía se registra con sus productos (evaluateGoods).');
     const moneda = input.moneda === 'BS' ? 'BS' : 'USD';
     const monto = Number(input.monto);
     if (!Number.isFinite(monto) || monto <= 0) throw new Error('Ingresa un monto mayor a cero.');
@@ -343,7 +353,98 @@ export function canVoidEntry(entry, { entries = [], employee, movement = null, i
         }
         return { ok: true };
     }
+    if (entry.tipo === GOODS_TYPE && movement && movement.status !== 'ANULADA' && !isInOpenShift(movement)) {
+        return { ok: false, reason: 'Esa mercancía salió en una caja ya cerrada. Para corregirlo, registra un bono o un descuento.' };
+    }
     const bal = computePeriodBalance(entries, employee, entry.periodoId);
     if (bal.estado === 'PAGADO') return { ok: false, reason: 'El periodo ya está pagado. Para corregirlo, registra un bono o un descuento en el periodo actual.' };
     return { ok: true };
+}
+
+// ─── Mercancía del empleado (F6) ────────────────────────────────────────────
+
+/** Valoración elegida en Ajustes; si no hay o es rara, «costo». */
+export function readGoodsValuation(store = globalThis.localStorage) {
+    try {
+        const v = store?.getItem?.(GOODS_VALUATION_KEY);
+        return GOODS_VALUATIONS.includes(v) ? v : 'costo';
+    } catch {
+        return 'costo';
+    }
+}
+
+/** Precio unitario en $ de un producto según la valoración. */
+export function goodsUnitPriceUsd(product, valuation) {
+    return round2(Number(valuation === 'venta' ? product?.priceUsd : product?.costUsd) || 0);
+}
+
+/**
+ * Valida la mercancía y calcula su monto con los productos FRESCOS. NO guarda.
+ *
+ * Contrato de entrada:
+ *   { employeeId, tipo: 'MERCANCIA', items: [{ id, qty }], nota?, idempotencyKey, confirmarExceso? }
+ * El precio lo pone el servicio con la valoración de Ajustes, nunca la pantalla.
+ *
+ * @returns {{ items, montoUsd, montoBs, tasa, excedenteUsd, saldoAntesUsd, valoracion }}
+ */
+export function evaluateGoods({ input, products = [], balance, tasa, valuation = 'costo', allowNegative = false }) {
+    if (input?.tipo !== GOODS_TYPE) throw new Error('Tipo de movimiento no válido.');
+    if (!input.idempotencyKey) throw new Error('Falta la llave del movimiento. Cierra y abre el formulario.');
+    const valoracion = GOODS_VALUATIONS.includes(valuation) ? valuation : 'costo';
+    const raw = Array.isArray(input.items) ? input.items : [];
+    if (raw.length === 0) throw new Error('Elige al menos un producto.');
+
+    const byId = new Map(products.map(p => [p?.id, p]));
+    const seen = new Set();
+    const items = raw.map(({ id, qty }) => {
+        if (seen.has(id)) throw new Error('Un producto está repetido en la lista.');
+        seen.add(id);
+        const product = byId.get(id);
+        if (!product) throw new Error('Un producto de la lista ya no existe en el inventario.');
+        const q = Number(qty);
+        if (!Number.isFinite(q) || q <= 0) throw new Error(`Cantidad no válida para ${product.name}.`);
+        const stock = Number(product.stock) || 0;
+        if (!allowNegative && q > stock + 1e-9) throw new Error(`No hay suficiente ${product.name}: quedan ${stock}.`);
+        const unitUsd = goodsUnitPriceUsd(product, valoracion);
+        if (!(unitUsd > 0)) {
+            throw new Error(`${product.name} no tiene ${valoracion === 'venta' ? 'precio de venta' : 'costo'} cargado. Cárgalo en Inventario o cambia la opción en Ajustes.`);
+        }
+        return {
+            id: product.id,
+            name: product.name,
+            qty: q,
+            unitUsd,
+            subtotalUsd: mulR(unitUsd, q),
+            costUsd: round2(Number(product.costUsd) || 0),
+            priceUsd: round2(Number(product.priceUsd) || 0),
+        };
+    });
+
+    const montoUsd = sumR(...items.map(i => i.subtotalUsd));
+    if (!(montoUsd > 0)) throw new Error('El monto es demasiado pequeño.');
+    const t = Number(tasa) || 0;
+    const saldoAntesUsd = round2(balance?.saldoUsd || 0);
+    const excedenteUsd = round2(Math.max(0, subR(montoUsd, Math.max(0, saldoAntesUsd))));
+    if (excedenteUsd > 0 && input.confirmarExceso !== true) {
+        const err = new Error(`Se pasa del saldo por $${formatUsd(excedenteUsd)}. Confirma para que quede debiendo esa diferencia en el próximo periodo.`);
+        err.code = 'EXCEDE_SALDO';
+        err.excedenteUsd = excedenteUsd;
+        throw err;
+    }
+    return {
+        items,
+        montoUsd,
+        montoBs: t > 0 ? mulR(montoUsd, t) : 0,
+        tasa: t > 0 ? t : null,
+        excedenteUsd,
+        saldoAntesUsd,
+        valoracion,
+    };
+}
+
+/** Texto corto de los productos: «2 × Harina PAN, 1 × Aceite y 3 más». */
+export function goodsSummary(items = [], max = 3) {
+    const parts = items.slice(0, max).map(i => `${i.qty} × ${i.name}`);
+    const text = parts.join(', ');
+    return items.length > max ? `${text} y ${items.length - max} más` : text;
 }

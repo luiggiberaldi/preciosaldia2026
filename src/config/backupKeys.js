@@ -57,6 +57,7 @@ export const LS_KEYS = Object.freeze([
   'cop_enabled',
   'cop_primary',
   'monitor_rates_v12',
+  'payroll_goods_valuation', // Ajustes › Nómina: mercancía de empleados a costo o a venta (P-012)
   'printer_paper_width',
   'street_rate_bs',
   'tasa_cop',

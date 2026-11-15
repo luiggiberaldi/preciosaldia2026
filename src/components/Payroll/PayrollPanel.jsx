@@ -6,6 +6,7 @@ import EmptyState from '../EmptyState';
 import PinField from './PinField';
 import EmployeeFormModal from './EmployeeFormModal';
 import PayrollEntryModal from './PayrollEntryModal';
+import PayrollGoodsModal from './PayrollGoodsModal';
 import { useAuthStore } from '../../hooks/store/useAuthStore';
 import { useAudit } from '../../hooks/useAudit';
 import { getActivePaymentMethods } from '../../config/paymentMethods';
@@ -13,10 +14,10 @@ import { formatBs, formatUsd } from '../../utils/calculatorUtils';
 import { mulR } from '../../utils/dinero';
 import {
     computePeriodBalance, periodIdFor, periodLabel, nextPeriodId, previousPeriodId,
-    FRECUENCIA_LABELS, ENTRY_TYPE_LABELS, MONEY_OUT_TYPES,
+    FRECUENCIA_LABELS, ENTRY_TYPE_LABELS, MONEY_OUT_TYPES, GOODS_TYPE, goodsSummary,
 } from '../../utils/payrollModel';
 import {
-    loadPayroll, saveEmployee, setEmployeeActive, registerEntry, voidEntry, recoverPayroll,
+    loadPayroll, saveEmployee, setEmployeeActive, registerEntry, registerGoods, voidEntry, recoverPayroll,
 } from '../../services/payrollService';
 import { buildPayrollReceiptData, printPayrollReceipt, downloadPayrollReceiptPdf } from '../../utils/payrollReceipt';
 
@@ -41,6 +42,7 @@ export default function PayrollPanel({ rate = 0, isActive = true, triggerHaptic 
     const [viewPeriod, setViewPeriod] = useState(null);
     const [employeeModal, setEmployeeModal] = useState({ open: false, employee: null });
     const [entryModal, setEntryModal] = useState({ open: false, tipo: null });
+    const [goodsOpen, setGoodsOpen] = useState(false);
     const [pinAction, setPinAction] = useState(null); // { title, message, run(pin) }
     const [pin, setPin] = useState('');
     const [pinError, setPinError] = useState('');
@@ -105,6 +107,13 @@ export default function PayrollPanel({ rate = 0, isActive = true, triggerHaptic 
         const res = await registerEntry(input, ctxFor(pinValue));
         await reload();
         if (!res.duplicate) showToast(`${ENTRY_TYPE_LABELS[input.tipo]} registrado`, 'success');
+        return res;
+    };
+
+    const handleSubmitGoods = async (input, pinValue) => {
+        const res = await registerGoods(input, ctxFor(pinValue));
+        await reload();
+        if (!res.duplicate) showToast('Mercancía registrada', 'success');
         return res;
     };
 
@@ -175,6 +184,7 @@ export default function PayrollPanel({ rate = 0, isActive = true, triggerHaptic 
                         ['Sueldo del periodo', b.sueldoPeriodoUsd, '+'],
                         ['Bonos', b.bonosUsd, '+'],
                         ['Descuentos', b.descuentosUsd, '−'],
+                        ['Mercancía', b.mercanciaUsd, '−'],
                         ['Deuda del periodo anterior', b.arrastreRecibidoUsd, '−'],
                         ['Adelantos', b.adelantosUsd, '−'],
                         ['Pagos', b.pagosUsd, '−'],
@@ -197,6 +207,10 @@ export default function PayrollPanel({ rate = 0, isActive = true, triggerHaptic 
                                 {t === 'ADELANTO' ? 'Dar adelanto' : t === 'PAGO' ? 'Pagar periodo' : ENTRY_TYPE_LABELS[t]}
                             </button>
                         ))}
+                        <button data-testid={`payroll-action-${GOODS_TYPE}`} onClick={() => setGoodsOpen(true)}
+                            className="col-span-2 py-3 rounded-xl font-black text-sm bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200">
+                            Se lleva mercancía
+                        </button>
                     </div>
                 )}
 
@@ -214,6 +228,7 @@ export default function PayrollPanel({ rate = 0, isActive = true, triggerHaptic 
                                     <p className="text-xs text-slate-500 truncate">
                                         {new Date(e.timestamp).toLocaleString('es-VE', { timeZone: 'America/Caracas', dateStyle: 'short', timeStyle: 'short' })}
                                         {e.metodoId ? ` · ${paymentMethods.find(m => m.id === e.metodoId)?.label || e.metodoId}` : ''}
+                                        {e.tipo === GOODS_TYPE && Array.isArray(e.items) ? ` · ${goodsSummary(e.items)}` : ''}
                                         {e.nota ? ` · ${e.nota}` : ''}
                                     </p>
                                 </div>
@@ -233,7 +248,9 @@ export default function PayrollPanel({ rate = 0, isActive = true, triggerHaptic 
                                             onClick={() => askPin('Anular movimiento',
                                                 MONEY_OUT_TYPES.has(e.tipo)
                                                     ? `El ${ENTRY_TYPE_LABELS[e.tipo].toLowerCase()} de $${formatUsd(e.montoUsd)} se tacha y su salida de caja también.`
-                                                    : `El ${ENTRY_TYPE_LABELS[e.tipo].toLowerCase()} de $${formatUsd(e.montoUsd)} se tacha.`,
+                                                    : e.tipo === GOODS_TYPE
+                                                        ? `La mercancía de $${formatUsd(e.montoUsd)} se tacha y los productos vuelven al inventario.`
+                                                        : `El ${ENTRY_TYPE_LABELS[e.tipo].toLowerCase()} de $${formatUsd(e.montoUsd)} se tacha.`,
                                                 async (p) => { await voidEntry(e.id, ctxFor(p)); await reload(); showToast('Movimiento anulado', 'success'); })}
                                             className="p-1.5 text-slate-400 hover:text-red-500"><Ban size={14} /></button>
                                     )}
@@ -248,6 +265,8 @@ export default function PayrollPanel({ rate = 0, isActive = true, triggerHaptic 
                 <PayrollEntryModal isOpen={entryModal.open} tipo={entryModal.tipo} employee={selected} balance={shownBalance}
                     rate={rate} paymentMethods={paymentMethods} onClose={() => setEntryModal({ open: false, tipo: null })}
                     onSubmit={handleSubmitEntry} onReceipt={receipt} />
+                <PayrollGoodsModal isOpen={goodsOpen} employee={selected} balance={shownBalance} rate={rate}
+                    onClose={() => setGoodsOpen(false)} onSubmit={handleSubmitGoods} onReceipt={receipt} />
                 {renderPinModal()}
             </div>
         );
