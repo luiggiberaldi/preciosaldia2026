@@ -1,4 +1,5 @@
 import { writeVerifiedValue } from '../utils/verifiedWrite';
+import { canBypassPin } from '../utils/adminPinPolicy';
 
 const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const PIN_HASH_PATTERN = /^pbkdf2\$\d+\$[^$]+\$[^$]+$/;
@@ -58,6 +59,9 @@ export async function applySupervisorUserCommand(storage, payload = {}, { onUser
             pin: requirePinHash(payload.pinHash),
             requirePin: payload.bypassPin !== true,
         };
+        if (user.requirePin === false && !canBypassPin(user, state.requireLogin)) {
+            throw new Error('El Administrador debe entrar con PIN mientras la pantalla de inicio esté activa');
+        }
         nextUsers = [...users, user];
         changedUser = user;
     } else if (action === 'edit') {
@@ -72,6 +76,10 @@ export async function applySupervisorUserCommand(storage, payload = {}, { onUser
         if (patch.nombre !== undefined) next.nombre = requireUserName(patch.nombre);
         if (patch.rol !== undefined) next.rol = requireRole(patch.rol);
         if (patch.bypassPin !== undefined) next.requirePin = patch.bypassPin !== true;
+        // Con la pantalla de inicio activa, el Administrador no puede quedar «entra sin PIN».
+        if (next.requirePin === false && !canBypassPin(next, state.requireLogin)) {
+            throw new Error('El Administrador debe entrar con PIN mientras la pantalla de inicio esté activa');
+        }
         changedUser = next;
         nextUsers = users.map((user, currentIndex) => currentIndex === index ? next : user);
     } else if (action === 'delete') {
