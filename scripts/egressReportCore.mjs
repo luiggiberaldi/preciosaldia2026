@@ -14,7 +14,10 @@ export const SIZE_RANGES = Object.freeze([
 export const DEFAULT_THRESHOLDS = Object.freeze({
     dailyUploadBytes: 40_000_000,
     maxPostBytes: 150_000,
-    maxDocBytes: 200_000,
+    // Por encima del tramo cerrado de ventas (400 KB, casi nunca se reescribe)
+    // y por debajo del límite de ~1 MB de Realtime. Las reescrituras frecuentes
+    // las vigila maxPostBytes.
+    maxDocBytes: 450_000,
     realtimeConnections: 150,
 });
 
@@ -126,15 +129,17 @@ const VIOLATION_TEXT = {
     dailyUpload: (v) => `${v.day}: subida a sync_documents ${formatBytes(v.value)} (límite ${formatBytes(v.limit)})`,
     maxPost: (v) => `${v.day}: un POST a sync_documents pesó ${formatBytes(v.value)} (límite ${formatBytes(v.limit)})`,
     realtimeConnections: (v) => `${v.day}: ${v.value} conexiones de Realtime (límite ${v.limit})`,
-    maxDoc: (v) => `doc ${v.docId} (${String(v.deviceId || '').slice(0, 14)}…) pesa ${formatBytes(v.value)} (límite ${formatBytes(v.limit)})`,
+    maxDoc: (v, redact) => `doc ${v.docId}${redact ? '' : ` (${String(v.deviceId || '').slice(0, 14)}…)`} pesa ${formatBytes(v.value)} (límite ${formatBytes(v.limit)})`,
 };
 
-export function describeViolation(violation) {
-    return (VIOLATION_TEXT[violation?.kind] || ((v) => JSON.stringify(v)))(violation);
+/** `redact`: sin identificadores de equipos (el repo es público y la alarma abre issues). */
+export function describeViolation(violation, { redact = false } = {}) {
+    const text = VIOLATION_TEXT[violation?.kind];
+    return text ? text(violation, redact) : `${violation?.kind ?? 'límite'} superado`;
 }
 
 /** Texto Markdown del reporte (consola, issue de la alarma). */
-export function renderReport({ days = [], topDocs = [], publication = [], violations = [] } = {}) {
+export function renderReport({ days = [], topDocs = [], publication = [], violations = [], redact = false } = {}) {
     const lines = [];
     lines.push('## Subidas a `sync_documents` por día');
     lines.push('');
@@ -148,10 +153,12 @@ export function renderReport({ days = [], topDocs = [], publication = [], violat
     lines.push('');
     lines.push('## Documentos vivos más pesados (actualizados en 7 días)');
     lines.push('');
-    lines.push('| doc_id | Equipo | Tamaño | Actualizado |');
-    lines.push('|---|---|---|---|');
+    lines.push(redact ? '| doc_id | Tamaño | Actualizado |' : '| doc_id | Equipo | Tamaño | Actualizado |');
+    lines.push(redact ? '|---|---|---|' : '|---|---|---|---|');
     for (const doc of topDocs) {
-        lines.push(`| ${doc.doc_id} | ${String(doc.device_id || '').slice(0, 14)}… | ${formatBytes(doc.bytes)} | ${doc.updated_at} |`);
+        lines.push(redact
+            ? `| ${doc.doc_id} | ${formatBytes(doc.bytes)} | ${doc.updated_at} |`
+            : `| ${doc.doc_id} | ${String(doc.device_id || '').slice(0, 14)}… | ${formatBytes(doc.bytes)} | ${doc.updated_at} |`);
     }
     lines.push('');
     lines.push(`Tablas en \`supabase_realtime\`: ${publication.map((p) => `\`${p.tablename}\``).join(', ') || '(ninguna)'}`);
@@ -159,7 +166,7 @@ export function renderReport({ days = [], topDocs = [], publication = [], violat
     if (violations.length) {
         lines.push('## ⚠️ Límites superados');
         lines.push('');
-        for (const violation of violations) lines.push(`- ${describeViolation(violation)}`);
+        for (const violation of violations) lines.push(`- ${describeViolation(violation, { redact })}`);
     } else {
         lines.push('Sin límites superados.');
     }

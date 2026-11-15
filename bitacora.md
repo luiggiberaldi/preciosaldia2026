@@ -364,3 +364,13 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 **Cambios de diseño respecto al plan:** sin pestaña «líder» (riesgo de vistas que no refrescan) y sin despliegue en dos pasos (no hace falta, porque el supervisor nuevo deja de escuchar `sync_documents`).
 **Pruebas:** `monitorSyncNotifyEvents.test.jsx` 6/6 (nueva: ráfaga → una descarga, fuera de contrato ignorado, oculta → nada hasta volver, suelta a los 2 min y se reconecta, modo anterior sin la tabla). `supervisorSyncEcho.test.jsx` sigue probando el modo de filas completas (su Supabase falso dice que la tabla de avisos no existe). Diagnóstico 22/22, guardias de publicación 4/4, suites de monitor 48/48.
 **Pendiente:** aplicar la migración en producción **antes** de publicar la app (falta el visto bueno del dueño) y verificar en navegador.
+
+## 2026-11-14 — Egress F6: alarma diaria en GitHub e informe semanal de Claude
+
+**Plan:** `docs/plans/2026-11-14-plan-fixeo-egress-realtime.md`, fase F6 (decisión del dueño: dos avisos con papeles distintos).
+**Alarma (`.github/workflows/egress-alarm.yml`, nuevo):** todos los días a las 11:00 UTC (7:00 en Venezuela) corre `scripts/egress-report.mjs --check --redact`. Si todo está bien no hace nada; si se pasa un límite, abre un issue con la etiqueta `egress-alarm` (GitHub manda el correo) o comenta el que ya esté abierto. Es como una alarma de humo: solo suena si hay humo.
+**Límites:** subida diaria > 40 MB, POST > 150 KB, doc vivo > 450 KB, más de 150 conexiones de Realtime al día. El de doc se subió de 200 a 450 KB porque los tramos cerrados de ventas miden 400 KB por diseño y casi nunca se reescriben.
+**Repo público:** el reporte del issue va con `--redact` (nuevo), sin identificadores de equipos.
+**Informe semanal:** tarea programada de Claude «Informe semanal de egress (Supabase)», lunes 8:00, solo lectura. Compara la semana contra la línea base y las metas del plan.
+**Falta (solo el dueño):** guardar el secreto `SUPABASE_ACCESS_TOKEN` en GitHub (Settings → Secrets and variables → Actions). GitHub solo ejecuta los horarios del workflow que está en `main`; hasta que llegue a `main`, corre solo a mano.
+**Verificación:** `egressReportCore.test.js` 7/7; YAML válido; corrida local de `--check --redact` contra producción: sale con código 1 (todavía no hay nada publicado) y el reporte no tiene ningún `PDA-V2`. El workflow no se corrió en GitHub (falta el secreto).

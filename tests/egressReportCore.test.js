@@ -45,7 +45,7 @@ describe('egressReportCore (F0/F6 del plan de egress Realtime)', () => {
             uploads: summarizeUploads([{ rango: 'b', n: 600, bytes: 18_000_000, max_b: 61_000 }]),
             realtimeConnections: 30,
         };
-        const kinds = evaluateThresholds({ days: [incident], topDocs: [{ doc_id: 'abasto_audit_log_v1', bytes: 406963 }] })
+        const kinds = evaluateThresholds({ days: [incident], topDocs: [{ doc_id: 'abasto_audit_log_v1', bytes: 600_000 }] })
             .map((v) => v.kind).sort();
         expect(kinds).toEqual(['dailyUpload', 'maxDoc', 'maxPost', 'realtimeConnections']);
         expect(evaluateThresholds({ days: [healthy], topDocs: [{ doc_id: 'x', bytes: 50_000 }] })).toEqual([]);
@@ -67,5 +67,17 @@ describe('egressReportCore (F0/F6 del plan de egress Realtime)', () => {
         expect(report).toContain('Límites superados');
         expect(report).toContain('abasto_audit_log_v1');
         expect(report).toContain('`sync_documents`');
+    });
+
+    it('--redact no muestra identificadores de equipos (el repo es público)', () => {
+        const input = {
+            days: [],
+            topDocs: [{ doc_id: 'bodega_sales_v1:2026-11#16', device_id: 'PDA-V2-0000TEST0001', bytes: 120_000, updated_at: 'x' }],
+            violations: [{ kind: 'maxDoc', docId: 'bodega_sales_v1:2026-11#16', deviceId: 'PDA-V2-0000TEST0001', value: 300_000, limit: 200_000 }],
+        };
+        expect(renderReport(input)).toContain('PDA-V2-0000TES');
+        const redacted = renderReport({ ...input, redact: true });
+        expect(redacted).not.toContain('PDA-V2');
+        expect(redacted).toContain('bodega_sales_v1:2026-11#16');
     });
 });

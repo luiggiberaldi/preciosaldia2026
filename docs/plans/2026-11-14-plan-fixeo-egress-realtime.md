@@ -206,7 +206,7 @@ Orden recomendado: **F0 → F1 → F2 → F5 → F3 → F4 → F6**. F1 sola ya 
 
 ---
 
-## F6 — Alerta diaria de egress
+## F6 — Alerta diaria de egress ✅ HECHO (falta el secreto en GitHub y llevar el workflow a `main`)
 
 Decisión del dueño (14-11-2026): **dos avisos con papeles distintos**, que usan el mismo script de F0.
 
@@ -218,7 +218,7 @@ Decisión del dueño (14-11-2026): **dos avisos con papeles distintos**, que usa
 Límites de la alarma (`scripts/egress-report.mjs --check`, sale con código 1 si alguno se cumple):
 - subida diaria a `sync_documents` > 40 MB;
 - algún POST a `sync_documents` > 150 KB;
-- algún doc de `sync_documents` > 200 KB;
+- algún doc vivo (actualizado en 7 días) de `sync_documents` > 450 KB (por encima del tramo cerrado de ventas de 400 KB, que casi nunca se reescribe; por debajo del límite de ~1 MB de Realtime);
 - más de 150 conexiones de Realtime en el día (señal de reconexiones o pestañas duplicadas).
 
 Nota: la API de logs no da el egress de Realtime en MB. Se vigilan sus dos factores: lo que se sube y cuántas conexiones lo reciben. La cifra exacta sigue estando en el panel de uso de Supabase.

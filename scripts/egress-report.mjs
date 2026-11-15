@@ -7,7 +7,8 @@
 //   node scripts/egress-report.mjs --from 2026-11-10 --to 2026-11-14
 //   node scripts/egress-report.mjs --check               # sale con código 1 si se pasa algún límite
 //   node scripts/egress-report.mjs --out reporte.md      # además guarda el Markdown
-//   --max-post 150000 --max-doc 200000 --daily-upload 40000000 --max-connections 150
+//   node scripts/egress-report.mjs --redact             # sin ids de equipos (issues públicos)
+//   --max-post 150000 --max-doc 450000 --daily-upload 40000000 --max-connections 150
 //
 // Token: SUPABASE_ACCESS_TOKEN del `.env` de la raíz si existe (en local la
 // variable de entorno del sistema puede ser un token viejo); si no, del entorno
@@ -52,6 +53,7 @@ function parseArgs(argv) {
         const key = argv[i];
         const value = argv[i + 1];
         if (key === '--check') args.check = true;
+        else if (key === '--redact') args.redact = true;
         else if (key === '--from') { args.from = value; i += 1; }
         else if (key === '--to') { args.to = value; i += 1; }
         else if (key === '--days') { args.days = Number(value); i += 1; }
@@ -132,7 +134,7 @@ async function main() {
     const topDocs = await querySql(TOP_DOCS_SQL);
     const publication = await querySql(PUBLICATION_SQL);
     const violations = evaluateThresholds({ days, topDocs }, thresholds);
-    const report = renderReport({ days, topDocs, publication, violations });
+    const report = renderReport({ days, topDocs, publication, violations, redact: Boolean(args.redact) });
 
     console.log(report);
     if (args.out) {

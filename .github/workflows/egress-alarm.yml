@@ -1,0 +1,71 @@
+# Alarma diaria de egress de Supabase (plan 2026-11-14-plan-fixeo-egress-realtime, F6).
+#
+# Corre todos los días a las 11:00 UTC (7:00 en Venezuela), aunque la PC esté
+# apagada. Mide el día anterior con scripts/egress-report.mjs --check y:
+#   - si todo está bien, no hace nada;
+#   - si se pasa algún límite, abre un issue con la etiqueta `egress-alarm`
+#     (GitHub manda el correo) o, si ya hay uno abierto, le agrega un comentario.
+#
+# El repo es PÚBLICO: el reporte va con --redact (sin identificadores de equipos).
+#
+# Requisito: secreto del repo SUPABASE_ACCESS_TOKEN (Settings → Secrets and
+# variables → Actions). Sin él, el job falla en rojo a propósito.
+#
+# Nota: GitHub solo ejecuta los `schedule` del workflow que está en la rama por
+# defecto (main). Hasta que este archivo llegue a main, solo corre a mano.
+
+name: Alarma de egress
+
+on:
+  schedule:
+    - cron: '0 11 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  egress:
+    name: Medir egress de ayer
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Medir y comparar con los límites
+        id: report
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set +e
+          node scripts/egress-report.mjs --check --redact --out egress-report.md
+          code=$?
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          # 0 = todo bien, 1 = límite superado (se avisa abajo), 2 = no se pudo medir.
+          if [ "$code" -ge 2 ]; then exit "$code"; fi
+          exit 0
+
+      - name: Abrir o comentar el issue de la alarma
+        if: steps.report.outputs.code == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create egress-alarm --color B60205 --description "Alarma diaria de egress de Supabase" 2>/dev/null || true
+          {
+            echo "La alarma diaria encontró límites superados. Reporte generado por \`scripts/egress-report.mjs --check --redact\`."
+            echo
+            cat egress-report.md
+            echo
+            echo "Plan: docs/plans/2026-11-14-plan-fixeo-egress-realtime.md"
+          } > issue-body.md
+          open_issue=$(gh issue list --label egress-alarm --state open --json number --jq '.[0].number')
+          if [ -n "$open_issue" ]; then
+            gh issue comment "$open_issue" --body-file issue-body.md
+          else
+            gh issue create --title "Alarma de egress: $(date -u -d 'yesterday' +%F)" --label egress-alarm --body-file issue-body.md
+          fi
