@@ -94,6 +94,14 @@ describe('docs-check: errores', () => {
         expect(checkErrores(root)).toContain('ERR-002: ID repetido');
     });
 
+    it('acepta una nota entre paréntesis en el estado de la tabla (ERR-012: «Resuelto (mitigado)»)', () => {
+        put('docs/ERRORES.md', ERRORES_OK.replace('| ERR-001 | Uno | 2026-11-07 | Resuelto |', '| ERR-001 | Uno | 2026-11-07 | Resuelto (mitigado) |'));
+        expect(checkErrores(root)).toEqual([]);
+        // La nota no esconde un estado distinto al de la sección.
+        put('docs/ERRORES.md', ERRORES_OK.replace('| ERR-001 | Uno | 2026-11-07 | Resuelto |', '| ERR-001 | Uno | 2026-11-07 | Abierto (en revisión) |'));
+        expect(checkErrores(root)).toContain('ERR-001: la tabla dice Abierto y la sección dice Resuelto');
+    });
+
     it('detecta secciones que faltan en la tabla y estados distintos', () => {
         put('docs/ERRORES.md', ERRORES_OK.replace('| ERR-002 | Dos | 2026-11-07 | Abierto | — |', '| ERR-001x | x | x | x | x |'));
         expect(checkErrores(root)).toContain('ERR-002: falta en la tabla resumen de ERRORES.md');

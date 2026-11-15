@@ -374,3 +374,9 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 **Informe semanal:** tarea programada de Claude «Informe semanal de egress (Supabase)», lunes 8:00, solo lectura. Compara la semana contra la línea base y las metas del plan.
 **Falta (solo el dueño):** guardar el secreto `SUPABASE_ACCESS_TOKEN` en GitHub (Settings → Secrets and variables → Actions). GitHub solo ejecuta los horarios del workflow que está en `main`; hasta que llegue a `main`, corre solo a mano.
 **Verificación:** `egressReportCore.test.js` 7/7; YAML válido; corrida local de `--check --redact` contra producción: sale con código 1 (todavía no hay nada publicado) y el reporte no tiene ningún `PDA-V2`. El workflow no se corrió en GitHub (falta el secreto).
+
+## 2026-11-14 — fix(docs-check): el verificador aceptaba «Resuelto (mitigado)» en la ficha pero no en la tabla
+
+**Problema:** `docs-check` avisaba «ERR-012: falta en la tabla resumen de ERRORES.md», pero la fila sí estaba. La regla de la tabla solo aceptaba una palabra sola en la columna de estado, y ERR-012 dice «Resuelto (mitigado)». La de la sección sí lo aceptaba porque lee solo la primera palabra. Además, como no veía la fila, tampoco comparaba su estado con el de la sección.
+**Cambio:** `scripts/docs-check.mjs` acepta una nota entre paréntesis después del estado en la tabla y compara solo la primera palabra, igual que con la sección. Se conserva el «mitigado», que es honesto: el cajero todavía puede elegir «Todo en $» con centavos (el dueño decidió avisar, no bloquear).
+**Verificación:** prueba nueva en `tests/docsCheck.test.js` (acepta la nota y sigue detectando un estado distinto aunque lleve nota): 21/21. `docs-check` sobre el repo ya no muestra ERR-012. El arreglo de ERR-012 sigue en pie: `tests/cobroSugerido.test.js` 11/11.
