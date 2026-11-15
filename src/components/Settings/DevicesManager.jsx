@@ -38,22 +38,16 @@ export default function DevicesManager({ triggerHaptic, currentDeviceId }) {
     useEffect(() => {
         fetchDevices();
 
-        // Suscripción Realtime para actualizar la lista cuando se abra un nuevo dispositivo o cambie el estado
-        if (!supabase || !import.meta.env.VITE_SUPABASE_URL) return;
-
-        const channel = supabase
-            .channel('realtime_devices_list')
-            .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'licenses', filter: `product_id=eq.${PRODUCT_ID}` },
-                () => {
-                    fetchDevices();
-                }
-            )
-            .subscribe();
-
+        // Egress F5: antes había un canal Realtime sobre `licenses`, pero esa
+        // tabla no está en la publicación (nunca llegó un evento) y no se agrega
+        // porque el heartbeat la actualiza seguido. La lista se refresca al
+        // volver a la pestaña.
+        const handleVisibility = () => {
+            if (document.visibilityState === 'visible') fetchDevices();
+        };
+        document.addEventListener('visibilitychange', handleVisibility);
         return () => {
-            supabase.removeChannel(channel);
+            document.removeEventListener('visibilitychange', handleVisibility);
         };
     }, []);
 
