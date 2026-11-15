@@ -148,7 +148,7 @@ export const TABS = {
     inicio: 'Inicio',
     ventas: 'Vender',
     catalogo: 'Inventario',
-    clientes: 'Clientes',
+    clientes: 'Gestión',
     reportes: 'Reportes',
     ajustes: 'Ajustes',
 };

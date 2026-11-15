@@ -12,7 +12,8 @@ import {
     FileText, 
     CreditCard, 
     Calendar,
-    Filter
+    Filter,
+    Wallet
 } from 'lucide-react';
 import { formatBs, formatCop } from '../../utils/calculatorUtils';
 import { buildSupplierPeriodSummary, rangeLabel } from '../../utils/supplierReportRange';
@@ -24,6 +25,7 @@ const CATEGORY_META = {
     insumos: { label: 'Insumos', icon: Package, bgIcon: 'bg-blue-100 dark:bg-blue-900/30 text-blue-500 dark:text-blue-400' },
     servicios: { label: 'Servicios', icon: Lightbulb, bgIcon: 'bg-amber-100 dark:bg-amber-900/30 text-amber-500 dark:text-amber-400' },
     transporte: { label: 'Transporte', icon: Car, bgIcon: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-500 dark:text-indigo-400' },
+    nomina: { label: 'Nómina', icon: Wallet, bgIcon: 'bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400' },
     personal: { label: 'Personal', icon: User, bgIcon: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-500 dark:text-emerald-400' },
     mantenimiento: { label: 'Mantenimiento', icon: Wrench, bgIcon: 'bg-rose-100 dark:bg-rose-900/30 text-rose-500 dark:text-rose-400' },
     proveedor: { label: 'Proveedor', icon: Wrench, bgIcon: 'bg-orange-100 dark:bg-orange-900/30 text-orange-500 dark:text-orange-400' },

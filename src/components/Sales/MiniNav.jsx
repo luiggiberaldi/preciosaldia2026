@@ -3,7 +3,7 @@ import { Home, Store, Users, BarChart3 } from 'lucide-react';
 const NAV_ITEMS = [
     { id: 'inicio', icon: Home, label: 'Inicio' },
     { id: 'catalogo', icon: Store, label: 'Inventario' },
-    { id: 'clientes', icon: Users, label: 'Clientes' },
+    { id: 'clientes', icon: Users, label: 'Gestión' },
     { id: 'reportes', icon: BarChart3, label: 'Reportes' },
 ];
 

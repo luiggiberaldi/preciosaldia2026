@@ -353,7 +353,7 @@ export default function App() {
     { id: 'inicio', label: 'Inicio', icon: Home },
     { id: 'ventas', label: 'Vender', icon: ShoppingCart },
     { id: 'catalogo', label: 'Inventario', icon: Store, premiumOnly: true },
-    { id: 'clientes', label: 'Clientes', icon: Users },
+    { id: 'clientes', label: 'Gestión', icon: Users }, // Nómina D9: Clientes · Proveedores · Nómina
     { id: 'reportes', label: 'Reportes', icon: BarChart3, adminOnly: true },
     { id: 'ajustes', label: 'Ajustes', icon: Settings, adminOnly: true },
   ];

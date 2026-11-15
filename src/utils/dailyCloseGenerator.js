@@ -132,6 +132,7 @@ export async function generateDailyClosePDF({
     const CATEGORY_LABELS = {
         insumos: 'Insumos', servicios: 'Servicios', transporte: 'Transporte',
         personal: 'Personal', mantenimiento: 'Mantenimiento', otros: 'Otros',
+        nomina: 'Nómina', // plan de nómina 2026-11-14 (adelantos y pagos al personal)
     };
     const gastosPorCat = {};
     allSales
