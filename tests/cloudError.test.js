@@ -21,7 +21,7 @@ describe('describeCloudError — códigos PostgREST/Supabase', () => {
         expect(info.code).toBe('42501');
         expect(info.title).toMatch(/RLS|Permisos/i);
         expect(info.detail).toMatch(/cloud_backups/);
-        expect(info.hint).toMatch(/Exportar Backup/i);
+        expect(info.hint).toMatch(/Exportar respaldo/i);
         expect(info.technical).toContain('42501');
     });
 
@@ -113,6 +113,6 @@ describe('describeCloudError — casos límite', () => {
         const short = describeCloudErrorShort({ code: '42501', message: 'row-level security' });
         expect(short).not.toContain('\n');
         expect(short).toMatch(/RLS|Permisos/i);
-        expect(short).toMatch(/Exportar Backup/i);
+        expect(short).toMatch(/Exportar respaldo/i);
     });
 });

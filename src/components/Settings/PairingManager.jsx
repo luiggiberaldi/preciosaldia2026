@@ -289,7 +289,7 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
                                 <div className="flex min-w-0 items-center gap-3">
                                     <Smartphone className="shrink-0 text-emerald-500" size={22} />
                                     <div className="min-w-0">
-                                        <span className="text-[9px] uppercase tracking-wider font-bold text-slate-400 block">Supervisor {index + 1}</span>
+                                        <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block">Supervisor {index + 1}</span>
                                         <span className="block truncate text-xs font-bold text-slate-700 dark:text-slate-200" title={pairedDevice.id}>
                                             {pairedDevice.id}
                                         </span>
@@ -346,7 +346,7 @@ export default function PairingManager({ deviceId, triggerHaptic }) {
                         className="text-center space-y-1 hover:opacity-80 active:scale-95 transition-all group focus:outline-none block mx-auto"
                         title="Hacer clic para copiar"
                     >
-                        <span className="text-[9px] uppercase tracking-wider font-black text-slate-400 group-hover:text-emerald-500 transition-colors flex items-center justify-center gap-1.5">
+                        <span className="text-[10px] uppercase tracking-wider font-black text-slate-400 group-hover:text-emerald-500 transition-colors flex items-center justify-center gap-1.5">
                             Código Manual
                             <span className="text-[8px] bg-slate-100 dark:bg-slate-800 text-slate-400 group-hover:bg-emerald-500/10 group-hover:text-emerald-500 px-1.5 py-0.5 rounded font-bold uppercase transition-all">Copiar</span>
                         </span>
