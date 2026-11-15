@@ -133,7 +133,10 @@ Orden recomendado: **F0 → F1 → F2 → F5 → F3 → F4 → F6**. F1 sola ya 
 
 ---
 
-## F2 — Tramo abierto de ventas más chico
+## F2 — Tramo abierto de ventas más chico ✅ HECHO
+
+> **Cambio de diseño al implementar (14-11-2026):** no se bajó todo a 80 KB. Serían ~170 filas por mes y por caja (285 ventas/día de ~1,6 KB), y el barrido de 90 s del supervisor baja los metadatos de todas las filas en cada pasada: lo ahorrado en Realtime se perdería en PostgREST. En su lugar, **solo las ventas de hoy (UTC)** van en tramos propios de ≤ 100 KB; los tramos cerrados siguen en 400 KB. Al cambiar de día las ventas de ayer se reacomodan una vez y los tramos sobrantes se **borran** (no `[]`, que vaciaría el mes en el lector). `SALES_SYNC_OPEN_PACK_BUDGET_BYTES` y `deleteStaleSalesShards` en `useCloudSync.js`.
+
 
 **Problema:** cada venta reescribe el último tramo del mes, que llega a 400 KB.
 
@@ -148,7 +151,10 @@ Orden recomendado: **F0 → F1 → F2 → F5 → F3 → F4 → F6**. F1 sola ya 
 
 ---
 
-## F3 — Un solo canal por navegador y menos reconexiones
+## F3 — Un solo canal por navegador y menos reconexiones ✅ HECHO (con otro enfoque)
+
+> **Cambio de diseño al implementar (14-11-2026):** en vez de una pestaña «líder» con `navigator.locks` (con riesgo de que las otras pestañas dejen de refrescar sus vistas, porque los avisos `app_storage_update` no cruzan pestañas), **una pestaña oculta más de 2 minutos suelta su conexión de Realtime** y al volver se reconecta con un pull incremental. Ataca lo mismo: pestañas abiertas que reciben todo sin que nadie mire. El motivo de cada caída del canal queda en el panel de diagnóstico («Caídas del canal»), para entender las 254 reconexiones del 11-nov. El aviso de «supervisor abierto en otro equipo» no se hizo (queda pendiente).
+
 
 **Problema:** dos pestañas o navegadores = el doble de entregas, y cada reconexión hace un pull.
 
@@ -161,7 +167,11 @@ Orden recomendado: **F0 → F1 → F2 → F5 → F3 → F4 → F6**. F1 sola ya 
 
 ---
 
-## F4 — Realtime solo avisa; los datos viajan por PostgREST (cambio de fondo)
+## F4 — Realtime solo avisa; los datos viajan por PostgREST (cambio de fondo) ✅ CÓDIGO HECHO · migración sin aplicar
+
+> **Cambio de diseño al implementar (14-11-2026):** no hace falta el despliegue en dos pasos. El supervisor nuevo **deja de escuchar** `sync_documents` y escucha solo `sync_document_events`; Realtime solo cobra a quien está suscrito, así que el ahorro llega en cuanto cada supervisor se actualiza, mientras los viejos siguen funcionando igual. Quitar `sync_documents` de la publicación queda como paso opcional, cuando no quede ningún supervisor viejo. Si la tabla de avisos no existe (migración sin aplicar), el supervisor detecta el error y sigue en el modo anterior. El trigger no avisa borrados (con RLS, Realtime no filtra los DELETE y repartiría la clave a todos).
+> **Orden de despliegue:** primero aplicar `supabase/migrations/20261114_sync_document_events.sql`, después publicar la app.
+
 
 **Problema:** Realtime manda la fila completa a cada cliente, en cada escritura, aunque la pestaña esté oculta y aunque llegue otra versión 2 s después.
 

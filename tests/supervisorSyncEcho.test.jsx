@@ -80,6 +80,15 @@ const h = vi.hoisted(() => {
     };
 
     const from = (table) => {
+        // Estas pruebas reparten filas completas por el bus (modo anterior a
+        // egress F4): la tabla de avisos «no existe» y el monitor escucha
+        // `sync_documents` directo. El modo de avisos tiene su propia prueba
+        // (monitorSyncNotifyEvents.test.jsx).
+        if (table === 'sync_document_events') {
+            const missing = { select: () => missing, eq: () => missing, limit: () => missing,
+                then: (resolve, reject) => Promise.resolve({ data: null, error: { code: '42P01', message: 'relation "sync_document_events" does not exist' } }).then(resolve, reject) };
+            return missing;
+        }
         const q = { table, filters: [], mode: 'list' };
         const api = {
             select() { return api; },

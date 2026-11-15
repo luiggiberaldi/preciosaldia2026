@@ -43,6 +43,10 @@ export default function SupervisorSyncDiagnosticsPanel({ isOpen, onClose, diagno
         { label: 'Pulls de respaldo', value: String(diagnostics?.oversizePulls ?? 0), testId: 'sync-diag-oversize-pulls' },
         { label: 'Último pull 413', value: formatWhen(diagnostics?.lastOversizePullAt), testId: 'sync-diag-last-oversize-pull' },
         { label: 'Bytes del pull', value: formatBytes(diagnostics?.lastPull?.bytes), testId: 'sync-diag-last-pull-bytes' },
+        // Egress F3/F4: cómo llega Realtime (avisos livianos o filas completas) y
+        // cuántas veces se cayó el canal (sin contar las pausas por pestaña oculta).
+        { label: 'Modo Realtime', value: diagnostics?.realtimeMode === 'notify' ? 'Avisos' : diagnostics?.realtimeMode === 'rows' ? 'Filas completas' : '—', testId: 'sync-diag-realtime-mode' },
+        { label: 'Caídas del canal', value: `${diagnostics?.realtimeCloses ?? 0}${diagnostics?.lastRealtimeClose?.status ? ` (${diagnostics.lastRealtimeClose.status})` : ''}`, testId: 'sync-diag-realtime-closes' },
     ];
 
     return (

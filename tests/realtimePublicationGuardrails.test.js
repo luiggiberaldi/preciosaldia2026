@@ -60,4 +60,19 @@ describe('Realtime: tablas escuchadas vs publicación', () => {
     it('backup_requests está publicada (camino primario de los respaldos remotos)', () => {
         expect(publishedTables().has('backup_requests')).toBe(true);
     });
+
+    it('la tabla de avisos (F4) tiene RLS, no da acceso a anon y no avisa borrados', () => {
+        const sql = readFileSync('supabase/migrations/20261114_sync_document_events.sql', 'utf8');
+        expect(sql).toContain('ALTER TABLE public.sync_document_events ENABLE ROW LEVEL SECURITY');
+        expect(sql).toMatch(/REVOKE ALL ON TABLE public\.sync_document_events FROM anon/);
+        expect(sql).not.toMatch(/GRANT\s+[^;]*\bTO\s+anon\b/i);
+        expect(sql).not.toMatch(/USING\s*\(\s*true\s*\)/i);
+        expect(sql).toContain('SECURITY DEFINER');
+        expect(sql).toContain('SET search_path = public, extensions');
+        // Sin DELETE: con RLS, Realtime no filtra los DELETE y repartiría la clave.
+        expect(sql).toMatch(/AFTER INSERT OR UPDATE OF data, updated_at ON public\.sync_documents/);
+        expect(sql).not.toMatch(/AFTER[^;]*DELETE[^;]*ON public\.sync_documents/i);
+        // sync_documents sigue publicada (supervisores sin actualizar).
+        expect(sql).not.toMatch(/DROP TABLE public\.sync_documents/i);
+    });
 });
