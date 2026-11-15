@@ -42,6 +42,11 @@ import {
     isPurchasesSyncDocId,
     mergePurchasesSyncDoc,
 } from '../utils/purchasesSyncFamily';
+import {
+    AUDIT_SYNC_BASE_KEY,
+    isAuditSyncDocId,
+    mergeAuditSyncDoc,
+} from '../utils/auditSyncFamily';
 
 // Plan de stock delta: el catálogo del monitor es una VISTA derivada — el
 // baseline del último doc de productos (con su `stockAsOf`) más los efectos de
@@ -177,10 +182,12 @@ export function useMonitorSync(pairedDeviceId) {
         const isProductsFamily = isProductsSyncDocId(docId);
         const isSupplierInvoicesFamily = isSupplierInvoicesSyncDocId(docId);
         const isPurchasesFamily = isPurchasesSyncDocId(docId);
+        const isAuditFamily = isAuditSyncDocId(docId);
         const contractKey = isSalesFamily ? SALES_SYNC_BASE_KEY
             : isProductsFamily ? PRODUCTS_SYNC_BASE_KEY
             : isSupplierInvoicesFamily ? SUPPLIER_INVOICES_SYNC_BASE_KEY
-            : isPurchasesFamily ? PURCHASES_SYNC_BASE_KEY : docId;
+            : isPurchasesFamily ? PURCHASES_SYNC_BASE_KEY
+            : isAuditFamily ? AUDIT_SYNC_BASE_KEY : docId;
         const validation = validateSupervisorSyncDocument(contractKey, envelope.payload);
         if (!validation.valid) {
             return { applied: false, rejected: true, error: validation.error };
@@ -256,6 +263,16 @@ export function useMonitorSync(pairedDeviceId) {
                     writeKey = PURCHASES_SYNC_BASE_KEY;
                     const localPurchases = await localforage.getItem(PURCHASES_SYNC_BASE_KEY);
                     await localforage.setItem(writeKey, mergePurchasesSyncDoc(localPurchases, docId, envelope.payload));
+                } else if (isAuditFamily) {
+                    // Egress F1: franjas de 2 h del audit log. Cada franja
+                    // reemplaza la suya (`[]` la vacía); el legacy se une. La
+                    // copia del supervisor se recorta a la ventana publicada.
+                    writeKey = AUDIT_SYNC_BASE_KEY;
+                    const localLog = await localforage.getItem(AUDIT_SYNC_BASE_KEY);
+                    await localforage.setItem(writeKey, mergeAuditSyncDoc(localLog, docId, envelope.payload, {
+                        replaceSlot: true,
+                        trimToWindow: true,
+                    }));
                 } else {
                     await localforage.setItem(docId, envelope.payload);
                 }
@@ -500,7 +517,8 @@ export function useMonitorSync(pairedDeviceId) {
                 || isSalesSyncDocId(doc.doc_id)
                 || isProductsSyncDocId(doc.doc_id)
                 || isSupplierInvoicesSyncDocId(doc.doc_id)
-                || isPurchasesSyncDocId(doc.doc_id));
+                || isPurchasesSyncDocId(doc.doc_id)
+                || isAuditSyncDocId(doc.doc_id));
 
             let targetDocIds;
             if (full) {

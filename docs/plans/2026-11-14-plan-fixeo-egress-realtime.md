@@ -97,15 +97,18 @@ Orden recomendado: **F0 → F1 → F2 → F5 → F3 → F4 → F6**. F1 sola ya 
 
 ---
 
-## F1 — Audit log partido por día (la causa del 81 %)
+## F1 — Audit log partido por franjas de 2 horas (la causa del 81 %) ✅ HECHO
 
 **Problema:** el audit log se sube entero (~407 KB) en cada venta.
 
-**Diseño:** el mismo patrón que la familia de ventas, pero por día y con retención (D1).
+> **Cambio de diseño al implementar (14-11-2026):** en vez de «doc por día + tramos por tamaño» se usan **franjas fijas de 2 h** (`abasto_audit_log_v1:AAAA-MM-DDTHH`, HH par, UTC). Cada doc es la franja completa y **reemplaza** la suya en el supervisor (como las compras por mes), así un borrado del log se propaga sin la ambigüedad de los tramos `#N`. Con 4 h una caja muy activa llegaba a 141 KB por franja; con 2 h queda en ≤ ~70 KB. El «debounce de 60 s» es en realidad una **ventana fija** de 60 s: con ventas seguidas un debounce que se reinicia nunca llegaba a publicar.
+> Lo implementado está en `src/utils/auditSyncFamily.js` y `pushAuditFamilySync` (`useCloudSync.js`). Los pasos de abajo son el diseño original, que se conserva como referencia.
+
+**Diseño original:** el mismo patrón que la familia de ventas, pero por día y con retención (D1).
 - Doc por día: `abasto_audit_log_v1:AAAA-MM-DD`. Si un día pasa de **60 KB**, se parte en tramos `#2`, `#3`… (mismo empaquetado que las ventas).
 - Solo se publican los días de la ventana de 7 días (D1) cuyo hash cambió. En la operación normal **solo cambia el tramo de hoy**: ~30 KB promedio por push en lugar de 407 KB.
 - Debounce propio de 60 s para `abasto_audit_log_v1` (D2), fuera de `HEAVY_KEYS`.
-- El doc viejo `abasto_audit_log_v1` (sin sufijo) se **retira** una sola vez por equipo, igual que `retireLegacySalesDoc` (borrado confirmado, reintento a 24 h). La política de borrado ya existe (`20261024_sync_documents_device_delete_policy.sql`; confirmar que está aplicada en producción antes de desplegar).
+- El doc viejo `abasto_audit_log_v1` (sin sufijo) se **retira** una sola vez por equipo, igual que `retireLegacySalesDoc` (borrado confirmado, reintento a 24 h). La política de borrado ya existe y **está aplicada en producción** (`device_delete_own_sync_doc`, verificado el 14-11-2026).
 - Los días que salen de la ventana de 7 días se borran de la nube (mismo mecanismo de retiro, por lotes y como mucho una vez al día).
 
 **Pasos:**
