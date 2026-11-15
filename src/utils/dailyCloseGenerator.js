@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf';
+import { getLogoSrc, loadLogoImage, fitLogo } from './brandLogo';
 import { formatBs, formatCop, formatUsd } from './calculatorUtils';
 import { getPaymentLabel, toTitleCase } from '../config/paymentMethods';
 import { round2, mulR, divR } from './dinero';
@@ -131,6 +132,7 @@ export async function generateDailyClosePDF({
     const CATEGORY_LABELS = {
         insumos: 'Insumos', servicios: 'Servicios', transporte: 'Transporte',
         personal: 'Personal', mantenimiento: 'Mantenimiento', otros: 'Otros',
+        nomina: 'Nómina', // plan de nómina 2026-11-14 (adelantos y pagos al personal)
     };
     const gastosPorCat = {};
     allSales
@@ -199,10 +201,7 @@ export async function generateDailyClosePDF({
     // Precargar la imagen del logo en base64 o local
     let imgLogo = null;
     try {
-        const img = new Image();
-        img.src = './logo.png';
-        await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
-        imgLogo = img;
+        imgLogo = await loadLogoImage(getLogoSrc());
     } catch (_) {}
 
     // =========================================================================
@@ -244,8 +243,7 @@ export async function generateDailyClosePDF({
 
             // Logo
             if (imgLogo) {
-                const logoW = 38;
-                const logoH = 9;
+                const { w: logoW, h: logoH } = fitLogo(imgLogo.naturalWidth, imgLogo.naturalHeight, 38, 9);
                 doc.addImage(imgLogo, 'PNG', M, y + 4, logoW, logoH);
             } else {
                 doc.setFont('helvetica', 'bold');
@@ -833,8 +831,11 @@ export async function generateDailyClosePDF({
             doc.setFont('helvetica', 'italic');
             doc.setFontSize(6.4);
             doc.setTextColor(...MUTED);
+            // F4: con pagos con saldo a favor, la nota aclara que esa parte tampoco entró hoy.
             const noteLines = doc.splitTextToSize(
-                'Solo lo cobrado de las ventas y las cobranzas entraron a la caja. FIADO y CASHEA son cuentas por cobrar: no forman parte del efectivo esperado del arqueo.',
+                daySummary.saldoFavorUsadoUsd > 0
+                    ? 'Entró a la caja lo cobrado de las ventas (menos lo pagado con saldo a favor, que entró el día que se generó) y las cobranzas. FIADO y CASHEA son cuentas por cobrar: no forman parte del efectivo esperado del arqueo.'
+                    : 'Solo lo cobrado de las ventas y las cobranzas entraron a la caja. FIADO y CASHEA son cuentas por cobrar: no forman parte del efectivo esperado del arqueo.',
                 RIGHT - M
             );
             doc.text(noteLines, M, y);
@@ -976,8 +977,7 @@ export async function generateDailyClosePDF({
     // Logo
     try {
         if (imgLogo) {
-            const logoW = is80 ? 46 : 38;
-            const logoH = is80 ? 11 : 9;
+            const { w: logoW, h: logoH } = fitLogo(imgLogo.naturalWidth, imgLogo.naturalHeight, is80 ? 46 : 38, is80 ? 11 : 9);
             doc.addImage(imgLogo, 'PNG', HEADER_CX - logoW / 2, y, logoW, logoH);
             y += logoH + 3;
         } else {

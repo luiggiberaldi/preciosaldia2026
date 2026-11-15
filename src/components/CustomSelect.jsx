@@ -8,7 +8,9 @@ export default function CustomSelect({
     className = '',
     buttonClassName = '',
     placeholder = 'Seleccionar...',
-    openUp = false
+    openUp = false,
+    // Opcional: `data-testid` del botón; cada opción lleva `${testId}-option-${value}`.
+    testId,
 }) {
     const [isOpen, setIsOpen] = useState(false);
     const containerRef = useRef(null);
@@ -29,6 +31,10 @@ export default function CustomSelect({
         <div ref={containerRef} className={`relative ${className}`}>
             <button
                 type="button"
+                data-testid={testId}
+                data-value={value}
+                aria-haspopup="listbox"
+                aria-expanded={isOpen}
                 onClick={() => setIsOpen(!isOpen)}
                 className={`w-full bg-slate-50 dark:bg-slate-800 p-3.5 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 text-sm flex items-center justify-between text-left border border-transparent shadow-sm transition-all ${buttonClassName}`}
             >
@@ -46,6 +52,7 @@ export default function CustomSelect({
                         <button
                             key={opt.value}
                             type="button"
+                            data-testid={testId ? `${testId}-option-${opt.value}` : undefined}
                             onClick={() => {
                                 onChange(opt.value);
                                 setIsOpen(false);

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { matchesSearch as matchesSearchFields } from '../../utils/searchMatch';
 import { ChevronDown, UserPlus, Check, Search, X, User } from 'lucide-react';
 import { formatBs } from '../../utils/calculatorUtils';
+import { customerBalanceChip } from '../../utils/customerBalanceText';
 
 const AVATAR_COLORS = [
     'bg-brand-light text-brand-dark dark:bg-surface-800/40 dark:text-brand',
@@ -20,6 +21,22 @@ function CustomerAvatar({ name, size = 'md' }) {
         <div className={`${sizeClass} ${colorClass} rounded-full flex items-center justify-center font-black shrink-0`}>
             {initial}
         </div>
+    );
+}
+
+// F7: «Debe $5.00 · Bs 200,00» (rojo) / «Favor $3.00 · Bs 120,00» (verde). Los Bs son
+// referencia a la tasa del día: la cuenta se lleva en dólares (decisión D3).
+function BalanceChip({ customer, rate, testId }) {
+    const chip = customerBalanceChip(customer, rate);
+    if (!chip) return null;
+    return (
+        <span data-testid={testId} className={`text-[8px] font-black px-1.5 py-0.5 rounded leading-none border shrink-0 ${
+            chip.tone === 'debt'
+                ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 border-red-100 dark:border-red-900/30'
+                : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 border-emerald-100 dark:border-emerald-900/30'
+        }`}>
+            {chip.text}
+        </span>
     );
 }
 
@@ -103,6 +120,8 @@ export default function CheckoutCustomerPicker({
             {/* ── Trigger button ── */}
             <button
                 onClick={handleTogglePicker}
+                data-testid="customer-picker-toggle"
+                aria-expanded={showCustomerPicker}
                 className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border-2 transition-all ${
                     showCustomerPicker
                         ? 'border-emerald-400 dark:border-emerald-600 bg-white dark:bg-slate-900 shadow-sm shadow-emerald-500/10'
@@ -135,17 +154,7 @@ export default function CheckoutCustomerPicker({
                                         C.I: {selectedCustomer.documentId}
                                     </span>
                                 )}
-                        {(selectedCustomer.deuda > 0.01 || selectedCustomer.favor > 0.01) && (
-                            <span className={`text-[8px] font-black px-1.5 py-0.5 rounded leading-none border shrink-0 ${
-                                selectedCustomer.deuda > 0
-                                    ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 border-red-100 dark:border-red-900/30'
-                                    : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 border-emerald-100 dark:border-emerald-900/30'
-                            }`}>
-                                {selectedCustomer.deuda > 0
-                                    ? `Debe $${selectedCustomer.deuda.toFixed(2)}`
-                                    : `Favor $${selectedCustomer.favor.toFixed(2)}`}
-                            </span>
-                        )}
+                        <BalanceChip customer={selectedCustomer} rate={effectiveRate} testId="customer-balance-chip" />
                             </div>
                         )}
                     </div>
@@ -316,15 +325,7 @@ export default function CheckoutCustomerPicker({
                                                                 C.I: {c.documentId}
                                                             </span>
                                                         )}
-                                                        {(c.deuda > 0.01 || c.favor > 0.01) && (
-                                                            <span className={`text-[8px] font-black px-1.5 py-0.5 rounded leading-none border shrink-0 ${
-                                                                c.deuda > 0
-                                                                    ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 border-red-100 dark:border-red-900/30'
-                                                                    : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 border-emerald-100 dark:border-emerald-900/30'
-                                                            }`}>
-                                                                {c.deuda > 0 ? `Debe $${c.deuda.toFixed(2)}` : `Favor $${c.favor.toFixed(2)}`}
-                                                            </span>
-                                                        )}
+                                                        <BalanceChip customer={c} rate={effectiveRate} />
                                                     </div>
                                                 </div>
                                                 {selectedCustomerId === c.id && <Check size={14} className="text-emerald-500 shrink-0" />}

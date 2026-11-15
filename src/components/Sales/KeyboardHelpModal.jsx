@@ -8,7 +8,7 @@ export default function KeyboardHelpModal({ isOpen, onClose }) {
         { key: 'Enter', action: 'Buscar / Agregar a cesta / Volver a buscar', desc: 'Flujo principal continuo' },
         { key: 'F2', action: 'Enfocar buscador', desc: 'Alternativa rápida' },
         { key: 'F4', action: 'Vaciar cesta', desc: 'Pide confirmación' },
-        { key: 'F9', action: 'Procesar cobro', desc: 'Abre modal de pago' },
+        { key: 'F9', action: 'Procesar cobro', desc: 'Abre el pago; ya dentro del pago, cobra' },
         { key: '↑ / ↓', action: 'Navegar en cesta', desc: 'Mueve la selección verde' },
         { key: '+ / -', action: 'Ajustar cantidad', desc: 'Aumenta o disminuye item' },
         { key: 'Supr', action: 'Eliminar item', desc: 'Borra el item seleccionado' },

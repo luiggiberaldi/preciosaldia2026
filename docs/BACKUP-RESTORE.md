@@ -28,7 +28,7 @@ actual.
 ### Flujo de exportación
 1. `useDataImportExport.handleExport` recolecta el payload canónico
    (`IDB_KEYS` + `LS_KEYS` de `src/config/backupKeys.js`).
-2. Descarga `backup_tasasaldia_completo_YYYY-MM-DD.json`.
+2. Descarga `respaldo_preciosaldia_AAAA-MM-DD.json`.
 
 ### Flujo de importación
 1. `handleFileChange` **valida antes de borrar** (BACKUP-002): rechaza JSON

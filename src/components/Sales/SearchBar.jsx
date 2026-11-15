@@ -1,5 +1,5 @@
 import { forwardRef, useState, useEffect, useRef } from 'react';
-import { Search, Mic, Package, X, Box, Layers, List, LayoutGrid } from 'lucide-react';
+import { Search, Mic, Package, X, Box, Keyboard, Hand } from 'lucide-react';
 import { BODEGA_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../config/categories';
 import { formatCop, formatUsd, getCop, getUsd } from '../../utils/calculatorUtils';
 import {
@@ -79,7 +79,7 @@ const SearchBar = forwardRef(function SearchBar({
                     }
                 }}
                 placeholder="Buscar producto..."
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl py-3 pl-10 sm:pl-12 pr-32 sm:pr-40 text-slate-800 dark:text-white font-medium outline-none focus:ring-2 focus:ring-emerald-500/50 shadow-inner text-sm sm:text-base transition-all" />
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl py-3 pl-10 sm:pl-12 pr-[140px] sm:pr-[154px] text-slate-800 dark:text-white font-medium outline-none focus:ring-2 focus:ring-emerald-500/50 shadow-inner text-sm sm:text-base transition-all" />
 
             <div className="absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 flex items-center pr-1 gap-1">
                 {/* Conmutador de modo de vista en caja */}
@@ -88,37 +88,29 @@ const SearchBar = forwardRef(function SearchBar({
                         type="button"
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => onViewModeChange?.('hybrid')}
-                        title="Modo Híbrido: Desplegable rápido + Cuadrícula táctil"
-                        className={`p-1 rounded-md transition-all ${posSearchViewMode === 'hybrid'
+                        title="Teclado y escáner: lista rápida al escribir + fichas"
+                        aria-label="Modo teclado y escáner"
+                        aria-pressed={posSearchViewMode === 'hybrid'}
+                        className={`p-1.5 sm:p-2 rounded-md transition-all ${posSearchViewMode === 'hybrid'
                             ? 'bg-emerald-500 text-white shadow-xs font-bold'
                             : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
                         }`}
                     >
-                        <Layers size={13} />
-                    </button>
-                    <button
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => onViewModeChange?.('list')}
-                        title="Modo Lista: Desplegable ultra-rápido para teclado"
-                        className={`p-1 rounded-md transition-all ${posSearchViewMode === 'list'
-                            ? 'bg-emerald-500 text-white shadow-xs font-bold'
-                            : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
-                        }`}
-                    >
-                        <List size={13} />
+                        <Keyboard size={15} />
                     </button>
                     <button
                         type="button"
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => onViewModeChange?.('grid')}
-                        title="Modo Galería: Cuadrícula visual para pantalla táctil"
-                        className={`p-1 rounded-md transition-all ${posSearchViewMode === 'grid'
+                        title="Pantalla táctil: solo fichas grandes para tocar"
+                        aria-label="Modo pantalla táctil"
+                        aria-pressed={posSearchViewMode === 'grid'}
+                        className={`p-1.5 sm:p-2 rounded-md transition-all ${posSearchViewMode === 'grid'
                             ? 'bg-emerald-500 text-white shadow-xs font-bold'
                             : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
                         }`}
                     >
-                        <LayoutGrid size={13} />
+                        <Hand size={15} />
                     </button>
                 </div>
 
@@ -193,7 +185,7 @@ const SearchBar = forwardRef(function SearchBar({
                                         />
                                     </div>
                                     <div className="flex-1 min-w-0 text-left">
-                                        <p className={`text-sm font-bold truncate leading-tight ${isSelected ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-800 dark:text-slate-100'}`}>
+                                        <p className={`text-sm font-bold break-words leading-tight ${isSelected ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-800 dark:text-slate-100'}`}>
                                             {p.name}
                                         </p>
                                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">

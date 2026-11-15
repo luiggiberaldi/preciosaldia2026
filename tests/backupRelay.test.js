@@ -179,7 +179,7 @@ describe('isRlsBlockedError', () => {
 describe('describeCloudError(42501) menciona acción de relay/export', () => {
     it('el hint orienta al usuario cuando RLS bloquea', () => {
         const info = describeCloudError({ code: '42501', message: 'row-level security' });
-        expect(info.hint).toMatch(/Exportar Backup|relay/i);
+        expect(info.hint).toMatch(/Exportar respaldo|relay/i);
         expect(info.technical).toContain('42501');
     });
 });

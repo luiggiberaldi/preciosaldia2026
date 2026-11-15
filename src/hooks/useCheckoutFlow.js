@@ -8,6 +8,7 @@ import { CurrencyService } from '../services/CurrencyService'; // FIN-026: safeP
 import { SALES_KEY } from './useSalesData';
 import { buildAporteCajaRecord } from '../utils/cajaAporte';
 import { useAuthStore } from './store/useAuthStore';
+import { findOpenCashShift } from '../utils/cashShift';
 
 export function useCheckoutFlow({
     cart, cartTotalUsd, cartTotalBs, cartSubtotalUsd, cartBaseUsd, cartIvaUsd,
@@ -118,14 +119,27 @@ export function useCheckoutFlow({
             };
 
             // FIN-026: envolver en withLock para evitar duplicar aperturas en doble-click.
+            // CAJA-APERTURA-001: si ya hay una caja abierta (otra pestaña o pantalla
+            // desactualizada) no se crea otra: su fondo quedaría fuera de las cuentas,
+            // porque solo cuenta la apertura abierta más reciente.
+            let alreadyOpen = null;
             await withLock('pos_write_lock', async () => {
                 const existingSales = await storageService.getItem(SALES_KEY, []);
+                alreadyOpen = findOpenCashShift(existingSales);
+                if (alreadyOpen) {
+                    setTodayAperturaData(alreadyOpen);
+                    return;
+                }
                 const updatedSales = [...existingSales, aperturaRecord];
                 await storageService.setItem(SALES_KEY, updatedSales);
                 setTodayAperturaData(aperturaRecord);
             });
 
             setIsAperturaOpen(false);
+            if (alreadyOpen) {
+                showToast('La caja ya estaba abierta. Se usa la apertura existente.', 'info');
+                return;
+            }
             showToast('Caja abierta exitosamente', 'success');
             if (triggerHaptic) triggerHaptic();
 

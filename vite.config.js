@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { fetchBcvRates } from './api/bcvRatesHelper.js';
 // Fuente única del system prompt — la misma que usa api/chat.js en Vercel.
+import { RELEASE_NOTES } from './src/data/releaseNotes.js';
 import { buildChatSystemMessage, CHAT_TEMPERATURE, CHAT_MAX_TOKENS } from './src/services/chatSystemPrompt.js';
 
 // Versión del package.json para cacheId estable (INFRA-006).
@@ -22,6 +23,14 @@ export default defineConfig(({ mode }) => {
     base: process.env.ELECTRON_BUILD === 'true' ? './' : '/',
     plugins: [
       react(),
+      // Publica las novedades como /release-notes.json (sin caché) para que la versión
+      // ya instalada pueda mostrar qué trae la actualización ANTES de aplicarla.
+      {
+        name: 'pda-release-notes',
+        generateBundle() {
+          this.emitFile({ type: 'asset', fileName: 'release-notes.json', source: JSON.stringify(RELEASE_NOTES) });
+        },
+      },
     VitePWA({
       registerType: 'prompt', // SW prompt: no fuerza recargas abruptas durante operaciones POS (A-001/B-003).
       includeAssets: [
@@ -34,33 +43,22 @@ export default defineConfig(({ mode }) => {
         'pwa-512x512.png',
         'pwa-maskable-192.png',
         'pwa-maskable-512.png',
+        // Logos de fábrica y avatar del asistente: sin esto no se ven sin internet.
+        'logo.png',
+        'logodark.png',
+        'bot-avatar.png',
       ],
       workbox: {
         cleanupOutdatedCaches: true,
+        // Letras autoalojadas (@fontsource) en el precache: se ven sin internet desde la primera carga.
+        globPatterns: ['**/*.{js,css,html,woff2}'],
         skipWaiting: false, // No forzar skipWaiting automático para evitar pérdida de datos en caja.
         clientsClaim: true,
         cacheId: `preciosaldia-bodega-v${APP_VERSION}`,
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/^\/api\//],
+        // Las letras ya no vienen de Google Fonts (van en el precache): no hacen falta reglas para ellas.
         runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts-cache',
-              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-          {
-            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'gstatic-fonts-cache',
-              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
           {
             urlPattern: /\/storage\/v1\/object\/public\/product-images\/.*/i,
             handler: 'CacheFirst',
@@ -614,7 +612,8 @@ export default defineConfig(({ mode }) => {
     environment: 'jsdom',
     setupFiles: ['./tests/setup.js'],
     include: ['tests/**/*.{test,spec}.{js,jsx}'],
-    exclude: ['tests/e2e/**'],
+    // e2e-offline: Playwright contra el build (npm run test:e2e:offline), no Vitest.
+    exclude: ['tests/e2e/**', 'tests/e2e-offline/**'],
     coverage: {
       reporter: ['text', 'html', 'lcov'],
       include: ['src/utils/**', 'src/core/**'],

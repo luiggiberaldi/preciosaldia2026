@@ -64,3 +64,37 @@
     color: var(--primary);
   }
 }
+
+/* Encabezado del inicio (src/views/dashboard/DashboardSummary.jsx).
+   El logo ancho (600x130, con el lema abajo recortado) solo aparece si el encabezado
+   mide lo suficiente; si no, se usa el ícono «D». Se mide el encabezado y no la ventana
+   porque la barra lateral le quita entre 64 y 224 px. */
+.dash-header { container-type: inline-size; }
+.dash-header .dash-logo-word { display: none; }
+.dash-header .dash-logo-box { height: 30px; }
+.dash-header .dash-logo-img { height: 47px; }
+/* Ancho intermedio: logo pequeño (sin lema) en lugar de la «D». */
+@container (min-width: 760px) {
+  .dash-header .dash-logo-icon { display: none; }
+  .dash-header .dash-logo-word { display: flex; }
+}
+@container (min-width: 1000px) {
+  .dash-header .dash-logo-box { height: 42px; }
+  .dash-header .dash-logo-img { height: 66px; }
+}
+@container (min-width: 1400px) {
+  .dash-header .dash-logo-box { height: 58px; }
+  .dash-header .dash-logo-img { height: 90px; }
+}
+
+/* Ajustes (src/views/SettingsView.jsx): las tarjetas se reparten en 1, 2 o 3 columnas según el
+   ancho REAL del panel (.settings-pane), no el de la ventana. Así no se aprietan cuando la barra
+   lateral de la app está abierta. */
+.settings-pane { container-type: inline-size; }
+.cq-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+@container (min-width: 640px) {
+  .cq-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container (min-width: 1080px) {
+  .cq-grid.cq-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

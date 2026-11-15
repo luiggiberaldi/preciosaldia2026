@@ -14,22 +14,21 @@ export default function DashboardStats({
 }) {
     return (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-            {/* Licencia Demo */}
+            {/* Licencia Demo — estilo Farmacia: tarjeta clara con el color de la marca */}
             {isDemo && demoTimeLeft && (
-                <div className="col-span-2 lg:col-span-4 bg-gradient-to-r from-amber-500 to-amber-600 rounded-2xl p-4 shadow-sm relative overflow-hidden text-white flex items-center justify-between">
-                    <div className="absolute right-0 top-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -translate-y-1/2 translate-x-1/2"></div>
-                    <div className="flex items-center gap-3 relative z-10">
-                        <div className="w-10 h-10 bg-black/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
-                            <Key size={20} className="text-amber-100" />
+                <div className="col-span-2 lg:col-span-4 bg-brand-light dark:bg-slate-900 border border-brand/20 dark:border-slate-800 rounded-2xl p-4 shadow-sm relative overflow-hidden flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 relative z-10 min-w-0">
+                        <div className="w-10 h-10 bg-brand rounded-xl flex items-center justify-center shadow-sm shrink-0">
+                            <Key size={20} className="text-white" />
                         </div>
-                        <div>
-                            <h3 className="text-[13px] font-bold text-amber-50 leading-tight">Licencia de Prueba</h3>
-                            <p className="text-2xl font-outfit font-semibold mt-0.5">{demoTimeLeft}</p>
+                        <div className="min-w-0">
+                            <h3 className="text-[11px] font-bold text-brand dark:text-brand-light uppercase tracking-wider leading-tight">Licencia de prueba</h3>
+                            <p className="text-xl font-outfit font-semibold text-slate-800 dark:text-white mt-0.5">{demoTimeLeft}</p>
                         </div>
                     </div>
-                    <div className="relative z-10 text-right">
-                        <button className="text-[10px] font-bold bg-white/20 hover:bg-white/30 transition-colors px-3 py-1.5 rounded-lg active:scale-95" onClick={() => window.open(`https://wa.me/584124051793?text=Hola! Quiero adquirir la licencia Premium de PreciosAlDía Bodega. Mi ID de instalación es: ${deviceId || 'N/A'}`.replace(/\s+/g, '%20'), '_blank')}>
-                            ADQUIRIR
+                    <div className="relative z-10 shrink-0">
+                        <button className="text-xs font-bold bg-brand hover:bg-brand-dark text-white transition-colors px-4 py-2 rounded-xl shadow-sm active:scale-95" onClick={() => window.open(`https://wa.me/584124051793?text=Hola! Quiero adquirir la licencia Premium de PreciosAlDía Bodega. Mi ID de instalación es: ${deviceId || 'N/A'}`.replace(/\s+/g, '%20'), '_blank')}>
+                            Adquirir licencia
                         </button>
                     </div>
                 </div>

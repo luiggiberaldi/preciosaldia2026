@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mockup – Modal de actualización</title>
+<style>
+:root{--bg:#f1f5f9;--card:#fff;--text:#0f172a;--muted:#64748b;--border:#e2e8f0;--primary:#0d9488;--primary-d:#0f766e;--soft:#ccfbf1;--soft-text:#0f766e;--app:#f8fafc;--shadow:0 20px 50px rgba(15,23,42,.18)}
+.dark{--bg:#020617;--card:#0f172a;--text:#f1f5f9;--muted:#94a3b8;--border:#1e293b;--primary:#14b8a6;--primary-d:#2dd4bf;--soft:rgba(20,184,166,.15);--soft-text:#5eead4;--app:#0b1220;--shadow:0 20px 50px rgba(0,0,0,.6)}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--text);padding:24px;transition:.2s}
+h1{font-size:20px;margin:0 0 4px}.sub{color:var(--muted);font-size:14px;margin:0 0 16px}
+.toggle{border:1px solid var(--border);background:var(--card);color:var(--text);padding:8px 16px;border-radius:999px;font-weight:700;cursor:pointer;margin-bottom:24px}
+.row{display:flex;gap:40px;flex-wrap:wrap;align-items:flex-start}
+.label{font-size:12px;font-weight:800;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;margin-bottom:10px}
+/* marcos */
+.phone{width:340px;height:640px;border:10px solid #0f172a;border-radius:38px;background:var(--app);position:relative;overflow:hidden}
+.desk{width:760px;height:460px;border:1px solid var(--border);border-radius:14px;background:var(--app);position:relative;overflow:hidden}
+.fake{position:absolute;inset:0;padding:16px;opacity:.55}
+.fake i{display:block;height:54px;border-radius:14px;background:var(--card);border:1px solid var(--border);margin-bottom:10px}
+.scrim{position:absolute;inset:0;background:rgba(2,6,23,.55);backdrop-filter:blur(2px);display:flex;align-items:flex-end;justify-content:center}
+.desk .scrim{align-items:center}
+/* modal */
+.modal{background:var(--card);width:100%;border-radius:24px 24px 0 0;padding:22px 20px 20px;box-shadow:var(--shadow)}
+.desk .modal{width:440px;border-radius:24px;padding:26px}
+.head{display:flex;gap:12px;align-items:center}
+.logo{width:46px;height:46px;border-radius:14px;background:var(--primary);color:#fff;display:grid;place-items:center;font-size:22px;flex:none}
+.title{font-weight:900;font-size:18px;line-height:1.2}
+.meta{display:flex;gap:8px;align-items:center;margin-top:4px;font-size:12px;color:var(--muted)}
+.chip{background:var(--soft);color:var(--soft-text);font-weight:800;padding:2px 9px;border-radius:999px;font-size:12px}
+.sec{margin-top:18px}
+.sec h4{margin:0 0 8px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.notes{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.notes li{display:flex;gap:12px;align-items:flex-start;padding:10px 12px;border:1px solid var(--border);border-radius:14px;font-size:14px;line-height:1.35}
+.notes .ic{width:32px;height:32px;border-radius:10px;background:var(--soft);display:grid;place-items:center;flex:none;font-size:16px}
+.notes b{display:block;font-size:14px}.notes span{color:var(--muted);font-size:13px}
+.older{margin-top:12px;font-size:13px;color:var(--muted);border-top:1px dashed var(--border);padding-top:10px}
+.older .chip{background:transparent;border:1px solid var(--border);color:var(--muted)}
+.btns{display:flex;gap:10px;margin-top:20px}
+.btns button{flex:1;min-height:46px;border-radius:14px;font-weight:800;font-size:15px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text)}
+.btns .go{background:var(--primary);border-color:var(--primary);color:#fff;flex:1.4}
+.hint{font-size:12px;color:var(--muted);text-align:center;margin-top:10px}
+</style>
+</head>
+<body>
+<h1>Modal “Nueva actualización disponible” — propuesta</h1>
+<p class="sub">Así se vería con las novedades. Ejemplo: usuario que se saltó la 2.0.5 y ahora va a la 2.0.7.</p>
+<button class="toggle" onclick="document.body.classList.toggle('dark');document.documentElement.classList.toggle('dark')">🌙 / ☀️ Cambiar modo claro / oscuro</button>
+
+<div class="row">
+  <div>
+    <div class="label">Teléfono</div>
+    <div class="phone">
+      <div class="fake"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="scrim">
+        <div class="modal" id="m1"></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="label">Computadora</div>
+    <div class="desk">
+      <div class="fake"><i></i><i></i><i></i><i></i></div>
+      <div class="scrim">
+        <div class="modal" id="m2"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const html = `
+  <div class="head">
+    <div class="logo">🚀</div>
+    <div>
+      <div class="title">Nueva actualización disponible</div>
+      <div class="meta"><span class="chip">Versión 2.0.7</span><span>12 de noviembre de 2026</span></div>
+    </div>
+  </div>
+  <div class="sec">
+    <h4>Qué hay de nuevo</h4>
+    <ul class="notes">
+      <li><div class="ic">🧾</div><div><b>Recibos con IVA claro</b><span>Ahora ves el IVA desglosado al cobrar y en el cierre de caja.</span></div></li>
+      <li><div class="ic">💵</div><div><b>Cierre de caja más fácil</b><span>La tasa del día aparece como “Tasa activa”.</span></div></li>
+      <li><div class="ic">🏠</div><div><b>Inicio renovado</b><span>Barra lateral y encabezado nuevos, más rápidos de usar.</span></div></li>
+    </ul>
+    <div class="older"><span class="chip">Versión 2.0.6</span> También incluye: ajuste “Mis precios ya incluyen IVA”. <u>Ver más</u></div>
+  </div>
+  <div class="btns"><button>Después</button><button class="go">Actualizar ahora</button></div>
+  <div class="hint">La app se reinicia en 2 segundos. No pierdes tus datos.</div>`;
+m1.innerHTML = html; m2.innerHTML = html;
+</script>
+</body>
+</html>

@@ -2,18 +2,22 @@ import { useState, useEffect, useRef } from 'react';
 import { matchesSearch as matchesSearchFields } from '../utils/searchMatch';
 import { Search, ChevronRight, Package, Users, FileText, Settings, X } from 'lucide-react';
 
-export default function CommandPalette({ isOpen, onClose, onToggle, navigateTo }) {
+export default function CommandPalette({ isOpen, onClose, onToggle, navigateTo, hiddenTabs = null }) {
     const [query, setQuery] = useState('');
     const inputRef = useRef(null);
 
+    // ERR-118: la paleta solo ofrece las pantallas que el rol puede abrir (al Cajero no le
+    // muestra Reportes ni Ajustes); además, `navigateTo` es el portero de App.jsx.
     const commands = [
-        { id: 'nav-sales', title: 'Ir a Ventas', icon: Package, action: () => navigateTo('ventas') },
-        { id: 'nav-inventory', title: 'Ir a Inventario', icon: Package, action: () => navigateTo('catalogo') },
-        { id: 'nav-customers', title: 'Ir a Clientes', icon: Users, action: () => navigateTo('clientes') },
-        { id: 'nav-reports', title: 'Ir a Reportes', icon: FileText, action: () => navigateTo('reportes') },
-        { id: 'nav-dashboard', title: 'Ir a Inicio', icon: Package, action: () => navigateTo('inicio') },
-        { id: 'nav-settings', title: 'Ir a Ajustes', icon: Settings, action: () => navigateTo('ajustes') },
-    ];
+        { id: 'nav-sales', tab: 'ventas', title: 'Ir a Ventas', icon: Package },
+        { id: 'nav-inventory', tab: 'catalogo', title: 'Ir a Inventario', icon: Package },
+        { id: 'nav-customers', tab: 'clientes', title: 'Ir a Gestión (clientes, proveedores, nómina)', icon: Users },
+        { id: 'nav-reports', tab: 'reportes', title: 'Ir a Reportes', icon: FileText },
+        { id: 'nav-dashboard', tab: 'inicio', title: 'Ir a Inicio', icon: Package },
+        { id: 'nav-settings', tab: 'ajustes', title: 'Ir a Ajustes', icon: Settings },
+    ]
+        .filter(c => !hiddenTabs?.has(c.tab))
+        .map(c => ({ ...c, action: () => navigateTo(c.tab) }));
 
     const filteredCommands = commands.filter(c => matchesSearchFields([c.title], query));
 

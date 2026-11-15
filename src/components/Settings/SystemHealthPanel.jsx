@@ -88,7 +88,7 @@ export default function SystemHealthPanel({ triggerHaptic, measureImpl = measure
                         type="button"
                         onClick={() => { triggerHaptic?.(); check(); }}
                         disabled={isChecking}
-                        className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-600 transition hover:bg-slate-100 hover:text-slate-800 active:scale-95 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 min-h-[40px] text-[11px] font-black text-slate-600 transition hover:bg-slate-100 hover:text-slate-800 active:scale-95 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
                     >
                         {isChecking ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
                         Revisar ahora

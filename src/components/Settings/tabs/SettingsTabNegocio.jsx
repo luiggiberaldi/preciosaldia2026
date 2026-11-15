@@ -2,6 +2,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Store, Coins, Check, Tag } from 'lucide-react';
 import { SectionCard, Toggle } from '../../SettingsShared';
+import BrandLogoSettings from '../BrandLogoSettings';
+import PayrollSettingsCard from '../../Payroll/PayrollSettingsCard';
 import { generarPreviewLabel } from '../../../utils/labelGenerator';
 
 
@@ -49,7 +51,7 @@ const CalibratorSlider = ({ label, value, setValue, baseKey, mode, paperWidth, m
                         }}
                         className="w-10 bg-transparent text-[10px] font-black text-brand text-right focus:outline-none focus:ring-0 p-0 border-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     />
-                    <span className="text-[9px] font-black text-slate-400/80 dark:text-slate-500 select-none">{unit}</span>
+                    <span className="text-[10px] font-black text-slate-400/80 dark:text-slate-500 select-none">{unit}</span>
                 </div>
             </div>
             <div className="flex items-center gap-2">
@@ -191,9 +193,9 @@ export default function SettingsTabNegocio({
 
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
+        <div className="cq-grid cq-3 items-start">
             {/* Mi Negocio */}
-            <div className="md:col-span-2 xl:col-span-3">
+            <div className="col-span-full">
                 <SectionCard icon={Store} title="Mi Negocio" subtitle="Datos que aparecen en tickets" iconColor="text-brand">
                     <div className="space-y-4">
                         <div>
@@ -229,6 +231,7 @@ export default function SettingsTabNegocio({
                             />
                             <p className="text-[10px] text-slate-400 mt-1">Te contactaremos por WhatsApp sobre tu licencia, soporte y novedades.</p>
                         </div>
+                        <BrandLogoSettings />
                         <button
                             onClick={handleSaveBusinessData}
                             className="w-full flex items-center justify-center gap-2 py-3 bg-brand-light dark:bg-surface-800/20 text-brand-dark dark:text-brand font-bold text-xs uppercase tracking-wider rounded-xl hover:bg-brand-light dark:hover:bg-surface-800/40 transition-colors active:scale-[0.98]"
@@ -272,12 +275,15 @@ export default function SettingsTabNegocio({
                 </div>
             </SectionCard>
 
+            {/* Nómina: precio de la mercancía de empleados (P-012, F6) */}
+            <PayrollSettingsCard triggerHaptic={triggerHaptic} />
+
             {/* Monedas COP */}
-            <SectionCard icon={Coins} title="Peso Colombiano (COP)" subtitle="Habilitar pagos y calculos en COP" iconColor="text-amber-500">
+            <SectionCard icon={Coins} title="Peso Colombiano (COP)" subtitle="Habilitar pagos y cálculos en COP" iconColor="text-amber-500">
                 <div className="flex items-center justify-between">
                     <div>
                         <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Habilitar COP</p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Pagos y calculos rapidos</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Pagos y cálculos rápidos</p>
                     </div>
                     <Toggle
                         enabled={copEnabled}

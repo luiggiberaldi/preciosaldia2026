@@ -5,6 +5,14 @@ Aprendizajes reutilizables van a `inteligencia.md`.
 
 ---
 
+## 2026-11-15 — Licencias: aviso remoto de cambio de ID para separar un ID compartido (P-020)
+
+- Nuevo buzón `identity_migration_orders` (migración `20261115_identity_migration_orders.sql`, **aplicada**): tabla cerrada, solo service_role crea avisos; la caja solo ve y completa avisos de su propia sesión (`auth.uid()`).
+- La caja revisa su aviso al abrir y cada 30 min, solo si ya tiene sesión; si su ID actual es el viejo, adopta el nuevo con `migrateDeviceIdentity({ newDeviceId, expectedCurrentId })`. No borra datos ni toca la licencia del ID viejo.
+- Publicado en producción: commit `0552a69` en `main` (rama `fix/aviso-cambio-id`, desde la versión publicada, sin el resto del trabajo sin publicar). Vercel `dpl_3f3YT1jjNg6Gc3kfzsUrZZesXktp`.
+- Prueba real con el equipo de prueba (sesión `8c42499b`): `…36EE3855` → `…BED0F3A9` a las 20:24:55 UTC, aviso cumplido, licencia `ACTIV-BED0-F3A9` creada antes; el usuario confirmó ID, premium y datos en pantalla.
+- Cosméticos: licencia `ACTIV-49CF-C294` («cosméticos») y aviso para la sesión `8bc85903` creados; cambia al abrir o recargar la caja. Identificación: es la sesión que usa `…CB675980` sin tener su identidad ni subir respaldos; «bueno y sano» es `d20bcf79` (Telemic) y sube el respaldo (282 productos de víveres).
+
 ## 2026-09-29 — fix(respaldos): errores honestos en useAutoBackup, fallback muerto eliminado
 
 **Problema:** el pipeline de respaldos remotos era silencioso. `performBackup()` tragaba
@@ -212,3 +220,202 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
   bloque aparte que NO suma al total, con aviso «La caja no está subiendo datos a la nube
   desde…» cuando tarda.
 - Pruebas: `tests/purchasesPendingSync.test.js`, `tests/purchasesPendingSyncView.test.jsx`.
+
+---
+
+## 2026-11-13 — (reconstruido) Cambios del 31-oct al 13-nov
+
+**Contexto:** la bitácora quedó sin entradas desde el 29-oct. Esta entrada resume, desde `git log`, lo que se guardó en ese tiempo. No se inventó nada: solo los títulos de los commits.
+**Cambios (commits, de más viejo a más nuevo):**
+- 2026-11-01: asistente con contexto de productos, ventas, clientes, reportes y proveedores; cupo por dispositivo; día de Caracas; prueba e2e del widget.
+- 2026-11-04: en productos, el margen elegido se mantiene a cualquier nivel de precio y la ficha muestra el margen y los Bs reales tras redondear a centavos.
+- 2026-11-07: ticket y recibo con IVA desglosado y productos exentos marcados con (E); cierre de caja con IVA desglosado y «Tasa activa».
+- 2026-11-08: opción «Mis precios ya incluyen IVA».
+- 2026-11-13: inicio con barra lateral, pantalla completa y encabezado estilo Farmacia.
+**Casos y errores:** ninguno (aún no existía la ley).
+**Verificación:** no verificado; solo se leyó el historial de git.
+
+---
+
+## 2026-11-13 — Auditoría y arreglo de la apertura de caja
+
+**Contexto:** el dueño vio «Efectivo esperado −2.159,35 Bs». Informe: [docs/auditorias/AUDITORIA-APERTURA-CAJA-2026-11-13.md](docs/auditorias/AUDITORIA-APERTURA-CAJA-2026-11-13.md).
+**Cambios:** no se pueden abrir dos cajas a la vez (`useCheckoutFlow.js`); regla única del fondo real de la gaveta (`cashShift.js`, `fondoGaveta.js`, `SalesView.jsx` y `useDashboardMetrics.js`); aviso legible de efectivo insuficiente para el vuelto (`AvisoFondoGaveta.jsx` y componentes del cobro), con «Registrar aporte», «Dejar en saldo a favor» y «Confirmar igual» en la confirmación final; aviso al abrir con 0 Bs y explicación del número rojo en el Inicio. Marcas en el código: `CAJA-APERTURA-001`, `CAJA-FONDO-001`, `CAJA-FONDO-002`.
+**Casos y errores:** [CASO-002](docs/casos/CASO-002-caja-apertura-y-fondo.md); ERR-001, ERR-002, ERR-003.
+**Verificación:** 124 de 124 pruebas de caja y cobro (incluye 12 nuevas: `tests/fondoGaveta.test.js`, `tests/aperturaDuplicada.test.js`). Batería completa: 2.241 de 2.244; fallan 3 de licencias (`licenseMonitoringMissing`, `licensePolicy`), ajenas a este cambio. Probado en el navegador: apertura con 0 Bs, vuelto en Bs sin Bs, aporte que quita el aviso, Inicio con USD 30,00 y 144,84 Bs. Guardado el 2026-11-13.
+
+---
+
+## 2026-11-13 — Documentación estilo Farmacia (fases 1 a 4)
+
+**Contexto:** el dueño pidió copiar el modelo de documentación de Farmacia en versión ligera. Caso: [CASO-001](docs/casos/CASO-001-documentacion-estilo-farmacia.md).
+**Cambios:**
+- Fase 1: `docs/LEY-DOCUMENTACION.md`, `docs/ERRORES.md` (con 3 errores de caja de hoy y 3 reconstruidos de informes), `docs/casos/` (índice, CASO-001, CASO-002), `PENDIENTES.md`, sección en `AGENT.md`.
+- Fase 2: `scripts/docs-check.mjs`, `tests/docsCheck.test.js`, script `docs:check`, llamada en `githooks/pre-commit` y en `.github/workflows/ci.yml`. Solo avisa.
+- Fase 3: manual corto en `docs/sistema/`.
+- Fase 4: auditorías de la raíz movidas a `docs/auditorias/`.
+**Casos y errores:** CASO-001.
+- Fase 4 (detalle): movidas las 10 `AUDITORIA-*.md` de la raíz y `docs/AUDITORIA-MODO-SUPERVISOR.md` a `docs/auditorias/` con los enlaces ajustados; el enlace absoluto roto del README a `ROLLBACK-STABLE-BASELINE.md` se hizo relativo. Los `PLAN-*` y reportes de la raíz **no** se movieron (P-006).
+**Verificación:** `node scripts/docs-check.mjs --ci` → «Documentación al día»; `npx vitest run tests/docsCheck.test.js` → 20 de 20. No se corrió la batería completa ni ESLint. Sin commit. Quedan 10 enlaces rotos antiguos dentro de `docs/auditorias/` (rutas absolutas de otro equipo y un test inexistente), no revisados por el guardia.
+
+---
+
+## 2026-11-14 — Vender estilo Farmacia (fases 1 a 7)
+
+**Contexto:** el dueño pidió auditar Vender de Farmacia y traer lo útil a Bodega, fase a fase. Informe y plan con medidas antes/después: [docs/auditorias/AUDITORIA-VENDER-BODEGA-VS-FARMACIA-2026-11-13.md](docs/auditorias/AUDITORIA-VENDER-BODEGA-VS-FARMACIA-2026-11-13.md) y [docs/plans/2026-11-13-plan-vender-bodega-alinear-con-farmacia.md](docs/plans/2026-11-13-plan-vender-bodega-alinear-con-farmacia.md).
+**Cambios:**
+- Hora de la tasa en el cuadro «TASA BCV» (`src/utils/rateStamp.js`, `SalesView.jsx`).
+- Fichas uniformes con recuadro de imagen fijo e iniciales si no hay foto; rejilla que se acomoda al ancho (mín. 170 px); poco stock en ámbar; aviso de producto sin precio; botones de 38 px; nombres completos sin «…» (`CategoryBar.jsx`, `src/utils/productInitials.js`, `tailwind.config.js` con pantalla `short`).
+- Barra de categorías: se esconden «Todos/General» si hay una sola categoría; ayuda = botón «?»; una sola fila (`CategoryBar.jsx`).
+- Buscador con 2 modos: «Teclado y escáner» y «Pantalla táctil»; se quitó «Lista» (`SearchBar.jsx`, `SalesView.jsx`, `RemoteSalePanel.jsx`).
+- Ajustes → Ventas → «Cesta» (Automática / Siempre compacta / Siempre amplia), cesta compacta con precio por unidad cuando hay 2 o más, siempre compacta en teléfono; «Vaciar» en el encabezado de la cesta (`src/config/salesFeatures.js`, `SettingsTabVentas.jsx`, `CartPanel.jsx`).
+- Más vendidos primero y «Productos frecuentes» en la cesta vacía (`src/utils/hotProducts.js`, `CategoryBar.jsx`, `CartPanel.jsx`, `SalesView.jsx`).
+- Decisión del dueño: el sistema no usará tema oscuro.
+**Casos y errores:** [CASO-003](docs/casos/CASO-003-vender-estilo-farmacia.md); ERR-007 (resuelto), ERR-008 (descartado); P-007 (descartado), P-008.
+**Verificación:** batería completa 2.241 de 2.244 (16 omitidas); fallan las mismas 3 de licencias de antes (`licenseMonitoringMissing` ×2, `licensePolicy` ×1), ajenas a este cambio. Pruebas nuevas: `rateStamp`, `productInitials`, `salesFeaturesCartCompact`, `hotProducts`; ajustada `posSearchViewModes`. ESLint sin errores en los archivos tocados. `docs:check` al día. Probado en el navegador a 1366×768, 1920×1080, 1024×768, 768 y 375 con 2.400 productos de prueba. No verificado: varias categorías y fotos reales (P-008). Sin commit.
+
+## 2026-11-14 — Cobro «Procesar Pago» estilo Farmacia y vueltos (CASO-004)
+
+**Contexto:** el dueño comparó el cobro de PC con el de Farmacia y pidió auditoría, plan y ejecución fase a fase.
+**Cambios:** resumen único y botón COBRAR junto al total; «Completar» y atajos de 44 px; vuelto en opciones de un toque con «Sugerido» ($ en billetes + resto en Bs) y reparto automático; confirmación del vuelto siempre; F9/Enter cobran; `redondeoUsd`; Esc ya no cierra el cobro; Bs con 2 decimales; Biopago de fábrica; referencia de pago por método (de fábrica en «No»); teclado numérico táctil; `index.jsx` partido en `parts/`. Detalle y archivos en el caso.
+**Casos y errores:** CASO-004, ERR-009 a ERR-012.
+**Verificación:** pruebas del cobro 157 de 157; batería completa 2296 pasan, 3 fallan (licencias, ya fallaban antes); navegador `tests/e2e/cobro-pos.e2e.spec.js` 17 de 17 a 1366×768 y 1024×768. No verificado: laptop táctil real, impresora térmica y PDF con referencia, cuadre con ventas reales.
+
+## 2026-11-14 — Verificación de punta a punta del flujo de clientes (billetera, abonos, deudas)
+
+**Contexto:** después de cambiar el cobro y los vueltos (CASO-004) se revisó todo el flujo de clientes: fiado total y parcial, abonos ($, Bs, mixto, mayor que la deuda), vuelto a la billetera, compras con saldo a favor, anulaciones, cambio de tasa, centavos, «Recalcular deudas» y cierre.
+**Cambios:** recibo con «Vuelto a su billetera» (ERR-013); Vender ya no muestra el saldo viejo del cliente tras cobrar (ERR-014, `useSalesData.js`); el resumen del cierre cuenta el vuelto a billetera como saldo generado (ERR-015, `closeDaySummary.js`).
+**Pruebas nuevas:** `tests/clientesBilleteraFlujo.test.js` (6) y `tests/e2e/clientes-billetera.e2e.spec.js` (3).
+**Verificación:** pruebas de cartera, caja y cierre 320 de 320; e2e nuevo 3 de 3; recorrido a mano en el navegador a 1366×768 con datos de prueba. Informe: [docs/reports/2026-11-14-verificacion-clientes-e2e.md](docs/reports/2026-11-14-verificacion-clientes-e2e.md).
+
+## 2026-11-14 — Clientes F1: «Reparar cartera» con datos frescos (ERR-016)
+
+**Plan:** `PLAN-FIXEO-CLIENTES-BILLETERA.md`, fase F1.
+**Cambios:** `rebuildAllCustomersFromLedger()` en `customerWalletService.js` (lee dentro de `pos_write_lock`, solo toca descuadrados); `ReportsView.jsx` la usa y, al anular, aplica `updatedCustomers`.
+**Verificación:** `tests/ledgerRepairFresh.test.js` 5/5; e2e «Reconstruir…» pasa; pruebas de cartera y reportes 90/90. La e2e «cartera desviada…» falla también sin este cambio (Reportes tarda más de 15 s en la primera carga en frío): queda para F2.
+
+## 2026-11-14 — Clientes F2: pruebas e2e antiguas de clientes otra vez en verde
+
+**Plan:** `PLAN-FIXEO-CLIENTES-BILLETERA.md`, fase F2.
+**Cambios (solo pruebas):** `tests/e2e/helpers/auditHarness.js` toma el botón visible del menú (`navTab`; `[data-tour="tab-*"]` existe en la barra lateral y en la inferior). `reportes-fiado`: espera de Reportes a 45 s (en frío tardaba más de 15 s) y montos de proveedor que salen dos veces con `.first()`. `auditoria-flujos` F12b: el botón del cobro POS se llama «COBRAR $5.00» desde CASO-004 (solo esa línea; los cambios de F8 de otra sesión no se incluyeron).
+**Verificación:** F3, F3b, F12, F12b, F13, `reportes-fiado` (3) y `clientes-billetera` (3) pasan.
+
+## 2026-11-14 — Clientes F3: la confirmación de anular dice cómo queda la cuenta del cliente
+
+**Plan:** `PLAN-FIXEO-CLIENTES-BILLETERA.md`, fase F3 (decisión D4: anular se permite, con aviso).
+**Cambios:** `buildVoidReversalMovements` exportada desde `voidSaleProcessor.js` (misma regla para anular y para la vista previa); `src/utils/voidImpact.js` (impacto y texto); `src/hooks/useVoidImpact.js` (lee cliente y ledger frescos); `ConfirmModal.jsx` acepta `details` (líneas destacadas, ámbar si empiezan con «⚠»); Inicio y Reportes las muestran al anular. Ej.: «Cuenta de María: al día → debe $5.00» y «⚠ El cliente quedará debiendo $5.00 (Bs 200,00): ya usó el saldo a favor que le dio esta venta».
+**Verificación:** `tests/voidImpact.test.js` 6/6 (la vista previa coincide con la anulación real); e2e `clientes-billetera` 4/4 (nueva: anular desde Inicio una venta pagada con saldo); pruebas de anulación y cartera 51/51.
+
+## 2026-11-14 — Clientes F4: el cierre separa lo pagado con saldo a favor
+
+**Plan:** `PLAN-FIXEO-CLIENTES-BILLETERA.md`, fase F4.
+**Cambios:** `closeDaySummary.js` calcula `saldoFavorUsadoUsd` y, si es mayor que 0, agrega bajo «Cobrado» las filas «De eso, pagado con saldo a favor» y «Entró hoy a caja y bancos» (columna izquierda del PDF carta; etiquetas cortas para el ticket de 58 mm) y cambia la ayuda de «Cobrado». `dailyCloseGenerator.js`: la nota bajo el resumen lo aclara. Sin pagos con saldo, el cierre queda igual que antes.
+**Verificación:** pruebas de cierre, motor y reportes pasan (3 nuevas en `closeDaySummary.test.js`, con medidas de PDF y ticket); PDF de muestra generado en el navegador y revisado: cobrado $14 → con saldo $4 → entró a caja $10.
+
+## 2026-11-14 — Clientes F5: abono mixto ($ + Bs) en una sola ventana
+
+**Plan:** `PLAN-FIXEO-CLIENTES-BILLETERA.md`, fase F5 (decisión D2).
+**Cambios:** `customerTransactionProcessor.js` acepta `payments` (varias partes) y arma siempre el abono desde sus partes: un solo `COBRO_DEUDA` con un pago por moneda y un solo movimiento `ABONO_DEUDA` por el total en $. `TransactionModal.jsx`: pestaña «$ y Bs» (solo en «Recibir Abono») con un campo y un método por moneda, total en $ y aviso de sobrante. `CustomersView.jsx` pasa los pagos. `receivablesReport.js` guarda `methodIds` y Reportes muestra «Efectivo $ + Pago Móvil» en el detalle de cobranzas.
+**Verificación:** 4 pruebas nuevas en `clientesBilleteraFlujo.test.js` (mixto, sobrante, un solo campo, vacío); e2e «Abono mixto…» pasa con captura revisada; unitarias de cartera/cierre/motor 146/146; e2e de clientes y reportes 8/8 (una pasó al reintento: carga en frío de Reportes con otras sesiones usando el mismo servidor).
+
+## 2026-11-14 — Clientes F6: reportes y cierre dicen cuánto del fiado cubrió el saldo a favor
+
+**Plan:** `PLAN-FIXEO-CLIENTES-BILLETERA.md`, fase F6 (decisión D1: el fiado se sigue contando entero; se muestra aparte lo cubierto).
+**Cambios:** `receivablesReport.js` calcula por fiado `cubiertoConFavorUsd` con la foto `walletSnapshot.favorAntes` (menos lo pagado con saldo en la misma venta; Cashea y ventas viejas = 0) y el total `fiadoCubiertoConFavorUsd`; la vista agrega la sub-fila «De eso, cubierto con saldo a favor». Reportes e Inicio la muestran con sangría. `closeDaySummary.js`: la misma fila bajo «Fiado a clientes» en el PDF y el ticket.
+**Verificación:** pruebas nuevas en `clientesBilleteraFlujo.test.js` (3), `closeDaySummary.test.js` (2) y `receivablesReport.test.js` (1); 102/102 de cartera, cierre y reportes; e2e «Fiado a un cliente con saldo a favor…» pasa con captura revisada.
+
+## 2026-11-14 — Documentos del Escritorio pasados al repo
+
+**Contexto:** varias sesiones dejaron auditorías, planes, propuestas y un mockup de Bodega sueltos en el Escritorio, fuera del repo. El dueño pidió tenerlos todos dentro del proyecto, ordenados según la ley de documentación.
+**Cambios:** movidos (no copiados) 13 archivos: 6 auditorías a `docs/auditorias/` (Ajustes, apertura de caja, cobro y vueltos, documentación de Farmacia, nómina de Donde Juancho, Vender); 3 planes a `docs/plans/` (`2026-11-13-plan-vender-bodega-alinear-con-farmacia.md`, `2026-11-14-plan-cobro-bodega-alinear-con-farmacia.md`, `2026-11-13-plan-preciosaldia-multicaja.md`); 2 informes a `docs/reports/` (`2026-11-13-reporte-cliente-dos-sedes-v2.md`, `2026-11-14-verificacion-clientes-e2e.md`); la propuesta de logos sin internet a `docs/propuestas/` y el mockup del aviso de actualización a `docs/mockups/` (carpetas nuevas, registradas en `docs/LEY-DOCUMENTACION.md`). Enlaces arreglados en esta bitácora, CASO-001 a CASO-004, `PLAN-FIXEO-CLIENTES-BILLETERA.md`, `docs/plans/2026-11-14-plan-logos-offline.md` y dentro de los documentos movidos. Quedan en el Escritorio, a propósito: `REPORTE-CLIENTE-DOS-SEDES.md` (versión 1, recomendaba Listo POS Lite; la reemplaza la v2), `propuesta.html` (de Synaptica, otro proyecto) y la carpeta de capturas de logos.
+**Casos y errores:** ninguno.
+**Verificación:** `bun run docs:check`: sin enlaces rotos; sus únicos avisos (ERR-012 sin fila en la tabla y módulos por revisar) vienen de cambios de otras sesiones. Sin cambios de código, así que no se corrió ESLint.
+
+## 2026-11-14 — Clientes F7: la pantalla del cliente explica mejor su cuenta
+
+**Plan:** `PLAN-FIXEO-CLIENTES-BILLETERA.md`, fase F7 (decisión D3: la cuenta sigue en dólares; los Bs son referencia a la tasa del día).
+**Cambios:** `src/utils/customerBalanceText.js` (nuevo): texto del saldo («Debe $5.00 · Bs 200,00» en rojo / «Favor $3.00 · Bs 120,00» en verde) y notas del historial («Pagó con su saldo a favor», «Pagó $2.00 · fió $3.00», «El fiado lo cubrió su saldo a favor»). `CheckoutCustomerPicker.jsx` usa ese texto en el cobro. `useCheckoutPosChange.js`: «Billetera: elige cliente» sin cliente abre el selector de cliente además del aviso (toca el selector que se ve: hay uno para PC y otro para pantalla angosta). `TransactionModal.jsx`: «Ajustar Cuenta» con título y botón fijos y el centro desplazable (a 1366×768 ya no se corta), aviso «La deuda es de $X. En bolívares cambia con la tasa del día» y «Pagar Total» en Bs muestra también los dólares. `CustomersView.jsx` muestra las notas en el historial. `receivablesReport.js` exporta `fiadoCoveredByCredit`.
+**Simplificado del plan:** el aviso «cuando se fió eran Bs 400» no se hizo (la deuda puede venir de varios fiados con tasas distintas); el historial se basa en las ventas, no en los movimientos del ledger, así que los nombres van como notas de cada venta.
+**Verificación:** `customerBalanceText.test.js` 7/7; cartera y reportes 74/74; e2e `clientes-billetera` 7/7 (nueva a 900 px para el selector de pantalla angosta), capturas revisadas: selector con el saldo en Bs, historial con «Pagó $2.00 · fió $3.00», abono «$ y Bs» entero a 1366×768.
+
+## 2026-11-14 — Plan de «Nómina simple» para Bodega
+
+**Contexto:** el dueño pidió el plan para añadir la nómina, partiendo del estudio de Donde Juancho pero corregida (sin sus errores E1–E3) y adaptada a Bodega.
+**Cambios:** nuevo `docs/plans/2026-11-14-plan-nomina-simple-bodega.md`, con fases F0–F4 del núcleo y F6–F7 opcionales. Decisiones del dueño D1–D8: la frecuencia la elige cada empleado; el sueldo va en $ y se paga en $ o Bs con la tasa de la tienda; los consumos de mercancía quedan para después; los adelantos los da solo el Administrador; solo se anula lo del turno abierto; no se paga más que el saldo sin confirmar (la diferencia se arrastra al periodo siguiente); nada en el Supervisor por ahora; bono y descuento manuales por defecto. Sin cambios de código.
+**Casos y errores:** ninguno todavía. El caso se abre al empezar F0.
+**Verificación:** no aplica (solo documento).
+
+## 2026-11-14 — Nómina simple en «Gestión» (fases F0 a F4)
+
+**Contexto:** el dueño pidió ejecutar el plan de nómina fase a fase. A mitad del trabajo decidió (D9) que la nómina va en la pestaña «Clientes», que pasa a llamarse «Gestión». También decidió que la tasa en Bs no se edita, que el recibo sale en ticket y en PDF y que los gastos viejos de «Personal» se dejan como están.
+**Cambios:** F0 «Gastos internos» con candado, lectura fresca, redondeo, actor, caja abierta para efectivo y confirmación al guardar (`utils/gastoInterno.js`, `services/gastosInternosService.js`, `hooks/useGastosInternos.js`). F1 modelo puro (`utils/payrollModel.js`). F2 servicio con PIN, idempotencia, anular sin movimiento al revés y recuperación tras un corte (`services/payrollService.js`), más las claves en `config/backupKeys.js`. F3 pestaña «Gestión» (`App.jsx`, `MiniNav.jsx`, `CommandPalette.jsx`, `OnboardingOverlay.jsx`), sub-pestañas `components/Gestion/GestionTabs.jsx`, pantalla `components/Payroll/*`, recibo `utils/payrollReceipt.js` y la categoría «Nómina» en Reportes y en el cierre. F4 e2e `tests/e2e/nomina.e2e.spec.js`. Ajuste al plan: el pago por pago móvil se guarda con `afectaCaja: true`, como todo gasto, para que salga en el cierre (el método decide si toca la gaveta). Detalle en CASO-005.
+**Casos y errores:** CASO-005. Sin errores nuevos de la app. P-010 (prueba en el equipo real), P-011 (3 pruebas de licencias que ya fallaban, ajenas a este trabajo) y P-012 (fases opcionales F6 y F7).
+**Verificación:** Vitest de nómina y gastos 45/45 (`gastosInternosService` 9, `payrollModel` 19, `payrollService` 14, `payrollUi` 3). E2E `nomina` 2/2, con capturas revisadas. Suite completa: 2393 pasan y 3 fallan, las de licencias de P-011. ESLint sin errores en los archivos tocados. No verificado: impresora térmica real ni PDF en el celular.
+
+## 2026-11-14 — Plan de multicaja por red local (LAN), anotado como pendiente
+
+**Contexto:** el dueño preguntó qué faltaba para tener multicaja por LAN, si se podía hacer como PWA, qué cambiaba para los usuarios actuales y si seguía el Modo Supervisor. Pidió dejar el plan escrito como pendiente.
+**Cambios:** nuevo `docs/plans/2026-11-14-plan-multicaja-lan.md` (fases F0–F7, barandas L1–L8, decisiones P-L1 a P-L7). Nueva entrada P-013 en `PENDIENTES.md`. Sin cambios de código.
+**Decisiones del dueño:** ninguna todavía. Propuestas en el plan: cajas en la app de escritorio o Android (no PWA pura, por las restricciones del navegador con la red local), LAN para cobrar + nube para respaldo y Supervisor, y mismo repo con interruptor.
+**Casos y errores:** ninguno. El caso se abre al empezar F0.
+**Verificación:** no aplica (solo documento).
+
+## 2026-11-14 — Nómina: listas desplegables con bordes redondeados
+
+**Contexto:** el dueño pidió que el menú de «Se le paga» tenga bordes redondeados. Un `<select>` nativo no lo permite: su menú lo dibuja el sistema.
+**Cambios:** «Se le paga» (`Payroll/EmployeeFormModal.jsx`) y «Forma de pago» (`Payroll/PayrollEntryModal.jsx`) usan el `CustomSelect` de la app. `CustomSelect.jsx` acepta un `testId` opcional (no cambia nada para quien no lo pasa). La e2e `nomina` abre la lista y toca la opción.
+**Casos y errores:** CASO-005.
+**Verificación:** e2e `nomina` 2/2, con capturas revisadas de las dos listas abiertas. ESLint sin errores.
+
+## 2026-11-15 — Licencias: la caja corta una licencia borrada o vencida, y la política se iguala con la Estación (P-011)
+
+**Contexto:** el dueño pidió resolver P-011, las 3 pruebas de licencias que llevaban días en rojo. No eran pruebas rotas: señalaban dos problemas reales.
+**Cambios:** `src/hooks/useLicenseMonitoring.js`: si la fila de licencia ya no existe (se borró en la Estación), la caja quita el acceso tras 3 consultas seguidas (`MISSING_LICENSE_LIMIT`, ~6 min con el latido de 3 min). Solo cuenta como «borrada» cuando el RPC `get_license_status` (SECURITY DEFINER) y el SELECT responden sin error y vacíos; sin red no se quita nada. Además, una permanente con vencimiento ya pasado se corta, como dice `licensePolicy.js`. `src/config/licensePolicy.js`: se trae la copia de la Estación Maestra (`139e33c`, 31-10), igual a la de Farmacia: precio de Farmacia ($300 / $20) y gracia mensual configurable. Para Bodega no cambia nada (no pasa `graceDays` y sus precios son los mismos). `tests/licensePolicy.test.js`: nuevo SHA anclado y precio de Farmacia.
+**Casos y errores:** P-011 pasa a Hechos.
+**Verificación:** suite completa 2401 pasan, 1 falla y 16 omitidas. La que falla es la comparación con los checkouts vecinos: el worktree `pad-egress-realtime` aún tiene la copia vieja de la política, y se igualará al unir `fix/egress-realtime`. ESLint 0 errores (los avisos ya estaban). No verificado en una caja real con una licencia borrada.
+
+## 2026-11-15 — Revisión de licencias y migraciones para cerrar la lectura pública (P-018)
+
+**Contexto:** el dueño pidió buscar licencias revocadas o eliminadas sospechosas y, con su permiso, se leyó la base en vivo en solo lectura (Management API, cada consulta en una transacción `read only`).
+**Hallazgos:** no se borró ninguna licencia desde el 22-10 (respaldo local comparado con 555 filas vivas); las 9 desactivaciones de pago desde entonces son pruebas del dueño; las 11 permanentes activas tienen el código normal y su fila en `cloud_licenses`; no hay duplicados ni intentos fallidos de entrar a la Estación. Lo grave es de seguridad: `licenses` y `backup_requests` son legibles con la clave pública, y `backup_requests` además se puede borrar. También se vio que `20261106_backup_identity_seed_and_monthly.sql` no está aplicada (P-019) y que `verify_activation_code` no compara el código, solo mira `cloud_licenses`.
+**Cambios:** nuevas `supabase/migrations/20261115_licenses_cerrar_lectura_publica.sql` y `20261115_backup_requests_solo_propias.sql` (sin aplicar), con su reversión en el encabezado. Nueva prueba `tests/licenseRlsMigrationsSql.test.js`. Entradas P-018 y P-019 en `PENDIENTES.md`.
+**Verificación:** `licenseRlsMigrationsSql` 7/7. El SQL no se probó contra una base: aplicarlo y verificar en una caja real es P-018.
+
+## 2026-11-15 — Seguridad: aplicadas en producción las migraciones de licenses y backup_requests (P-018)
+
+**Qué:** con el visto bueno del dueño se aplicaron `20261115_backup_requests_solo_propias.sql` y `20261115_licenses_cerrar_lectura_publica.sql` (Management API).
+**Después:** `backup_requests` queda con `backup_requests_admin_write`, `backup_requests_own_select` y `backup_requests_own_update`; `licenses` solo con `licenses_own_device_read`.
+**Prueba con la clave pública (anon):** leer `licenses` → `[]`; leer `backup_requests` → `[]`; un borrado no afecta filas; `get_license_status` de Bodega (1 argumento) y de Farmacia (2 argumentos) devuelven la permanente activa; `verify_activation_code` → `true`; equipo inexistente → `[]`. Filas intactas: 555 licencias y 43 solicitudes.
+**Falta:** ver en una caja real que abre premium y que un «Solicitar respaldo» de la Estación se completa.
+
+## 2026-11-15 — Documentación: planes y reportes de la raíz pasan a docs/ (P-006)
+
+**Cambios:** 26 archivos movidos con `git mv`, sin cambiarles el nombre (el código y las pruebas los citan por nombre): 20 `PLAN-*`, `REBRAND-PLAN` y `HANDOFF-PLAN-CLIENTES-BILLETERA` a `docs/plans/`; `REPORTE-*`, `M5-*` y `CASO-DESCUADRE-*` a `docs/reports/`. 60 enlaces corregidos con un script (los que apuntaban a estos archivos y los internos que partían de la raíz), más 2 menciones «(raíz)» en `docs/ERRORES.md` y 1 en `AGENT.md`.
+**Verificación:** revisión de todos los enlaces de los `.md` del repo antes y después: ningún enlace roto nuevo (quedan 13 rotos de antes, contra 25). Sin cambios de código.
+
+## 2026-11-15 — Nómina F6: mercancía que se lleva el empleado (P-012)
+
+**Decisiones del dueño:** el precio es una opción de Ajustes (costo o venta, de fábrica costo); pide PIN; F7 (resumen en el Supervisor) espera a que se publique `fix/egress-realtime`.
+**Cambios:** movimiento `MERCANCIA` en `utils/payrollModel.js` (`evaluateGoods`, `readGoodsValuation`, `goodsSummary`; resta del saldo y arrastra la deuda si se pasa). `registerGoods` en `services/payrollService.js` (stock + retiro de inventario sin tocar la gaveta + renglón, con vuelta atrás), y `voidEntry`/`recoverPayroll` devuelven el stock. Nueva tarjeta Ajustes › Negocio › Nómina y nueva pantalla `PayrollGoodsModal.jsx`; recibo con los productos. Clave `payroll_goods_valuation` en `LS_KEYS`. Detalle en CASO-005 § F6.
+**Verificación:** Vitest `payrollGoods` (nuevo) y nómina completa 101/101; Playwright `nomina.e2e.spec.js` 3/3 con capturas revisadas. ESLint sin errores. No verificado: impresora térmica real (P-010).
+
+## 2026-11-15 — Respaldos: se recupera del stash la parte de la caja de la migración del 06-11 (P-019)
+
+**Contexto:** el dueño pidió preparar P-019. La migración `20261106_backup_identity_seed_and_monthly.sql` sigue **sin aplicar** y su parte de la caja solo existía en `git stash@{0}`.
+**Cambios (traídos tal cual del stash; ninguno de los 4 archivos había cambiado desde el 08-11):** `utils/deviceIdentity.js` siembra la prueba de posesión con `claim_device_session` después de un vínculo comprobado, una vez por carga y sin romper el registro si falla; con el esquema actual la RPC responde `ALREADY_BOUND` y no guarda nada, así que es seguro publicarlo antes de la migración. `services/cloudBackupUpload.js`: si la caja no tiene identidad en la nube, intenta el relay de la Estación en vez de rendirse en silencio. `hooks/useAutoBackup.js`: el respaldo programado guarda su último resultado (`bodega_last_backup_attempt`) y registra los fallos, y el oyente de solicitudes de la Estación se vuelve a montar cuando llega la licencia (antes solo dependía de `deviceId` y nunca se montaba). No se trajo `useLicenseMonitoring.js` (resuelto en P-011) ni las 3 capturas e2e del stash. El stash se conserva.
+**Migración revisada:** es la `claim_device_session` de `20261017` más la siembra (`coalesce`, nunca pisa una llave existente) y `has_permanent_backup_license` de `20261015` más la mensualidad con 5 días de gracia. Mismos permisos. Antes de aplicarla, comprobar en vivo que las dos funciones siguen iguales a esas versiones.
+**Verificación:** 3 pruebas nuevas en `deviceIdentity` (siembra, una sola vez por carga, reintento si falla) y 2 en `cloudBackupUpload` (relay). Suite completa: 2446 pasan, 16 omitidas y 1 falla ya conocida (`licensePolicy` contra el worktree `pad-egress-realtime`). ESLint 0 errores. No verificado en una caja real ni contra la base.
+
+## 2026-11-15 — Respaldos: aplicada en producción la migración del 06-11 (P-019)
+
+**Qué:** con el permiso del dueño se aplicó `20261106_backup_identity_seed_and_monthly.sql` (Management API).
+**Antes:** `claim_device_session` y `has_permanent_backup_license` en vivo eran idénticas a `20261017` y `20261015` (comparado el texto completo), así que no se pisó ningún cambio hecho a mano. 254 filas en `device_sessions`, ninguna con `possession_hash`; 11 permanentes activas y 2 mensualidades, ambas inactivas.
+**Después:** `claim_device_session` siembra la llave (`coalesce`) y `has_permanent_backup_license` acepta la mensualidad con 5 días de gracia; las dos siguen como SECURITY DEFINER y con los mismos permisos. Las 11 permanentes activas siguen con derecho a respaldo.
+**Falta:** publicar la app con `c116813` para que las cajas empiecen a sembrar la llave (hasta entonces nadie la guarda), ver en una caja real que `device_sessions.possession_hash` se llena, y liberar a mano las cajas que ya perdieron la sesión.
+
+## 2026-11-15 — Versión 2.0.6 con aviso de novedades
+
+**Contexto:** el dueño pidió publicar en `main` con el aviso de novedades y aprobó el texto.
+**Cambios:** versión 2.0.6 en `package.json` y nota en `src/data/releaseNotes.js` (Pantalla nueva, Vender y cobrar más fácil, Nómina de tus empleados, IVA en tus tickets). Las cajas que vienen de 2.0.5 nunca guardaron `pda_last_seen_version` (el aviso con notas no estaba en `main`), así que el aviso nuevo se habría quedado callado: `versionDesdeNovedades` toma 2.0.5 como «lo último visto» si la caja ya aceptó los términos (`pda_terms_accepted`); una instalación nueva no ve el aviso. `LockScreen` mostraba «v2.0.5» escrito a mano; ahora lee `VITE_APP_VERSION`. Capturas del cobro (360/390/430) regeneradas por la revisión previa al push con la ventana de pago actual.
+**Cómo se ve en la caja:** primero la barra verde vieja «Nueva versión disponible» (código de 2.0.5, no se puede cambiar); al reiniciar, y después de la pantalla de inicio, la ventana «¡Ya tienes lo nuevo!» una sola vez.
+**Verificación:** `releaseNotes` 8/8 y `lockScreenBento`. En el navegador (servidor local): caja en uso sin versión vista → sale la ventana tras entrar; «Entendido» guarda 2.0.6 y no se repite; instalación nueva → no sale; la pantalla de inicio dice v2.0.6.

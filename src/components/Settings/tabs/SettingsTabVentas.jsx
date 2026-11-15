@@ -6,11 +6,13 @@ import {
 } from 'lucide-react';
 import { SectionCard, Toggle } from '../../SettingsShared';
 import PaymentMethodsManager from '../PaymentMethodsManager';
+import TouchKeypadSetting from '../TouchKeypadSetting';
 import CasheaIcon from '../../CasheaIcon';
 import PrinterHardwareManager from '../PrinterHardwareManager';
 import { useProductContext } from '../../../context/ProductContext';
 import { loadTaxConfig, saveTaxConfig as saveTaxConfigLocal, resetTaxConfig as resetTaxConfigLocal, IVA_FACTORY_RATE, normalizeIvaRate } from '../../../config/taxConfig';
 import { pushLocalSync } from '../../../hooks/useCloudSync';
+import { useCartCompact, setCartCompactMode } from '../../../config/salesFeatures';
 
 // El IVA viaja al supervisor: las ventas remotas se cobran con el mismo total.
 const publishTaxConfig = (config) => { pushLocalSync('tax_config_v1', JSON.stringify(config)); return config; };
@@ -50,6 +52,7 @@ export default function SettingsTabVentas({
     paperWidth, setPaperWidth,
 }) {
     const { checkoutMode, setCheckoutMode, granelUnitMode, setGranelUnitMode } = useProductContext();
+    const { mode: cartCompactMode } = useCartCompact();
 
     // ── SUB-PESTAÑA ACTIVA CON PERSISTENCIA ──
     const [activeSubTab, setActiveSubTab] = useState(() => {
@@ -230,7 +233,7 @@ export default function SettingsTabVentas({
             <div
                 role="tablist"
                 aria-label="Subsecciones de Ventas"
-                className="flex items-center gap-1.5 p-1.5 bg-slate-100 dark:bg-slate-900/90 rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-x-auto shadow-xs"
+                className="grid grid-cols-2 sm:flex sm:items-center gap-1.5 p-1.5 bg-slate-100 dark:bg-slate-900/90 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs"
             >
                 {SUB_TABS.map(tab => {
                     const isActive = activeSubTab === tab.id;
@@ -244,14 +247,14 @@ export default function SettingsTabVentas({
                             aria-controls={`panel-ventas-${tab.id}`}
                             type="button"
                             onClick={() => handleSubTabChange(tab.id)}
-                            className={`flex-1 min-w-[135px] sm:min-w-0 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer select-none active:scale-[0.98] ${
+                            className={`flex-1 min-w-0 min-h-[44px] flex items-center justify-center gap-2 py-2 px-2 sm:px-3 rounded-xl text-xs font-black transition-all cursor-pointer select-none active:scale-[0.98] ${
                                 isActive
                                     ? 'bg-teal-700 text-white dark:bg-teal-800 shadow-sm ring-2 ring-teal-500/20'
                                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/80 dark:hover:bg-slate-800/80'
                             }`}
                         >
-                            <IconComponent size={15} />
-                            <span className="whitespace-nowrap">{tab.label}</span>
+                            <IconComponent size={15} className="shrink-0" />
+                            <span className="truncate">{tab.label}</span>
                         </button>
                     );
                 })}
@@ -265,7 +268,7 @@ export default function SettingsTabVentas({
                     id="panel-ventas-terminal"
                     role="tabpanel"
                     aria-labelledby="tab-ventas-terminal"
-                    className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch animate-in fade-in duration-200"
+                    className="cq-grid cq-3 items-stretch animate-in fade-in duration-200"
                 >
                     {/* Modo de Cobro (Interfaz) */}
                     <SectionCard icon={LayoutGrid} title="Modo de Cobro (Interfaz)" subtitle="Selecciona la pantalla de pago activa para esta caja" iconColor="text-indigo-500">
@@ -274,7 +277,7 @@ export default function SettingsTabVentas({
                                 Define la experiencia visual del proceso de cobranza. Puedes dejarlo en automático o fijar un modo permanente:
                             </p>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 gap-2 pt-1">
+                            <div className="grid grid-cols-1 gap-2 pt-1">
                                 {[
                                     { 
                                         id: 'auto', 
@@ -332,11 +335,11 @@ export default function SettingsTabVentas({
                                             </div>
 
                                             {isSelected ? (
-                                                <span className="flex items-center gap-0.5 text-[9px] font-black bg-white text-teal-800 px-1.5 py-0.5 rounded-full shadow-xs">
+                                                <span className="flex items-center gap-0.5 text-[10px] font-black bg-white text-teal-800 px-1.5 py-0.5 rounded-full shadow-xs">
                                                     <Check size={9} strokeWidth={3} /> OK
                                                 </span>
                                             ) : opt.badge ? (
-                                                <span className="text-[9px] font-extrabold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 px-1.5 py-0.5 rounded-md">
+                                                <span className="text-[10px] font-extrabold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 px-1.5 py-0.5 rounded-md">
                                                     {opt.badge}
                                                 </span>
                                             ) : null}
@@ -346,6 +349,9 @@ export default function SettingsTabVentas({
                             </div>
                         </div>
                     </SectionCard>
+
+                    {/* Teclado numérico del cobro (pantallas táctiles) */}
+                    <TouchKeypadSetting triggerHaptic={triggerHaptic} showToast={showToast} />
 
                     {/* Ticket de Venta */}
                     <SectionCard icon={DollarSign} title="IVA" subtitle="Impuesto al valor agregado sobre la venta" iconColor="text-emerald-600">
@@ -392,7 +398,7 @@ export default function SettingsTabVentas({
                                             onBlur={handleIvaRateBlur}
                                             disabled={!taxConfig.ivaEnabled}
                                             aria-label="Tasa de IVA en porcentaje"
-                                            className="w-24 text-right font-black text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-xl pl-3 pr-7 py-2 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all shadow-inner disabled:opacity-50"
+                                            className="w-24 min-h-[40px] text-right font-black text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-xl pl-3 pr-7 py-2 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all shadow-inner disabled:opacity-50"
                                         />
                                         <span className="absolute right-2.5 text-xs font-black text-emerald-600 dark:text-emerald-400 pointer-events-none">%</span>
                                     </div>
@@ -401,7 +407,7 @@ export default function SettingsTabVentas({
                                     <button
                                         type="button"
                                         onClick={handleIvaRestore}
-                                        className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 px-3 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-900/40 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-all"
+                                        className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 px-3 py-2 min-h-[40px] rounded-lg border border-emerald-200 dark:border-emerald-900/40 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-all"
                                     >
                                         Restaurar {IVA_FACTORY_RATE}% (de fábrica)
                                     </button>
@@ -446,7 +452,7 @@ export default function SettingsTabVentas({
                                                 </p>
                                             </div>
                                             {isSelected && (
-                                                <span className="flex items-center gap-0.5 text-[9px] font-black bg-white text-teal-800 px-1.5 py-0.5 rounded-full shadow-xs">
+                                                <span className="flex items-center gap-0.5 text-[10px] font-black bg-white text-teal-800 px-1.5 py-0.5 rounded-full shadow-xs">
                                                     <Check size={9} strokeWidth={3} /> OK
                                                 </span>
                                             )}
@@ -500,7 +506,7 @@ export default function SettingsTabVentas({
                                                 </p>
                                             </div>
                                             {isSelected && (
-                                                <span className="text-[9px] font-black bg-white text-amber-700 px-1.5 py-0.5 rounded-full shadow-xs">
+                                                <span className="text-[10px] font-black bg-white text-amber-700 px-1.5 py-0.5 rounded-full shadow-xs">
                                                     Activo
                                                 </span>
                                             )}
@@ -511,6 +517,26 @@ export default function SettingsTabVentas({
                             <p className="text-[10px] text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800/40 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
                                 💡 En <strong>Gramos / ml</strong>, el inventario canónico se conserva intacto en kilogramos sin alterar los reportes.
                             </p>
+                        </div>
+                    </SectionCard>
+
+                    {/* Cesta compacta (igual que en Farmacia) */}
+                    <SectionCard icon={LayoutGrid} title="Cesta" subtitle="Cuántos artículos caben en la lista" iconColor="text-sky-500">
+                        <div className="space-y-2">
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                                La cesta compacta usa una sola línea por artículo. Automática: se activa sola en pantallas bajas (laptops chicas). En teléfono y tablet la cesta siempre es compacta.
+                            </p>
+                            <div role="group" aria-label="Modo de la cesta" className="flex flex-wrap gap-1.5">
+                                {[['auto', 'Automática'], ['always', 'Siempre compacta'], ['never', 'Siempre amplia']].map(([id, label]) => (
+                                    <button
+                                        key={id} type="button" aria-pressed={cartCompactMode === id}
+                                        onClick={() => { setCartCompactMode(id); triggerHaptic?.(); }}
+                                        className={`rounded-xl px-3 py-1.5 text-xs font-black transition-colors ${cartCompactMode === id
+                                            ? 'bg-brand text-white'
+                                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}
+                                    >{label}</button>
+                                ))}
+                            </div>
                         </div>
                     </SectionCard>
                 </div>
@@ -526,12 +552,12 @@ export default function SettingsTabVentas({
                     aria-labelledby="tab-ventas-caja"
                     className="space-y-4 animate-in fade-in duration-200"
                 >
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
+                    <div className="cq-grid items-stretch">
                         {/* Desglose del Cambio */}
                         <SectionCard
                             icon={HandCoins}
                             title="Cómo entrega la caja el cambio"
-                            subtitle="Ajusta la propuesta automática a lo que realmente hay en caja"
+                            subtitle="Lo usa el vuelto «Sugerido» del cobro, en PC y en celular"
                             iconColor="text-emerald-600"
                         >
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -553,7 +579,7 @@ export default function SettingsTabVentas({
                                                 onChange={(e) => { setSmallestUsdBill(e.target.value); }}
                                                 onBlur={(e) => persistBill(e.target.value)}
                                                 aria-label="Valor del billete de dólar más pequeño disponible en caja"
-                                                className="w-24 text-right font-black text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-xl pl-6 pr-3 py-2 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all shadow-inner"
+                                                className="w-24 min-h-[40px] text-right font-black text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-xl pl-6 pr-3 py-2 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all shadow-inner"
                                             />
                                         </div>
                                     </div>
@@ -580,7 +606,7 @@ export default function SettingsTabVentas({
                                                 onChange={(e) => { setBsRoundStep(e.target.value); }}
                                                 onBlur={(e) => persistRoundStep(e.target.value)}
                                                 aria-label="Paso de redondeo en bolívares para el cambio"
-                                                className="w-24 text-right font-black text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-xl pl-8 pr-3 py-2 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all shadow-inner"
+                                                className="w-24 min-h-[40px] text-right font-black text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-xl pl-8 pr-3 py-2 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all shadow-inner"
                                             />
                                         </div>
                                     </div>
@@ -608,6 +634,9 @@ export default function SettingsTabVentas({
                             </div>
                             <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2 leading-relaxed">
                                 Ejemplo: cambio de $6.20 · billete $1 · redondeo Bs 1 a favor del cliente → la caja entrega <strong>$6 + Bs 16</strong>.
+                            </p>
+                            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 leading-relaxed">
+                                En el cobro de PC el «Sugerido» da los Bs exactos con «a favor del cliente» (dar de más no se puede anotar en la venta); con «a favor de la tienda» redondea hacia abajo y la diferencia queda en caja.
                             </p>
                         </SectionCard>
 
@@ -649,7 +678,7 @@ export default function SettingsTabVentas({
                                                 onFocus={handleCashAdvancePctFocus}
                                                 onChange={handleCashAdvancePctChange}
                                                 onBlur={handleCashAdvancePctBlur}
-                                                className="w-24 text-right font-black text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-xl pl-3 pr-7 py-2 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 transition-all shadow-inner"
+                                                className="w-24 min-h-[40px] text-right font-black text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-xl pl-3 pr-7 py-2 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 transition-all shadow-inner"
                                             />
                                             <span className="absolute right-2.5 text-xs font-black text-amber-600 dark:text-amber-400 pointer-events-none">%</span>
                                         </div>
@@ -680,7 +709,7 @@ export default function SettingsTabVentas({
                     aria-labelledby="tab-ventas-politicas"
                     className="space-y-4 animate-in fade-in duration-200"
                 >
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
+                    <div className="cq-grid items-stretch">
                         {/* Inventario & Carrito */}
                         <SectionCard icon={Package} title="Inventario en Caja" subtitle="Reglas de cobro y sincronización de existencias" iconColor="text-emerald-500">
                             <div className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -776,7 +805,7 @@ export default function SettingsTabVentas({
                     </div>
 
                     {/* Cuentas por Cobrar & Fiados */}
-                    <SectionCard icon={FileSpreadsheet} title="Cuentas por Cobrar & Auditoría de Fiados" subtitle="Tratamiento contable de deudas de clientes y conciliación del libro mayor" iconColor="text-indigo-500">
+                    <SectionCard icon={FileSpreadsheet} title="Fiados y deudas de clientes" subtitle="Cómo se muestran los fiados en el cierre y cómo se corrigen los saldos" iconColor="text-indigo-500">
                         <div className="divide-y divide-slate-100 dark:divide-slate-800">
                             <div className="flex items-center justify-between py-2.5">
                                 <div className="pr-2">
@@ -798,10 +827,10 @@ export default function SettingsTabVentas({
                             <div className="flex items-center justify-between py-2.5">
                                 <div className="pr-2">
                                     <div className="flex items-center gap-1.5">
-                                        <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Reparar cartera desde el ledger</p>
-                                        <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.2 bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 rounded border border-amber-300 dark:border-amber-800">Técnico</span>
+                                        <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Recalcular deudas desde el historial</p>
+                                        <span className="text-[10px] font-extrabold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 rounded border border-amber-300 dark:border-amber-800">Técnico</span>
                                     </div>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Permite la reconstrucción de saldos cuando se detecte un descuadre contable (no para cajeros)</p>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Si el saldo de un cliente no cuadra, el reporte lo vuelve a calcular sumando sus fiados y abonos. Úsalo solo si soporte te lo indica.</p>
                                 </div>
                                 <Toggle
                                     enabled={ledgerRepair}
@@ -809,7 +838,7 @@ export default function SettingsTabVentas({
                                         const newVal = !ledgerRepair;
                                         setLedgerRepair(newVal);
                                         localStorage.setItem('reportes_reparacion_ledger', newVal.toString());
-                                        showToast(newVal ? 'El reporte podrá reconstruir saldos desde el ledger' : 'La reconstrucción desde el ledger queda deshabilitada', 'success');
+                                        showToast(newVal ? 'El reporte podrá recalcular las deudas desde el historial' : 'El recálculo de deudas queda apagado', 'success');
                                         triggerHaptic?.();
                                     }}
                                 />

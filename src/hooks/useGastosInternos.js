@@ -1,13 +1,9 @@
 import { useState, useCallback } from 'react';
-import { storageService } from '../utils/storageService';
-import { withLock } from '../utils/withLock';
-import { subR, sumR, mulR } from '../utils/dinero';
-import { isGranelProduct, adjustStockValue } from '../utils/granel'; // GRANEL-001
+import { round2 } from '../utils/dinero';
 import { showToast } from '../components/Toast';
 import { useAuthStore } from './store/useAuthStore';
-
-const SALES_KEY    = 'bodega_sales_v1';
-const PRODUCTS_KEY = 'bodega_products_v1';
+import { buildGastoInternoRecord } from '../utils/gastoInterno';
+import { saveGastoInterno, saveAutoconsumo, voidGastoInterno } from '../services/gastosInternosService';
 
 export const GASTO_CATEGORIES = [
     { id: 'insumos',      label: 'Insumos',          icon: '📦' },
@@ -19,60 +15,42 @@ export const GASTO_CATEGORIES = [
     { id: 'otros',        label: 'Otros',             icon: '📝' },
 ];
 
-export function useGastosInternos({ bcvRate, tasaCop, copEnabled, triggerHaptic, auditLog, sales, setSales }) {
+const currentUser = () => useAuthStore.getState()?.usuarioActivo || null;
+
+// Nómina F0: la escritura vive en services/gastosInternosService.js (candado,
+// lectura fresca, confirmación y caja abierta para efectivo). Este hook solo
+// arma los datos, avisa en pantalla y refresca la lista.
+export function useGastosInternos({ bcvRate, tasaCop, copEnabled, triggerHaptic, auditLog, setSales }) {
     const [isAddGastoOpen, setIsAddGastoOpen] = useState(false);
 
     // ─── Gasto de caja normal (sin movimiento de inventario) ────────────────
     const registrarGasto = useCallback(async ({ description, category, amountUsd, amountBs, methodId, currency, note }) => {
         triggerHaptic && triggerHaptic();
 
-        if (!description.trim() || (!amountUsd && !amountBs)) {
-            showToast('Descripción y monto requeridos', 'warning');
+        let record;
+        try {
+            record = buildGastoInternoRecord({
+                description, category, amountUsd, amountBs, methodId, currency, note,
+                bcvRate, tasaCop, copEnabled, usuario: currentUser(),
+            });
+        } catch (err) {
+            showToast(err.message, 'warning');
             return false;
         }
 
-        const totalEnBs  = currency === 'BS'  ? amountBs  : (amountUsd * bcvRate);
-        const totalEnUsd = currency === 'USD' ? amountUsd : (bcvRate > 0 ? amountBs / bcvRate : 0);
-        const totalEnCop = currency === 'COP' ? amountBs  : (amountUsd * tasaCop);
-
-        const newGasto = {
-            id: crypto.randomUUID(),
-            timestamp: new Date().toISOString(),
-            tipo: 'GASTO_INTERNO',
-            cajaCerrada: false,
-            afectaCaja: true,
-            description: description.trim(),
-            category: category,
-            note: note?.trim() || '',
-            totalBs:  -totalEnBs,
-            totalUsd: -totalEnUsd,
-            ...(copEnabled && { totalCop: -totalEnCop }),
-            paymentMethod: methodId,
-            payments: [{
-                methodId:  methodId,
-                amountUsd: currency === 'USD' ? -totalEnUsd : 0,
-                amountBs:  currency === 'BS'  ? -totalEnBs  : 0,
-                ...(copEnabled && { amountCop: currency === 'COP' ? -totalEnCop : 0 }),
-                currency:    currency,
-                methodLabel: 'Gasto Interno'
-            }],
-            items: [{
-                name:     `Gasto: ${description.trim()}`,
-                qty:      1,
-                priceUsd: -totalEnUsd,
-                costBs:   0
-            }]
-        };
-
-        const updatedSales = [newGasto, ...sales];
-        await storageService.setItem(SALES_KEY, updatedSales);
-        setSales(updatedSales);
+        try {
+            const updatedSales = await saveGastoInterno(record);
+            setSales(updatedSales);
+        } catch (err) {
+            showToast(err.message || 'No se pudo registrar el gasto', 'error');
+            return false;
+        }
 
         showToast('Gasto registrado con éxito', 'success');
-        auditLog('CAJA', 'REGISTRO_GASTO', `Gasto registrado: "${description}" - $${totalEnUsd.toFixed(2)}`);
+        auditLog('CAJA', 'REGISTRO_GASTO', `Gasto registrado: "${record.description}" - $${Math.abs(record.totalUsd).toFixed(2)}`);
         setIsAddGastoOpen(false);
         return true;
-    }, [sales, setSales, bcvRate, tasaCop, copEnabled, triggerHaptic, auditLog]);
+    }, [setSales, bcvRate, tasaCop, copEnabled, triggerHaptic, auditLog]);
 
     // ─── Autoconsumo: retiro de mercancía por el dueño ──────────────────────
     /**
@@ -92,73 +70,57 @@ export function useGastosInternos({ bcvRate, tasaCop, copEnabled, triggerHaptic,
             return false;
         }
 
-        const result = await withLock('pos_write_lock', async () => {
-            // 1. Leer productos frescos de IndexedDB
-            const freshProducts = await storageService.getItem(PRODUCTS_KEY, []);
-            const allowNeg = localStorage.getItem('allow_negative_stock') === 'true';
+        const usd = round2(Math.abs(Number(totalUsd) || 0));
+        const bs = round2(Math.abs(Number(totalBs) || 0));
+        const usuario = currentUser();
+        const gasto = {
+            id:           crypto.randomUUID(),
+            timestamp:    new Date().toISOString(),
+            tipo:         'GASTO_INTERNO',
+            category:     'autoconsumo',
+            isAutoconsumo: true,
+            afectaCaja:   false,       // NO afecta el cuadre de caja física
+            cajaCerrada:  false,
+            valoracion,
+            description:  String(description || '').trim(),
+            note:         note?.trim() || '',
+            totalUsd:     -usd,
+            totalBs:      -bs,
+            ...(copEnabled && { totalCop: -round2(usd * tasaCop) }),
+            paymentMethod: 'autoconsumo',
+            payments: [{
+                methodId:    'autoconsumo',
+                amountUsd:   -usd,
+                amountBs:    -bs,
+                currency:    'USD',
+                methodLabel: 'Autoconsumo de Inventario'
+            }],
+            // Guardamos los ítems con su qty para poder revertir el stock al anular
+            items: items.map(i => ({
+                id:       i.id,
+                name:     i.name,
+                qty:      i.qty,
+                costUsd:  i.costUsd  || 0,
+                priceUsd: i.priceUsd || 0,
+            })),
+            actor:   usuario?.nombre || 'Sin sesión',
+            actorId: usuario?.id ?? null,
+        };
 
-            // 2. Deducir stock — GRANEL-001: granel conserva 3 decimales, resto entero.
-            const updatedProducts = freshProducts.map(p => {
-                const cartItem = items.find(i => i.id === p.id);
-                if (!cartItem) return p;
-                const newStock = adjustStockValue(p.stock ?? 0, -cartItem.qty, isGranelProduct(p));
-                return { ...p, stock: allowNeg ? newStock : Math.max(0, newStock) };
-            });
-
-            await storageService.setItem(PRODUCTS_KEY, updatedProducts);
-
-            // 3. Crear registro de gasto
-            const gasto = {
-                id:           crypto.randomUUID(),
-                timestamp:    new Date().toISOString(),
-                tipo:         'GASTO_INTERNO',
-                category:     'autoconsumo',
-                isAutoconsumo: true,
-                afectaCaja:   false,       // NO afecta el cuadre de caja física
-                cajaCerrada:  false,
-                valoracion,
-                description:  description.trim(),
-                note:         note?.trim() || '',
-                totalUsd:     -Math.abs(totalUsd),
-                totalBs:      -Math.abs(totalBs),
-                ...(copEnabled && { totalCop: -(Math.abs(totalUsd) * tasaCop) }),
-                paymentMethod: 'autoconsumo',
-                payments: [{
-                    methodId:    'autoconsumo',
-                    amountUsd:   -Math.abs(totalUsd),
-                    amountBs:    -Math.abs(totalBs),
-                    currency:    'USD',
-                    methodLabel: 'Autoconsumo de Inventario'
-                }],
-                // Guardamos los ítems con su qty para poder revertir el stock al anular
-                items: items.map(i => ({
-                    id:       i.id,
-                    name:     i.name,
-                    qty:      i.qty,
-                    costUsd:  i.costUsd  || 0,
-                    priceUsd: i.priceUsd || 0,
-                })),
-            };
-
-            // 4. Guardar en sales (leer frescos aquí para no pisar otros writes)
-            const freshSales = await storageService.getItem(SALES_KEY, []);
-            const updatedSales = [gasto, ...freshSales];
-            await storageService.setItem(SALES_KEY, updatedSales);
-
-            return { gasto, updatedSales };
-        });
-
-        if (result) {
-            setSales(result.updatedSales);
-            showToast('Retiro de inventario registrado', 'success');
-            auditLog('CAJA', 'AUTOCONSUMO', `Retiro de ${items.length} producto(s) - $${Math.abs(totalUsd).toFixed(2)}`);
-            setIsAddGastoOpen(false);
-            return true;
+        try {
+            const allowNegative = localStorage.getItem('allow_negative_stock') === 'true';
+            const updatedSales = await saveAutoconsumo(gasto, items, { allowNegative });
+            setSales(updatedSales);
+        } catch (err) {
+            showToast(err.message || 'Error al registrar el retiro', 'error');
+            return false;
         }
 
-        showToast('Error al registrar el retiro', 'error');
-        return false;
-    }, [sales, setSales, bcvRate, tasaCop, copEnabled, triggerHaptic, auditLog]);
+        showToast('Retiro de inventario registrado', 'success');
+        auditLog('CAJA', 'AUTOCONSUMO', `Retiro de ${items.length} producto(s) - $${usd.toFixed(2)}`);
+        setIsAddGastoOpen(false);
+        return true;
+    }, [setSales, tasaCop, copEnabled, triggerHaptic, auditLog]);
 
     // ─── Anulación (con reversión de stock si es autoconsumo) ───────────────
     const anularGasto = useCallback(async (gastoId) => {
@@ -171,37 +133,20 @@ export function useGastosInternos({ bcvRate, tasaCop, copEnabled, triggerHaptic,
             return false;
         }
 
-        const targetGasto = sales.find(s => s.id === gastoId);
-        if (!targetGasto) return;
-
-        // Si es autoconsumo, devolver el stock
-        if (targetGasto.isAutoconsumo && Array.isArray(targetGasto.items)) {
-            await withLock('pos_write_lock', async () => {
-                const freshProducts = await storageService.getItem(PRODUCTS_KEY, []);
-                const restored = freshProducts.map(p => {
-                    const item = targetGasto.items.find(i => i.id === p.id);
-                    if (!item) return p;
-                    // GRANEL-001: restauración sin drift, 3 decimales solo para granel.
-                    return { ...p, stock: adjustStockValue(p.stock ?? 0, item.qty, isGranelProduct(p)) };
-                });
-                await storageService.setItem(PRODUCTS_KEY, restored);
-            });
+        let result;
+        try {
+            result = await voidGastoInterno(gastoId, { usuario: authState?.usuarioActivo || null });
+        } catch (err) {
+            showToast(err.message || 'No se pudo anular el gasto', 'warning');
+            return false;
         }
 
-        const updatedSales = sales.map(s => {
-            if (s.id === gastoId) {
-                return { ...s, status: 'ANULADA', voidedAt: new Date().toISOString() };
-            }
-            return s;
-        });
-
-        await storageService.setItem(SALES_KEY, updatedSales);
-        setSales(updatedSales);
-
-        const label = targetGasto.isAutoconsumo ? 'Autoconsumo anulado y stock devuelto' : 'Gasto anulado con éxito';
+        setSales(result.updatedSales);
+        const label = result.gasto.isAutoconsumo ? 'Autoconsumo anulado y stock devuelto' : 'Gasto anulado con éxito';
         showToast(label, 'success');
-        auditLog('CAJA', 'ANULAR_GASTO', `Gasto anulado: "${targetGasto.description}"`);
-    }, [sales, setSales, triggerHaptic, auditLog]);
+        auditLog('CAJA', 'ANULAR_GASTO', `Gasto anulado: "${result.gasto.description}"`);
+        return true;
+    }, [setSales, triggerHaptic, auditLog]);
 
     return {
         isAddGastoOpen,

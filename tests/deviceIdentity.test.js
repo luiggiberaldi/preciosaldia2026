@@ -120,6 +120,50 @@ describe('ensureDeviceSessionRegistered', () => {
         });
     });
 
+    // Siembra de la prueba de posesión (migración 20261106, P-019). Cada caso usa
+    // su propio deviceId porque lo ya sembrado se recuerda durante la carga.
+    it('tras un vínculo comprobado siembra la prueba de posesión con claim_device_session', async () => {
+        _insertMock.mockResolvedValue({ error: null });
+        _rpcMock.mockImplementation((name) => (name === 'claim_device_session'
+            ? Promise.resolve({ data: { success: true, code: 'SEEDED' }, error: null })
+            : Promise.resolve({ data: null, error: { code: 'PGRST202' } })));
+
+        const res = await ensureDeviceSessionRegistered('PDA-SEED-01');
+
+        expect(res).toEqual({ ok: true, registered: true, reclaimed: false, error: null });
+        const claims = _rpcMock.mock.calls.filter(([name]) => name === 'claim_device_session');
+        expect(claims).toHaveLength(1);
+        expect(claims[0][1].p_device_id).toBe('PDA-SEED-01');
+        expect(String(claims[0][1].p_secret).length).toBeGreaterThanOrEqual(32);
+    });
+
+    it('una vez sembrada no vuelve a llamar a claim_device_session en la misma carga', async () => {
+        _insertMock.mockResolvedValue({ error: null });
+        _rpcMock.mockImplementation((name) => (name === 'claim_device_session'
+            ? Promise.resolve({ data: { success: true, code: 'ALREADY_BOUND' }, error: null })
+            : Promise.resolve({ data: null, error: { code: 'PGRST202' } })));
+
+        await ensureDeviceSessionRegistered('PDA-SEED-02');
+        await ensureDeviceSessionRegistered('PDA-SEED-02');
+
+        const claims = _rpcMock.mock.calls.filter(([name]) => name === 'claim_device_session');
+        expect(claims).toHaveLength(1);
+    });
+
+    it('si la siembra falla el registro sigue siendo exitoso y se reintenta la próxima vez', async () => {
+        _insertMock.mockResolvedValue({ error: null });
+        _rpcMock.mockImplementation((name) => (name === 'claim_device_session'
+            ? Promise.reject(new Error('sin red'))
+            : Promise.resolve({ data: null, error: { code: 'PGRST202' } })));
+
+        const first = await ensureDeviceSessionRegistered('PDA-SEED-03');
+        await ensureDeviceSessionRegistered('PDA-SEED-03');
+
+        expect(first.ok).toBe(true);
+        const claims = _rpcMock.mock.calls.filter(([name]) => name === 'claim_device_session');
+        expect(claims).toHaveLength(2);
+    });
+
     it('sin deviceId devuelve ok=false sin lanzar', async () => {
         const res = await ensureDeviceSessionRegistered('');
         expect(res.ok).toBe(false);

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { storageService } from '../utils/storageService';
 import { getActivePaymentMethods, INTERNAL_CREDIT_PAYMENT_METHOD } from '../config/paymentMethods';
 import { migrateCustomerLedger } from '../utils/customerMigration';
@@ -6,6 +6,7 @@ import { isGranelProduct, normalizeCartQuantity } from '../utils/granel'; // GRA
 import { findOpenCashShift } from '../utils/cashShift';
 
 export const SALES_KEY = 'bodega_sales_v1';
+export const CUSTOMERS_KEY = 'bodega_customers_v1';
 
 function addInternalCreditMethod(methods) {
     return [
@@ -81,14 +82,21 @@ export function useSalesData({ setCart, cartRef, isActive }) {
     }, []);
 
     // Refresh payment methods and customers when tab becomes active (consolidates window focus + isActive)
+    // ERR-014: al cobrar, la venta se guarda antes que el saldo del cliente. Una
+    // recarga disparada por la venta podía leer el saldo viejo y pisar el nuevo
+    // (la pantalla mostraba el saldo a favor de antes del vuelto). Solo se aplica
+    // la recarga más reciente, y escribir clientes también recarga.
+    const reloadSeqRef = useRef(0);
     const handleReloadContent = useCallback(() => {
         if (!isActive) return;
+        const seq = ++reloadSeqRef.current;
         Promise.all([
             migrateCustomerLedger().catch(error => console.error('[useSalesData] Error migrando cartera:', error)),
             getActivePaymentMethods(),
             storageService.getItem('bodega_customers_v1', []),
             storageService.getItem(SALES_KEY, [])
         ]).then(([, methods, savedCustomers, savedSales]) => {
+            if (seq !== reloadSeqRef.current) return; // llegó una recarga más nueva
             setPaymentMethods(addInternalCreditMethod(methods));
             setCustomers(savedCustomers);
             setSalesData(savedSales);
@@ -113,7 +121,7 @@ export function useSalesData({ setCart, cartRef, isActive }) {
         };
 
         const onStorageUpdate = (e) => {
-            if (e.detail && e.detail.key === SALES_KEY) {
+            if (e.detail && (e.detail.key === SALES_KEY || e.detail.key === CUSTOMERS_KEY)) {
                 // Pequeño timeout para dar margen a que IndexedDB haya persistido los datos
                 setTimeout(handleReloadContent, 50);
             }

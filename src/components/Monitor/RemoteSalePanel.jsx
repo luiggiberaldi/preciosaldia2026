@@ -38,7 +38,8 @@ import { reportSupervisorCommandOutcome } from '../../services/supervisorCommand
 export const SELLER_NAME_KEY = 'pda_monitor_seller_name';
 const SEARCH_MAX_RESULTS = 50;
 const VIEW_MODE_KEY = 'pos_search_view_mode';
-const VIEW_MODES = ['hybrid', 'list', 'grid'];
+// «Teclado y escáner» (hybrid) y «Pantalla táctil» (grid); el modo lista se quitó.
+const VIEW_MODES = ['hybrid', 'grid'];
 
 const readAdvanceSettings = () => ({
     enabled: localStorage.getItem('allow_cash_advance') === 'true',

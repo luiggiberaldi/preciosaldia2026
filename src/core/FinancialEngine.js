@@ -25,6 +25,7 @@ const FACTORY_LABELS = {
     efectivo_bs:       'Efectivo Bs',
     pago_movil:        'Pago Móvil',
     punto_venta:       'Punto de Venta',
+    biopago:           'Biopago',
     efectivo_usd:      'Efectivo $',
     efectivo_cop:      'Efectivo COP',
     transferencia_cop: 'Transferencia COP',

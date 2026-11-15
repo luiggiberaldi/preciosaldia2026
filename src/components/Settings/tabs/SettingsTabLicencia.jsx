@@ -182,9 +182,9 @@ export default function SettingsTabLicencia({ deviceId, triggerHaptic }) {
     };
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
+        <div className="cq-grid cq-3 items-start">
             {/* Estado de Licencia */}
-            <div className="md:col-span-2 xl:col-span-3">
+            <div className="col-span-full">
                 <SectionCard icon={KeyRound} title="Licencia de Software" subtitle="Detalles de activación de la app" iconColor="text-brand">
                     <div className="space-y-4">
                         <div className="flex justify-between items-center">
@@ -222,7 +222,7 @@ export default function SettingsTabLicencia({ deviceId, triggerHaptic }) {
                                             if (bizPhone) parts.push(`Mi teléfono: ${bizPhone}`);
                                             window.open(`https://wa.me/584124051793?text=${encodeURIComponent(parts.join('\n'))}`, '_blank');
                                         }}
-                                        className="w-full mt-1 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-black rounded-xl transition-all shadow-sm shadow-emerald-500/20 active:scale-[0.97] text-center"
+                                        className="w-full mt-1 py-2.5 min-h-[44px] bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-black rounded-xl transition-all shadow-sm shadow-emerald-500/20 active:scale-[0.97] text-center"
                                     >
                                         Solicitar por WhatsApp
                                     </button>
@@ -234,7 +234,7 @@ export default function SettingsTabLicencia({ deviceId, triggerHaptic }) {
             </div>
 
             {/* Datos Técnicos de Licencia */}
-            <div className="md:col-span-2 xl:col-span-3">
+            <div className="col-span-full">
                 <SectionCard icon={Hash} title="Identificación del Equipo" subtitle="ID asociado para licenciamiento" iconColor="text-slate-500">
                     <div className="flex items-start justify-between gap-2 bg-slate-50 dark:bg-slate-800/20 border border-slate-100 dark:border-slate-800 p-3 rounded-xl">
                         <div className="min-w-0 flex-1">
@@ -244,7 +244,7 @@ export default function SettingsTabLicencia({ deviceId, triggerHaptic }) {
                         <button
                             type="button"
                             onClick={() => copyToClipboard(deviceId)}
-                            className="shrink-0 p-2 rounded-lg text-slate-400 hover:text-teal-500 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-all mt-0.5"
+                            className="shrink-0 p-2.5 min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg text-slate-400 hover:text-teal-500 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-all"
                             title="Copiar ID completo"
                             aria-label="Copiar ID de instalación"
                         >

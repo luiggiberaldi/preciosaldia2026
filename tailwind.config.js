@@ -15,6 +15,10 @@ export default {
   darkMode: ['class', '[data-theme="dark"]'],
   theme: {
     extend: {
+      screens: {
+        // `short:` = pantallas bajas de escritorio (p. ej. 1366x768): menos relleno y tarjetas más compactas.
+        short: { raw: '(min-width: 1024px) and (max-height: 800px)' },
+      },
       colors: {
         // Brand: cian/turquesa H=192 (antes azul)
         brand: {

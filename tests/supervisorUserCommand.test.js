@@ -67,4 +67,22 @@ describe('Supervisor user commands', () => {
             userId: 1,
         })).rejects.toThrow('último administrador');
     });
+
+    it('con la pantalla de inicio activa no deja al Administrador «entrar sin PIN»', async () => {
+        const storage = makeStorage([{ id: 1, nombre: 'Admin', rol: 'ADMIN', pin: pinHash, requirePin: true }]);
+        storage.values['abasto-auth-storage'].state.requireLogin = true;
+
+        await expect(applySupervisorUserCommand(storage, {
+            action: 'edit', userId: 1, patch: { bypassPin: true },
+        })).rejects.toThrow('debe entrar con PIN');
+        await expect(applySupervisorUserCommand(storage, {
+            action: 'add', nombre: 'Otro dueño', rol: 'ADMIN', pinHash, bypassPin: true,
+        })).rejects.toThrow('debe entrar con PIN');
+
+        // Un cajero sí puede quedar sin PIN.
+        const cajero = await applySupervisorUserCommand(storage, {
+            action: 'add', nombre: 'Caja', rol: 'CAJERO', pinHash, bypassPin: true,
+        });
+        expect(cajero.user.requirePin).toBe(false);
+    });
 });

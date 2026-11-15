@@ -65,6 +65,31 @@ function legacyReversalMovements(sale) {
 }
 
 /**
+ * Movimientos de cartera que deshacen una venta al anularla. Las ventas nuevas
+ * usan sus movimientos exactos del ledger (en orden inverso); las históricas sin
+ * movimientos enlazados se mapean de forma conservadora. Exportada para que la
+ * vista previa del aviso de anulación (F3, `voidImpact.js`) use la misma regla.
+ */
+export function buildVoidReversalMovements(sale, ledger) {
+    const ledgerMovements = (Array.isArray(ledger) ? ledger : []).filter(m => m.customerId === sale.customerId
+        && (m.sourceSaleId === sale.id || m.sourceId?.startsWith(`${sale.id}:`))
+        && m.type !== CUSTOMER_MOVEMENT_TYPES.REVERSAL);
+
+    return ledgerMovements.length > 0
+        ? ledgerMovements.slice().reverse().map(original => ({
+            type: CUSTOMER_MOVEMENT_TYPES.REVERSAL,
+            direction: original.direction === 'CREDIT' ? 'DEBIT' : 'CREDIT',
+            amountUsd: original.amountUsd,
+            sourceType: 'REVERSAL',
+            sourceId: `reversal:${original.id}`,
+            sourceSaleId: sale.id,
+            reversalOf: original.id,
+            reason: `Anulación de ${original.reason || original.type}`,
+        }))
+        : legacyReversalMovements(sale);
+}
+
+/**
  * @param {object} [options]
  * @param {object} [options.voidInfo] Datos de quién/por qué se anuló (p. ej.
  *   anulación remota del Supervisor); quedan en el registro de la venta.
@@ -141,24 +166,7 @@ export async function processVoidSale(saleParam, currentSales, currentProducts, 
         const savedCustomers = await storageService.getItem(CUSTOMERS_KEY, []);
         let updatedCustomers = savedCustomers;
         const savedLedger = await storageService.getItem(CUSTOMER_LEDGER_KEY, []);
-        let ledgerMovements = savedLedger.filter(m => m.customerId === freshSale.customerId
-            && (m.sourceSaleId === freshSale.id || m.sourceId?.startsWith(`${freshSale.id}:`))
-            && m.type !== CUSTOMER_MOVEMENT_TYPES.REVERSAL);
-
-        // New sales use their exact ledger movements. Historical sales are mapped
-        // conservatively only when no source-linked movements exist.
-        let reversalMovements = ledgerMovements.length > 0
-            ? ledgerMovements.slice().reverse().map(original => ({
-                type: CUSTOMER_MOVEMENT_TYPES.REVERSAL,
-                direction: original.direction === 'CREDIT' ? 'DEBIT' : 'CREDIT',
-                amountUsd: original.amountUsd,
-                sourceType: 'REVERSAL',
-                sourceId: `reversal:${original.id}`,
-                sourceSaleId: freshSale.id,
-                reversalOf: original.id,
-                reason: `Anulación de ${original.reason || original.type}`,
-            }))
-            : legacyReversalMovements(freshSale);
+        const reversalMovements = buildVoidReversalMovements(freshSale, savedLedger);
 
         // Cashea is a separate counterparty and remains outside the customer ledger.
         const casheaVentaUsd = freshSale.tipo === 'VENTA_CASHEA' ? round2(freshSale.casheaUsd || 0) : 0;

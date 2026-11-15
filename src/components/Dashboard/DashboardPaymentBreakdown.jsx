@@ -173,8 +173,8 @@ export default function DashboardPaymentBreakdown({
                     <div className="space-y-2 pl-1 border-l-2 border-amber-200 dark:border-amber-800/40">
                         <div className="pl-3 space-y-2">
                             {receivablesView.rows.map(row => (
-                                <div key={row.key} className="flex items-center justify-between text-sm gap-2">
-                                    <span className="text-slate-600 dark:text-slate-300 font-medium truncate">
+                                <div key={row.key} data-testid={`cxc-${row.key}`} className={`flex items-center justify-between gap-2 ${row.isSub ? 'text-xs pl-3' : 'text-sm'}`}>
+                                    <span className={`${row.isSub ? 'text-slate-500 dark:text-slate-400' : 'text-slate-600 dark:text-slate-300'} font-medium truncate`}>
                                         {row.label}
                                         {row.count > 0 && <span className="text-[10px] text-slate-400"> ({row.count})</span>}
                                     </span>

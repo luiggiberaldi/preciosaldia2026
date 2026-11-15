@@ -1,26 +1,26 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
-    Database, Palette, Fingerprint, Upload, Download, Share2, Cloud,
-    Check, ChevronRight, Trash2, AlertTriangle, FileText, ZoomIn, ZoomOut, RotateCcw, QrCode
+    Palette, Fingerprint, Upload, Download, Share2, Cloud, HardDrive,
+    Check, ChevronRight, Trash2, AlertTriangle, ZoomIn, ZoomOut, RotateCcw, QrCode, RefreshCw
 } from 'lucide-react';
 import { SectionCard } from '../../SettingsShared';
 import { showToast } from '../../Toast';
-import AuditLogViewer from '../AuditLogViewer';
 import PairingManager from '../PairingManager';
 import SystemHealthPanel from '../SystemHealthPanel';
 import ConfirmModal from '../../ConfirmModal';
 import QRCode from 'qrcode';
 import { resetPOSDataToEmpty } from '../../../hooks/useCloudSync';
 import { useSecurity } from '../../../hooks/useSecurity';
-import { Modal } from '../../Modal';
-import { storageService } from '../../../utils/storageService';
-import { PRODUCTS_KEY } from '../../../utils/catalogLock';
-import { planCatalogPackagingFix, formatPackagingFixReport } from '../../../utils/granel';
-import { hasPackagingFixUndo, undoPackagingFixMigration } from '../../../utils/packagingFixMigration';
 import { applyUiScale } from '../../../utils/uiScale';
+import { getLastBackupAt, describeBackupAge, isBackupStale } from '../../../utils/backupReminder';
+
+// Ajustes > Sistema, ordenado como en Farmacia (CASO-021): respaldo local y nube por separado,
+// aviso de «último respaldo», versión con «Buscar actualización» y lo irreversible solo en la
+// Zona de Peligro. Se quitaron «Diagnóstico de Empaque» y «Deshacer corrección de empaque»
+// (herramientas de una migración vieja); el código de apoyo sigue en utils/granel y
+// utils/packagingFixMigration por si hace falta.
 
 export default function SettingsTabSistema({
-    theme, toggleTheme,
     deviceId, idCopied, setIdCopied,
     isAdmin,
     importStatus, statusMessage,
@@ -43,61 +43,63 @@ export default function SettingsTabSistema({
     
     const qrCanvasRef = useRef(null);
 
-    // FIX-EMPAQUE-001: modo diagnóstico (dry-run) de empaque. Lee el catálogo,
-    // calcula los cambios que se aplicarían y NO escribe absolutamente nada.
-    const [packDiag, setPackDiag] = useState(null);
-    const [packDiagOpen, setPackDiagOpen] = useState(false);
-    const [packDiagLoading, setPackDiagLoading] = useState(false);
+    const [showResetConfirm, setShowResetConfirm] = useState(false);
 
-    const handlePackDiag = async () => {
-        if (packDiagLoading) return;
+    // Fecha del último respaldo exportado (se vuelve a leer al terminar una exportación).
+    const [lastBackupAt, setLastBackupAt] = useState(null);
+    useEffect(() => {
+        let alive = true;
+        getLastBackupAt().then(v => { if (alive) setLastBackupAt(v); }).catch(() => {});
+        return () => { alive = false; };
+    }, [importStatus]);
+    const backupStale = isBackupStale(lastBackupAt);
+
+    // Buscar actualización: pide al service worker revisar y, si hay versión nueva, permite aplicarla.
+    const [checkingUpdate, setCheckingUpdate] = useState(false);
+    const [updateReady, setUpdateReady] = useState(() => !!window.__pdaSwUpdateAvailable);
+    useEffect(() => {
+        const onUpdate = () => setUpdateReady(true);
+        window.addEventListener('sw-update-available', onUpdate);
+        return () => window.removeEventListener('sw-update-available', onUpdate);
+    }, []);
+    const handleCheckUpdate = async () => {
         triggerHaptic?.();
-        setPackDiagLoading(true);
+        if (updateReady && typeof window.__pdaUpdateSW === 'function') {
+            await window.__pdaUpdateSW(true);
+            return;
+        }
+        if (checkingUpdate) return;
+        setCheckingUpdate(true);
         try {
-            const products = (await storageService.getItem(PRODUCTS_KEY, [])) || [];
-            const cambios = planCatalogPackagingFix(products);
-            setPackDiag({ cambios, total: products.length });
-            setPackDiagOpen(true);
+            const reg = await navigator.serviceWorker?.getRegistration?.();
+            if (!reg) {
+                showToast('Las actualizaciones no están disponibles en este modo', 'info');
+                return;
+            }
+            await reg.update();
+            await new Promise(r => setTimeout(r, 2500));
+            if (window.__pdaSwUpdateAvailable) setUpdateReady(true);
+            else showToast('Ya tienes la última versión', 'success');
         } catch (err) {
-            console.warn('[SettingsTabSistema] No se pudo generar el diagnóstico de empaque:', err);
-            showToast('No se pudo generar el diagnóstico de empaque', 'error');
+            console.warn('[SettingsTabSistema] No se pudo buscar actualización:', err);
+            showToast('No se pudo buscar actualización. Revisa tu conexión', 'error');
         } finally {
-            setPackDiagLoading(false);
+            setCheckingUpdate(false);
         }
     };
 
-    const handlePackDiagDownload = () => {
-        if (!packDiag) return;
-        const blob = new Blob([formatPackagingFixReport(packDiag.cambios)], { type: 'text/plain;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `diagnostico_empaque_${new Date().toISOString().slice(0, 10)}.txt`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    };
-
-    // FIX-EMPAQUE-002: botón de reversión de la corrección automática de empaque.
-    // Solo aparece si hay una corrección aplicada con bitácora que deshacer.
-    const [canUndoPackFix, setCanUndoPackFix] = useState(false);
-    useEffect(() => {
-        let alive = true;
-        hasPackagingFixUndo().then(ok => { if (alive) setCanUndoPackFix(ok); }).catch(() => {});
-        return () => { alive = false; };
-    }, []);
-
-    const handleUndoPackFix = async () => {
-        const ok = window.confirm('Se devolverán los productos corregidos a su empaque anterior (solo etiquetas de empaque; stock y precios NO cambian). ¿Continuar?');
-        if (!ok) return;
-        triggerHaptic?.();
-        const result = await undoPackagingFixMigration();
-        if (result.undone > 0) {
-            setCanUndoPackFix(false);
-            showToast(`Corrección de empaque deshecha (${result.undone} producto(s))`, 'success');
-        } else {
-            showToast('No se pudo deshacer la corrección de empaque', 'error');
+    // Vacía este equipo y publica el estado vacío en la nube (antes con window.confirm, ahora con confirmación propia).
+    const handleResetFromZero = async () => {
+        try {
+            const result = await resetPOSDataToEmpty();
+            showToast(
+                result.ok
+                    ? 'Equipo reiniciado: la nube quedó con estado vacío'
+                    : `No se pudo publicar el estado vacío: ${result.result?.error || 'error desconocido'}`,
+                result.ok ? 'success' : 'error',
+            );
+        } catch (error) {
+            showToast(error?.message || 'No se pudieron reiniciar los datos', 'error');
         }
     };
 
@@ -132,7 +134,7 @@ export default function SettingsTabSistema({
                     }
                 },
                 (err) => {
-                    if (err) console.error('[SettingsTabSistema] Error dibujando QR de instalacion:', err);
+                    if (err) console.error('[SettingsTabSistema] Error dibujando QR de instalación:', err);
                 }
             );
         }
@@ -152,113 +154,98 @@ export default function SettingsTabSistema({
     };
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
-            {/* Datos y Respaldo */}
-            <SectionCard icon={Database} title="Datos y Respaldo" subtitle="Exportar, importar y compartir" iconColor="text-cyan-500">
-                <div className="p-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/30 rounded-xl flex gap-2.5">
-                    <AlertTriangle size={18} className="text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
-                    <p className="text-[10px] text-amber-800 dark:text-amber-400 leading-relaxed font-bold">
-                        PRECAUCION: Al restaurar un backup se sobrescribira por completo todo el historial de ventas, inventario, deudores y configuraciones de este dispositivo.
-                    </p>
+        <div className="cq-grid cq-3 items-start">
+            {/* Respaldo local */}
+            <SectionCard icon={HardDrive} title="Respaldo local" subtitle="Exportar, importar y compartir" iconColor="text-cyan-500">
+                <div
+                    data-testid="backup-age"
+                    className={`p-2.5 rounded-xl flex gap-2.5 border ${backupStale ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800/40' : 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-800/30'}`}
+                >
+                    {backupStale
+                        ? <AlertTriangle size={18} className="text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
+                        : <Check size={18} className="text-emerald-600 dark:text-emerald-500 shrink-0 mt-0.5" />}
+                    <div className="min-w-0">
+                        <p className={`text-xs font-bold ${backupStale ? 'text-amber-800 dark:text-amber-400' : 'text-emerald-800 dark:text-emerald-400'}`}>
+                            {describeBackupAge(lastBackupAt)}
+                        </p>
+                        {backupStale && (
+                            <p className="text-[11px] text-amber-700 dark:text-amber-500/90 leading-relaxed mt-0.5">
+                                Exporta un respaldo al menos una vez por semana para no perder tus datos.
+                            </p>
+                        )}
+                    </div>
                 </div>
 
-                <div className="space-y-2">
-                    <button onClick={handleExport} className="w-full flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors group active:scale-[0.98]">
+                {/* Exportar, importar (reemplaza todo) y compartir son del Administrador. */}
+                {!isAdmin && (
+                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Solo el Administrador puede exportar, importar o compartir datos.</p>
+                )}
+                {isAdmin && <div className="space-y-2">
+                    <button onClick={handleExport} className="w-full flex items-center gap-3 p-3 min-h-[56px] bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors group active:scale-[0.98]">
                         <div className="p-2 bg-brand-light dark:bg-surface-800/30 rounded-lg"><Download size={18} className="text-brand" /></div>
-                        <div className="text-left flex-1">
-                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Exportar Backup</p>
+                        <div className="text-left flex-1 min-w-0">
+                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Exportar respaldo</p>
                             <p className="text-xs text-slate-500 dark:text-slate-400">Descargar archivo .json</p>
                         </div>
-                        <ChevronRight size={16} className="text-slate-300" />
+                        <ChevronRight size={16} className="text-slate-300 shrink-0" />
                     </button>
 
-                    <button onClick={handleImportClick} className="w-full flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors group active:scale-[0.98]">
+                    <button onClick={handleImportClick} className="w-full flex items-center gap-3 p-3 min-h-[56px] bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors group active:scale-[0.98]">
                         <div className="p-2 bg-emerald-50 dark:bg-emerald-900/30 rounded-lg"><Upload size={18} className="text-emerald-500" /></div>
-                        <div className="text-left flex-1">
-                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Importar Backup</p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">Restaurar desde archivo</p>
+                        <div className="text-left flex-1 min-w-0">
+                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Importar respaldo</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Restaurar desde archivo (reemplaza todo)</p>
                         </div>
-                        <ChevronRight size={16} className="text-slate-300" />
+                        <ChevronRight size={16} className="text-slate-300 shrink-0" />
                     </button>
 
-                    <button
-                        onClick={() => {
-                            if (!isLicensedCloud) {
-                                showToast('La sincronización con la nube requiere licencia completa', 'error');
-                                return;
-                            }
-                            handleSyncCloud?.();
-                        }}
-                        aria-disabled={!isLicensedCloud}
-                        title={!isLicensedCloud ? 'Disponible con licencia permanente activa' : undefined}
-                        className={`w-full flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 rounded-xl transition-colors group active:scale-[0.98] ${isLicensedCloud ? 'hover:bg-slate-100 dark:hover:bg-slate-800' : 'opacity-50 cursor-not-allowed'}`}
-                    >
-                        <div className="p-2 bg-sky-50 dark:bg-sky-900/30 rounded-lg"><Cloud size={18} className="text-sky-500" /></div>
-                        <div className="text-left flex-1">
-                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Sincronizar con la Nube</p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">Disponible solo con licencia permanente activa</p>
-                        </div>
-                        {!isLicensedCloud && (
-                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 uppercase tracking-wide">Solo permanente</span>
-                        )}
-                        <ChevronRight size={16} className="text-slate-300" />
-                    </button>
-
-                    <button onClick={() => setIsShareOpen(true)} className="w-full flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors group active:scale-[0.98]">
+                    <button onClick={() => setIsShareOpen(true)} className="w-full flex items-center gap-3 p-3 min-h-[56px] bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors group active:scale-[0.98]">
                         <div className="p-2 bg-brand-light dark:bg-surface-800/30 rounded-lg"><Share2 size={18} className="text-brand" /></div>
-                        <div className="text-left flex-1">
-                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Compartir Inventario</p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">Codigo de 6 digitos, 24h</p>
+                        <div className="text-left flex-1 min-w-0">
+                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Compartir inventario</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Código de 6 dígitos, válido 24 h</p>
                         </div>
-                        <ChevronRight size={16} className="text-slate-300" />
+                        <ChevronRight size={16} className="text-slate-300 shrink-0" />
                     </button>
+                </div>}
 
-                    <button onClick={handlePackDiag} className="w-full flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors group active:scale-[0.98]">
-                        <div className="p-2 bg-amber-50 dark:bg-amber-900/30 rounded-lg"><FileText size={18} className="text-amber-500" /></div>
-                        <div className="text-left flex-1">
-                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Diagnóstico de Empaque</p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">Ver qué se corregiría. No escribe nada</p>
-                        </div>
-                        <ChevronRight size={16} className="text-slate-300" />
-                    </button>
+                <p className="text-[11px] text-amber-800 dark:text-amber-400 leading-relaxed font-bold">
+                    PRECAUCIÓN: al restaurar un respaldo se sobrescribirá por completo todo el historial de ventas, inventario, deudores y configuraciones de este dispositivo.
+                </p>
 
-                    {canUndoPackFix && (
-                        <button onClick={handleUndoPackFix} className="w-full flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors group active:scale-[0.98]">
-                            <div className="p-2 bg-rose-50 dark:bg-rose-900/30 rounded-lg"><RotateCcw size={18} className="text-rose-500" /></div>
-                            <div className="text-left flex-1">
-                                <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Deshacer corrección de empaque</p>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">Devuelve los productos a su empaque anterior</p>
-                            </div>
-                            <ChevronRight size={16} className="text-slate-300" />
-                        </button>
-                    )}
-                </div>
+                {importStatus && (
+                    <div className={`p-2.5 rounded-xl text-xs font-bold text-center flex items-center justify-center gap-2 ${importStatus === 'success' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'}`}>
+                        {importStatus === 'success' ? <Check size={14} /> : <AlertTriangle size={14} />}
+                        {statusMessage}
+                    </div>
+                )}
+            </SectionCard>
 
-                    <button
-                        onClick={async () => {
-                            const ok = window.confirm('Se descartarán productos, ventas y clientes de ESTE equipo y se publicará un respaldo vacío en la nube. ¿Continuar?');
-                            if (!ok) return;
-                            try {
-                                const result = await resetPOSDataToEmpty();
-                                showToast(
-                                    result.ok
-                                        ? 'Equipo reiniciado: la nube quedó con estado vacío'
-                                        : `No se pudo publicar el estado vacío: ${result.result?.error || 'error desconocido'}`,
-                                    result.ok ? 'success' : 'error',
-                                );
-                            } catch (error) {
-                                showToast(error?.message || 'No se pudieron reiniciar los datos', 'error');
-                            }
-                        }}
-                        className="w-full flex items-center gap-3 p-3 bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800/40 rounded-xl hover:bg-rose-100 dark:hover:bg-rose-900/30 transition-colors group active:scale-[0.98]"
-                    >
-                        <div className="p-2 bg-rose-100 dark:bg-rose-900/40 rounded-lg"><AlertTriangle size={18} className="text-rose-500" /></div>
-                        <div className="text-left flex-1">
-                            <p className="text-sm font-bold text-rose-700 dark:text-rose-300">Empezar desde cero</p>
-                            <p className="text-xs text-rose-500 dark:text-rose-400">Vacía este equipo y publica el vacío en la nube</p>
-                        </div>
-                        <ChevronRight size={16} className="text-slate-300" />
-                    </button>
+            {/* Nube */}
+            <SectionCard icon={Cloud} title="Nube" subtitle="Copia en línea de tus datos" iconColor="text-sky-500">
+                <button
+                    onClick={() => {
+                        if (!isLicensedCloud) {
+                            showToast('La sincronización con la nube requiere licencia completa', 'error');
+                            return;
+                        }
+                        handleSyncCloud?.();
+                    }}
+                    aria-disabled={!isLicensedCloud}
+                    title={!isLicensedCloud ? 'Disponible con licencia permanente activa' : undefined}
+                    className={`w-full flex items-center gap-3 p-3 min-h-[56px] bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 rounded-xl transition-colors group active:scale-[0.98] ${isLicensedCloud ? 'hover:bg-slate-100 dark:hover:bg-slate-800' : 'opacity-50 cursor-not-allowed'}`}
+                >
+                    <div className="p-2 bg-sky-50 dark:bg-sky-900/30 rounded-lg"><Cloud size={18} className="text-sky-500" /></div>
+                    <div className="text-left flex-1 min-w-0">
+                        <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Sincronizar con la Nube</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Disponible solo con licencia permanente activa</p>
+                        {/* La etiqueta va debajo del texto para que el título no se parta en columnas angostas. */}
+                        {!isLicensedCloud && (
+                            <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 uppercase tracking-wide">Solo permanente</span>
+                        )}
+                    </div>
+                    <ChevronRight size={16} className="text-slate-300 shrink-0" />
+                </button>
 
                 {lastError && (
                     <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 rounded-xl space-y-1.5" role="alert">
@@ -290,7 +277,7 @@ export default function SettingsTabSistema({
                             <AlertTriangle size={14} /> Conflicto de datos detectado
                         </p>
                         <p className="text-[11px] text-amber-700 dark:text-amber-500/90 leading-relaxed">
-                            Hay datos tanto en este dispositivo como en la nube. Elige que version conservar:
+                            Hay datos tanto en este dispositivo como en la nube. Elige qué versión conservar:
                         </p>
                         <div className="flex gap-2">
                             <button
@@ -309,12 +296,6 @@ export default function SettingsTabSistema({
                     </div>
                 )}
 
-                {importStatus && (
-                    <div className={`p-2.5 rounded-xl text-xs font-bold text-center flex items-center justify-center gap-2 ${importStatus === 'success' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'}`}>
-                        {importStatus === 'success' ? <Check size={14} /> : <AlertTriangle size={14} />}
-                        {statusMessage}
-                    </div>
-                )}
             </SectionCard>
 
             {/* Apariencia */}
@@ -332,7 +313,7 @@ export default function SettingsTabSistema({
                         <button
                             onClick={() => adjustScale(-5)}
                             disabled={uiScale <= 60}
-                            className="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-brand-light hover:text-brand-dark dark:hover:bg-surface-800/20 dark:hover:text-brand transition-all active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-brand-light hover:text-brand-dark dark:hover:bg-surface-800/20 dark:hover:text-brand transition-all active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed"
                         >
                             <ZoomOut size={16} />
                         </button>
@@ -347,15 +328,15 @@ export default function SettingsTabSistema({
                                 className="w-full h-2 rounded-full appearance-none cursor-pointer bg-slate-200 dark:bg-slate-700 accent-brand"
                             />
                             <div className="flex justify-between mt-1 px-0.5">
-                                <span className="text-[9px] text-slate-500 dark:text-slate-400 font-medium">60%</span>
-                                <span className="text-[9px] text-slate-500 dark:text-slate-400 font-medium">100%</span>
-                                <span className="text-[9px] text-slate-500 dark:text-slate-400 font-medium">140%</span>
+                                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">60%</span>
+                                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">100%</span>
+                                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">140%</span>
                             </div>
                         </div>
                         <button
                             onClick={() => adjustScale(5)}
                             disabled={uiScale >= 140}
-                            className="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-brand-light hover:text-brand-dark dark:hover:bg-surface-800/20 dark:hover:text-brand transition-all active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-brand-light hover:text-brand-dark dark:hover:bg-surface-800/20 dark:hover:text-brand transition-all active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed"
                         >
                             <ZoomIn size={16} />
                         </button>
@@ -375,13 +356,13 @@ export default function SettingsTabSistema({
             </SectionCard>
 
             {/* Dispositivo */}
-            <SectionCard icon={Fingerprint} title="Dispositivo" subtitle="Informacion tecnica" iconColor="text-slate-500">
+            <SectionCard icon={Fingerprint} title="Dispositivo" subtitle="Información técnica" iconColor="text-slate-500">
                 <div className="flex flex-col items-center justify-center p-3 bg-white dark:bg-slate-950 rounded-2xl border border-slate-200/50 dark:border-slate-800/80 shadow-inner w-fit mx-auto mb-4">
                     <canvas ref={qrCanvasRef} className="w-[140px] h-[140px] rounded-lg" />
                 </div>
                 <div className="flex items-start justify-between gap-2 p-2.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-xl">
                     <div className="min-w-0 flex-1">
-                        <p className="text-[11px] uppercase tracking-wider font-extrabold text-slate-500 dark:text-slate-400 mb-1">ID de Instalacion</p>
+                        <p className="text-[11px] uppercase tracking-wider font-extrabold text-slate-500 dark:text-slate-400 mb-1">ID de instalación</p>
                         <p className="font-mono text-xs font-black text-slate-700 dark:text-slate-200 select-all break-all leading-relaxed">{deviceId || '...'}</p>
                     </div>
                     <button
@@ -393,7 +374,7 @@ export default function SettingsTabSistema({
                                 setTimeout(() => setIdCopied(false), 2000);
                             });
                         }}
-                        className="shrink-0 p-2 rounded-lg text-slate-400 hover:text-teal-500 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-all mt-1"
+                        className="shrink-0 p-2.5 min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg text-slate-400 hover:text-teal-500 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-all"
                         title={idCopied ? '¡Copiado!' : 'Copiar ID completo'}
                         aria-label="Copiar ID de instalación"
                     >
@@ -401,6 +382,23 @@ export default function SettingsTabSistema({
                     </button>
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">Comparte este ID o escanea su código QR si necesitas soporte técnico o activación de licencia.</p>
+
+                <div className="mt-4 flex items-center justify-between gap-3 p-2.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-xl">
+                    <div className="min-w-0">
+                        <p className="text-[11px] uppercase tracking-wider font-extrabold text-slate-500 dark:text-slate-400">Versión de la app</p>
+                        <p data-testid="app-version" className="font-mono text-xs font-black text-slate-700 dark:text-slate-200">v{import.meta.env.VITE_APP_VERSION}</p>
+                    </div>
+                    <button
+                        type="button"
+                        data-testid="check-update"
+                        onClick={handleCheckUpdate}
+                        disabled={checkingUpdate}
+                        className={`shrink-0 flex items-center gap-1.5 px-3 py-2 min-h-[40px] rounded-xl text-[11px] font-black uppercase tracking-wider transition-all active:scale-95 disabled:opacity-60 ${updateReady ? 'bg-emerald-500 hover:bg-emerald-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
+                    >
+                        <RefreshCw size={13} className={checkingUpdate ? 'animate-spin' : ''} />
+                        {updateReady ? 'Actualizar ahora' : checkingUpdate ? 'Buscando…' : 'Buscar actualización'}
+                    </button>
+                </div>
 
                 {/* Dos equipos con el mismo ID: separar esta estación */}
                 <div className="mt-4 p-3 rounded-2xl border border-amber-200/70 dark:border-amber-800/40 bg-amber-50/50 dark:bg-amber-950/20">
@@ -410,7 +408,7 @@ export default function SettingsTabSistema({
                     <button
                         onClick={() => { triggerHaptic?.(); setShowIdFixConfirm(true); }}
                         disabled={fixingId}
-                        className="mt-2 w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white text-[11px] font-black uppercase tracking-wider transition-all"
+                        className="mt-2 w-full flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-[44px] rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white text-[11px] font-black uppercase tracking-wider transition-all"
                     >
                         <Fingerprint size={13} />
                         {fixingId ? 'Generando ID único…' : 'Generar ID único para esta estación'}
@@ -438,7 +436,7 @@ export default function SettingsTabSistema({
 
             {/* Celular del Supervisor (QR Monitoreo) */}
             {isAdmin && (
-                <div className="md:col-span-2 xl:col-span-3">
+                <div className="col-span-full">
                     <SectionCard icon={QrCode} title="Celular del Supervisor" subtitle="Monitoreo remoto en tiempo real" iconColor="text-emerald-500">
                         <PairingManager deviceId={deviceId} triggerHaptic={triggerHaptic} />
                     </SectionCard>
@@ -447,11 +445,11 @@ export default function SettingsTabSistema({
 
             {/* Zona de Peligro — Habilitado para Administradores */}
             {isAdmin && (
-                <div className="md:col-span-2 xl:col-span-3">
+                <div className="col-span-full">
                     <SectionCard icon={AlertTriangle} title="Zona de Peligro" subtitle="Acciones irreversibles" iconColor="text-red-500">
                         <div className="p-2.5 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/30 rounded-xl mb-3">
                             <p className="text-xs text-red-750 dark:text-red-400 leading-relaxed font-bold">
-                                Esta accion eliminara todo el historial de ventas y reportes estadisticos. El inventario NO sera afectado.
+                                Esta acción eliminará todo el historial de ventas y los reportes estadísticos. El inventario NO se verá afectado.
                             </p>
                         </div>
                         <button
@@ -460,46 +458,34 @@ export default function SettingsTabSistema({
                         >
                             <div className="p-2 bg-red-100 dark:bg-red-900/40 rounded-lg"><Trash2 size={18} className="text-red-600 dark:text-red-400" /></div>
                             <div className="text-left flex-1">
-                                <p className="text-sm font-bold text-red-700 dark:text-red-400">Borrar Historial de Ventas</p>
-                                <p className="text-xs text-red-500/80 dark:text-red-400/80">El inventario no se borrara</p>
+                                <p className="text-sm font-bold text-red-700 dark:text-red-400">Borrar historial de ventas</p>
+                                <p className="text-xs text-red-500/80 dark:text-red-400/80">El inventario no se borra</p>
+                            </div>
+                        </button>
+                        <button
+                            onClick={() => { triggerHaptic?.(); setShowResetConfirm(true); }}
+                            className="mt-2 w-full flex items-center gap-3 p-3 min-h-[56px] bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 rounded-xl hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors group active:scale-[0.98]"
+                        >
+                            <div className="p-2 bg-red-100 dark:bg-red-900/40 rounded-lg"><AlertTriangle size={18} className="text-red-600 dark:text-red-400" /></div>
+                            <div className="text-left flex-1">
+                                <p className="text-sm font-bold text-red-700 dark:text-red-400">Empezar desde cero</p>
+                                <p className="text-xs text-red-500/80 dark:text-red-400/80">Vacía este equipo y publica el vacío en la nube</p>
                             </div>
                         </button>
                     </SectionCard>
                 </div>
             )}
 
-            {/* FIX-EMPAQUE-001: diagnóstico de empaque (dry-run) */}
-            <Modal isOpen={packDiagOpen} onClose={() => setPackDiagOpen(false)} title="Diagnóstico de Empaque" size="max-w-lg">
-                <p className="text-xs text-slate-500 dark:text-slate-400 mb-3 leading-relaxed">
-                    Modo diagnóstico: esto <strong>NO escribe nada</strong> en tus datos. Muestra lo que se corregiría al aplicar el fix de empaque (solo las etiquetas de empaque, unidad y granelUnit; nunca stock ni precios).
-                </p>
-                {packDiag && packDiag.cambios.length === 0 ? (
-                    <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">Sin cambios pendientes: todo el catálogo ya tiene un empaque válido.</p>
-                ) : (
-                    <>
-                        <p className="text-xs font-bold text-slate-600 dark:text-slate-300 mb-2">
-                            {packDiag?.cambios.length ?? 0} de {packDiag?.total ?? 0} producto(s) con cambios propuestos:
-                        </p>
-                        <div className="space-y-2 max-h-[45vh] overflow-y-auto custom-scrollbar pr-1">
-                            {packDiag?.cambios.map((c, i) => (
-                                <div key={c.id ?? i} className="p-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 rounded-xl">
-                                    <p className="text-xs font-black text-slate-700 dark:text-slate-200">{c.name}</p>
-                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                        {c.campos.map(k => `${k}: ${c.antes[k] ?? '(vacío)'} → ${c.despues[k] ?? '(limpio)'}`).join(' · ')}
-                                    </p>
-                                    {c.stockDecimalPendiente && (
-                                        <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400 mt-1">⚠ Stock con decimales: revisa la cantidad (no se redondea sola)</p>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    </>
-                )}
-                <div className="flex gap-2 mt-4">
-                    <button onClick={handlePackDiagDownload} className="flex-1 py-2.5 rounded-xl bg-brand text-white font-bold text-sm active:scale-[0.98]">Descargar informe</button>
-                    <button onClick={() => setPackDiagOpen(false)} className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-sm active:scale-[0.98]">Cerrar</button>
-                </div>
-            </Modal>
+            <ConfirmModal
+                isOpen={showResetConfirm}
+                onClose={() => setShowResetConfirm(false)}
+                onConfirm={handleResetFromZero}
+                variant="danger"
+                title="¿Empezar desde cero?"
+                message={'Se descartarán productos, ventas y clientes de ESTE equipo y se publicará un respaldo vacío en la nube.\n\nEsta acción no se puede deshacer.'}
+                confirmText="Sí, vaciar todo"
+                cancelText="Cancelar"
+            />
         </div>
     );
 }

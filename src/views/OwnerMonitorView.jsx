@@ -9,7 +9,7 @@ import { formatStockDisplay, granelStockUnitLabel, isGranelProduct, lowStockThre
 import { 
     TrendingUp, Package, Coins, Users, LogOut,
     RefreshCw, Wifi, WifiOff, Clock, FileText, DollarSign,
-    Wallet, CreditCard, Smartphone, Banknote, ArrowDownRight, ArrowDownToLine, ArrowUpFromLine,
+    Wallet, CreditCard, Fingerprint, Smartphone, Banknote, ArrowDownRight, ArrowDownToLine, ArrowUpFromLine,
     ShieldCheck, Hash, AlertTriangle, ChevronLeft, ChevronRight,
     Plus, Minus, Check, X, Pencil, Trash2, Activity, Radio, Truck, ShoppingCart, Ban
 } from 'lucide-react';
@@ -89,6 +89,7 @@ const PAYMENT_METHOD_ICONS = {
     efectivo_bs: Banknote,
     pago_movil: Smartphone,
     punto_venta: CreditCard,
+    biopago: Fingerprint,
     efectivo_usd: DollarSign,
     efectivo_cop: Coins,
     transferencia_cop: CreditCard,
@@ -1124,7 +1125,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
                 <div className="flex min-w-0 w-full items-center gap-2.5 sm:flex-1 sm:gap-3">
                     <div className="h-9 w-9 shrink-0 overflow-hidden rounded-2xl shadow-lg shadow-emerald-500/20 sm:h-10 sm:w-10">
                         <img
-                            src="/pwa-192x192.png"
+                            src="./pwa-192x192.png"
                             alt=""
                             aria-hidden="true"
                             className="h-full w-full object-cover"

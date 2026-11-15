@@ -510,8 +510,8 @@ export default function ReportsMetricsTab({
                                             </div>
                                             <div className="space-y-2">
                                                 {receivablesView.rows.map(row => (
-                                                    <div key={row.key} className="flex items-center justify-between text-sm gap-2">
-                                                        <span className={`font-medium truncate ${row.isStock ? 'text-slate-500 dark:text-slate-400' : 'text-slate-600 dark:text-slate-300'}`}>
+                                                    <div key={row.key} data-testid={`cxc-${row.key}`} className={`flex items-center justify-between gap-2 ${row.isSub ? 'text-xs pl-3' : 'text-sm'}`}>
+                                                        <span className={`font-medium truncate ${row.isStock || row.isSub ? 'text-slate-500 dark:text-slate-400' : 'text-slate-600 dark:text-slate-300'}`}>
                                                             {row.label}
                                                             {row.count > 0 && <span className="text-[10px] text-slate-400"> ({row.count})</span>}
                                                             <span className="block text-[9px] text-slate-400 font-normal">{row.hint}</span>
@@ -531,7 +531,11 @@ export default function ReportsMetricsTab({
                                                                 <span className="text-slate-500 dark:text-slate-400 truncate">
                                                                     {cobranza.cliente}
                                                                     {cobranza.saleNumber ? ` · #${cobranza.saleNumber}` : ''}
-                                                                    {cobranza.methodId ? ` · ${toTitleCase(getPaymentLabel(cobranza.methodId))}` : ''}
+                                                                    {(() => {
+                                                                        // F5: un abono mixto muestra todos sus métodos («Efectivo $ + Pago Móvil»).
+                                                                        const ids = cobranza.methodIds?.length ? cobranza.methodIds : (cobranza.methodId ? [cobranza.methodId] : []);
+                                                                        return ids.length ? ` · ${ids.map(id => toTitleCase(getPaymentLabel(id))).join(' + ')}` : '';
+                                                                    })()}
                                                                 </span>
                                                                 <span className="text-slate-600 dark:text-slate-300 font-medium shrink-0">
                                                                     {formatBs(cobranza.montoBs)} Bs

@@ -5,10 +5,13 @@ import { supabaseCloud } from '../../config/supabaseCloud';
 import { ensureSupervisorSession } from '../../services/supervisorAuth';
 import { readPairingRow, getActivePairingSlots } from '../../services/supervisorPairingState';
 import UserCard from './UserCard';
+import SafeImg, { APP_ICON_SRC } from '../SafeImg';
+import { useBrandLogo } from '../../utils/brandLogo';
 import LoginPinModal from './LoginPinModal';
 import EmergencyPinResetModal from './EmergencyPinResetModal';
 
 export default function LockScreen({ onOpenPairing, onOpenPairingIssuer = () => {}, adminLoginRequest = 0, installPrompt, onInstall, showIOSButton, onShowIOSInstall, onOpenRemotion }) {
+  const { logoSrc: brandLogoSrc } = useBrandLogo();
   const { usuarios, login, loginDirect, requireCajeroPin, requireAdminPin, resetPinEmergency } = useAuthStore();
   const [selectedUser, setSelectedUser] = useState(null);
   const [showEmergencyModal, setShowEmergencyModal] = useState(false);
@@ -128,7 +131,7 @@ export default function LockScreen({ onOpenPairing, onOpenPairingIssuer = () => 
       <header className="w-full px-4 sm:px-6 pt-[max(0.875rem,env(safe-area-inset-top))] pb-2 flex items-center justify-between z-30 shrink-0">
         {/* Version Tag */}
         <div className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-900/5 dark:bg-slate-100/10 border border-slate-900/10 dark:border-slate-100/10 rounded-xl backdrop-blur-md">
-          <span className="text-[11px] font-black text-slate-500 dark:text-slate-400 tracking-wider">v2.0.5</span>
+          <span className="text-[11px] font-black text-slate-500 dark:text-slate-400 tracking-wider">v{import.meta.env.VITE_APP_VERSION}</span>
         </div>
 
         {/* PWA Install Button */}
@@ -155,12 +158,21 @@ export default function LockScreen({ onOpenPairing, onOpenPairingIssuer = () => 
         {/* Header */}
         <div className="text-center mb-8 sm:mb-14">
           <div className="flex justify-center mb-4 sm:mb-6">
-            <img
-              src="./logo.png"
+            <SafeImg
+              src={brandLogoSrc}
               alt="Logo"
               onClick={handleLogoClick}
               className="h-16 sm:h-28 md:h-32 w-auto max-w-[270px] sm:max-w-none object-contain drop-shadow-md cursor-pointer select-none active:scale-95 transition-transform"
               title="Precios Al Día"
+              fallback={(
+                <img
+                  src={APP_ICON_SRC}
+                  alt="Logo"
+                  onClick={handleLogoClick}
+                  className="h-16 w-16 sm:h-28 sm:w-28 rounded-2xl object-contain drop-shadow-md cursor-pointer select-none active:scale-95 transition-transform"
+                  title="Precios Al Día"
+                />
+              )}
             />
           </div>
           <h1 className="text-xl sm:text-3xl font-light tracking-[0.15em] text-slate-600">

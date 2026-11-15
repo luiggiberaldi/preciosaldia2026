@@ -1,9 +1,10 @@
 // v1.2.0: Rebrand al design system "Precios al Día" — shadow-tone-sm en cards, font-display en totales, text-accent para Bs (BCV-derived), reveal-on-scroll.
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { processVoidSale } from '../utils/voidSaleProcessor';
+import { useVoidImpact } from '../hooks/useVoidImpact';
 import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
-import { BarChart3, TrendingUp, Package, AlertTriangle, ShoppingCart, Store, Users, Settings, Wallet, LogOut, LockIcon } from 'lucide-react';
+import { BarChart3, TrendingUp, Package, AlertTriangle, ShoppingCart, Settings, Wallet, LockIcon } from 'lucide-react';
 import { formatBs, formatCop } from '../utils/calculatorUtils';
 import DashboardStats from '../components/Dashboard/DashboardStats';
 import DashboardPaymentBreakdown from '../components/Dashboard/DashboardPaymentBreakdown';
@@ -17,7 +18,6 @@ import { generateTicketPDF, printThermalTicket } from '../utils/ticketGenerator'
 import { shareSaleWhatsApp } from '../utils/dashboardActions';
 import { generateDailyClosePDF, printThermalDailyClose } from '../utils/dailyCloseGenerator';
 import { useNotifications } from '../hooks/useNotifications';
-import SyncStatus from '../components/SyncStatus';
 import { useProductContext } from '../context/ProductContext';
 import { useCart } from '../context/CartContext';
 import { useSecurity } from '../hooks/useSecurity';
@@ -31,6 +31,8 @@ import { useDashboardMetrics } from '../hooks/useDashboardMetrics';
 import { TicketClientModal, DeleteHistoryModal, RecycleOfferModal } from '../components/Dashboard/DashboardModals';
 import { useReveal } from '../hooks/useReveal';
 import MonitorView from './MonitorView';
+import DashboardSummary from './dashboard/DashboardSummary';
+import { useBrandLogo } from '../utils/brandLogo';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { useGastosInternos } from '../hooks/useGastosInternos';
 import GastosInternosModal from '../components/GastosInternos/GastosInternosModal';
@@ -76,6 +78,8 @@ const extractAdvancesFromSales = (salesArray) => {
 };
 
 export default function DashboardView({ rates, triggerHaptic, onNavigate, theme, toggleTheme, isActive, isDemo, demoTimeLeft }) {
+    // Logo del negocio (Ajustes › Negocio) o, si no hay, el de fábrica claro/oscuro.
+    const { logoSrc, isCustom: logoIsCustom } = useBrandLogo({ dark: theme === 'dark' });
     const { notifyCierrePendiente, requestPermission } = useNotifications();
     const { deviceId } = useSecurity();
     const requireLogin = useAuthStore(s => s.requireLogin);
@@ -96,6 +100,8 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [voidSaleTarget, setVoidSaleTarget] = useState(null);
+    // F3: cómo queda la cuenta del cliente si se anula (se muestra en la confirmación).
+    const voidImpactLines = useVoidImpact(voidSaleTarget, bcvRate);
     const [isCashReconOpen, setIsCashReconOpen] = useState(false);
     const [isAporteOpen, setIsAporteOpen] = useState(false);
     const [ticketPendingSale, setTicketPendingSale] = useState(null);
@@ -146,6 +152,24 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         }, 1000);
         return () => clearInterval(timer);
     }, []);
+
+    // Atajo F1: desde el inicio abre Vender (traído de Farmacia).
+    useEffect(() => {
+        if (!isActive) return undefined;
+        const handleKeyDown = (e) => {
+            const tag = document.activeElement?.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+            if (e.key === 'F1') {
+                e.preventDefault();
+                if (onNavigate) {
+                    triggerHaptic && triggerHaptic();
+                    onNavigate('ventas');
+                }
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isActive, onNavigate, triggerHaptic]);
 
     const timeString = currentTime.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', hour12: true });
     const dateString = currentTime.toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -493,73 +517,12 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 </div>
             )}
 
-            {/* Header Sticky con 5 Fichas Integradas (estilo donde juancho - Glassmorphism & Scroll reactive) */}
-            <div className={`sticky top-0 z-30 flex flex-col transition-all duration-200 -mx-3 sm:-mx-5 lg:-mx-6 xl:-mx-8 px-3 sm:px-5 lg:px-6 xl:px-8 py-2 mb-4 bg-surface-50/95 dark:bg-surface-950/95 backdrop-blur-md border-b ${isScrolled ? 'border-slate-200/80 dark:border-slate-800/80 shadow-md' : 'border-transparent'}`}>
-                {/* Fila Superior: Reloj | Logo | SyncStatus */}
-                <div className="flex md:grid md:grid-cols-3 items-center justify-between">
-                    {/* Reloj y fecha en PC */}
-                    <div className="hidden md:flex flex-col items-start gap-1">
-                        <span className="text-xl font-display font-bold italic text-slate-800 dark:text-white leading-none">
-                            {timeString}
-                        </span>
-                        <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider leading-none">
-                            {formattedDate}
-                        </span>
-                    </div>
-                    <div className="flex flex-col items-start md:items-center justify-center gap-0.5 shrink min-w-0">
-                        <img src={theme === 'dark' ? './logodark.png' : './logo.png'} alt="PreciosAlDía" className="h-10 sm:h-12 md:h-[85px] w-auto object-contain drop-shadow-sm shrink-0" />
-                    </div>
-                    <div className="flex items-center justify-end gap-1.5 shrink-0">
-                        <SyncStatus />
-
-                        {useAuthStore.getState().requireLogin && useAuthStore.getState().usuarioActivo && (
-                            <button
-                                onClick={() => {
-                                    triggerHaptic && triggerHaptic();
-                                    useAuthStore.getState().logout();
-                                }}
-                                className="h-8 min-h-[32px] px-2.5 sm:px-3 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200/60 dark:border-rose-900/50 rounded-full sm:rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition-all active:scale-95 shadow-sm shrink-0"
-                                title={`Cerrar sesión (${useAuthStore.getState().usuarioActivo?.nombre})`}
-                            >
-                                <LogOut size={15} className="text-rose-500 shrink-0" />
-                                <span className="hidden sm:inline text-xs font-bold">Salir</span>
-                            </button>
-                        )}
-                    </div>
-                </div>
-
-                {/* Fila Inferior: 4 Fichas Pro (Visibles en Tablet/Desktop sm:grid) */}
-                <div className="hidden sm:grid sm:grid-cols-4 gap-1 sm:gap-3 mt-2 pt-2 border-t border-slate-200/40 dark:border-slate-800/40 w-full max-w-4xl mx-auto">
-                    <button
-                        onClick={() => { if (onNavigate) { triggerHaptic(); onNavigate('ventas'); } }}
-                        className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 px-1 sm:px-3 py-1.5 sm:py-2 bg-[#01696f] hover:bg-[#00575d] dark:bg-[#1ce2ee] dark:hover:bg-[#0bc2cd] text-white dark:text-slate-950 rounded-xl font-extrabold text-[9.5px] sm:text-xs leading-tight transition-all active:scale-95 shadow-sm text-center"
-                    >
-                        <ShoppingCart size={17} className="shrink-0" />
-                        <span className="truncate sm:whitespace-nowrap">Vender</span>
-                    </button>
-                    <button
-                        onClick={() => { if (onNavigate) { triggerHaptic(); onNavigate('catalogo'); } }}
-                        className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 px-1 sm:px-3 py-1.5 sm:py-2 bg-[#01696f] hover:bg-[#00575d] dark:bg-[#1ce2ee] dark:hover:bg-[#0bc2cd] text-white dark:text-slate-950 rounded-xl font-extrabold text-[9.5px] sm:text-xs leading-tight transition-all active:scale-95 shadow-sm text-center"
-                    >
-                        <Store size={17} className="shrink-0" />
-                        <span className="truncate sm:whitespace-nowrap">Inventario</span>
-                    </button>
-                    <button
-                        onClick={() => { if (onNavigate) { triggerHaptic(); onNavigate('clientes'); } }}
-                        className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 px-1 sm:px-3 py-1.5 sm:py-2 bg-[#01696f] hover:bg-[#00575d] dark:bg-[#1ce2ee] dark:hover:bg-[#0bc2cd] text-white dark:text-slate-950 rounded-xl font-extrabold text-[9.5px] sm:text-xs leading-tight transition-all active:scale-95 shadow-sm text-center"
-                    >
-                        <Users size={17} className="shrink-0" />
-                        <span className="truncate sm:whitespace-nowrap">Clientes</span>
-                    </button>
-                    <button
-                        onClick={() => { triggerHaptic(); setShowMonitor(true); }}
-                        className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 px-1 sm:px-3 py-1.5 sm:py-2 bg-[#01696f] hover:bg-[#00575d] dark:bg-[#1ce2ee] dark:hover:bg-[#0bc2cd] text-white dark:text-slate-950 rounded-xl font-extrabold text-[9.5px] sm:text-xs leading-tight transition-all active:scale-95 shadow-sm text-center"
-                    >
-                        <TrendingUp size={17} className="shrink-0" />
-                        <span className="truncate sm:whitespace-nowrap">Monitor</span>
-                    </button>
-                </div>
-            </div>
+            {/* Encabezado compacto (estilo Farmacia): hora + tasa BCV | logo | Vender (F1) + conexión + usuario.
+                La navegación (Vender, Inventario, Clientes…) vive en la barra lateral en PC y abajo en el teléfono. */}
+            <DashboardSummary {...{
+                isScrolled, logoSrc, logoIsCustom, triggerHaptic, setShowMonitor, bcvRate, onNavigate,
+                requireLogin, usuarioActivo, logout: () => useAuthStore.getState().logout(), timeString, formattedDate, copEnabled, tasaCop
+            }} />
 
             {/* Componente de historial de ventas reutilizable para Cajero y Admin */}
             {(() => {
@@ -708,6 +671,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                         copPrimary={copPrimary}
                         tasaCop={tasaCop}
                     />
+                    <div className={Object.keys(paymentBreakdown || {}).length === 0 ? 'md:col-span-2' : ''}>
                     <SalesChart
                         weekData={weekData}
                         selectedDate={selectedChartDate}
@@ -723,6 +687,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                             }, 50);
                         }}
                     />
+                    </div>
                 </div>
 
                 {/* Historial de ventas — integrado en la columna izquierda para eliminar espacios vacíos */}
@@ -934,6 +899,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 isOpen={!!voidSaleTarget}
                 onClose={() => setVoidSaleTarget(null)}
                 onConfirm={confirmVoidSale}
+                details={voidImpactLines}
                 title={`Anular venta #${voidSaleTarget?.id?.substring(0, 6).toUpperCase() || ''}`}
                 message={`Esta acción:\n• Marcará la venta como ANULADA\n• Devolverá el stock a la bodega\n• Revertirá deudas o saldos a favor\n\nEsta acción no se puede deshacer.`}
                 confirmText="Sí, anular"

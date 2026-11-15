@@ -6,6 +6,7 @@ import SmartImage from '../SmartImage';
 import { FinancialEngine } from '../../core/FinancialEngine';
 import { getCartIvaOpts } from '../../config/taxConfig';
 import { showToast } from '../Toast';
+import { useCartCompact } from '../../config/salesFeatures';
 import { isGranelProduct, granelUnitLabel, parseCartQuantity, formatStockDisplay, useGranelUnitMode, formatGranelDisplay, parseWeightToCanonical, formatSaleItemQuantity, formatPresentationLabel } from '../../utils/granel'; // GRANEL-001
 
 export default function CartPanel({
@@ -36,11 +37,16 @@ export default function CartPanel({
     // (sin conexión o venta en curso). Sin onOpenDiscount no hay descuento.
     showShortcuts = true,
     checkoutDisabled = false,
+    // Cesta vacía: productos frecuentes para agregar con un toque (solo la caja principal).
+    frequentProducts = [],
+    onAddFrequent,
 }) {
     const [editingQtyId, setEditingQtyId] = React.useState(null);
     const [tempQty, setTempQty] = React.useState('');
     const inputRef = React.useRef(null);
     const [granelUnitMode] = useGranelUnitMode();
+    // Ajustes → Ventas → «Cesta»: una sola línea por artículo (automática en pantallas bajas).
+    const { compact } = useCartCompact();
 
     // Calcular el total en Bolívares para mostrar en la cesta usando la tasa de referencia si hay Doble Precio
     const displayCartTotalBs = React.useMemo(() => {
@@ -126,6 +132,18 @@ export default function CartPanel({
                         <ShoppingCart size={16} className="opacity-80" />
                         Cesta ({cartItemCount})
                     </span>
+                    <div className="flex items-center gap-1.5">
+                    {/* Vaciar cesta en el encabezado (igual que Farmacia); en teléfono/tablet sigue en la barra de arriba */}
+                    {onClearCart && cart.length > 0 && (
+                        <button
+                            onClick={onClearCart}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-rose-500/80 text-white text-xs font-bold active:scale-95 transition-all"
+                            title="Vaciar toda la cesta (F4)"
+                        >
+                            <Trash2 size={14} />
+                            Vaciar
+                        </button>
+                    )}
                     {canRegistrarAporte && onOpenAporte && (
                         <button
                             onClick={() => { triggerHaptic && triggerHaptic(); onOpenAporte(); }}
@@ -135,6 +153,7 @@ export default function CartPanel({
                             Aporte
                         </button>
                     )}
+                    </div>
                 </div>
             </div>
 
@@ -147,9 +166,24 @@ export default function CartPanel({
                     <div className="flex flex-col items-center justify-center text-slate-300 dark:text-slate-700 p-8 text-center h-full gap-2">
                         <ShoppingCart size={44} strokeWidth={1} className="opacity-30" />
                         <p className="text-sm font-bold text-slate-400">Tu cesta está vacía</p>
+                        {onAddFrequent && frequentProducts.length > 0 && (
+                            <div className="mt-3 w-full text-left">
+                                <p className="mb-1.5 text-[10px] font-black uppercase tracking-wide text-slate-400">Productos frecuentes</p>
+                                <div className="flex flex-col gap-1.5">
+                                    {frequentProducts.map(fp => (
+                                        <button key={fp.id} type="button"
+                                            onClick={() => { triggerHaptic && triggerHaptic(); onAddFrequent(fp); }}
+                                            className="flex items-center justify-between gap-2 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 px-3 py-2 min-h-[40px] text-xs font-bold text-slate-700 dark:text-slate-200 hover:border-brand/40 active:scale-[0.98] transition-all">
+                                            <span className="break-words">{fp.name}</span>
+                                            <Plus size={14} className="shrink-0 text-brand" />
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 ) : (
-                    <div className="space-y-2">
+                    <div className={compact ? 'space-y-1.5' : 'space-y-2'}>
                         {cart.map((item, idx) => {
                             if (!item) return null;
                             const itemIsGranel = isGranelProduct(item);
@@ -160,6 +194,79 @@ export default function CartPanel({
                             const isCashAdvance = item.isCashAdvance === true;
                             const isEditing = editingQtyId === item.id;
                             const isSelected = cartSelectedIndex === idx;
+
+                            if (compact && !isCashAdvance) {
+                                const isDual = item.pricingMode === 'dual_usd' && parseFloat(item.priceBsUsdRef) > 0;
+                                const unitBs = isDual
+                                    ? mulR(item.priceBsUsdRef, effectiveRate)
+                                    : (item.exactBs != null ? item.exactBs : mulR(item.priceUsd, effectiveRate));
+                                const lineBs = isDual
+                                    ? mulR(mulR(item.priceBsUsdRef, item.qty), effectiveRate)
+                                    : (item.exactBs != null ? mulR(item.exactBs, item.qty) : mulR(mulR(item.priceUsd, item.qty), effectiveRate));
+                                const showLine = itemIsGranel || item.qty > 1;
+                                const presentation = formatPresentationLabel(item);
+                                return (
+                                    <div
+                                        key={item.id || `cart_item_${idx}`}
+                                        data-testid="cart-row-compact"
+                                        className={`flex items-center gap-2 rounded-[10px] border px-2 py-1.5 transition-colors ${
+                                            isSelected
+                                                ? 'bg-white dark:bg-slate-900 border-emerald-500 ring-2 ring-emerald-500/20 dark:border-emerald-400'
+                                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700/80 hover:border-emerald-200 dark:hover:border-emerald-800'
+                                        }`}
+                                    >
+                                        <div className="min-w-0 flex-1">
+                                            <p className="break-words text-xs font-bold leading-tight text-slate-800 dark:text-slate-100" title={item.name}>{item.name}</p>
+                                            <p
+                                                className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10px] font-bold leading-tight text-slate-500 dark:text-slate-400"
+                                                title={showLine ? `$${formatUsd(item.priceUsd)} c/u` : undefined}
+                                            >
+                                                {item._productMissing && <span className="rounded bg-red-50 px-1 font-black text-red-600 dark:bg-red-900/30 dark:text-red-400">Ya no existe</span>}
+                                                {isDual && <span className="rounded bg-purple-50 px-1 font-black text-purple-600 dark:bg-purple-900/30 dark:text-purple-400">Ref Bs</span>}
+                                                {presentation && <span className="font-black text-brand">{presentation}</span>}
+                                                {/* Con 2 o más (o granel): precio por unidad en gris y luego el total de la línea */}
+                                                {showLine && (
+                                                    <span className="font-semibold text-slate-400 dark:text-slate-500" data-testid="cart-row-unit-price">
+                                                        ${formatUsd(item.priceUsd)} {itemIsGranel ? `/${granelUnitLabel(item)}` : 'c/u'} ·
+                                                    </span>
+                                                )}
+                                                <span className="font-black text-emerald-600">${formatUsd(showLine ? mulR(item.priceUsd, item.qty) : item.priceUsd)}</span>
+                                                <span className="text-brand">{formatBs(showLine ? lineBs : unitBs)} Bs</span>
+                                                {copEnabled && tasaCop > 0 && <span className="text-amber-600 dark:text-amber-400">{formatCop(getCop(item, tasaCop))} COP</span>}
+                                            </p>
+                                        </div>
+                                        <div className="flex shrink-0 items-center rounded-[8px] border border-slate-200/70 bg-slate-50 p-0.5 dark:border-slate-700 dark:bg-slate-800">
+                                            <button type="button" aria-label="Quitar uno" onClick={() => updateQty(item.id, itemIsGranel ? -0.1 : -1)}
+                                                className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition-colors hover:text-red-500 active:bg-slate-200 dark:active:bg-slate-700">
+                                                <Minus size={13} strokeWidth={2.5} />
+                                            </button>
+                                            {isEditing ? (
+                                                <input
+                                                    ref={inputRef} type="text" value={tempQty}
+                                                    onChange={e => setTempQty(e.target.value)} onFocus={e => e.target.select()}
+                                                    onBlur={() => submitCustomQty(item)} onKeyDown={e => { if (e.key === 'Enter') submitCustomQty(item); }}
+                                                    placeholder={itemIsGranel && granelUnitMode === 'gr_ml' ? String(Math.round((item.qty || 0) * 1000)) : String(item.qty ?? 1)}
+                                                    className="h-7 w-14 rounded-md border border-emerald-500 bg-white px-1 text-center text-xs font-black text-slate-700 outline-none dark:bg-slate-900 dark:text-white"
+                                                    inputMode={itemIsGranel ? 'decimal' : 'numeric'}
+                                                />
+                                            ) : (
+                                                <span aria-label={`Cantidad de ${item.name}`} onClick={() => handleQtyClick(item)}
+                                                    className="min-w-[2rem] cursor-pointer whitespace-nowrap px-1 text-center text-xs font-black text-slate-800 transition-colors hover:text-emerald-500 dark:text-white">
+                                                    {qtyDisplay}
+                                                </span>
+                                            )}
+                                            <button type="button" aria-label="Agregar uno" onClick={() => updateQty(item.id, itemIsGranel ? 0.1 : 1)}
+                                                className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition-colors hover:text-emerald-500 active:bg-slate-200 dark:active:bg-slate-700">
+                                                <Plus size={13} strokeWidth={2.5} />
+                                            </button>
+                                        </div>
+                                        <button type="button" aria-label="Eliminar del carrito" onClick={() => removeFromCart(item.id)}
+                                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] bg-rose-50 text-rose-500 transition-colors hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-900/50">
+                                            <X size={13} />
+                                        </button>
+                                    </div>
+                                );
+                            }
 
                             return (
                                 <div key={item.id || `cart_item_${idx}`} className={`group rounded-2xl p-2.5 lg:p-2 border flex flex-col gap-1.5 lg:gap-1.5 transition-colors relative ${
@@ -199,7 +306,7 @@ export default function CartPanel({
                                             )}
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <p className={`text-xs font-bold text-slate-800 dark:text-slate-100 leading-tight mb-0.5 ${isCashAdvance ? 'break-words' : 'truncate'}`}>{item.name}</p>
+                                            <p className={`text-xs font-bold text-slate-800 dark:text-slate-100 leading-tight mb-0.5 break-words`}>{item.name}</p>
                                             {/* BULTOS-001: badge de presentación — distingue bulto de unidad suelta */}
                                             {!isCashAdvance && formatPresentationLabel(item) && (
                                                 <p className="flex items-center gap-1 text-[9px] font-black text-brand dark:text-brand leading-none mb-0.5">

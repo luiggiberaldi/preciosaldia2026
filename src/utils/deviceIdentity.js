@@ -119,9 +119,34 @@ export async function verifyDeviceSessionRegistered(deviceId) {
 // Éxito SOLO con vínculo comprobado (read-back). Un UPDATE que no afecta filas
 // NO es un error en PostgREST: sin esta verificación, un reclaim sin efecto se
 // reportaba como ok y el siguiente push moría con RLS ("new row violates…").
+// Equipos cuya prueba de posesión ya se sembró en esta carga de la app.
+const seededPossession = new Set();
+
+/**
+ * Siembra la prueba de posesión en la fila propia (migración 20261106): sin ella,
+ * si la caja pierde su sesión anónima no puede volver a reclamar su identidad y
+ * deja de respaldar para siempre. Best-effort: un fallo aquí no rompe el registro
+ * (con el esquema anterior la RPC responde ALREADY_BOUND sin guardar nada).
+ */
+async function seedPossessionProof(deviceId) {
+    if (seededPossession.has(deviceId)) return;
+    try {
+        const { data, error } = await supabaseCloud.rpc('claim_device_session', {
+            p_device_id: deviceId,
+            p_secret: getOrCreatePossessionSecret(),
+        });
+        if (!error && data?.success === true) seededPossession.add(deviceId);
+    } catch {
+        // Se reintenta en el próximo registro.
+    }
+}
+
 async function assertBinding(deviceId, registered, reclaimed) {
     const verification = await verifyDeviceSessionRegistered(deviceId);
-    if (verification.bound) return { ok: true, registered, reclaimed, error: null };
+    if (verification.bound) {
+        await seedPossessionProof(deviceId);
+        return { ok: true, registered, reclaimed, error: null };
+    }
     // Diagnóstico: el mensaje de UI no muestra la causa; registrar el paso que falló.
     console.error('[DeviceIdentity] Vínculo no comprobado tras registro', {
         deviceId: String(deviceId).slice(0, 12),

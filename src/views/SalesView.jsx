@@ -31,7 +31,7 @@ import KeyboardHelpModal from '../components/Sales/KeyboardHelpModal';
 import DiscountModal from '../components/Sales/DiscountModal';
 import CashAdvanceModal from '../components/Sales/CashAdvanceModal';
 import CajaCerradaOverlay from '../components/Sales/CajaCerradaOverlay';
-import { getLocalISODate } from '../utils/dateHelpers';
+import { calcularFondoEnGaveta } from '../utils/fondoGaveta';
 import AperturaCajaModal from '../components/Dashboard/AperturaCajaModal';
 import AporteCajaModal from '../components/Sales/AporteCajaModal';
 import { useAuthStore } from '../hooks/store/useAuthStore';
@@ -45,6 +45,8 @@ import { buildReceiptWhatsAppUrl } from '../components/Sales/ReceiptShareHelper'
 // Extracted hooks
 import { useSalesData } from '../hooks/useSalesData';
 import { useCheckoutFlow } from '../hooks/useCheckoutFlow';
+import { formatRateStamp } from '../utils/rateStamp';
+import { topHotProducts } from '../utils/hotProducts';
 
 export default function SalesView({ triggerHaptic, isActive }) {
     const { playAdd, playRemove, playCheckout, playError } = useSounds();
@@ -80,19 +82,20 @@ export default function SalesView({ triggerHaptic, isActive }) {
     const searchInputRef = useRef(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedIndex, setSelectedIndex] = useState(0);
-    // Modos de vista del buscador: hybrid (desplegable + grid) | list (solo
-    // desplegable) | grid (galería táctil). Persistido por caja.
+    // Modos de vista del buscador: hybrid = «Teclado y escáner» (desplegable + fichas) |
+    // grid = «Pantalla táctil» (solo fichas). Persistido por caja. El antiguo modo «lista»
+    // se quitó a pedido del dueño: si estaba guardado, se abre en «Teclado y escáner».
     const [posSearchViewMode, setPosSearchViewModeState] = useState(() => {
         try {
             const stored = localStorage.getItem('pos_search_view_mode');
-            return ['hybrid', 'list', 'grid'].includes(stored) ? stored : 'hybrid';
+            return ['hybrid', 'grid'].includes(stored) ? stored : 'hybrid';
         } catch {
             return 'hybrid';
         }
     });
 
     const handleSetPosSearchViewMode = (mode) => {
-        if (!['hybrid', 'list', 'grid'].includes(mode)) return;
+        if (!['hybrid', 'grid'].includes(mode)) return;
         setPosSearchViewModeState(mode);
         try {
             localStorage.setItem('pos_search_view_mode', mode);
@@ -375,20 +378,10 @@ export default function SalesView({ triggerHaptic, isActive }) {
         value: discount?.value
     };
 
-    // ── Current cash float (for soft change warning in CheckoutModal) ──
-    const currentFloat = useMemo(() => {
-        const todayStr = getLocalISODate(new Date());
-        const todayOpen = salesData.filter(s => {
-            if (s.cajaCerrada) return false;
-            const saleDay = s.timestamp ? getLocalISODate(new Date(s.timestamp)) : todayStr;
-            return saleDay === todayStr;
-        });
-        const bd = FinancialEngine.calculatePaymentBreakdown(todayOpen);
-        return {
-            usd: bd['efectivo_usd']?.total ?? 0,
-            bs:  bd['efectivo_bs']?.total  ?? 0,
-        };
-    }, [salesData]);
+    // ── Efectivo en gaveta ahora (avisos de vuelto en el cobro) ──
+    // CAJA-FONDO-001: misma cuenta que el "Efectivo esperado" del Inicio: sigue el
+    // turno abierto (no la fecha) y resta los vueltos ya entregados.
+    const currentFloat = useMemo(() => calcularFondoEnGaveta(salesData), [salesData]);
 
     // GRANEL-001-UI: cuenta ARTÍCULOS distintos de la cesta, nunca suma cantidades
     // (sumar item.qty mostraba decimales "1.355" para productos a granel).
@@ -417,8 +410,20 @@ export default function SalesView({ triggerHaptic, isActive }) {
     // Auto-focus search
     useEffect(() => { if (!isLoading && searchInputRef.current) searchInputRef.current.focus(); }, [isLoading]);
 
+    // Con el cobro abierto la pantalla (Móvil/PC) no cambia aunque se redimensione la ventana:
+    // cambiar de componente borraría los montos ya escritos. Solo se recalcula al abrir el cobro
+    // o si el cajero cambia el modo a mano (onSwitchMode → checkoutMode).
+    const checkoutOpenKey = showCheckout ? (checkoutMode || 'auto') : null;
+    const [checkoutOpenMode, setCheckoutOpenMode] = useState({ key: null, mode: null });
+    if (checkoutOpenMode.key !== checkoutOpenKey) {
+        setCheckoutOpenMode({ key: checkoutOpenKey, mode: checkoutOpenKey ? effectiveCheckoutMode : null });
+    }
+
     // Return focus after closing modals
     useEffect(() => { if (!showCheckout && !showReceipt && searchInputRef.current) searchInputRef.current.focus(); }, [showCheckout, showReceipt]);
+
+    // Cesta vacía: atajos a los productos que más se agregan en esta caja (como Farmacia).
+    const frequentProducts = useMemo(() => (cart.length === 0 ? topHotProducts((products || []).filter((p) => Number(p.priceUsdt ?? p.priceUsd) > 0 || Number(p.priceCop) > 0), 6) : []), [cart.length, products]);
 
     // Global keybinds (F9 = checkout, F7 = hold/park, Escape = close modals)
     useEffect(() => {
@@ -883,6 +888,9 @@ export default function SalesView({ triggerHaptic, isActive }) {
                                             : formatBs(effectiveRate).replace('.', ',')}
                                     </span>
                                     {!useAutoRate && <span className="text-[8px] bg-brand-light dark:bg-surface-800/30 text-brand-dark dark:text-brand px-1 rounded font-bold">MAN</span>}
+                                    {useAutoRate && formatRateStamp(rates?.lastUpdate) && (
+                                        <span className="text-[8px] font-bold text-slate-400 leading-none" title="Última actualización de la tasa">{formatRateStamp(rates?.lastUpdate)}</span>
+                                    )}
                                 </button>
                                 )}
                             </div>
@@ -935,6 +943,8 @@ export default function SalesView({ triggerHaptic, isActive }) {
                         copEnabled={copEnabled}
                         copPrimary={copPrimary}
                         tasaCop={tasaCop}
+                        frequentProducts={frequentProducts}
+                        onAddFrequent={addToCart}
                     />
                 </div>
 
@@ -1045,10 +1055,12 @@ export default function SalesView({ triggerHaptic, isActive }) {
                     copEnabled, copPrimary, tasaCop,
                     currentFloatUsd: currentFloat.usd,
                     currentFloatBs: currentFloat.bs,
+                    // CAJA-FONDO-002: registrar un aporte desde el aviso de efectivo insuficiente.
+                    onOpenAporte: canRegistrarAporte ? () => setIsAporteOpen(true) : null,
                     onSwitchMode: setCheckoutMode,
                     isProcessing,
                 };
-                const activeMode = effectiveCheckoutMode || 'basic';
+                const activeMode = checkoutOpenMode.mode || effectiveCheckoutMode || 'basic';
                 return activeMode === 'pos'
                     ? <CheckoutModalPOS {...sharedProps} />
                     : <CheckoutModal {...sharedProps} />;

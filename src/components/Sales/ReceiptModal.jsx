@@ -1,4 +1,5 @@
 import React from 'react';
+import { refParen } from '../../utils/paymentReference';
 import { CheckCircle, Wallet, Send, X, Printer } from 'lucide-react';
 import { formatBs, formatCop, formatUsd } from '../../utils/calculatorUtils';
 import { printThermalTicket } from '../../utils/ticketGenerator';
@@ -262,7 +263,7 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Pagos Recibidos</p>
                                 {receipt.payments.filter(p => p.methodId !== 'cashea' && !p.isCashea).map(p => (
                                     <div key={p.id} className="flex justify-between text-slate-600 mb-1">
-                                        <span>{p.methodLabel}:</span>
+                                        <span>{p.methodLabel}{refParen(p)}:</span>
                                         <span className="font-bold">{p.amountInputCurrency === 'USD' ? '$' : p.amountInputCurrency === 'COP' ? 'COP' : 'Bs'} {p.amountInput}</span>
                                     </div>
                                 ))}
@@ -311,6 +312,14 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                                                 : `$${receipt.tipDonated.amountUsd.toFixed(2)}`
                                             }
                                         </span>
+                                    </div>
+                                )}
+
+                                {/* ERR-013: el vuelto enviado a la billetera del cliente (el ticket impreso ya lo decía). */}
+                                {receipt.tipo !== 'COBRO_DEUDA' && Number(receipt.vueltoParaMonedero) > 0.001 && (
+                                    <div data-testid="recibo-vuelto-billetera" className="flex justify-between text-sky-700 dark:text-sky-400 font-bold mt-2 pt-2 border-t border-slate-200">
+                                        <span className="flex items-center gap-1.5"><Wallet size={14} /> Vuelto a su billetera:</span>
+                                        <span>${Number(receipt.vueltoParaMonedero).toFixed(2)}</span>
                                     </div>
                                 )}
 

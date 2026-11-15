@@ -30,6 +30,21 @@ plan, resumen de commits o respuesta de agentes en este repositorio debe cumplir
 
 ---
 
+## 📜 Ley de documentación — OBLIGATORIA
+
+Todo cambio, error o decisión queda escrito en el repositorio (desde 2026-11-13). Versión ligera, adaptada de Farmacia. Completa en [docs/LEY-DOCUMENTACION.md](docs/LEY-DOCUMENTACION.md).
+
+| Qué ocurrió | Dónde |
+|---|---|
+| Cualquier cambio de código, configuración o base de datos | `bitacora.md` (entrada nueva **al final**) |
+| Trabajo grande (varios archivos, visible, dinero/inventario/licencias) | `docs/casos/` (`CASO-NNN`) |
+| Un error, con su causa y solución | `docs/ERRORES.md` (`ERR-NNN`) |
+| Algo por hacer que no se hizo ahora | `PENDIENTES.md` (`P-NNN`) |
+
+Reglas cortas: documentar en el mismo commit; IDs correlativos que no se reutilizan (releer el último antes de crear uno); escribir "no verificado" si no se probó; lo que no cuadra se **propone** (4 líneas, máximo 3 por tarea), no se calla. `bun run docs:check` revisa enlaces y fichas; por ahora solo avisa. Cómo funciona el sistema: [docs/sistema/INICIO.md](docs/sistema/INICIO.md).
+
+---
+
 ## Tabla de contenidos
 
 1. [Visión general](#1-visión-general)
@@ -617,6 +632,8 @@ El header del Supervisor es sticky, respeta `safe-area-inset-top` y reorganiza s
 
 ## 14. Mapa de issues (ISSUES.md)
 
+> Los errores **nuevos** (desde 2026-11-13) se registran en [docs/ERRORES.md](docs/ERRORES.md), no aquí. `ISSUES.md` es la foto de la auditoría de marzo.
+
 Ver `ISSUES.md` en la raíz del proyecto para el detalle completo de los 130 IDs de issues auditados:
 
 | Dominio | Prefix | Total | Cerrados |
@@ -701,4 +718,4 @@ bash scripts/purge-history.sh   # Purgar binarios/secretos del git history
 
 ---
 
-*Documento mantenido por el equipo de auditoría. Última revisión: 2026-08-10. Para detalles de los fixes aplicados, ver `CHANGES.md`; para el estado operativo del Supervisor, ver `M5-PRODUCTION-CANARY.md` y `M5-VERCEL-PREVIEW.md`; para el reporte completo, ver `ISSUES.md`.*
+*Documento mantenido por el equipo de auditoría. Última revisión: 2026-08-10. Para detalles de los fixes aplicados, ver `CHANGES.md`; para el estado operativo del Supervisor, ver `docs/reports/M5-PRODUCTION-CANARY.md` y `M5-VERCEL-PREVIEW.md`; para el reporte completo, ver `ISSUES.md`.*

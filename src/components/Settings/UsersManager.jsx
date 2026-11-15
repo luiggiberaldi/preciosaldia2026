@@ -3,6 +3,7 @@ import { useAuthStore } from '../../hooks/store/useAuthStore';
 import { showToast } from '../Toast';
 import { verifyPin } from '../../utils/crypto';
 import { PIN_POLICY } from '../../utils/securityConstants';
+import { canBypassPin } from '../../utils/adminPinPolicy';
 import {
     UserPlus, Trash2, KeyRound, Shield, ShoppingCart,
     Crown, X, Check, Eye, EyeOff, AlertTriangle, Edit2, Lock, Unlock
@@ -69,15 +70,18 @@ function PinInput({ value, onChange, label, length = 6, showDigits = false }) {
 }
 
 // ─── User Row ──────────────────────────────────────
-function UserRow({ user, currentUserId, onChangePin, onDelete, onEditName, onTogglePin, triggerHaptic }) {
+function UserRow({ user, currentUserId, onChangePin, onDelete, onEditName, onTogglePin, triggerHaptic, requireLogin }) {
     const roleConf = ROLE_CONFIG[user.rol] || ROLE_CONFIG.CAJERO;
     const RoleIcon = roleConf.icon;
     const isCurrentUser = user.id === currentUserId;
     const isAdmin = user.rol === 'ADMIN';
     const requirePin = user.requirePin !== false;
+    // Con la pantalla de inicio activa, el Administrador siempre usa PIN: no se muestra el interruptor.
+    const showPinToggle = canBypassPin(user, requireLogin);
 
     return (
-        <div className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${isCurrentUser ? 'bg-brand-light/50 dark:bg-surface-800/10 border-surface-300/50 dark:border-surface-800/30' : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800'}`}>
+        // En el teléfono los botones bajan a una segunda línea para que el nombre no se corte.
+        <div className={`flex flex-wrap items-center gap-x-3 gap-y-2 p-3 rounded-xl border transition-all ${isCurrentUser ? 'bg-brand-light/50 dark:bg-surface-800/10 border-surface-300/50 dark:border-surface-800/30' : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800'}`}>
             {/* Avatar */}
             <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${roleConf.gradient} flex items-center justify-center shrink-0 shadow-sm relative`}>
                 <span className="text-white font-black text-lg">{(user.nombre || 'U')[0].toUpperCase()}</span>
@@ -89,26 +93,26 @@ function UserRow({ user, currentUserId, onChangePin, onDelete, onEditName, onTog
             </div>
 
             {/* Info */}
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-[120px]">
                 <div className="flex items-center gap-2">
                     <p className="text-sm font-bold text-slate-800 dark:text-white truncate">{user.nombre}</p>
                     {isCurrentUser && (
-                        <span className="text-[8px] font-black uppercase tracking-wider bg-brand-light dark:bg-surface-800/30 text-brand px-1.5 py-0.5 rounded-full">Tu</span>
+                        <span className="text-[10px] font-black uppercase tracking-wider bg-brand-light dark:bg-surface-800/30 text-brand px-1.5 py-0.5 rounded-full">Tú</span>
                     )}
                 </div>
                 <div className="flex items-center gap-1.5 mt-0.5">
                     <RoleIcon size={10} className={roleConf.text} />
-                    <span className={`text-[9px] font-black uppercase tracking-wider ${roleConf.text}`}>
+                    <span className={`text-[10px] font-black uppercase tracking-wider ${roleConf.text}`}>
                         {roleConf.label}
                     </span>
                 </div>
             </div>
 
             {/* Actions */}
-            <div className="flex items-center gap-1.5 shrink-0">
-                <button
+            <div className="flex items-center justify-end gap-1.5 shrink-0 w-full sm:w-auto">
+                {showPinToggle && <button
                     onClick={() => { triggerHaptic?.(); onTogglePin(user); }}
-                    className={`px-2.5 py-1.5 rounded-xl text-[10px] font-extrabold flex items-center gap-1.5 transition-all border active:scale-95 ${requirePin
+                    className={`px-2.5 py-1.5 min-h-[40px] rounded-xl text-[11px] font-extrabold flex items-center gap-1.5 transition-all border active:scale-95 ${requirePin
                         ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20 hover:bg-rose-500/20'
                         : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
                     }`}
@@ -116,18 +120,18 @@ function UserRow({ user, currentUserId, onChangePin, onDelete, onEditName, onTog
                 >
                     {requirePin ? <Lock size={12} /> : <Unlock size={12} />}
                     <span>{requirePin ? 'Con PIN' : 'Sin PIN'}</span>
-                </button>
+                </button>}
 
                 <button
                     onClick={() => { triggerHaptic?.(); onChangePin(user); }}
-                    className="p-2 rounded-lg text-slate-400 hover:text-brand hover:bg-brand-light dark:hover:bg-surface-800/20 transition-all active:scale-90"
+                    className="p-2.5 min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg text-slate-400 hover:text-brand hover:bg-brand-light dark:hover:bg-surface-800/20 transition-all active:scale-90"
                     title="Cambiar PIN"
                 >
                     <KeyRound size={16} />
                 </button>
                 <button
                     onClick={() => { triggerHaptic?.(); onEditName(user); }}
-                    className="p-2 rounded-lg text-slate-400 hover:text-brand hover:bg-brand-light dark:hover:bg-surface-800/20 transition-all active:scale-90"
+                    className="p-2.5 min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg text-slate-400 hover:text-brand hover:bg-brand-light dark:hover:bg-surface-800/20 transition-all active:scale-90"
                     title="Editar Nombre"
                 >
                     <Edit2 size={16} />
@@ -135,7 +139,7 @@ function UserRow({ user, currentUserId, onChangePin, onDelete, onEditName, onTog
                 {!isCurrentUser && (
                     <button
                         onClick={() => { triggerHaptic?.(); onDelete(user); }}
-                        className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all active:scale-90"
+                        className="p-2.5 min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all active:scale-90"
                         title="Eliminar"
                     >
                         <Trash2 size={16} />
@@ -148,7 +152,7 @@ function UserRow({ user, currentUserId, onChangePin, onDelete, onEditName, onTog
 
 // ═══════════════════════════════════════════════════ MAIN
 export default function UsersManager({ triggerHaptic }) {
-    const { usuarios, usuarioActivo, agregarUsuario, eliminarUsuario, cambiarPin, editarUsuario } = useAuthStore();
+    const { usuarios, usuarioActivo, agregarUsuario, eliminarUsuario, cambiarPin, editarUsuario, requireLogin } = useAuthStore();
 
     // States
     const [showAddForm, setShowAddForm] = useState(false);
@@ -320,9 +324,11 @@ export default function UsersManager({ triggerHaptic }) {
                         onEditName={u => { setEditNameUser(u); setEditNameValue(u.nombre); }}
                         onTogglePin={u => {
                             const newStatus = u.requirePin === false;
-                            editarUsuario(u.id, { requirePin: newStatus });
+                            const res = editarUsuario(u.id, { requirePin: newStatus });
+                            if (res && res.ok === false) { showToast(res.error, 'error'); return; }
                             showToast(newStatus ? `PIN activado para ${u.nombre}` : `Acceso directo activado para ${u.nombre}`, 'success');
                         }}
+                        requireLogin={requireLogin}
                         onDelete={u => setDeleteUser(u)}
                         triggerHaptic={triggerHaptic}
                     />
@@ -354,7 +360,7 @@ export default function UsersManager({ triggerHaptic }) {
                             setShowEmergencyConfigModal(true);
                             triggerHaptic?.();
                         }}
-                        className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 font-bold text-[11px] rounded-xl transition-all border border-amber-500/20"
+                        className="px-3 py-2 min-h-[40px] bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 font-bold text-[11px] rounded-xl transition-all border border-amber-500/20"
                     >
                         Configurar
                     </button>
@@ -627,7 +633,7 @@ export default function UsersManager({ triggerHaptic }) {
                         </div>
                         <h3 className="text-lg font-black text-slate-800 dark:text-white mb-2">Eliminar Usuario</h3>
                         <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
-                            ¿Seguro que deseas eliminar a <strong>"{deleteUser.nombre}"</strong>? Esta accion no se puede deshacer.
+                            ¿Seguro que deseas eliminar a <strong>"{deleteUser.nombre}"</strong>? Esta acción no se puede deshacer.
                         </p>
                         <div className="flex gap-3">
                             <button

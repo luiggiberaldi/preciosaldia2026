@@ -23,7 +23,8 @@ test.use({
 async function goToReports(page) {
     await page.goto('/');
     await page.getByRole('button', { name: 'Reportes', exact: true }).click();
-    await expect(page.locator('[data-view="reportes"]')).toBeVisible({ timeout: 15_000 });
+    // En frío (primer test de la corrida) Vite compila Reportes: puede pasar de 15 s.
+    await expect(page.locator('[data-view="reportes"]')).toBeVisible({ timeout: 45_000 });
 }
 
 test('cobranzas mayores al fiado: la sección aparece con neto negativo y sin overflow', async ({ page }) => {
@@ -35,9 +36,9 @@ test('cobranzas mayores al fiado: la sección aparece con neto negativo y sin ov
     await reports.getByRole('button', { name: 'Gastos', exact: true }).click();
     await expect(reports.getByRole('button', { name: 'PDF de ventas y caja' })).toHaveCount(0);
     const supplierReport = reports.getByTestId('supplier-period-report');
-    await expect(supplierReport.getByText('$80.00')).toBeVisible();
-    await expect(supplierReport.getByText('-$45.00')).toBeVisible();
-    await expect(supplierReport.getByText('$35.00')).toBeVisible();
+    await expect(supplierReport.getByText('$80.00').first()).toBeVisible(); // sale en el total y en la fila
+    await expect(supplierReport.getByText('-$45.00').first()).toBeVisible();
+    await expect(supplierReport.getByText('$35.00').first()).toBeVisible();
     const supplierPdfButton = supplierReport.getByRole('button', { name: 'PDF de compras y pagos' });
     await expect(supplierPdfButton).toBeVisible();
     const supplierDownload = page.waitForEvent('download');
@@ -109,4 +110,24 @@ test('cartera desviada del ledger: aparece la alerta de conciliación sin el bot
         clientWidth: document.documentElement.clientWidth,
     }));
     expect(dims.scrollWidth).toBeLessThanOrEqual(dims.clientWidth + 1);
+});
+
+test('con «Recalcular deudas» activado, «Reconstruir» deja el saldo igual al ledger (ERR-016)', async ({ page }) => {
+    await page.addInitScript(`try { localStorage.setItem('reportes_reparacion_ledger', 'true'); } catch (_) {}`);
+    await seedReportesFiado(page, { customerDeudaUsd: 2.5 });
+    await goToReports(page);
+
+    await expect(page.getByText('Cartera descuadrada con el ledger')).toBeVisible();
+    await page.getByLabel('Ver detalle').click();
+    await page.getByRole('button', { name: /Reconstruir 1 saldo/ }).click();
+
+    await expect(page.getByText('Cartera descuadrada con el ledger')).toHaveCount(0, { timeout: 10_000 });
+    const deuda = await page.evaluate(() => new Promise((resolve) => {
+        const req = indexedDB.open('BodegaApp');
+        req.onsuccess = () => {
+            const get = req.result.transaction('bodega_app_data').objectStore('bodega_app_data').get('bodega_customers_v1');
+            get.onsuccess = () => resolve(get.result?.[0]?.deuda);
+        };
+    }));
+    expect(deuda).toBe(0);
 });

@@ -1,0 +1,82 @@
+{
+  "descripcion": "Mapa que conecta archivos de código con los documentos que los describen. Lo lee scripts/docs-check.mjs para avisar qué documentos revisar cuando cambia el código. Un patrón que termina en / o * coincide por prefijo; los demás deben coincidir exactos. Un archivo puede estar en varias reglas.",
+  "reglas": [
+    {
+      "modulo": "Venta",
+      "docs": ["docs/sistema/modulos/VENTA.md"],
+      "codigo": [
+        "src/utils/checkoutProcessor.js",
+        "src/utils/voidSaleProcessor.js",
+        "src/utils/ticket",
+        "src/views/SalesView.jsx",
+        "src/components/Sales/",
+        "src/hooks/useCheckout",
+        "src/hooks/useSalesData.js",
+        "src/hooks/useCalculator.js",
+        "src/context/CartContext.jsx",
+        "src/config/paymentMethods.js"
+      ]
+    },
+    {
+      "modulo": "Apertura y cierre de caja",
+      "docs": ["docs/sistema/modulos/CIERRE-DE-CAJA.md"],
+      "codigo": [
+        "src/utils/cashShift.js",
+        "src/utils/cajaEsperada.js",
+        "src/utils/fondoGaveta.js",
+        "src/utils/closeDaySummary.js",
+        "src/utils/closeTaxSummary.js",
+        "src/utils/dailyClose",
+        "src/components/Dashboard/",
+        "src/hooks/useDashboard",
+        "src/views/DashboardView.jsx"
+      ]
+    },
+    {
+      "modulo": "Inventario",
+      "docs": ["docs/sistema/modulos/INVENTARIO.md"],
+      "codigo": [
+        "src/utils/granel.js",
+        "src/utils/productProcessor.js",
+        "src/utils/productCostFactor.js",
+        "src/views/ProductsView.jsx",
+        "src/components/Products/",
+        "src/hooks/useProduct",
+        "src/context/ProductContext.jsx"
+      ]
+    },
+    {
+      "modulo": "Supervisor",
+      "docs": ["docs/sistema/modulos/SUPERVISOR.md"],
+      "codigo": [
+        "src/config/supervisorPolicy.js",
+        "src/services/supervisor",
+        "src/hooks/useRemoteCommands.js",
+        "src/hooks/useMonitorSync.js",
+        "src/hooks/useSupervisor",
+        "src/views/OwnerMonitorView.jsx",
+        "src/views/MonitorView.jsx",
+        "src/components/Monitor/",
+        "supabase/migrations/"
+      ]
+    },
+    {
+      "modulo": "Reglas del dinero",
+      "docs": ["docs/sistema/modulos/REGLAS-DEL-DINERO.md"],
+      "codigo": [
+        "src/core/FinancialEngine.js",
+        "src/utils/dinero.js",
+        "src/utils/financialLogic.js",
+        "src/utils/withLock.js",
+        "src/utils/securityConstants.js",
+        "src/config/taxConfig.js"
+      ]
+    },
+    {
+      "modulo": "General",
+      "docs": ["docs/sistema/INICIO.md"],
+      "porDefecto": true,
+      "codigo": ["src/", "api/", "supabase/"]
+    }
+  ]
+}

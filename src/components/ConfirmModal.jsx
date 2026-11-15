@@ -31,6 +31,9 @@ export default function ConfirmModal({
     confirmText = 'Confirmar',
     cancelText = 'Cancelar',
     variant = 'danger', // 'danger' | 'warning' | 'cart'
+    // Líneas extra destacadas (p. ej. cómo queda la cuenta del cliente al anular).
+    // Las que empiezan con «⚠» salen en ámbar.
+    details = null,
 }) {
     if (!isOpen) return null;
 
@@ -59,6 +62,18 @@ export default function ConfirmModal({
                 {/* Message */}
                 {message && (
                     <p className="text-sm text-slate-500 dark:text-slate-400 text-center leading-relaxed mb-6 whitespace-pre-line">{message}</p>
+                )}
+
+                {Array.isArray(details) && details.length > 0 && (
+                    <div data-testid="confirm-details" className="-mt-3 mb-6 space-y-2">
+                        {details.map((line, i) => (
+                            <p key={i} className={`text-sm leading-snug rounded-xl px-3 py-2 text-left ${String(line).startsWith('⚠')
+                                ? 'bg-amber-50 text-amber-900 border border-amber-300 font-bold dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800'
+                                : 'bg-slate-50 text-slate-700 border border-slate-200 font-semibold dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700'}`}>
+                                {line}
+                            </p>
+                        ))}
+                    </div>
                 )}
 
                 {/* Actions */}

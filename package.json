@@ -1,7 +1,7 @@
 {
   "name": "preciosaldia",
   "private": true,
-  "version": "2.0.5",
+  "version": "2.0.6",
   "type": "module",
   "packageManager": "bun@1.1.0",
   "scripts": {
@@ -27,6 +27,8 @@
     "test:e2e:stock-delta": "playwright test tests/e2e/stock-delta-flow.e2e.spec.js",
     "test:e2e:producto-acciones": "playwright test tests/e2e/supervisor-product-actions.e2e.spec.js",
     "test:supervisor-echo": "vitest run tests/supervisorSyncEcho.test.jsx",
+    "docs:check": "node scripts/docs-check.mjs",
+    "docs:check:staged": "node scripts/docs-check.mjs --staged",
     "hooks:install": "git config core.hooksPath githooks",
     "prepare": "git config core.hooksPath githooks || exit 0",
     "lint:supervisor": "eslint src/App.jsx src/components/PairingScanScreen.jsx src/components/Settings/PairingManager.jsx src/hooks/useCloudSync.js src/hooks/useMonitorSync.js src/hooks/useRemoteCommands.js src/views/OwnerMonitorView.jsx src/components/Monitor src/services/supervisor*.js tests/supervisor*.test.js",
@@ -36,12 +38,19 @@
     "desktop:start": "cross-env ELECTRON_BUILD=true npm run build && cd desktop && npx electron .",
     "desktop:build": "cross-env ELECTRON_BUILD=true npm run build && cd desktop && npx electron-builder",
     "remotion:preview": "remotion preview src/remotion/Root.jsx",
-    "remotion:render": "remotion render src/remotion/Root.jsx PreciosAlDiaLogoIntro out/intro.mp4"
+    "remotion:render": "remotion render src/remotion/Root.jsx PreciosAlDiaLogoIntro out/intro.mp4",
+    "test:e2e:offline": "playwright test -c playwright.offline.config.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.2.0",
     "@capacitor/cli": "^8.2.0",
     "@capacitor/core": "^8.2.0",
+    "@fontsource/dm-mono": "^5.3.0",
+    "@fontsource/instrument-serif": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/outfit": "^5.3.0",
+    "@fontsource/plus-jakarta-sans": "^5.3.0",
+    "@fontsource/work-sans": "^5.3.0",
     "@remotion/cli": "^4.0.502",
     "@remotion/google-fonts": "4.0.502",
     "@remotion/player": "^4.0.502",

@@ -13,6 +13,7 @@
 import { formatBs, formatCop, formatUsd } from './calculatorUtils.js';
 import { round2 } from './dinero.js';
 import { buildCloseTaxSummary } from './closeTaxSummary.js';
+import { getLogoSrc } from './brandLogo.js';
 
 function escHtml(str) {
     if (str === null || str === undefined) return '';
@@ -275,7 +276,7 @@ export function buildDailyCloseHtml(cierreData, paperConfig, settings) {
 
     <!-- Logo -->
     <div class="center" style="margin-bottom:6px;">
-        <img src="./logo.png" alt="Logo" style="max-width:${cssLogoW};max-height:16mm;" onerror="this.style.display='none'">
+        <img src="${getLogoSrc()}" alt="Logo" style="max-width:${cssLogoW};max-height:16mm;" onerror="this.style.display='none'">
     </div>
 
     <!-- Encabezado del negocio -->
