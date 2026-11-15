@@ -27,7 +27,7 @@ inspeccionando los backups reales del repositorio:
 
 Las rutas `/images/catalog/*.webp` **no son código**: entran como dato cuando el
 negocio importa un backup. Los generan los scripts de
-[scripts/scraper_500_products.py:127](scripts/scraper_500_products.py#L127) y
+[scripts/scraper_500_products.py:127](../../scripts/scraper_500_products.py#L127) y
 hermanos. Por eso son reales en producción y no se pueden ignorar.
 
 ### 0.2 Los tres huecos confirmados
@@ -39,20 +39,20 @@ hermanos. Por eso son reales en producción y no se pueden ignorar.
   25 `js`, 7 `png`, 1 `css`, 1 `html`, 1 `ico`, 1 `webmanifest` — **cero `webp`**.
 - Causa: el `globPatterns` por defecto de `vite-plugin-pwa` es
   `**/*.{js,css,html,ico,png,svg}`, que **no incluye `.webp`**, y en el bloque
-  `workbox` de [vite.config.js:21-65](vite.config.js#L21-L65) no se sobreescribe.
+  `workbox` de [vite.config.js:21-65](../../vite.config.js#L21-L65) no se sobreescribe.
 - Y tampoco hay regla de `runtimeCaching` que las capture: la única regla de
   imágenes matchea solo `/storage/v1/object/public/product-images/`
-  ([vite.config.js:56](vite.config.js#L56)).
-- Agravante: [useImagePrecache.js:87](src/hooks/useImagePrecache.js#L87) filtra con
+  ([vite.config.js:56](../../vite.config.js#L56)).
+- Agravante: [useImagePrecache.js:87](../../src/hooks/useImagePrecache.js#L87) filtra con
   `/^https?:/i.test(img)`, así que las rutas relativas **también quedan fuera del
   precalentado**.
 
 **Hueco 2 — `maxEntries: 500` desaloja imágenes.**
-[vite.config.js:60](vite.config.js#L60). Con un inventario grande el LRU empieza a
+[vite.config.js:60](../../vite.config.js#L60). Con un inventario grande el LRU empieza a
 botar imágenes justo cuando más se necesitan.
 
 **Hueco 3 — respuestas opacas inflan la cuota.**
-[useImagePrecache.js:50](src/hooks/useImagePrecache.js#L50) usa
+[useImagePrecache.js:50](../../src/hooks/useImagePrecache.js#L50) usa
 `fetch(url, { mode: 'no-cors' })`. Eso produce respuestas **opacas**, y cada
 respuesta opaca suma ~7 MB de *padding* a la cuota de almacenamiento del navegador
 (no lo que pesa de verdad). Resultado: el navegador cree que el cache está lleno
@@ -63,9 +63,9 @@ mucho antes de lo real y empieza a purgar.
 Se comprobaron para evitar "arreglos" innecesarios durante la ejecución:
 
 1. **Los caches de runtime sobreviven los cambios de versión.** Aunque
-   `cacheId: 'preciosaldia-bodega-v${APP_VERSION}'` ([vite.config.js:26](vite.config.js#L26))
+   `cacheId: 'preciosaldia-bodega-v${APP_VERSION}'` ([vite.config.js:26](../../vite.config.js#L26))
    cambia en cada release, en
-   [node_modules/workbox-core/src/_private/cacheNames.ts:69-71](node_modules/workbox-core/src/_private/cacheNames.ts#L69-L71)
+   [node_modules/workbox-core/src/_private/cacheNames.ts:69-71](../../node_modules/workbox-core/src/_private/cacheNames.ts#L69-L71)
    `getRuntimeName` devuelve `userCacheName || _createCacheName(...)` — es decir, un
    `cacheName` **explícito se usa tal cual, sin prefijo**. `product-images-cache`
    NO se renombra ni se pierde al actualizar la app. Lo mismo aplicará al nuevo
@@ -144,7 +144,7 @@ grep -o 'catalog-images-cache' dist/sw.js | wc -l
 
 ## FASE 1 — Regla `CacheFirst` para el catálogo local
 
-**Archivo:** [vite.config.js](vite.config.js)
+**Archivo:** [vite.config.js](../../vite.config.js)
 **Arregla:** Hueco 1 (parte SW).
 
 ### Paso 1.1 — Localizar el punto de inserción
@@ -227,7 +227,7 @@ grep -o 'catalog-images-cache' dist/sw.js | wc -l
 
 ## FASE 2 — Subir el techo de `maxEntries`
 
-**Archivo:** [vite.config.js](vite.config.js)
+**Archivo:** [vite.config.js](../../vite.config.js)
 **Arregla:** Hueco 2.
 
 ### Paso 2.1 — Editar una sola línea
@@ -270,7 +270,7 @@ grep -o 'maxEntries:1200\|maxEntries: 1200' dist/sw.js | wc -l
 
 ## FASE 3 — Precalentar rutas locales + fetch CORS
 
-**Archivo:** [src/hooks/useImagePrecache.js](src/hooks/useImagePrecache.js)
+**Archivo:** [src/hooks/useImagePrecache.js](../../src/hooks/useImagePrecache.js)
 **Arregla:** Hueco 1 (parte precalentado) y Hueco 3.
 
 ### Paso 3.1 — Añadir dos helpers
@@ -409,13 +409,13 @@ en el Paso 0.2**.
 
 ## FASE 4 — Cache-busting al re-subir una imagen (recomendada)
 
-**Archivo:** [src/utils/imageUpload.js](src/utils/imageUpload.js)
+**Archivo:** [src/utils/imageUpload.js](../../src/utils/imageUpload.js)
 **Arregla:** un bug de obsolescencia que las Fases 1-3 **agravan**.
 
 ### Paso 4.1 — Entender el problema antes de editar
 
-En [imageUpload.js:66](src/utils/imageUpload.js#L66) la ruta es determinística y se
-sube con `upsert: true` ([imageUpload.js:70](src/utils/imageUpload.js#L70)):
+En [imageUpload.js:66](../../src/utils/imageUpload.js#L66) la ruta es determinística y se
+sube con `upsert: true` ([imageUpload.js:70](../../src/utils/imageUpload.js#L70)):
 
 ```js
 const path = `${deviceId}/${id}.${ext}`;
@@ -461,7 +461,7 @@ Reemplazar por:
 
 Comprobar a mano que la URL con `?v=` sigue pasando por:
 
-1. `isStorageImageUrl` — [imageUpload.js:35](src/utils/imageUpload.js#L35):
+1. `isStorageImageUrl` — [imageUpload.js:35](../../src/utils/imageUpload.js#L35):
    `/\/storage\/v1\/object\/public\/product-images\//` → no ancla el final. ✅
 2. El `urlPattern` de la Fase 1 —
    `/\/storage\/v1\/object\/public\/product-images\/.*/i` → `.*` absorbe la query. ✅
@@ -515,7 +515,7 @@ varios productos.
 ### Paso 5.4 — Esperar el precalentado
 
 El hook tiene un debounce de **5 s**
-([useImagePrecache.js:22](src/hooks/useImagePrecache.js#L22)) y va en lotes de 4.
+([useImagePrecache.js:22](../../src/hooks/useImagePrecache.js#L22)) y va en lotes de 4.
 **Esperar ~30 s** con la app abierta y online.
 
 ### Paso 5.5 — Confirmar los caches poblados
@@ -546,7 +546,7 @@ DevTools → **Application → Cache Storage**. Debe existir:
 
 Seguir offline. Cerrar la pestaña por completo, volver a abrir la URL.
 Las imágenes deben seguir viéndose (el cache es persistente, y
-[main.jsx:26](src/main.jsx#L26) ya pide `navigator.storage.persist()`).
+[main.jsx:26](../../src/main.jsx#L26) ya pide `navigator.storage.persist()`).
 
 ### Paso 5.8 — Probar el cambio de foto (solo si se hizo la Fase 4)
 
@@ -591,7 +591,7 @@ las descartaba con el filtro /^https?:/.
 ### Paso 6.3 — Nota para el despliegue
 
 El SW nuevo se activa solo (`registerType: 'autoUpdate'` + `skipWaiting`
-[vite.config.js:19-23](vite.config.js#L19-L23)). Los equipos ya instalados
+[vite.config.js:19-23](../../vite.config.js#L19-L23)). Los equipos ya instalados
 empiezan a poblar `catalog-images-cache` la primera vez que abran la app
 **con internet** después del deploy. **Aviso al usuario:** un equipo que solo se
 abra offline después del deploy todavía no tendrá las imágenes del catálogo —

@@ -16,12 +16,12 @@
 El sistema no guarda una decisión clara de "cómo se vende este producto"; cuando
 falta el tipo de empaque, **adivina**. Tres cosas se encadenan:
 
-1. **El detector de granel es un adivinador** ([granel.js:101](src/utils/granel.js#L101)):
+1. **El detector de granel es un adivinador** ([granel.js:101](../../src/utils/granel.js#L101)):
    si el empaque no es exactamente `suelto` ni `lote`, cuenta como granel con
    CUALQUIER pista débil: unidad con nombre de peso (`kg`, `g`, `litro`, `ml`, `l`...),
    banderas `isWeight`/`soldByWeight`, o el solo hecho de existir el campo `granelUnit`.
-2. **El formulario siempre deja `granelUnit = 'kg'`** ([useProductForm.js:139](src/hooks/useProductForm.js#L139)),
-   incluso en productos que no son granel. Al guardar, [productProcessor.js:97](src/utils/productProcessor.js#L97)
+2. **El formulario siempre deja `granelUnit = 'kg'`** ([useProductForm.js:139](../../src/hooks/useProductForm.js#L139)),
+   incluso en productos que no son granel. Al guardar, [productProcessor.js:97](../../src/utils/productProcessor.js#L97)
    vuelve a adivinar con ese `kg` y **congela el producto como granel para siempre**.
 3. **Las importaciones traen vocabulario ajeno**: productos como "SAL DEL MAR 1 KG"
    llegan con tipo de empaque que no es `suelto`/`lote`/`granel` (ej. "Unidad",
@@ -127,7 +127,7 @@ Cambios pequeños y encadenados:
 
 Staging es el entorno de pruebas del proyecto Supabase del supervisor
 (`wapczmlwljkrjtfhmqko`), separado de producción. Nada de lo que pase aquí
-llega a las cajas reales. Guía completa: [docs/SUPERVISOR-E2E-STAGING.md](docs/SUPERVISOR-E2E-STAGING.md).
+llega a las cajas reales. Guía completa: [docs/SUPERVISOR-E2E-STAGING.md](../SUPERVISOR-E2E-STAGING.md).
 
 - [ ] Levantar el dev server apuntando a staging:
   `VITE_SUPERVISOR_E2E_STAGING=true bun run dev -- --host 127.0.0.1 --port 4173`

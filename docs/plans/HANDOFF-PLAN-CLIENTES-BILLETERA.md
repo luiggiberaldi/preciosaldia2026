@@ -2,7 +2,7 @@
 
 **Fecha:** 2026-11-14 · **Rama:** `feat/inicio-estilo-farmacia` · **Sin push** (el dueño no lo pidió).
 **Plan completo:** [PLAN-FIXEO-CLIENTES-BILLETERA.md](PLAN-FIXEO-CLIENTES-BILLETERA.md) (fases F1 a F10).
-**Informe de la verificación inicial:** [docs/reports/2026-11-14-verificacion-clientes-e2e.md](docs/reports/2026-11-14-verificacion-clientes-e2e.md).
+**Informe de la verificación inicial:** [docs/reports/2026-11-14-verificacion-clientes-e2e.md](../reports/2026-11-14-verificacion-clientes-e2e.md).
 **Usuario:** principiante; responder en **español sencillo**, una fase a la vez, y pedir permiso antes de la siguiente («vamos fase a fase»).
 
 ---

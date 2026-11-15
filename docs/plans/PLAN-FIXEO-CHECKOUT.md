@@ -1,7 +1,7 @@
 # PLAN DE FIXEO — MODOS DE COBRO (POS Y BÁSICO)
 
 **Documento ejecutable.** Escrito para que un LLM de baja capacidad (o cualquier IDE agéntico) lo ejecute paso a paso sin ambigüedad.
-**Reporte de origen:** [`AUDITORIA-CHECKOUT.md`](docs/auditorias/AUDITORIA-CHECKOUT.md)
+**Reporte de origen:** [`AUDITORIA-CHECKOUT.md`](../auditorias/AUDITORIA-CHECKOUT.md)
 **Fecha:** 2026-08-04
 **Fases:** 13 · **Archivos tocados:** 7 · **Tests nuevos:** 6
 
@@ -388,7 +388,7 @@ rm tests/checkout.test.js
 
 ## FASE 2 — 🔴 CRÍTICO C-1 + 🟠 A-3: normalizar el vuelto en el procesador
 
-**Archivo:** [`src/utils/checkoutProcessor.js`](src/utils/checkoutProcessor.js) · **2 ediciones**
+**Archivo:** [`src/utils/checkoutProcessor.js`](../../src/utils/checkoutProcessor.js) · **2 ediciones**
 
 **Qué está roto:** el procesador confía ciegamente en el desglose de vuelto que le manda la UI. Cuando la UI declara `{changeUsdGiven: 10, changeBsGiven: 400}` para un vuelto real de $10 a tasa 40, el `FinancialEngine` suma **ambos** — registra $20 de vuelto para una venta de $10. Eso arruina el cierre de caja (`CierreCajaWizard` calcula `esperado = efectivo − vuelto`, así que cada venta con vuelto genera un sobrante fantasma).
 
@@ -472,7 +472,7 @@ git checkout -- src/utils/checkoutProcessor.js
 
 ## FASE 3 — 🔴 CRÍTICO C-1 (origen, modo BÁSICO)
 
-**Archivo:** [`src/hooks/useCheckoutCalculations.js`](src/hooks/useCheckoutCalculations.js) · **1 edición**
+**Archivo:** [`src/hooks/useCheckoutCalculations.js`](../../src/hooks/useCheckoutCalculations.js) · **1 edición**
 
 **Qué está roto:** cuando el operador **no toca** los campos de desglose de vuelto (el caso normal), `changeUsdGiven` y `changeBsGiven` están vacíos, y el código toma la rama `(!changeUsdGiven && !changeBsGiven)` que asigna **`changeUsd` Y `changeBs` a la vez** — es decir, el vuelto completo dos veces, una en cada moneda. El `Math.min` no lo detecta porque cada valor por separado sí cabe en su tope.
 
@@ -524,7 +524,7 @@ git checkout -- src/hooks/useCheckoutCalculations.js
 
 ## FASE 4 — 🔴 CRÍTICO C-1 (origen, modo POS)
 
-**Archivo:** [`src/components/Sales/CheckoutModalPOS/index.jsx`](src/components/Sales/CheckoutModalPOS/index.jsx) · **1 edición**
+**Archivo:** [`src/components/Sales/CheckoutModalPOS/index.jsx`](../../src/components/Sales/CheckoutModalPOS/index.jsx) · **1 edición**
 
 **Qué está roto:** el POS usa `distVueltoUSD ? ... : cambioUSD` como fallback. El botón "⚡ Todo" del campo de vuelto en Bs pone `distVueltoUSD = ''` (cadena vacía, falsy) mientras deja `distVueltoBS` con el monto completo. El ternario lee ese `''` como "no especificado" y cae al fallback `cambioUSD` → **declara el vuelto completo en USD además del completo en Bs**.
 
@@ -696,7 +696,7 @@ git checkout -- src/hooks/useCheckoutCalculations.js src/components/Sales/Checko
 
 ## FASE 6 — 🟠 A-5: la auditoría miente con doble precio
 
-**Archivo:** [`src/utils/checkoutProcessor.js`](src/utils/checkoutProcessor.js) · **4 ediciones**
+**Archivo:** [`src/utils/checkoutProcessor.js`](../../src/utils/checkoutProcessor.js) · **4 ediciones**
 
 **Qué está roto:** el procesador recalcula el total (`activeCartTotalUsd`) cuando hay ítems con doble precio y se paga en Bs, pero **cuatro lugares siguen usando el prop crudo `cartTotalUsd`**. Consecuencia: el log de auditoría reporta un total distinto al de la venta persistida (imposible de conciliar), el umbral de vuelto anómalo se calcula sobre la base equivocada, y el total en COP queda desalineado.
 
@@ -797,7 +797,7 @@ git checkout -- src/utils/checkoutProcessor.js
 
 ## FASE 7 — 🟡 M-3: leer el cliente fresco dentro del lock
 
-**Archivo:** [`src/utils/checkoutProcessor.js`](src/utils/checkoutProcessor.js) · **1 edición**
+**Archivo:** [`src/utils/checkoutProcessor.js`](../../src/utils/checkoutProcessor.js) · **1 edición**
 
 **Qué está roto:** el impacto sobre el cliente (deuda/favor) se calcula a partir de `selectedCustomer`, tomado del array `customers` que llegó como prop desde React — potencialmente obsoleto. Los productos ya se releen frescos (`freshProducts`); los clientes no. Si otra pestaña o un abono registró deuda entre el render y el cobro, ese cambio se sobrescribe silenciosamente.
 
@@ -986,7 +986,7 @@ git checkout -- src/hooks/useCheckoutCalculations.js   # ⚠️ deshace también
 
 ## FASE 9 — 🟡 M-1: Cashea se autoactiva sin que nadie lo pida
 
-**Archivo:** [`src/components/Sales/CheckoutModal.jsx`](src/components/Sales/CheckoutModal.jsx) · **1 edición**
+**Archivo:** [`src/components/Sales/CheckoutModal.jsx`](../../src/components/Sales/CheckoutModal.jsx) · **1 edición**
 
 **Qué está roto:** al seleccionar un cliente con nivel Cashea, un `useEffect` **activa el financiamiento solo** (`setCasheaActive(true)`). El operador que solo quería asociar el cliente a una venta de contado se encuentra con una venta financiada ya armada, y si no lo nota, la venta se registra como `VENTA_CASHEA`. El modo POS **no** hace esto — es una divergencia entre modos, y el POS tiene razón.
 
@@ -1145,7 +1145,7 @@ git checkout -- src/components/Sales/CheckoutModalPOS/index.jsx   # ⚠️ desha
 
 ## FASE 11 — 🟠 A-2: eliminar el botón muerto de saldo a favor
 
-**Archivo:** [`src/components/Sales/CheckoutModal.jsx`](src/components/Sales/CheckoutModal.jsx) · **4 ediciones**
+**Archivo:** [`src/components/Sales/CheckoutModal.jsx`](../../src/components/Sales/CheckoutModal.jsx) · **4 ediciones**
 **Gobernada por la decisión D2 del §0.** Si el humano prefiere implementar la funcionalidad, **salta esta fase** y abre una tarea aparte.
 
 **Qué está roto:** el botón "Usar Saldo a Favor" llama a `onUseSaldoFavor`, un prop que **`SalesView` nunca pasa** (no está en el objeto `sharedProps` de sus líneas 939-959). El `if (onUseSaldoFavor)` lo hace fallar en silencio. Además su condición de visibilidad lee el campo equivocado: usa `selectedCustomer?.deuda < -0.01` cuando el saldo a favor vive en `selectedCustomer.favor` — así que hasta se muestra en el caso incorrecto.
@@ -1299,7 +1299,7 @@ grep -c "if (modo === 'contado' && faltaPorPagar > 0.01) {" src/components/Sales
 
 ### Edición 12d — deshabilitar el botón
 
-**Archivo:** [`src/components/Sales/CheckoutModalPOS/components/PaymentFooter.jsx`](src/components/Sales/CheckoutModalPOS/components/PaymentFooter.jsx)
+**Archivo:** [`src/components/Sales/CheckoutModalPOS/components/PaymentFooter.jsx`](../../src/components/Sales/CheckoutModalPOS/components/PaymentFooter.jsx)
 
 **VERIFICAR ANCLAJE (debe imprimir `1`):**
 ```bash
