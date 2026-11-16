@@ -478,3 +478,10 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 **Prueba del trigger:** un bloque `DO` movió 1 s la fecha del doc más reciente, leyó el aviso (coincidía) y lanzó un error a propósito para deshacer todo. La fecha real quedó igual. Como se deshizo, Realtime no repartió nada.
 **Efecto hoy:** ninguno visible todavía. Las cajas y supervisores publicados no usan la tabla de avisos; el ahorro empieza al publicar la rama `fix/egress-realtime`.
 **Dato al margen:** los avisos más pesados son `bodega_products_v1` viejos (hasta 583 KB, de julio y octubre) de equipos que ya no escriben. No generan egress mientras nadie los reescriba.
+
+## 2026-11-15 — Plan definitivo de la versión en la nube (P-021)
+
+**Contexto:** el dueño aclaró que la versión nueva debe dejar entrar a la cuenta desde cualquier equipo y trabajar ahí, como Fina Partner, y que debe seguir recibiendo los arreglos de Precios al Día actual.
+**Cambios:** nuevo [docs/plans/2026-11-15-plan-definitivo-precios-al-dia-nube.md](docs/plans/2026-11-15-plan-definitivo-precios-al-dia-nube.md). Los planes de multicaja del 13-11 (nube) y del 14-11 (red local) quedan marcados como reemplazados. En `PENDIENTES.md`, P-013 pasa a Descartado y se agrega P-021. Solo documentación; no cambia código.
+**Decisiones del dueño:** D1 nube; D2 seguir recibiendo arreglos de Precios al Día. D3–D9 quedan propuestas y por confirmar.
+**Verificación:** `bun run docs:check` sin enlaces rotos; solo avisa de ERR-012, que falta en la tabla de `ERRORES.md` y no es de este cambio.

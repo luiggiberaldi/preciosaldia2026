@@ -1,4 +1,5 @@
 # Plan detallado: Precios al Día Multicaja
+> **Reemplazado el 2026-11-15** por el [plan definitivo Precios al Día Nube](2026-11-15-plan-definitivo-precios-al-dia-nube.md). Se conserva como historia; no se trabaja con este plan.
 
 **Fecha:** 13 de noviembre de 2026
 **Nombre del producto y del repo:** por definir (en este plan: `preciosaldia-multicaja`)

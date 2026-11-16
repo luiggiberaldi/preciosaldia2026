@@ -1,4 +1,5 @@
 # Plan: Multicaja por red local (LAN) para Precios al Día Bodega
+> **Reemplazado el 2026-11-15** por el [plan definitivo Precios al Día Nube](2026-11-15-plan-definitivo-precios-al-dia-nube.md). Se conserva como historia; no se trabaja con este plan.
 
 **Fecha:** 14-11-2026
 **Estado:** Pendiente (P-013). No se ha empezado; falta que el dueño decida los puntos de la sección 12.

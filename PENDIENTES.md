@@ -20,7 +20,7 @@
 | P-010 | Probar la nómina en el equipo real: recibo en la impresora térmica, PDF enviado por WhatsApp, y el cierre de un día con un adelanto en efectivo y un pago por pago móvil | CASO-005 | Pendiente |
 | P-011 | Revisar 3 pruebas de licencias que fallan sin relación con la nómina: `licenseMonitoringMissing` (2; archivo nuevo de otra sesión, aún sin confirmar) y `licensePolicy` (compara contra la copia de otra carpeta del Escritorio) | CASO-005 | Hecho (2026-11-15) · ver Hechos |
 | P-012 | Fases opcionales de la nómina: ~~F6 (mercancía del empleado)~~ hecha el 2026-11-15; queda F7 (resumen de solo lectura en el Supervisor) | CASO-005 | F6 hecha · F7 pendiente (el dueño la deja para después de publicar `fix/egress-realtime`) |
-| P-013 | Multicaja por red local (LAN): una PC servidor con el stock, los fiados y los turnos de todas las cajas; Supervisor a través del servidor | Plan del 2026-11-14 | Pendiente (falta que el dueño decida P-L1 a P-L7) |
+| P-013 | Multicaja por red local (LAN): una PC servidor con el stock, los fiados y los turnos de todas las cajas; Supervisor a través del servidor | Plan del 2026-11-14 | Descartado (2026-11-15): el dueño eligió la nube estilo Fina Partner; ver P-021 |
 | P-018 | Seguridad: aplicar `20261115_licenses_cerrar_lectura_publica.sql` y `20261115_backup_requests_solo_propias.sql`. Hoy cualquiera con la clave pública lee todas las licencias y lee o borra las solicitudes de respaldo (la segunda resuelve P-016 de la rama `fix/egress-realtime`) | Revisión de licencias, 2026-11-15 | Aplicado (2026-11-15); falta probar en una caja real |
 | P-019 | Aplicar `20261106_backup_identity_seed_and_monthly.sql` (verificado en vivo el 2026-11-15 que **no** está aplicada: `has_permanent_backup_license` aún no acepta la mensualidad) **y** recuperar su parte de la caja, que solo existe en `git stash` («pendiente 6-nov: respaldo e identidad de caja», del 13-11): `deviceIdentity.js` siembra la prueba de posesión con `claim_device_session`, más cambios en `useAutoBackup.js` y `cloudBackupUpload.js`. Su cambio en `useLicenseMonitoring.js` ya no hace falta (P-011) | Revisión de licencias, 2026-11-15 | En curso: código de la caja recuperado del stash y migración **aplicada** el 2026-11-15 (bitácora); falta publicar la app y liberar a mano las cajas que ya perdieron la sesión |
 | P-020 | Separar «cosméticos» del ID compartido `PDA-V2-333D310E…CB675980` con «bueno y sano». Aviso de cambio de ID puesto el 2026-11-15 para la sesión `8bc85903` (Net Uno) hacia `PDA-V2-87149FBF…CFC294`, con licencia permanente `ACTIV-49CF-C294` ya creada; vence el 2026-11-22. Falta: confirmar `status = 'done'` en `identity_migration_orders`, que el ID nuevo reporte desde Net Uno y que «bueno y sano» siga con `ACTIV-CB67-5980`. Los datos viejos en la nube bajo el ID compartido quedan sin limpiar | Licencias, 2026-11-15 | En curso |
@@ -28,6 +28,7 @@
 | P-015 | Egress: guardar el secreto `SUPABASE_ACCESS_TOKEN` en GitHub (Settings → Secrets and variables → Actions) y llevar `egress-alarm.yml` a `main` para que la alarma corra sola | CASO-006 | Pendiente (solo el dueño) |
 | P-016 | Seguridad: `backup_requests` tiene políticas de lectura y borrado `USING (true)` para `anon` (cualquiera con la clave pública ve y borra solicitudes de cualquier equipo). Restringir a filas propias | CASO-006 | Propuesto |
 | P-017 | Egress: cuando ya no quede ningún supervisor sin actualizar, quitar `sync_documents` de la publicación de Realtime; y avisar «supervisor abierto en otro equipo» (parte de F3 no hecha) | CASO-006 | Pendiente |
+| P-021 | Precios al Día Nube: entrar a la cuenta desde cualquier equipo (estilo Fina Partner), multicaja y multisede, siguiendo los arreglos de Precios al Día | Decisión del dueño, 2026-11-15 | Pendiente (confirmar D3–D9 y llevar lo pulido a `main`) |
 
 ---
 
@@ -69,6 +70,8 @@ En CASO-003 no se pudo ver en pantalla el caso con varias categorías (los datos
 
 ## P-013 · Multicaja por red local (LAN)
 
+> **Descartado el 2026-11-15:** el dueño quiere entrar a la cuenta desde cualquier equipo, como en Fina Partner, y eso pide la nube. Reemplazado por P-021.
+
 Plan completo: [docs/plans/2026-11-14-plan-multicaja-lan.md](docs/plans/2026-11-14-plan-multicaja-lan.md). Es la alternativa por red local al plan de la nube ([2026-11-13-plan-preciosaldia-multicaja.md](docs/plans/2026-11-13-plan-preciosaldia-multicaja.md)).
 
 - **Qué es:** la app de escritorio de una PC hace de servidor (con su propia base) y las demás cajas le piden todo por la red del local. Se puede vender sin internet; la nube queda para respaldos y el Modo Supervisor, que se vincula con el servidor.
@@ -87,6 +90,15 @@ Revisión en vivo (solo lectura) del 2026-11-15: no hay licencias borradas ni re
 Las dos migraciones dejan a cada caja solo sus filas (`is_own_device_row`), la misma regla de `sync_documents` y `cloud_backups`. La Estación usa la clave de servicio y no le afecta. Las cajas usan los RPC `get_license_status` y `verify_activation_code`, que no cambian. **Aplicadas el 2026-11-15** con el visto bueno del dueño (bitácora). Antes de aplicar, leer el encabezado de cada migración (efectos conocidos, verificación y reversión). Después, probar en una caja real que abre premium y que un «Solicitar respaldo» de la Estación se completa.
 
 ---
+
+## P-021 · Precios al Día Nube (estilo Fina Partner)
+
+Plan definitivo: [docs/plans/2026-11-15-plan-definitivo-precios-al-dia-nube.md](docs/plans/2026-11-15-plan-definitivo-precios-al-dia-nube.md). Reemplaza a los planes de multicaja por la nube (13-11) y por red local (14-11).
+
+- **Qué es:** el dueño entra con correo y clave desde cualquier PC, tablet o teléfono; los datos viven en la nube y son de la cuenta; varias cajas y sedes trabajan a la vez con un libro de movimientos en el servidor; sin internet la caja vende hasta 72 horas y luego sube todo.
+- **Sigue a Precios al Día:** repo privado aparte con Precios al Día como upstream; los arreglos se traen cada semana (sección 8 del plan).
+- **Antes de empezar:** el dueño confirma D3–D9 (sección 2) y se publica en `main` lo pulido de `feat/inicio-estilo-farmacia`.
+- **Tamaño:** unas 13 semanas (≈3 meses) en 9 fases (F0–F8).
 
 ## Hechos
 
