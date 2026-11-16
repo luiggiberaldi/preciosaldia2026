@@ -201,6 +201,12 @@ export function createSyncDiagnosticsState() {
         lastOversizeAt: null,
         lastOversizePullAt: null,
         lastPull: null,
+        // Plan de egress Realtime F3/F4: cómo llega Realtime y por qué se cae.
+        realtimeMode: null,
+        notifyEvents: 0,
+        realtimeCloses: 0,
+        lastRealtimeClose: null,
+        hiddenReleases: 0,
     };
 }
 
@@ -244,6 +250,20 @@ export function updateSyncDiagnostics(state, event) {
                     full: Boolean(event.full),
                 },
             };
+        case 'realtime_mode':
+            return { ...current, realtimeMode: event.mode ?? null };
+        case 'notify':
+            return { ...current, notifyEvents: (current.notifyEvents || 0) + 1 };
+        case 'realtime_closed':
+            // Los cierres pedidos por la pestaña oculta (F3) no cuentan como caída.
+            if (event.released) return current;
+            return {
+                ...current,
+                realtimeCloses: (current.realtimeCloses || 0) + 1,
+                lastRealtimeClose: { status: event.status ?? null, at: event.at ?? null },
+            };
+        case 'hidden_release':
+            return { ...current, hiddenReleases: (current.hiddenReleases || 0) + 1 };
         default:
             return current;
     }

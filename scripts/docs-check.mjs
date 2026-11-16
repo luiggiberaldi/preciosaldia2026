@@ -128,7 +128,9 @@ export function checkErrores(root) {
     }
     const dup = blockIds.filter((id, i) => blockIds.indexOf(id) !== i);
     for (const id of new Set(dup)) errors.push(`${id}: ID repetido`);
-    const rows = [...text.matchAll(/^\|\s*(ERR-\d{3})\s*\|[^|]*\|[^|]*\|\s*(\w+)\s*\|/gm)];
+    // El estado de la tabla puede llevar una nota entre paréntesis («Resuelto
+    // (mitigado)»), igual que la sección: se compara solo la primera palabra.
+    const rows = [...text.matchAll(/^\|\s*(ERR-\d{3})\s*\|[^|]*\|[^|]*\|\s*(\w+)(?:\s*\([^|)]*\))?\s*\|/gm)];
     const tableIds = rows.map((r) => r[1]);
     for (const id of blockIds) if (!tableIds.includes(id)) errors.push(`${id}: falta en la tabla resumen de ERRORES.md`);
     for (const r of rows) {

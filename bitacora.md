@@ -419,3 +419,62 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 **Cambios:** versión 2.0.6 en `package.json` y nota en `src/data/releaseNotes.js` (Pantalla nueva, Vender y cobrar más fácil, Nómina de tus empleados, IVA en tus tickets). Las cajas que vienen de 2.0.5 nunca guardaron `pda_last_seen_version` (el aviso con notas no estaba en `main`), así que el aviso nuevo se habría quedado callado: `versionDesdeNovedades` toma 2.0.5 como «lo último visto» si la caja ya aceptó los términos (`pda_terms_accepted`); una instalación nueva no ve el aviso. `LockScreen` mostraba «v2.0.5» escrito a mano; ahora lee `VITE_APP_VERSION`. Capturas del cobro (360/390/430) regeneradas por la revisión previa al push con la ventana de pago actual.
 **Cómo se ve en la caja:** primero la barra verde vieja «Nueva versión disponible» (código de 2.0.5, no se puede cambiar); al reiniciar, y después de la pantalla de inicio, la ventana «¡Ya tienes lo nuevo!» una sola vez.
 **Verificación:** `releaseNotes` 8/8 y `lockScreenBento`. En el navegador (servidor local): caja en uso sin versión vista → sale la ventana tras entrar; «Entendido» guarda 2.0.6 y no se repite; instalación nueva → no sale; la pantalla de inicio dice v2.0.6.
+## 2026-11-14 — Egress F0: script de medición de egress y línea base
+
+**Plan:** `docs/plans/2026-11-14-plan-fixeo-egress-realtime.md`, fase F0. Origen: el 11-nov Realtime gastó 388 MB (88 % del egress del día).
+**Cambios:** `scripts/egress-report.mjs` (nuevo) consulta la API de administración de Supabase y muestra, por día, cuánto suben las cajas a `sync_documents` (separado por tamaño, como clasificar paquetes en chicos, medianos y grandes), los GET, las conexiones de Realtime y los docs vivos más pesados. Con `--check` sale con código 1 si se pasa un límite (base de la alarma de F6). La lógica pura vive en `scripts/egressReportCore.mjs`. El token se lee del `.env` antes que de la variable del sistema, porque en esta PC la variable tiene un token viejo que la API rechaza.
+**Línea base:** `docs/reports/2026-11-14-baseline-egress-realtime.md`: 161–206 MB subidos por día, 341–450 subidas diarias de 300–500 KB (el audit log), POST de hasta 405 KB y 209–438 conexiones de Realtime por día.
+**Verificación:** `tests/egressReportCore.test.js` 6/6; corrida real contra producción del 10 al 14-nov.
+
+## 2026-11-14 — Egress F1 y F2: el audit log y las ventas de hoy se publican en pedazos chicos
+
+**Plan:** `docs/plans/2026-11-14-plan-fixeo-egress-realtime.md`, fases F1 y F2 (un solo commit porque las dos tocan `useCloudSync.js`).
+**Problema:** el 13-nov la caja subió 450 veces un audit log de ~407 KB (81 % de todo lo subido) y cada venta reescribía el último tramo de ventas del mes, que crece hasta 400 KB. Realtime reenvía cada subida entera a cada supervisor conectado: el 11-nov fueron 388 MB.
+**F1 (audit log):** `src/utils/auditSyncFamily.js` (nuevo) parte la copia publicada en franjas de 2 horas (`abasto_audit_log_v1:2026-11-14T14`, como cajones por hora) y solo publica los últimos 7 días (decisión D1). Una acción nueva solo reescribe la franja en curso (≤ ~70 KB en la caja más activa). El push sale como mucho una vez por minuto con el valor más nuevo (D2): es una ventana fija, porque un debounce que se reinicia nunca publicaba con ventas seguidas. El supervisor reemplaza la franja entera (así un borrado del log se propaga) y recorta su copia a 7 días; la caja solo une y nunca pierde su historial fiscal. Una vez al día la caja borra de la nube el doc viejo de 407 KB y las franjas vencidas (la política de borrado ya estaba aplicada en producción). Al restaurar un respaldo también se publica por franjas.
+**Cambio de diseño:** el plan decía «doc por día + tramos de 60 KB». Se cambió a franjas fijas porque con tramos el lector no puede saber qué se borró; se pasó de 4 h a 2 h porque con 4 h una franja llegaba a 141 KB.
+**F2 (ventas):** las ventas de hoy (UTC) van en tramos propios de ≤ 100 KB y los tramos cerrados siguen de 400 KB. No se bajó todo a 80 KB como decía el plan: serían ~170 filas por mes y por caja, y el barrido de 90 s del supervisor baja los metadatos de todas en cada pasada. Al cambiar de día las ventas de ayer se reacomodan una vez y los tramos sobrantes se **borran** (no se tumban con `[]`, que en el lector vaciaría el mes entero).
+**Compatibilidad:** un supervisor sin actualizar deja de recibir el audit log nuevo (rechaza las franjas por contrato) hasta que se actualice; ventas y lo demás siguen igual.
+**Verificación:** `auditSyncFamily.test.js` 10/10, `cloudSyncAuditProjection.test.js` 6/6 (reescrita al contrato nuevo), `cloudSyncSalesOpenTail.test.js` 3/3, pruebas de tramos de ventas existentes 23/23 + 1 omitida; suites de sync/supervisor/monitor/backup 1026/1027 (la que falló era por finales de línea mezclados en una edición intermedia; corrida sola pasa 9/9). No verificado aún en navegador ni en producción.
+
+## 2026-11-14 — Egress F5: fuera los canales de Realtime que nunca recibían nada
+
+**Plan:** `docs/plans/2026-11-14-plan-fixeo-egress-realtime.md`, fase F5 (decisión D4).
+**Problema:** tres canales de Realtime escuchaban tablas que no están en la publicación `supabase_realtime` (como tener un radio sintonizado en una emisora que no transmite): `licenses` en `useLicenseMonitoring.js` y `DevicesManager.jsx`, y `backup_requests` en `useAutoBackup.js`. Ocupaban conexiones sin recibir nada, y el respaldo pedido desde el supervisor esperaba al polling de 5 min aunque el código decía que Realtime era el camino principal.
+**Cambios:** migración `supabase/migrations/20261114_realtime_backup_requests.sql` (agrega `backup_requests` a la publicación; idempotente; 43 filas en total, sin egress apreciable). `licenses` no se agrega a propósito, porque el heartbeat la actualiza cada 3 min y cada cambio sería egress: se quitaron sus dos canales. La licencia se verifica en cada heartbeat y al volver a la pestaña; la lista de equipos se refresca al volver a la pestaña.
+**Hallazgo de seguridad (no corregido aquí):** `backup_requests` tiene políticas de lectura y borrado `USING (true)` para `anon`: cualquiera con la clave pública puede ver y borrar solicitudes de cualquier equipo. Queda propuesto aparte.
+**Verificación:** `tests/realtimePublicationGuardrails.test.js` 3/3 (toda tabla escuchada en el código está en la publicación según los `.sql` del repo). **La migración no está aplicada en producción**: falta el visto bueno del dueño.
+
+## 2026-11-14 — Egress F3 y F4: el supervisor recibe avisos, no documentos, y suelta Realtime con la pestaña oculta
+
+**Plan:** `docs/plans/2026-11-14-plan-fixeo-egress-realtime.md`, fases F3 y F4 (un solo commit porque las dos tocan `useMonitorSync.js`).
+**Problema:** Realtime reenviaba la fila completa de `sync_documents` (hasta ~400 KB) a cada pestaña o navegador del supervisor, en cada escritura, aunque la pestaña estuviera oculta. Es como mandar el paquete entero a cada casa en vez de una nota de «llegó tu paquete, pásalo a buscar cuando estés».
+**F4:** migración `supabase/migrations/20261114_sync_document_events.sql`: tabla `sync_document_events` (una fila por doc con equipo, fecha y tamaño, ~150 B) que llena un trigger en cada escritura de `sync_documents`, con RLS igual a la del supervisor y agregada a la publicación. `useMonitorSync.js` escucha solo esos avisos, junta la ráfaga 2 s y baja por PostgREST solo los docs avisados (sin consulta de metadatos). Con la pestaña oculta no baja nada; baja una vez al volver (decisión D3). Si la tabla no existe, sigue en el modo anterior. `sync_documents` sigue en la publicación para los supervisores sin actualizar.
+**F3:** una pestaña oculta más de 2 min suelta su conexión de Realtime (sin marcar error ni reintentar) y al volver hace pull incremental y abre canal nuevo. El panel de diagnóstico muestra el modo («Avisos» o «Filas completas») y las caídas del canal con su motivo.
+**Cambios de diseño respecto al plan:** sin pestaña «líder» (riesgo de vistas que no refrescan) y sin despliegue en dos pasos (no hace falta, porque el supervisor nuevo deja de escuchar `sync_documents`).
+**Pruebas:** `monitorSyncNotifyEvents.test.jsx` 6/6 (nueva: ráfaga → una descarga, fuera de contrato ignorado, oculta → nada hasta volver, suelta a los 2 min y se reconecta, modo anterior sin la tabla). `supervisorSyncEcho.test.jsx` sigue probando el modo de filas completas (su Supabase falso dice que la tabla de avisos no existe). Diagnóstico 22/22, guardias de publicación 4/4, suites de monitor 48/48.
+**Pendiente:** aplicar la migración en producción **antes** de publicar la app (falta el visto bueno del dueño) y verificar en navegador.
+
+## 2026-11-14 — Egress F6: alarma diaria en GitHub e informe semanal de Claude
+
+**Plan:** `docs/plans/2026-11-14-plan-fixeo-egress-realtime.md`, fase F6 (decisión del dueño: dos avisos con papeles distintos).
+**Alarma (`.github/workflows/egress-alarm.yml`, nuevo):** todos los días a las 11:00 UTC (7:00 en Venezuela) corre `scripts/egress-report.mjs --check --redact`. Si todo está bien no hace nada; si se pasa un límite, abre un issue con la etiqueta `egress-alarm` (GitHub manda el correo) o comenta el que ya esté abierto. Es como una alarma de humo: solo suena si hay humo.
+**Límites:** subida diaria > 40 MB, POST > 150 KB, doc vivo > 450 KB, más de 150 conexiones de Realtime al día. El de doc se subió de 200 a 450 KB porque los tramos cerrados de ventas miden 400 KB por diseño y casi nunca se reescriben.
+**Repo público:** el reporte del issue va con `--redact` (nuevo), sin identificadores de equipos.
+**Informe semanal:** tarea programada de Claude «Informe semanal de egress (Supabase)», lunes 8:00, solo lectura. Compara la semana contra la línea base y las metas del plan.
+**Falta (solo el dueño):** guardar el secreto `SUPABASE_ACCESS_TOKEN` en GitHub (Settings → Secrets and variables → Actions). GitHub solo ejecuta los horarios del workflow que está en `main`; hasta que llegue a `main`, corre solo a mano.
+**Verificación:** `egressReportCore.test.js` 7/7; YAML válido; corrida local de `--check --redact` contra producción: sale con código 1 (todavía no hay nada publicado) y el reporte no tiene ningún `PDA-V2`. El workflow no se corrió en GitHub (falta el secreto).
+
+## 2026-11-14 — fix(docs-check): el verificador aceptaba «Resuelto (mitigado)» en la ficha pero no en la tabla
+
+**Problema:** `docs-check` avisaba «ERR-012: falta en la tabla resumen de ERRORES.md», pero la fila sí estaba. La regla de la tabla solo aceptaba una palabra sola en la columna de estado, y ERR-012 dice «Resuelto (mitigado)». La de la sección sí lo aceptaba porque lee solo la primera palabra. Además, como no veía la fila, tampoco comparaba su estado con el de la sección.
+**Cambio:** `scripts/docs-check.mjs` acepta una nota entre paréntesis después del estado en la tabla y compara solo la primera palabra, igual que con la sección. Se conserva el «mitigado», que es honesto: el cajero todavía puede elegir «Todo en $» con centavos (el dueño decidió avisar, no bloquear).
+**Verificación:** prueba nueva en `tests/docsCheck.test.js` (acepta la nota y sigue detectando un estado distinto aunque lleve nota): 21/21. `docs-check` sobre el repo ya no muestra ERR-012. El arreglo de ERR-012 sigue en pie: `tests/cobroSugerido.test.js` 11/11.
+
+## 2026-11-15 — Egress: migraciones aplicadas en producción
+
+**Qué:** con el visto bueno del dueño se aplicaron `supabase/migrations/20261114_realtime_backup_requests.sql` y `supabase/migrations/20261114_sync_document_events.sql` (Management API, `database/query`).
+**Antes:** la publicación tenía `device_pairings`, `supervisor_commands` y `sync_documents`; 481 docs.
+**Después:** se suman `backup_requests` y `sync_document_events`. 481 avisos (uno por doc), 0 desfasados, trigger `sync_documents_emit_event` activo, RLS activa, `authenticated` solo SELECT, `anon` sin permisos.
+**Prueba del trigger:** un bloque `DO` movió 1 s la fecha del doc más reciente, leyó el aviso (coincidía) y lanzó un error a propósito para deshacer todo. La fecha real quedó igual. Como se deshizo, Realtime no repartió nada.
+**Efecto hoy:** ninguno visible todavía. Las cajas y supervisores publicados no usan la tabla de avisos; el ahorro empieza al publicar la rama `fix/egress-realtime`.
+**Dato al margen:** los avisos más pesados son `bodega_products_v1` viejos (hasta 583 KB, de julio y octubre) de equipos que ya no escriben. No generan egress mientras nadie los reescriba.

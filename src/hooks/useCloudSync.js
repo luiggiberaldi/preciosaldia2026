@@ -20,6 +20,17 @@ import {
     mergePurchasesSyncDoc,
 } from '../utils/purchasesSyncFamily';
 import {
+    AUDIT_SYNC_BASE_KEY,
+    AUDIT_SYNC_MAX_ENTRIES,
+    AUDIT_SYNC_TRACKING_KEY,
+    buildAuditSyncPlan,
+    isAuditSlotInWindow,
+    isAuditSyncDocId,
+    mergeAuditSyncDoc,
+    parseAuditSyncDocId,
+    projectAuditSyncPayload,
+} from '../utils/auditSyncFamily';
+import {
     buildSyncEnvelope,
     getSyncMetadataKey,
     getSupervisorRecoveryIntervalMs,
@@ -99,6 +110,17 @@ export const SALES_SYNC_BASE_KEY = 'bodega_sales_v1';
 export const SALES_SYNC_MAX_DOC_BYTES = SYNC_DOC_BUDGET_BYTES;
 // Presupuesto de empaquetado por shard (deja margen bajo la cota dura).
 export const SALES_SYNC_PACK_BUDGET_BYTES = 400_000;
+// Plan de egress Realtime F2: las ventas de HOY (UTC) van en tramos aparte de
+// ~100 KB. Antes cada venta reescribía el último tramo del mes, que crecía hasta
+// 400 KB (≈ 200 KB por venta en promedio, y Realtime lo reenviaba entero a cada
+// supervisor). Los tramos cerrados siguen en 400 KB, así que el número de filas
+// casi no cambia; al cambiar de día las ventas de ayer se reacomodan una vez en
+// los tramos cerrados y los tramos sobrantes se borran de la nube.
+export const SALES_SYNC_OPEN_PACK_BUDGET_BYTES = 100_000;
+
+function startOfUtcDayIso(now) {
+    return new Date(now - (now % 86_400_000)).toISOString();
+}
 // Documentos publicados alguna vez por este equipo: el vaciado total debe
 // tumbearlos a todos para que ningún lector conserve ventas fantasma.
 export const SALES_SYNC_TRACKING_KEY = 'pda_sales_sync_docs_v1';
@@ -186,7 +208,8 @@ function salesRecordBytes(record, cache) {
  * exacto de tests y respaldos); con él, los registros ya vistos no se vuelven
  * a serializar. Los valores son idénticos cuando las entradas están frescas.
  */
-export function buildSalesSyncPlan(sales, { recordBytes } = {}) {
+export function buildSalesSyncPlan(sales, { recordBytes, now = Date.now() } = {}) {
+    const openFrom = startOfUtcDayIso(now);
     const list = Array.isArray(sales) ? sales : [];
     const byPeriod = new Map();
     for (const record of list) {
@@ -201,6 +224,7 @@ export function buildSalesSyncPlan(sales, { recordBytes } = {}) {
         let shard = [];
         let shardBytes = 0;
         let shardIndex = 0;
+        let shardOpen = false;
         const flush = () => {
             if (shard.length === 0) return;
             shardIndex += 1;
@@ -215,12 +239,18 @@ export function buildSalesSyncPlan(sales, { recordBytes } = {}) {
             });
             shard = [];
             shardBytes = 0;
+            shardOpen = false;
         };
         for (const record of sorted) {
             const bytes = salesRecordBytes(record, recordBytes);
-            if (shard.length > 0 && shardBytes + bytes > SALES_SYNC_PACK_BUDGET_BYTES) flush();
+            // Orden canónico ascendente: una vez que empiezan las ventas de hoy,
+            // todas las siguientes también lo son. La primera abre tramo nuevo.
+            const isOpen = (record?.timestamp || record?.fecha || '') >= openFrom;
+            const budget = isOpen ? SALES_SYNC_OPEN_PACK_BUDGET_BYTES : SALES_SYNC_PACK_BUDGET_BYTES;
+            if (shard.length > 0 && (shardBytes + bytes > budget || (isOpen && !shardOpen))) flush();
             shard.push(record);
             shardBytes += bytes;
+            if (isOpen) shardOpen = true;
         }
         flush();
     }
@@ -273,6 +303,42 @@ function readSalesSyncTrackedIds() {
 function rememberSalesSyncTrackedIds(ids) {
     const merged = new Set([...readSalesSyncTrackedIds(), ...ids.filter((id) => isSalesSyncDocId(id))]);
     localStorage.setItem(SALES_SYNC_TRACKING_KEY, JSON.stringify([...merged]));
+}
+
+function forgetSalesSyncTrackedIds(ids) {
+    const drop = new Set(ids);
+    localStorage.setItem(SALES_SYNC_TRACKING_KEY, JSON.stringify(readSalesSyncTrackedIds().filter((id) => !drop.has(id))));
+}
+
+const SALES_STALE_CLEANUP_TRY_KEY = 'pda_sales_stale_cleanup_try_v1';
+const SALES_STALE_CLEANUP_RETRY_MS = 60 * 60 * 1000;
+
+/**
+ * Egress F2: tramos de un periodo publicado que ya no están en el plan (al
+ * cambiar de día los tramos de 100 KB de ayer se funden en los de 400 KB). NO
+ * se tumban con `[]` —en un doc de periodo eso vacía el periodo entero en el
+ * lector— sino que se borran; su contenido ya está en los otros tramos y el
+ * lector une por id, así que la copia del supervisor no pierde nada.
+ */
+async function deleteStaleSalesShards(stampDeviceId, plan) {
+    const plannedIds = new Set(plan.map((slice) => slice.docId));
+    const plannedPeriods = new Set(plan.map((slice) => slice.period));
+    const stale = readSalesSyncTrackedIds().filter((docId) => {
+        if (plannedIds.has(docId)) return false;
+        const parsed = parseSalesSyncDocId(docId);
+        return parsed !== null && plannedPeriods.has(parsed.period);
+    });
+    if (stale.length === 0) return [];
+    const lastTry = Date.parse(localStorage.getItem(SALES_STALE_CLEANUP_TRY_KEY) || '') || 0;
+    if (lastTry && Date.now() - lastTry < SALES_STALE_CLEANUP_RETRY_MS) return [];
+    localStorage.setItem(SALES_STALE_CLEANUP_TRY_KEY, new Date().toISOString());
+    const gone = await deleteOwnSyncDocs(stampDeviceId, stale);
+    for (const docId of gone) {
+        localStorage.removeItem(LAST_PUSH_HASH_PREFIX + docId);
+        localStorage.removeItem(getSyncMetadataKey(docId));
+    }
+    forgetSalesSyncTrackedIds(gone);
+    return gone;
 }
 
 // ─── Fase 5: familia bodega_products_v1 por buckets de hash ─────────────────
@@ -730,11 +796,31 @@ let isCloudSyncActive = false;   // Evita empujar a la nube si el dispositivo no
 const originalSetItem = localStorage.setItem.bind(localStorage);
 
 // Keys pesadas (arrays grandes con imágenes) usan debounce más largo para agrupar ediciones
-const HEAVY_KEYS = ['bodega_products_v1', 'bodega_sales_v1', 'bodega_customers_v1', 'bodega_customer_ledger_v1', 'bodega_supplier_invoices_v1', 'abasto_audit_log_v1'];
+const HEAVY_KEYS = ['bodega_products_v1', 'bodega_sales_v1', 'bodega_customers_v1', 'bodega_customer_ledger_v1', 'bodega_supplier_invoices_v1'];
 const DEBOUNCE_LIGHT_MS = 300;
 const DEBOUNCE_HEAVY_MS = 3000;
+// Plan de egress Realtime F1 (decisión D2): el audit log no es urgente para el
+// supervisor. Se publica como mucho una vez por minuto con el valor MÁS NUEVO
+// (ventana fija, no debounce que se reinicia: con ventas seguidas un debounce
+// de 60 s se posponía para siempre).
+export const AUDIT_SYNC_THROTTLE_MS = 60_000;
+const THROTTLED_KEYS = { [AUDIT_SYNC_BASE_KEY]: AUDIT_SYNC_THROTTLE_MS };
 
 function _debouncePush(key, value) {
+    const throttleMs = THROTTLED_KEYS[key];
+    if (throttleMs) {
+        if (pendingPush[key]) {
+            pendingPush[key].value = value;
+            return;
+        }
+        const entry = { capturedAt: new Date().toISOString(), value };
+        entry.timer = setTimeout(() => {
+            delete pendingPush[key];
+            pushCloudSync(key, entry.value, false, false, null, entry.capturedAt).catch(() => {});
+        }, throttleMs);
+        pendingPush[key] = entry;
+        return;
+    }
     if (pendingPush[key]) clearTimeout(pendingPush[key].timer);
     const delay = HEAVY_KEYS.includes(key) ? DEBOUNCE_HEAVY_MS : DEBOUNCE_LIGHT_MS;
     // Fase 1 del plan de stock delta: `capturedAt` es el instante en que el
@@ -763,18 +849,16 @@ function stockAsOfFor(key, capturedAt) {
 // ─── Proyección de sincronización del audit log ─────────────────────────────
 // La copia LOCAL de `abasto_audit_log_v1` conserva MAX_ENTRIES (15.000) y la
 // retención fiscal de 5 años de auditService; la copia SINCRONIZADA solo
-// publica las entradas más recientes (el log está ordenado «más reciente
-// primero», así que slice(0, N) son las N frescas). Medido en producción el
-// 2026-10-24: 5.743 entradas ≈ 1,78 MB — sobre el límite de ~1 MB de Realtime
-// (eventos 413) y el techo de 500 KB de syncDocBudget. Con 1.200 la copia
-// publicada queda en ~370 KB. El historial completo viaja en los respaldos
-// (cloud_backups / backup local), que no pasan por sync_documents.
-export const AUDIT_SYNC_MAX_ENTRIES = 1_200;
+// publica la ventana de los últimos días (utils/auditSyncFamily), partida en
+// franjas de 2 h. Antes se publicaban las 1.200 más recientes en UN doc de
+// ~407 KB que se reescribía en cada venta: el 81 % de lo subido el 13-nov-2026.
+// El historial completo viaja en los respaldos, que no pasan por sync_documents.
+export { AUDIT_SYNC_MAX_ENTRIES };
 
 /** Proyección por clave del payload PUBLICADO (no del valor local). */
-export function projectSyncPayload(key, value) {
-    if (key === 'abasto_audit_log_v1' && Array.isArray(value)) {
-        return value.slice(0, AUDIT_SYNC_MAX_ENTRIES);
+export function projectSyncPayload(key, value, { now = Date.now() } = {}) {
+    if (key === AUDIT_SYNC_BASE_KEY && Array.isArray(value)) {
+        return projectAuditSyncPayload(value, { now });
     }
     return value;
 }
@@ -825,6 +909,11 @@ export const pushCloudSync = async (key, value, forceUnconditional = false, allo
     // Compras de mercancía: una compra nueva solo reescribe SU mes.
     if (key === PURCHASES_SYNC_BASE_KEY) {
         return pushPurchasesFamilySync(value, { stampDeviceId, hashKey, currentHash });
+    }
+
+    // Plan de egress Realtime F1: el audit log se publica por franjas de 2 h.
+    if (key === AUDIT_SYNC_BASE_KEY) {
+        return pushAuditFamilySync(syncValue, { stampDeviceId, hashKey, currentHash });
     }
 
     const result = await upsertSyncDocument(stampDeviceId, key, syncValue, { stockAsOf: stockAsOfFor(key, capturedAt) });
@@ -898,6 +987,7 @@ async function pushSalesFamilySync(value, { stampDeviceId, forceUnconditional, h
         published.push(slice.docId);
     }
     rememberSalesSyncTrackedIds(published);
+    await deleteStaleSalesShards(stampDeviceId, plan);
     localStorage.setItem(hashKey, currentHash);
     // Migración perezosa completada: una vez que los shards cubren el
     // historial, la fila legacy se retira (best-effort; nunca rompe el push).
@@ -1143,6 +1233,115 @@ async function pushPurchasesFamilySync(value, { stampDeviceId, hashKey, currentH
     return { ok: true, skipped: false, updatedAt, published };
 }
 
+// ─── Plan de egress Realtime F1: audit log por franjas de 2 h ───────────────
+function readAuditSyncTrackedIds() {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(AUDIT_SYNC_TRACKING_KEY) || '[]');
+        return Array.isArray(parsed) ? parsed.filter((id) => parseAuditSyncDocId(id) !== null) : [];
+    } catch {
+        return [];
+    }
+}
+
+function writeAuditSyncTrackedIds(ids) {
+    localStorage.setItem(AUDIT_SYNC_TRACKING_KEY, JSON.stringify([...new Set(ids)].sort()));
+}
+
+const AUDIT_CLEANUP_LAST_TRY_KEY = 'pda_audit_sync_cleanup_try_v1';
+const AUDIT_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Borra filas propias de `sync_documents` (política device_delete_own_sync_doc).
+ * Best-effort: devuelve los doc_id que ya no existen en la nube (borrados ahora
+ * o ausentes); nunca lanza.
+ */
+async function deleteOwnSyncDocs(stampDeviceId, docIds) {
+    if (!docIds.length) return [];
+    try {
+        const table = supabaseCloud?.from?.('sync_documents');
+        if (typeof table?.delete !== 'function') return [];
+        const { error } = await table.delete().eq('device_id', stampDeviceId).in('doc_id', docIds);
+        if (error) {
+            console.warn('[CloudSync] No se pudieron borrar docs viejos de sync_documents:', error.message || error);
+            return [];
+        }
+        // Confirmar la ausencia: un DELETE filtrado por RLS devuelve 0 sin error.
+        if (typeof table?.select !== 'function') return [];
+        const { data: remaining, error: readError } = await table
+            .select('doc_id').eq('device_id', stampDeviceId).in('doc_id', docIds);
+        if (readError || !Array.isArray(remaining)) return [];
+        const still = new Set(remaining.map((row) => row?.doc_id));
+        return docIds.filter((id) => !still.has(id));
+    } catch (error) {
+        console.warn('[CloudSync] No se pudieron borrar docs viejos de sync_documents:', error?.message || error);
+        return [];
+    }
+}
+
+/**
+ * Publica `abasto_audit_log_v1` por franjas de 2 h (utils/auditSyncFamily):
+ *  - solo las franjas de la ventana cuyo contenido cambió (hash por doc): en la
+ *    operación normal, solo la franja en curso;
+ *  - una franja publicada que se vació (borrado del log) se tumba con `[]`;
+ *  - una vez al día, best-effort: borra de la nube las franjas que salieron de
+ *    la ventana y el doc monolítico viejo (`abasto_audit_log_v1`).
+ */
+async function pushAuditFamilySync(syncValue, { stampDeviceId, hashKey, currentHash, now = Date.now() }) {
+    const list = Array.isArray(syncValue) ? syncValue : null;
+    if (!list) return { ok: false, skipped: false, error: 'Audit log inválido' };
+
+    const updatedAt = new Date().toISOString();
+    const plan = buildAuditSyncPlan(list, { now });
+    const plannedIds = new Set(plan.map((slice) => slice.docId));
+    const tracked = new Set(readAuditSyncTrackedIds());
+    const published = [];
+
+    for (const slice of plan) {
+        const sliceHash = quickHash(slice.records);
+        const sliceHashKey = LAST_PUSH_HASH_PREFIX + slice.docId;
+        if (localStorage.getItem(sliceHashKey) === sliceHash) continue;
+        const result = await upsertSyncDocument(stampDeviceId, slice.docId, slice.records);
+        if (!result.ok) return { ok: false, skipped: false, error: result.error, published };
+        localStorage.setItem(sliceHashKey, sliceHash);
+        if (result.updatedAt) localStorage.setItem(getSyncMetadataKey(slice.docId), result.updatedAt);
+        tracked.add(slice.docId);
+        published.push(slice.docId);
+    }
+
+    const emptyHash = quickHash([]);
+    const expired = [];
+    for (const docId of [...tracked]) {
+        if (plannedIds.has(docId)) continue;
+        const slot = parseAuditSyncDocId(docId);
+        if (!isAuditSlotInWindow(slot, now)) {
+            expired.push(docId);
+            continue;
+        }
+        const sliceHashKey = LAST_PUSH_HASH_PREFIX + docId;
+        if (localStorage.getItem(sliceHashKey) === emptyHash) continue;
+        const result = await upsertSyncDocument(stampDeviceId, docId, []);
+        if (!result.ok) return { ok: false, skipped: false, error: result.error, published };
+        localStorage.setItem(sliceHashKey, emptyHash);
+        if (result.updatedAt) localStorage.setItem(getSyncMetadataKey(docId), result.updatedAt);
+        published.push(docId);
+    }
+
+    const lastCleanup = Date.parse(localStorage.getItem(AUDIT_CLEANUP_LAST_TRY_KEY) || '') || 0;
+    if (!lastCleanup || now - lastCleanup >= AUDIT_CLEANUP_INTERVAL_MS) {
+        localStorage.setItem(AUDIT_CLEANUP_LAST_TRY_KEY, new Date(now).toISOString());
+        const gone = await deleteOwnSyncDocs(stampDeviceId, [AUDIT_SYNC_BASE_KEY, ...expired]);
+        for (const docId of gone) {
+            tracked.delete(docId);
+            localStorage.removeItem(LAST_PUSH_HASH_PREFIX + docId);
+            localStorage.removeItem(getSyncMetadataKey(docId));
+        }
+    }
+
+    writeAuditSyncTrackedIds([...tracked]);
+    localStorage.setItem(hashKey, currentHash);
+    return { ok: true, skipped: false, updatedAt, published };
+}
+
 async function upsertSyncDocument(stampDeviceId, docId, value, { stockAsOf = null } = {}) {
     const collectionType = LOCAL_KEYS.includes(docId) ? 'local' : 'store';
     const updatedAt = new Date().toISOString();
@@ -1356,10 +1555,12 @@ export async function _applyFromCloud(docId, collection, data) {
         const isProductsFamily = isProductsSyncDocId(docId);
         const isSupplierInvoicesFamily = isSupplierInvoicesSyncDocId(docId);
         const isPurchasesFamily = isPurchasesSyncDocId(docId);
+        const isAuditFamily = isAuditSyncDocId(docId);
         const contractKey = isSalesFamily ? SALES_SYNC_BASE_KEY
             : isProductsFamily ? PRODUCTS_SYNC_BASE_KEY
             : isSupplierInvoicesFamily ? SUPPLIER_INVOICES_SYNC_BASE_KEY
-            : isPurchasesFamily ? PURCHASES_SYNC_BASE_KEY : docId;
+            : isPurchasesFamily ? PURCHASES_SYNC_BASE_KEY
+            : isAuditFamily ? AUDIT_SYNC_BASE_KEY : docId;
 
         // Contrato común del supervisor: incluso el primary debe rechazar
         // documentos no allowlisted antes de aplicarlos localmente.
@@ -1445,6 +1646,14 @@ export async function _applyFromCloud(docId, collection, data) {
                     keepLocalNewerThan: envelope.updatedAt || null,
                 });
                 familyDocHashValue = payload;
+            } else if (isAuditFamily) {
+                // Egress F1: la caja es la autora de su audit log; lo remoto solo
+                // se une (nunca quita entradas locales ni recorta la retención
+                // fiscal). Las franjas y el legacy van a la clave local única.
+                writeKey = AUDIT_SYNC_BASE_KEY;
+                const localLog = await lf.getItem(AUDIT_SYNC_BASE_KEY);
+                payloadToStore = mergeAuditSyncDoc(localLog, docId, payload, { replaceSlot: false });
+                familyDocHashValue = payload;
             }
             await lf.setItem(writeKey, payloadToStore);
             if (docId === 'bodega_customer_ledger_v1') {
@@ -1469,6 +1678,8 @@ export async function _applyFromCloud(docId, collection, data) {
             : isSupplierInvoicesFamily ? SUPPLIER_INVOICES_SYNC_BASE_KEY
             : isPurchasesFamily ? PURCHASES_SYNC_BASE_KEY : null;
         localStorage.setItem(hashKey, quickHash(familyDocHashValue ?? payloadToStore));
+        // (Audit log: sin hash de clave base; el escritor compara la ventana
+        // proyectada y el diff real lo hace el hash por franja.)
         if (familyBaseKey) {
             localStorage.setItem(LAST_PUSH_HASH_PREFIX + familyBaseKey, quickHash(payloadToStore));
         }

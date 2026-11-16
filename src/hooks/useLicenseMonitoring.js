@@ -14,7 +14,6 @@ const PRODUCT_ID = 'bodega';
 export const MISSING_LICENSE_LIMIT = 3;
 
 // Module scope: cache subscriptions when multiple hooks are mounted in parallel
-const activeSubscriptions = new Map(); // deviceId -> { channel, count, callbacks: Set<function> }
 
 /**
  * Hook that handles heartbeat sending, license status verification,
@@ -187,65 +186,15 @@ export function useLicenseMonitoring({
         };
         document.addEventListener('visibilitychange', handleVisibility);
 
-        // Solo dispositivos con cuenta activa (permanent/monthly/demo) mantienen el
-        // socket `licenses_sync_` abierto — evita gastar cupo de conexiones Realtime
-        // en instalaciones sin licencia. Esas detectan una activación vía el heartbeat
-        // de arriba en vez de Realtime.
-        let subscribedToChannel = false;
-        if (isPremium) {
-            let subObj = activeSubscriptions.get(deviceId);
-            if (subObj) {
-                subObj.count++;
-                subObj.callbacks.add(verifyStatus);
-                subscribedToChannel = true;
-            } else {
-                const callbacks = new Set([verifyStatus]);
-                let subscription = null;
-                try {
-                    subscription = supabase
-                        .channel(`licenses_sync_${deviceId}`)
-                        .on('postgres_changes', {
-                            event: 'UPDATE',
-                            schema: 'public',
-                            table: 'licenses',
-                            filter: `device_id=eq.${deviceId}`,
-                        }, () => {
-                            const current = activeSubscriptions.get(deviceId);
-                            if (current) {
-                                current.callbacks.forEach(cb => {
-                                    try { cb(); } catch (err) { }
-                                });
-                            }
-                        })
-                        .subscribe();
-                    subObj = { channel: subscription, count: 1, callbacks };
-                    activeSubscriptions.set(deviceId, subObj);
-                    subscribedToChannel = true;
-                } catch (e) {
-                    if (import.meta.env?.DEV) {
-                        console.warn('[LicenseMonitoring] suscripción Realtime falló:', e?.message ?? e);
-                    }
-                }
-            }
-        }
+        // Egress F5: ya no hay canal Realtime `licenses_sync_`. La tabla
+        // `licenses` nunca estuvo en la publicación `supabase_realtime` (el canal
+        // no recibía nada) y no se agrega a propósito: el heartbeat la actualiza
+        // seguido y cada cambio sería egress. El estado se verifica en cada
+        // heartbeat (cada 3 min) y al volver a la pestaña.
 
         return () => {
             clearInterval(heartbeatInterval);
             document.removeEventListener('visibilitychange', handleVisibility);
-
-            if (subscribedToChannel) {
-                const currentSub = activeSubscriptions.get(deviceId);
-                if (currentSub) {
-                    currentSub.callbacks.delete(verifyStatus);
-                    currentSub.count--;
-                    if (currentSub.count <= 0) {
-                        activeSubscriptions.delete(deviceId);
-                        if (currentSub.channel) {
-                            supabase.removeChannel(currentSub.channel).catch(() => {});
-                        }
-                    }
-                }
-            }
         };
     }, [isPremium, isDemo, deviceId]);
 }

@@ -42,6 +42,11 @@ import {
     isPurchasesSyncDocId,
     mergePurchasesSyncDoc,
 } from '../utils/purchasesSyncFamily';
+import {
+    AUDIT_SYNC_BASE_KEY,
+    isAuditSyncDocId,
+    mergeAuditSyncDoc,
+} from '../utils/auditSyncFamily';
 
 // Plan de stock delta: el catálogo del monitor es una VISTA derivada — el
 // baseline del último doc de productos (con su `stockAsOf`) más los efectos de
@@ -74,6 +79,58 @@ const SUBSCRIBE_TIMEOUT_MS = 8000;
 // Un solo pull de respaldo cubre una ráfaga de eventos 413 (la caja empuja
 // productos y ventas juntos) sin montar una tormenta de selects.
 const OVERSIZE_PULL_THROTTLE_MS = 3000;
+
+// Plan de egress Realtime F4: Realtime solo AVISA qué doc cambió (tabla
+// `sync_document_events`, ~150 B por aviso) y el contenido se baja por
+// PostgREST, agrupando la ráfaga en una sola descarga.
+export const SYNC_NOTIFY_COALESCE_MS = 2_000;
+// Plan de egress Realtime F3: una pestaña oculta más de 2 min suelta su
+// conexión de Realtime (no recibe nada que nadie mira) y se reconecta con un
+// pull incremental al volver.
+export const MONITOR_HIDDEN_RELEASE_MS = 120_000;
+
+/** Docs que el supervisor puede bajar (allowlist + familias por prefijo, SEC-002). */
+export function isAllowedSupervisorDocId(docId) {
+    return SUPERVISOR_SYNC_KEYS.includes(docId)
+        || isSalesSyncDocId(docId)
+        || isProductsSyncDocId(docId)
+        || isSupplierInvoicesSyncDocId(docId)
+        || isPurchasesSyncDocId(docId)
+        || isAuditSyncDocId(docId);
+}
+
+// ¿Existe la tabla de avisos en el servidor? Se averigua una vez por sesión:
+// si la migración no está aplicada, el supervisor sigue en el modo anterior
+// (escucha `sync_documents` completo) en vez de quedar ciego.
+let syncEventsSupport = null;
+
+/** Solo tests: olvidar la detección. */
+export function resetSyncEventsSupportForTests() {
+    syncEventsSupport = null;
+}
+
+async function detectSyncEventsSupport(deviceId) {
+    if (syncEventsSupport !== null) return syncEventsSupport;
+    try {
+        const query = supabaseCloud?.from?.('sync_document_events');
+        if (typeof query?.select !== 'function') return false;
+        const { error } = await query
+            .select('doc_id')
+            .eq('device_id', deviceId)
+            .limit(1);
+        // Error de red o de sesión: no concluir nada todavía (se reintenta).
+        if (error) {
+            const missing = error.code === '42P01' || error.code === 'PGRST205'
+                || /sync_document_events/.test(error.message || '');
+            if (missing) syncEventsSupport = false;
+            return false;
+        }
+        syncEventsSupport = true;
+        return true;
+    } catch {
+        return false;
+    }
+}
 
 // Marca del último pull completo (la política vive en shouldPullFullSync).
 const readLastFullSyncAt = () => {
@@ -118,6 +175,11 @@ export function useMonitorSync(pairedDeviceId) {
     const remoteRevocationHandledRef = useRef(false);
     const oversizePullTimerRef = useRef(null);
     const pullDocumentsRef = useRef(null);
+    const pendingNotifiedRef = useRef(new Set());
+    const pendingNotifiedMetaRef = useRef(new Map());
+    const notifyFlushTimerRef = useRef(null);
+    const hiddenReleaseTimerRef = useRef(null);
+    const hiddenReleasedRef = useRef(false);
 
     const updateLastSync = (value) => {
         lastSyncRef.current = value;
@@ -150,6 +212,8 @@ export function useMonitorSync(pairedDeviceId) {
 
     const scheduleReconnect = (lifecycleId = lifecycleRef.current) => {
         if (!isActiveLifecycle(lifecycleId) || !pairedDeviceId || reconnectTimerRef.current) return;
+        // F3: la pestaña soltó el canal a propósito; se reconecta al volver.
+        if (hiddenReleasedRef.current) return;
         const delay = getMonitorReconnectDelayMs(reconnectAttemptRef.current);
         reconnectAttemptRef.current += 1;
         reconnectTimerRef.current = setTimeout(() => {
@@ -177,10 +241,12 @@ export function useMonitorSync(pairedDeviceId) {
         const isProductsFamily = isProductsSyncDocId(docId);
         const isSupplierInvoicesFamily = isSupplierInvoicesSyncDocId(docId);
         const isPurchasesFamily = isPurchasesSyncDocId(docId);
+        const isAuditFamily = isAuditSyncDocId(docId);
         const contractKey = isSalesFamily ? SALES_SYNC_BASE_KEY
             : isProductsFamily ? PRODUCTS_SYNC_BASE_KEY
             : isSupplierInvoicesFamily ? SUPPLIER_INVOICES_SYNC_BASE_KEY
-            : isPurchasesFamily ? PURCHASES_SYNC_BASE_KEY : docId;
+            : isPurchasesFamily ? PURCHASES_SYNC_BASE_KEY
+            : isAuditFamily ? AUDIT_SYNC_BASE_KEY : docId;
         const validation = validateSupervisorSyncDocument(contractKey, envelope.payload);
         if (!validation.valid) {
             return { applied: false, rejected: true, error: validation.error };
@@ -256,6 +322,16 @@ export function useMonitorSync(pairedDeviceId) {
                     writeKey = PURCHASES_SYNC_BASE_KEY;
                     const localPurchases = await localforage.getItem(PURCHASES_SYNC_BASE_KEY);
                     await localforage.setItem(writeKey, mergePurchasesSyncDoc(localPurchases, docId, envelope.payload));
+                } else if (isAuditFamily) {
+                    // Egress F1: franjas de 2 h del audit log. Cada franja
+                    // reemplaza la suya (`[]` la vacía); el legacy se une. La
+                    // copia del supervisor se recorta a la ventana publicada.
+                    writeKey = AUDIT_SYNC_BASE_KEY;
+                    const localLog = await localforage.getItem(AUDIT_SYNC_BASE_KEY);
+                    await localforage.setItem(writeKey, mergeAuditSyncDoc(localLog, docId, envelope.payload, {
+                        replaceSlot: true,
+                        trimToWindow: true,
+                    }));
                 } else {
                     await localforage.setItem(docId, envelope.payload);
                 }
@@ -349,6 +425,9 @@ export function useMonitorSync(pairedDeviceId) {
         const subscriptionPromise = (async () => {
             await removeInFlightRef.current;
             if (!isActiveLifecycle(lifecycleId)) return { ok: false, error: 'Ciclo de sincronización obsoleto' };
+            const notifyMode = await detectSyncEventsSupport(pairedDeviceId);
+            if (!isActiveLifecycle(lifecycleId)) return { ok: false, error: 'Ciclo de sincronización obsoleto' };
+            recordDiagnostics({ type: 'realtime_mode', mode: notifyMode ? 'notify' : 'rows', at: new Date().toISOString() });
 
             return new Promise((resolve) => {
                 let settled = false;
@@ -369,8 +448,19 @@ export function useMonitorSync(pairedDeviceId) {
                 }, SUBSCRIBE_TIMEOUT_MS);
 
                 const channel = supabaseCloud
-                    .channel(buildSupervisorRealtimeChannelName(pairedDeviceId, lifecycleId))
-                    .on('postgres_changes', {
+                    .channel(buildSupervisorRealtimeChannelName(pairedDeviceId, lifecycleId));
+                if (notifyMode) {
+                    // F4: solo avisos livianos; el contenido se baja agrupado.
+                    channel.on('postgres_changes', {
+                        event: '*',
+                        schema: 'public',
+                        table: 'sync_document_events',
+                        filter: `device_id=eq.${pairedDeviceId}`,
+                    }, (realtimePayload) => {
+                        if (!isActiveLifecycle(lifecycleId)) return;
+                        queueNotifiedDoc(realtimePayload?.new, lifecycleId);
+                    });
+                } else channel.on('postgres_changes', {
                         event: '*',
                         schema: 'public',
                         table: 'sync_documents',
@@ -433,7 +523,8 @@ export function useMonitorSync(pairedDeviceId) {
                         } finally {
                             pendingApplicationsRef.current.delete(application);
                         }
-                    })
+                    });
+                channel
                     .on('postgres_changes', {
                         event: '*',
                         schema: 'public',
@@ -455,7 +546,13 @@ export function useMonitorSync(pairedDeviceId) {
                             setSyncError(null);
                             finish({ ok: true, error: null });
                         } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                            recordDiagnostics({ type: 'realtime_closed', status, released: hiddenReleasedRef.current, at: new Date().toISOString() });
                             void removeChannel(channel);
+                            // F3: cierre pedido por la pestaña oculta; no es una falla.
+                            if (hiddenReleasedRef.current) {
+                                finish({ ok: false, error: 'Canal suelto por pestaña oculta' });
+                                return;
+                            }
                             setIsConnected(false);
                             setSyncState(lastSyncRef.current ? SUPERVISOR_SYNC_STATES.DEGRADED : SUPERVISOR_SYNC_STATES.ERROR);
                             finish({ ok: false, error: `Canal Realtime: ${status}` });
@@ -473,7 +570,7 @@ export function useMonitorSync(pairedDeviceId) {
         });
     };
 
-    const pullDocuments = async (lifecycleId = lifecycleRef.current, { full = false, source = 'pull' } = {}) => {
+    const pullDocuments = async (lifecycleId = lifecycleRef.current, { full = false, source = 'pull', docIds = null } = {}) => {
         if (!isActiveLifecycle(lifecycleId)) return { ok: false, skipped: true, error: 'Ciclo de sincronización obsoleto' };
         if (recoveryPullInFlightRef.current) return recoveryPullInFlightRef.current;
 
@@ -488,22 +585,30 @@ export function useMonitorSync(pairedDeviceId) {
             // lado cliente (allowlist + familia de ventas) y el payload pesado
             // se pide solo para esos ids: ningún documento fuera de contrato se
             // descarga (SEC-002).
-            const { data: metadata, error: metadataError } = await supabaseCloud
-                .from('sync_documents')
-                .select('collection, doc_id, updated_at')
-                .eq('device_id', pairedDeviceId)
-                .in('collection', ['store', 'local']);
-            if (metadataError) throw metadataError;
+            // F4: con avisos, los ids ya llegaron por Realtime (y se validan
+            // abajo contra la allowlist); no hace falta la consulta de metadatos.
+            let allowedDocs = [];
+            if (!Array.isArray(docIds)) {
+                const { data: metadata, error: metadataError } = await supabaseCloud
+                    .from('sync_documents')
+                    .select('collection, doc_id, updated_at')
+                    .eq('device_id', pairedDeviceId)
+                    .in('collection', ['store', 'local']);
+                if (metadataError) throw metadataError;
 
-            const allowedDocs = (metadata || []).filter((doc) =>
+                allowedDocs = (metadata || []).filter((doc) =>
                 SUPERVISOR_SYNC_KEYS.includes(doc.doc_id)
                 || isSalesSyncDocId(doc.doc_id)
                 || isProductsSyncDocId(doc.doc_id)
                 || isSupplierInvoicesSyncDocId(doc.doc_id)
-                || isPurchasesSyncDocId(doc.doc_id));
+                || isPurchasesSyncDocId(doc.doc_id)
+                || isAuditSyncDocId(doc.doc_id));
+            }
 
             let targetDocIds;
-            if (full) {
+            if (Array.isArray(docIds)) {
+                targetDocIds = docIds.filter((docId) => isAllowedSupervisorDocId(docId));
+            } else if (full) {
                 targetDocIds = allowedDocs.map((doc) => doc.doc_id);
             } else {
                 // El payload pesado se solicita únicamente para documentos
@@ -564,10 +669,58 @@ export function useMonitorSync(pairedDeviceId) {
     // respaldo del 413 sin depender del orden de declaración.
     pullDocumentsRef.current = pullDocuments;
 
+    // ── F4: avisos de Realtime → una descarga agrupada ────────────────────────
+    const flushNotifiedDocs = async (lifecycleId) => {
+        if (notifyFlushTimerRef.current) clearTimeout(notifyFlushTimerRef.current);
+        notifyFlushTimerRef.current = null;
+        if (!isActiveLifecycle(lifecycleId) || pendingNotifiedRef.current.size === 0) return;
+        // F3/D3: con la pestaña oculta no se baja nada; se baja al volver.
+        if (document.visibilityState === 'hidden') return;
+        // Un pull en vuelo puede haber leído los metadatos antes del cambio:
+        // esperarlo antes de pedir los ids avisados.
+        if (recoveryPullInFlightRef.current) await recoveryPullInFlightRef.current.catch(() => {});
+        if (!isActiveLifecycle(lifecycleId)) return;
+        const docIds = [...pendingNotifiedRef.current].filter((docId) => {
+            const meta = pendingNotifiedMetaRef.current.get(docId);
+            return !meta || isNewerSyncDocument(meta, localStorage.getItem(getSyncMetadataKey(docId)));
+        });
+        pendingNotifiedRef.current.clear();
+        pendingNotifiedMetaRef.current.clear();
+        if (docIds.length === 0) return;
+        try {
+            await pullDocuments(lifecycleId, { source: 'notify', docIds });
+            if (isActiveLifecycle(lifecycleId)) setSyncError(null);
+        } catch (error) {
+            if (!isActiveLifecycle(lifecycleId)) return;
+            // Devolver los ids a la cola: el barrido o el próximo aviso reintenta.
+            for (const docId of docIds) pendingNotifiedRef.current.add(docId);
+            setSyncState(SUPERVISOR_SYNC_STATES.DEGRADED);
+            setSyncError(error?.message || 'No se pudo bajar el cambio remoto');
+        }
+    };
+
+    const queueNotifiedDoc = (event, lifecycleId) => {
+        const docId = event?.doc_id;
+        if (!docId || !isAllowedSupervisorDocId(docId)) return;
+        if (event?.collection && !['store', 'local'].includes(event.collection)) return;
+        const previous = localStorage.getItem(getSyncMetadataKey(docId));
+        if (event?.updated_at && !isNewerSyncDocument(event.updated_at, previous)) return;
+        pendingNotifiedRef.current.add(docId);
+        if (event?.updated_at) pendingNotifiedMetaRef.current.set(docId, event.updated_at);
+        recordDiagnostics({ type: 'notify', docId, updatedAt: event?.updated_at ?? null, bytes: event?.bytes ?? null, at: new Date().toISOString() });
+        if (notifyFlushTimerRef.current || document.visibilityState === 'hidden') return;
+        notifyFlushTimerRef.current = setTimeout(() => {
+            notifyFlushTimerRef.current = null;
+            void flushNotifiedDocs(lifecycleId);
+        }, SYNC_NOTIFY_COALESCE_MS);
+    };
+
     const startRecoveryTimer = (lifecycleId) => {
         if (recoveryTimerRef.current || !isActiveLifecycle(lifecycleId)) return;
         recoveryTimerRef.current = setInterval(() => {
             if (!isActiveLifecycle(lifecycleId)) return;
+            // F3: canal suelto por pestaña oculta → nada que recuperar hasta volver.
+            if (hiddenReleasedRef.current) return;
 
             // Mientras Realtime está conectado, cada pull sería una copia
             // completa innecesaria del inventario/ventas del dispositivo.
@@ -718,6 +871,10 @@ export function useMonitorSync(pairedDeviceId) {
         reconnectTimerRef.current = null;
         if (oversizePullTimerRef.current) clearTimeout(oversizePullTimerRef.current);
         oversizePullTimerRef.current = null;
+        if (notifyFlushTimerRef.current) clearTimeout(notifyFlushTimerRef.current);
+        notifyFlushTimerRef.current = null;
+        if (hiddenReleaseTimerRef.current) clearTimeout(hiddenReleaseTimerRef.current);
+        hiddenReleaseTimerRef.current = null;
         stopRecoveryTimer();
         stopSweepTimer();
 
@@ -735,6 +892,9 @@ export function useMonitorSync(pairedDeviceId) {
         disposedRef.current = false;
         syncSuspendedRef.current = false;
         remoteRevocationHandledRef.current = false;
+        hiddenReleasedRef.current = false;
+        pendingNotifiedRef.current.clear();
+        pendingNotifiedMetaRef.current.clear();
         const lifecycleId = lifecycleRef.current + 1;
         lifecycleRef.current = lifecycleId;
         reconnectAttemptRef.current = 0;
@@ -760,7 +920,35 @@ export function useMonitorSync(pairedDeviceId) {
             setSyncError('Sin conexión a internet');
         };
         const handleVisibilityChange = () => {
-            if (document.visibilityState !== 'visible') return;
+            if (document.visibilityState === 'hidden') {
+                // F3: si sigue oculta 2 min, soltar la conexión de Realtime.
+                if (!hiddenReleaseTimerRef.current && !hiddenReleasedRef.current) {
+                    hiddenReleaseTimerRef.current = setTimeout(() => {
+                        hiddenReleaseTimerRef.current = null;
+                        if (!isActiveLifecycle(lifecycleId) || document.visibilityState !== 'hidden') return;
+                        hiddenReleasedRef.current = true;
+                        if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+                        reconnectTimerRef.current = null;
+                        recordDiagnostics({ type: 'hidden_release', at: new Date().toISOString() });
+                        void clearSubscription();
+                    }, MONITOR_HIDDEN_RELEASE_MS);
+                }
+                return;
+            }
+            if (hiddenReleaseTimerRef.current) clearTimeout(hiddenReleaseTimerRef.current);
+            hiddenReleaseTimerRef.current = null;
+            if (hiddenReleasedRef.current) {
+                // Volver: pull incremental + canal nuevo (initMonitor hace ambos).
+                hiddenReleasedRef.current = false;
+                reconnectAttemptRef.current = 0;
+                pendingNotifiedRef.current.clear();
+                pendingNotifiedMetaRef.current.clear();
+                recordDiagnostics({ type: 'hidden_resume', at: new Date().toISOString() });
+                void initMonitor(lifecycleId);
+                return;
+            }
+            // Avisos acumulados con la pestaña oculta: una sola descarga.
+            void flushNotifiedDocs(lifecycleId);
             // Los eventos perdidos mientras la pestaña descansó no se reenvían:
             // al volver la vista se barre al instante (mismo barrido conectado).
             runConnectedSweep(lifecycleId);
@@ -781,6 +969,10 @@ export function useMonitorSync(pairedDeviceId) {
             reconnectTimerRef.current = null;
             if (oversizePullTimerRef.current) clearTimeout(oversizePullTimerRef.current);
             oversizePullTimerRef.current = null;
+            if (notifyFlushTimerRef.current) clearTimeout(notifyFlushTimerRef.current);
+            notifyFlushTimerRef.current = null;
+            if (hiddenReleaseTimerRef.current) clearTimeout(hiddenReleaseTimerRef.current);
+            hiddenReleaseTimerRef.current = null;
             stopRecoveryTimer();
             stopSweepTimer();
             documentQueues.clear();

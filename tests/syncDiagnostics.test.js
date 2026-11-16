@@ -18,6 +18,29 @@ describe('updateSyncDiagnostics', () => {
             lastOversizeAt: null,
             lastOversizePullAt: null,
             lastPull: null,
+            realtimeMode: null,
+            notifyEvents: 0,
+            realtimeCloses: 0,
+            lastRealtimeClose: null,
+            hiddenReleases: 0,
+        });
+    });
+
+    it('egress F3/F4: modo de Realtime, avisos, caídas del canal y pestaña oculta', () => {
+        let state = createSyncDiagnosticsState();
+        state = updateSyncDiagnostics(state, { type: 'realtime_mode', mode: 'notify' });
+        state = updateSyncDiagnostics(state, { type: 'notify', docId: 'x' });
+        state = updateSyncDiagnostics(state, { type: 'notify', docId: 'y' });
+        state = updateSyncDiagnostics(state, { type: 'realtime_closed', status: 'TIMED_OUT', at: 't1' });
+        // El cierre pedido por la pestaña oculta no es una caída.
+        state = updateSyncDiagnostics(state, { type: 'realtime_closed', status: 'CLOSED', released: true, at: 't2' });
+        state = updateSyncDiagnostics(state, { type: 'hidden_release', at: 't2' });
+        expect(state).toMatchObject({
+            realtimeMode: 'notify',
+            notifyEvents: 2,
+            realtimeCloses: 1,
+            lastRealtimeClose: { status: 'TIMED_OUT', at: 't1' },
+            hiddenReleases: 1,
         });
     });
 

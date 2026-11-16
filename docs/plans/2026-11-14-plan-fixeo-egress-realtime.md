@@ -97,15 +97,18 @@ Orden recomendado: **F0 → F1 → F2 → F5 → F3 → F4 → F6**. F1 sola ya 
 
 ---
 
-## F1 — Audit log partido por día (la causa del 81 %)
+## F1 — Audit log partido por franjas de 2 horas (la causa del 81 %) ✅ HECHO
 
 **Problema:** el audit log se sube entero (~407 KB) en cada venta.
 
-**Diseño:** el mismo patrón que la familia de ventas, pero por día y con retención (D1).
+> **Cambio de diseño al implementar (14-11-2026):** en vez de «doc por día + tramos por tamaño» se usan **franjas fijas de 2 h** (`abasto_audit_log_v1:AAAA-MM-DDTHH`, HH par, UTC). Cada doc es la franja completa y **reemplaza** la suya en el supervisor (como las compras por mes), así un borrado del log se propaga sin la ambigüedad de los tramos `#N`. Con 4 h una caja muy activa llegaba a 141 KB por franja; con 2 h queda en ≤ ~70 KB. El «debounce de 60 s» es en realidad una **ventana fija** de 60 s: con ventas seguidas un debounce que se reinicia nunca llegaba a publicar.
+> Lo implementado está en `src/utils/auditSyncFamily.js` y `pushAuditFamilySync` (`useCloudSync.js`). Los pasos de abajo son el diseño original, que se conserva como referencia.
+
+**Diseño original:** el mismo patrón que la familia de ventas, pero por día y con retención (D1).
 - Doc por día: `abasto_audit_log_v1:AAAA-MM-DD`. Si un día pasa de **60 KB**, se parte en tramos `#2`, `#3`… (mismo empaquetado que las ventas).
 - Solo se publican los días de la ventana de 7 días (D1) cuyo hash cambió. En la operación normal **solo cambia el tramo de hoy**: ~30 KB promedio por push en lugar de 407 KB.
 - Debounce propio de 60 s para `abasto_audit_log_v1` (D2), fuera de `HEAVY_KEYS`.
-- El doc viejo `abasto_audit_log_v1` (sin sufijo) se **retira** una sola vez por equipo, igual que `retireLegacySalesDoc` (borrado confirmado, reintento a 24 h). La política de borrado ya existe (`20261024_sync_documents_device_delete_policy.sql`; confirmar que está aplicada en producción antes de desplegar).
+- El doc viejo `abasto_audit_log_v1` (sin sufijo) se **retira** una sola vez por equipo, igual que `retireLegacySalesDoc` (borrado confirmado, reintento a 24 h). La política de borrado ya existe y **está aplicada en producción** (`device_delete_own_sync_doc`, verificado el 14-11-2026).
 - Los días que salen de la ventana de 7 días se borran de la nube (mismo mecanismo de retiro, por lotes y como mucho una vez al día).
 
 **Pasos:**
@@ -130,7 +133,10 @@ Orden recomendado: **F0 → F1 → F2 → F5 → F3 → F4 → F6**. F1 sola ya 
 
 ---
 
-## F2 — Tramo abierto de ventas más chico
+## F2 — Tramo abierto de ventas más chico ✅ HECHO
+
+> **Cambio de diseño al implementar (14-11-2026):** no se bajó todo a 80 KB. Serían ~170 filas por mes y por caja (285 ventas/día de ~1,6 KB), y el barrido de 90 s del supervisor baja los metadatos de todas las filas en cada pasada: lo ahorrado en Realtime se perdería en PostgREST. En su lugar, **solo las ventas de hoy (UTC)** van en tramos propios de ≤ 100 KB; los tramos cerrados siguen en 400 KB. Al cambiar de día las ventas de ayer se reacomodan una vez y los tramos sobrantes se **borran** (no `[]`, que vaciaría el mes en el lector). `SALES_SYNC_OPEN_PACK_BUDGET_BYTES` y `deleteStaleSalesShards` en `useCloudSync.js`.
+
 
 **Problema:** cada venta reescribe el último tramo del mes, que llega a 400 KB.
 
@@ -145,7 +151,10 @@ Orden recomendado: **F0 → F1 → F2 → F5 → F3 → F4 → F6**. F1 sola ya 
 
 ---
 
-## F3 — Un solo canal por navegador y menos reconexiones
+## F3 — Un solo canal por navegador y menos reconexiones ✅ HECHO (con otro enfoque)
+
+> **Cambio de diseño al implementar (14-11-2026):** en vez de una pestaña «líder» con `navigator.locks` (con riesgo de que las otras pestañas dejen de refrescar sus vistas, porque los avisos `app_storage_update` no cruzan pestañas), **una pestaña oculta más de 2 minutos suelta su conexión de Realtime** y al volver se reconecta con un pull incremental. Ataca lo mismo: pestañas abiertas que reciben todo sin que nadie mire. El motivo de cada caída del canal queda en el panel de diagnóstico («Caídas del canal»), para entender las 254 reconexiones del 11-nov. El aviso de «supervisor abierto en otro equipo» no se hizo (queda pendiente).
+
 
 **Problema:** dos pestañas o navegadores = el doble de entregas, y cada reconexión hace un pull.
 
@@ -158,7 +167,11 @@ Orden recomendado: **F0 → F1 → F2 → F5 → F3 → F4 → F6**. F1 sola ya 
 
 ---
 
-## F4 — Realtime solo avisa; los datos viajan por PostgREST (cambio de fondo)
+## F4 — Realtime solo avisa; los datos viajan por PostgREST (cambio de fondo) ✅ CÓDIGO HECHO · migración sin aplicar
+
+> **Cambio de diseño al implementar (14-11-2026):** no hace falta el despliegue en dos pasos. El supervisor nuevo **deja de escuchar** `sync_documents` y escucha solo `sync_document_events`; Realtime solo cobra a quien está suscrito, así que el ahorro llega en cuanto cada supervisor se actualiza, mientras los viejos siguen funcionando igual. Quitar `sync_documents` de la publicación queda como paso opcional, cuando no quede ningún supervisor viejo. Si la tabla de avisos no existe (migración sin aplicar), el supervisor detecta el error y sigue en el modo anterior. El trigger no avisa borrados (con RLS, Realtime no filtra los DELETE y repartiría la clave a todos).
+> **Orden de despliegue:** primero aplicar `supabase/migrations/20261114_sync_document_events.sql`, después publicar la app.
+
 
 **Problema:** Realtime manda la fila completa a cada cliente, en cada escritura, aunque la pestaña esté oculta y aunque llegue otra versión 2 s después.
 
@@ -193,15 +206,26 @@ Orden recomendado: **F0 → F1 → F2 → F5 → F3 → F4 → F6**. F1 sola ya 
 
 ---
 
-## F6 — Alerta diaria de egress
+## F6 — Alerta diaria de egress ✅ HECHO (falta el secreto en GitHub y llevar el workflow a `main`)
 
-1. Reutilizar F0 en una tarea programada diaria (local o cron) que avise si:
-   - Realtime > 50 MB/día, o
-   - aparece algún POST a `sync_documents` > 150 KB, o
-   - un doc de `sync_documents` pasa de 200 KB.
-2. Agregar al reporte el top 5 de `doc_id` por bytes subidos, usando el campo `bytes` de `sync_document_events` (F4). Así se sabe **qué** doc creció sin adivinar por tamaño.
+Decisión del dueño (14-11-2026): **dos avisos con papeles distintos**, que usan el mismo script de F0.
 
-**Hecho cuando:** la alerta corre sola y una prueba manual (forzar un doc de 300 KB en staging) la dispara.
+| Aviso | Dónde corre | Cuándo | Qué hace |
+|---|---|---|---|
+| **Alarma** | GitHub Actions (`.github/workflows/egress-alarm.yml`) | Todos los días, 11:00 UTC (7:00 Venezuela), aunque la PC esté apagada | **Solo si algo se pasa del límite** abre un *issue* `egress-alarm` en el repo (GitHub manda el correo). Si ya hay uno abierto, le agrega un comentario en lugar de abrir otro. Si todo está bien, no hace nada. |
+| **Informe** | Tarea programada de Claude en esta PC | Lunes 8:00 | Corre el script con los últimos 7 días y explica la tendencia, qué doc creció y si cada fase sigue cumpliendo su meta. |
+
+Límites de la alarma (`scripts/egress-report.mjs --check`, sale con código 1 si alguno se cumple):
+- subida diaria a `sync_documents` > 40 MB;
+- algún POST a `sync_documents` > 150 KB;
+- algún doc vivo (actualizado en 7 días) de `sync_documents` > 450 KB (por encima del tramo cerrado de ventas de 400 KB, que casi nunca se reescribe; por debajo del límite de ~1 MB de Realtime);
+- más de 150 conexiones de Realtime en el día (señal de reconexiones o pestañas duplicadas).
+
+Nota: la API de logs no da el egress de Realtime en MB. Se vigilan sus dos factores: lo que se sube y cuántas conexiones lo reciben. La cifra exacta sigue estando en el panel de uso de Supabase.
+
+Requisito manual (solo el dueño puede hacerlo): guardar el token como secreto del repo, `SUPABASE_ACCESS_TOKEN`, en GitHub → Settings → Secrets and variables → Actions. Si algún día se rota el token, hay que cambiarlo en el `.env` y en ese secreto.
+
+**Hecho cuando:** el workflow corre a mano (`workflow_dispatch`) en verde, `--check` con límites bajados a propósito sale con código 1, y la tarea de Claude aparece en la lista de tareas programadas.
 
 ---
 

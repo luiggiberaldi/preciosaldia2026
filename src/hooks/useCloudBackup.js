@@ -14,6 +14,7 @@ import {
     buildSupplierInvoicesSyncPlan,
     projectSyncPayload,
 } from './useCloudSync';
+import { AUDIT_SYNC_BASE_KEY, buildAuditSyncPlan } from '../utils/auditSyncFamily';
 import { ensureDeviceSessionRegistered } from '../utils/deviceIdentity';
 import { ensureSupervisorSession } from '../services/supervisorAuth';
 import { relayUploadBackup, relayFetchBackup } from '../utils/backupRelay';
@@ -148,6 +149,19 @@ export function useCloudBackup({
                 // eventos 413); el legacy queda como histórico congelado.
                 if (key === PRODUCTS_SYNC_BASE_KEY) {
                     for (const slice of buildProductsSyncPlan(value)) {
+                        syncPayloads.push(buildSyncDocumentRow({
+                            deviceId,
+                            collection: 'store',
+                            docId: slice.docId,
+                            data: { payload: slice.records },
+                        }));
+                    }
+                    continue;
+                }
+                // Egress F1: el audit log entra por franjas de 2 h de la
+                // ventana publicada (nunca el doc monolítico).
+                if (key === AUDIT_SYNC_BASE_KEY) {
+                    for (const slice of buildAuditSyncPlan(value)) {
                         syncPayloads.push(buildSyncDocumentRow({
                             deviceId,
                             collection: 'store',
