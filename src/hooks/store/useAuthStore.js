@@ -26,6 +26,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { logEvent } from '../../services/auditService';
 import { hashPin, verifyPin } from '../../utils/crypto';
+import { canBypassPin, validateNewAdminPin } from '../../utils/adminPinPolicy';
 import {
     PIN_POLICY,
     LOGIN_RATE_LIMIT,
@@ -608,6 +609,14 @@ export const useAuthStore = create(
             editarUsuario: (userId, datos) => {
                 if (!datos || typeof datos !== 'object') return { ok: false, error: 'datos inválidos' };
 
+                // Con la pantalla de inicio activa, el Administrador no puede quedar «entra sin PIN».
+                if (datos.requirePin === false) {
+                    const target = get().usuarios.find(u => u.id === userId);
+                    if (!canBypassPin(target, get().requireLogin)) {
+                        return { ok: false, error: 'El Administrador debe entrar con PIN mientras la pantalla de inicio esté activa' };
+                    }
+                }
+
                 const nuevosDatos = { ...datos };
                 if (datos.pin !== undefined) {
                     const err = validatePin(String(datos.pin));
@@ -636,6 +645,31 @@ export const useAuthStore = create(
                     )
                 }));
                 return { ok: true };
+            },
+
+            /**
+             * Protege al Administrador: le pone un PIN nuevo (distinto de 000000) y lo obliga a
+             * entrar con PIN. Se usa al activar la pantalla de inicio desde Ajustes › Usuarios.
+             * @returns {Promise<{ ok: boolean, error?: string }>}
+             */
+            protegerAdministrador: async (userId, nuevoPin) => {
+                const target = get().usuarios.find(u => u.id === userId);
+                if (!target || target.rol !== 'ADMIN') return { ok: false, error: 'Administrador no encontrado' };
+                const err = validateNewAdminPin(nuevoPin);
+                if (err) return { ok: false, error: err };
+                try {
+                    const hashedPin = await hashPin(String(nuevoPin));
+                    set((state) => ({
+                        usuarios: state.usuarios.map(u =>
+                            u.id === userId ? { ...u, pin: hashedPin, requirePin: true } : u
+                        )
+                    }));
+                    logEvent('AUTH', 'PIN_ADMIN_PROTEGIDO', `PIN creado y obligatorio para ${target.nombre || 'Administrador'}`, get().usuarioActivo);
+                    return { ok: true };
+                } catch (e) {
+                    console.error('[useAuthStore] protegerAdministrador falló:', e);
+                    return { ok: false, error: 'No se pudo guardar el PIN' };
+                }
             },
 
             setRequireLogin: (val) => {

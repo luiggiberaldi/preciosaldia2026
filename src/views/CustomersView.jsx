@@ -31,6 +31,10 @@ import SuppliersList from '../components/Suppliers/SuppliersList';
 import { AddSupplierModal, AddInvoiceModal, PayInvoiceModal, SupplierDetailsSheet, EditInvoiceModal } from '../components/Suppliers/SupplierModals';
 import { getActivePaymentMethods } from '../config/paymentMethods';
 
+// Gestión › Nómina (plan 2026-11-14-plan-nomina-simple-bodega.md, F3)
+import GestionTabs, { canOpenGestionTab } from '../components/Gestion/GestionTabs';
+import PayrollPanel from '../components/Payroll/PayrollPanel';
+
 export default function CustomersView({ triggerHaptic, isActive }) {
     // v1.2.0: reveal-on-scroll para header, filtros y lista de tarjetas.
     const revealRef = useReveal();
@@ -85,11 +89,11 @@ export default function CustomersView({ triggerHaptic, isActive }) {
     };
 
     // ── ESTADOS DE PROVEEDORES ──
-    const [activeTab, setActiveTab] = useState('clientes'); // 'clientes' | 'proveedores'
+    const [activeTab, setActiveTab] = useState('clientes'); // 'clientes' | 'proveedores' | 'nomina'
 
-    // Cajero no puede ver proveedores — forzar a clientes si accedió antes
+    // Cajero no puede ver proveedores ni nómina — forzar a clientes si accedió antes
     useEffect(() => {
-        if (isCajero && activeTab === 'proveedores') setActiveTab('clientes');
+        if (!canOpenGestionTab(activeTab, isCajero)) setActiveTab('clientes');
     }, [isCajero, activeTab]);
 
     const {
@@ -278,29 +282,23 @@ export default function CustomersView({ triggerHaptic, isActive }) {
         setPaymentMethod('efectivo_bs');
     };
 
+    if (activeTab === 'nomina' && canOpenGestionTab('nomina', isCajero)) {
+        return (
+            <div ref={revealRef} className="flex flex-col h-full bg-surface-50 dark:bg-surface-950 overflow-hidden relative">
+                <GestionTabs activeTab={activeTab} onChange={setActiveTab} isCajero={isCajero} triggerHaptic={triggerHaptic} />
+                <div className="flex-1 overflow-y-auto scrollbar-hide">
+                    <PayrollPanel rate={effectiveRate} isActive={isActive} triggerHaptic={triggerHaptic} />
+                </div>
+            </div>
+        );
+    }
+
     if (activeTab === 'proveedores') {
         return (
             // v1.2.0: revealRef reutilizado + surface tokens (warm cream).
             <div ref={revealRef} className="flex flex-col h-full bg-surface-50 dark:bg-surface-950 overflow-hidden relative">
-                {/* Segmented Control Premium */}
-                <div className="px-3 sm:px-6 pt-3 sm:pt-6 shrink-0 z-10 bg-surface-50/80 dark:bg-surface-950/80 backdrop-blur-xl">
-                    <div className="flex bg-surface-200/50 dark:bg-surface-800/80 p-1.5 rounded-2xl shadow-inner">
-                        <button
-                            onClick={() => { setActiveTab('clientes'); triggerHaptic && triggerHaptic(); }}
-                            className={`flex flex-1 items-center justify-center gap-2 py-2.5 min-h-[40px] text-sm font-bold rounded-xl transition-all duration-300 ${activeTab === 'clientes' ? 'bg-surface dark:bg-surface-900 shadow-tone-sm text-brand-dark dark:text-brand scale-100' : 'text-surface-500 hover:text-surface-700 dark:hover:text-surface-300 scale-95 hover:scale-100'}`}
-                        >
-                            <Users size={18} aria-hidden="true" /> Clientes
-                        </button>
-                        {!isCajero && (
-                            <button
-                                onClick={() => { setActiveTab('proveedores'); triggerHaptic && triggerHaptic(); }}
-                                className={`flex flex-1 items-center justify-center gap-2 py-2.5 min-h-[40px] text-sm font-bold rounded-xl transition-all duration-300 ${activeTab === 'proveedores' ? 'bg-surface dark:bg-surface-900 shadow-tone-sm text-brand dark:text-brand scale-100 ring-1 ring-surface-900/5 dark:ring-white/10' : 'text-surface-500 hover:text-surface-700 dark:hover:text-surface-300 scale-95 hover:scale-100'}`}
-                            >
-                                <Truck size={18} aria-hidden="true" /> Proveedores
-                            </button>
-                        )}
-                    </div>
-                </div>
+                {/* Sub-pestañas de Gestión (nómina D9) */}
+                <GestionTabs activeTab={activeTab} onChange={setActiveTab} isCajero={isCajero} triggerHaptic={triggerHaptic} />
 
                 <div className="flex-1 overflow-y-auto scrollbar-hide">
                     <SuppliersList
@@ -411,25 +409,8 @@ export default function CustomersView({ triggerHaptic, isActive }) {
     return (
         // v1.2.0: revealRef + surface tokens (warm cream).
         <div ref={revealRef} className="flex flex-col h-full bg-surface-50 dark:bg-surface-950 overflow-hidden relative">
-            {/* Segmented Control Premium */}
-            <div className="px-3 sm:px-6 pt-3 sm:pt-6 shrink-0 z-10 bg-surface-50/80 dark:bg-surface-950/80 backdrop-blur-xl">
-                <div className="flex bg-surface-200/50 dark:bg-surface-800/80 p-1.5 rounded-2xl shadow-inner">
-                    <button
-                        onClick={() => { setActiveTab('clientes'); triggerHaptic && triggerHaptic(); }}
-                        className={`flex flex-1 items-center justify-center gap-2 py-2.5 min-h-[40px] text-sm font-bold rounded-xl transition-all duration-300 ${activeTab === 'clientes' ? 'bg-surface dark:bg-surface-900 shadow-tone-sm text-brand-dark dark:text-brand scale-100 ring-1 ring-surface-900/5 dark:ring-white/10' : 'text-surface-500 hover:text-surface-700 dark:hover:text-surface-300 scale-95 hover:scale-100'}`}
-                    >
-                        <Users size={18} aria-hidden="true" /> Clientes
-                    </button>
-                    {!isCajero && (
-                        <button
-                            onClick={() => { setActiveTab('proveedores'); triggerHaptic && triggerHaptic(); }}
-                            className={`flex flex-1 items-center justify-center gap-2 py-2.5 min-h-[40px] text-sm font-bold rounded-xl transition-all duration-300 ${activeTab === 'proveedores' ? 'bg-surface dark:bg-surface-900 shadow-tone-sm text-brand dark:text-brand scale-100' : 'text-surface-500 hover:text-surface-700 dark:hover:text-surface-300 scale-95 hover:scale-100'}`}
-                        >
-                            <Truck size={18} aria-hidden="true" /> Proveedores
-                        </button>
-                    )}
-                </div>
-            </div>
+            {/* Sub-pestañas de Gestión (nómina D9) */}
+            <GestionTabs activeTab={activeTab} onChange={setActiveTab} isCajero={isCajero} triggerHaptic={triggerHaptic} />
 
             <div className="flex-1 overflow-y-auto scrollbar-hide p-3 sm:p-6 pb-20">
                 {/* Header Clientes */}

@@ -26,6 +26,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { useOfflineQueue } from './hooks/useOfflineQueue';
 import { useAutoBackup } from './hooks/useAutoBackup';
 import { useRemoteCommands } from './hooks/useRemoteCommands';
+import { useIdentityMigrationOrder } from './hooks/useIdentityMigrationOrder';
 import CommandPalette from './components/CommandPalette';
 import SideNav from './app/SideNav';
 import { ADMIN_ONLY_TABS, canOpenTab } from './app/roleTabs';
@@ -135,6 +136,9 @@ export default function App() {
 
   // Inicializar Sincronización Realtime con Supabase (device_id como clave)
   useCloudSync(isMonitorMode ? null : deviceId);
+
+  // Aviso remoto de cambio de ID dirigido a esta instalación (ID compartido).
+  useIdentityMigrationOrder(isMonitorMode ? null : deviceId);
 
   // Detectar iOS Safari (no standalone) para mostrar instrucciones manuales
   const isIOS = useMemo(() => /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream, []);
@@ -353,7 +357,7 @@ export default function App() {
     { id: 'inicio', label: 'Inicio', icon: Home },
     { id: 'ventas', label: 'Vender', icon: ShoppingCart },
     { id: 'catalogo', label: 'Inventario', icon: Store, premiumOnly: true },
-    { id: 'clientes', label: 'Clientes', icon: Users },
+    { id: 'clientes', label: 'Gestión', icon: Users }, // Nómina D9: Clientes · Proveedores · Nómina
     { id: 'reportes', label: 'Reportes', icon: BarChart3, adminOnly: true },
     { id: 'ajustes', label: 'Ajustes', icon: Settings, adminOnly: true },
   ];

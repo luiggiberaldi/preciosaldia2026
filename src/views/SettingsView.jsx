@@ -252,23 +252,28 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                     <h1 className="text-lg font-black text-surface-700 dark:text-white tracking-tight">Configuración</h1>
                 </div>
 
-                {/* Tab Bar (Visible only on mobile) */}
-                <div className="flex gap-1 -mb-px overflow-x-auto scrollbar-hide md:hidden">
+                {/* Pestañas: en todos los tamaños (antes en PC había un menú lateral «Opciones» que, sumado a la
+                    barra lateral de la app, dejaba muy poco ancho a las tarjetas). En el teléfono las 5 caben
+                    en una fila con el ícono arriba, sin tener que deslizar. */}
+                <div role="tablist" aria-label="Secciones de Ajustes" className="flex gap-1 -mb-px">
                     {visibleTabs.map(tab => {
                         const Icon = tab.icon;
                         const isActive = activeTab === tab.id;
                         return (
                             <button
                                 key={tab.id}
+                                role="tab"
+                                aria-selected={isActive}
+                                data-testid={`settings-tab-${tab.id}`}
                                 onClick={() => { setActiveTab(tab.id); triggerHaptic?.(); }}
-                                className={`flex items-center gap-1.5 px-3.5 py-2.5 min-h-[48px] text-xs font-bold rounded-t-xl transition-all whitespace-nowrap border-b-2 ${
+                                className={`flex-1 md:flex-none min-w-0 flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 px-1 md:px-4 py-2 md:py-2.5 min-h-[52px] md:min-h-[48px] text-[11px] md:text-sm font-bold rounded-t-xl transition-all border-b-2 ${
                                     isActive
                                         ? 'text-brand-dark dark:text-brand border-strong-token bg-brand-light/50 dark:bg-surface-800/10'
                                         : 'text-surface-400 border-transparent hover:text-surface-600 dark:hover:text-surface-300'
                                 }`}
                             >
-                                <Icon size={14} aria-hidden="true" />
-                                <span>{tab.label}</span>
+                                <Icon size={16} className="shrink-0" aria-hidden="true" />
+                                <span className="truncate max-w-full">{tab.label}</span>
                             </button>
                         );
                     })}
@@ -276,32 +281,9 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
             </div>
 
             {/* Main content area */}
-            <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-surface-50 dark:bg-surface-950">
-                {/* Desktop Sidebar (Visible only on md+) */}
-                <div className="hidden md:flex flex-col w-52 shrink-0 bg-surface dark:bg-surface-900 border-r border-surface-100 dark:border-surface-800 p-4 space-y-1">
-                    <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 mb-2">Opciones</p>
-                    {visibleTabs.map(tab => {
-                        const Icon = tab.icon;
-                        const isActive = activeTab === tab.id;
-                        return (
-                            <button
-                                key={tab.id}
-                                onClick={() => { setActiveTab(tab.id); triggerHaptic?.(); }}
-                                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-left transition-all ${
-                                    isActive
-                                        ? 'bg-brand text-white dark:bg-slate-900 dark:text-brand shadow-sm shadow-primary/20'
-                                        : 'text-surface-500 hover:text-surface-700 dark:text-surface-400 dark:hover:text-surface-200 hover:bg-surface-100 dark:hover:bg-surface-800/40'
-                                }`}
-                            >
-                                <Icon size={16} aria-hidden="true" />
-                                <span>{tab.label}</span>
-                            </button>
-                        );
-                    })}
-                </div>
-
+            <div className="flex-1 flex flex-col overflow-hidden bg-surface-50 dark:bg-surface-950">
                 {/* Scrollable Content Pane */}
-                <div className="flex-1 overflow-y-auto pb-[calc(3rem+env(safe-area-inset-bottom))] md:pb-6 md:p-6">
+                <div className="settings-pane flex-1 overflow-y-auto pb-[calc(3rem+env(safe-area-inset-bottom))] md:pb-6 md:p-6">
                     <div className="w-full space-y-4 md:mt-2">
                         {/* ═══ TAB: NEGOCIO ═══ */}
                         {activeTab === 'negocio' && (
@@ -363,7 +345,6 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                         {/* ═══ TAB: SISTEMA ═══ */}
                         {activeTab === 'sistema' && (
                             <SettingsTabSistema
-                                theme={theme} toggleTheme={toggleTheme}
                                 deviceId={deviceId} idCopied={idCopied} setIdCopied={setIdCopied}
                                 isAdmin={isAdmin}
                                 importStatus={importStatus} statusMessage={statusMessage}
@@ -396,7 +377,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
 
                         {/* Version footer */}
                         <div className="text-center py-4">
-                            <p className="text-[10px] text-slate-400 dark:text-slate-600 font-bold">PreciosAlDía Bodegas v2.0.5</p>
+                            <p className="text-[10px] text-slate-400 dark:text-slate-600 font-bold">PreciosAlDía Bodega v{import.meta.env.VITE_APP_VERSION}</p>
                         </div>
                     </div>
                 </div>
@@ -409,9 +390,9 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                         <div className="w-16 h-16 mx-auto bg-red-100 dark:bg-red-900/30 text-red-500 rounded-full flex items-center justify-center mb-4">
                             <AlertTriangle size={32} aria-hidden="true" />
                         </div>
-                        <h3 className="text-xl font-black text-surface-700 dark:text-white mb-2">Estas seguro?</h3>
+                        <h3 className="text-xl font-black text-surface-700 dark:text-white mb-2">¿Estás seguro?</h3>
                         <p className="text-sm text-surface-500 dark:text-surface-400 mb-6">
-                            Esta accion eliminara <strong>todo el historial de ventas</strong> y dejara las estadisticas en cero.
+                            Esta acción eliminará <strong>todo el historial de ventas</strong> y dejará las estadísticas en cero.
                             <br/><br/>
                             Para confirmar, escribe <span className="font-mono font-bold text-red-500 bg-red-50 dark:bg-red-900/40 px-1 rounded">ELIMINAR</span> abajo:
                         </p>
@@ -435,7 +416,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                                 onClick={handleDeleteAllData}
                                 className="flex-1 py-3 min-h-[48px] text-sm font-bold text-white bg-red-500 rounded-xl hover:bg-red-600 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                Si, borrar todo
+                                Sí, borrar todo
                             </button>
                         </div>
                     </div>

@@ -20,7 +20,7 @@ import { describe, expect, it } from 'vitest';
 
 // SHA-256 de src/config/licensePolicy.js. Si cambias la política, actualiza
 // este valor en AMBOS proyectos y propaga la copia del archivo.
-const EXPECTED_POLICY_SHA256 = 'a41a78cac5f688a8a3ee1b9f82cf2e823c71a473229fe7b293202ab2048fcba2';
+const EXPECTED_POLICY_SHA256 = 'f14b4ae4b4b6c19db40e03f41de0f7753acd43631c0edde53ddafd39a51da31e';
 
 // Rutas relativas donde vive el módulo según el proyecto (POS y Estación).
 const POLICY_CANDIDATES = [
@@ -309,6 +309,9 @@ describe('precios de venta', () => {
         expect(PRODUCT_PRICES.bodega).toEqual({ permanent: 100, monthly: 10 });
         expect(productPrice('bodega', 'permanent')).toBe(100);
         expect(productPrice('bodega', 'monthly')).toBe(10);
+        // Farmacia (decisión del dueño, 2026-10-30): $300 permanente o $20 mensual.
+        expect(PRODUCT_PRICES.farmacia).toEqual({ permanent: 300, monthly: 20 });
+        expect(productPrice('farmacia', 'monthly')).toBe(20);
     });
 
     it('Pro sigue pausado sin precio inventado', () => {

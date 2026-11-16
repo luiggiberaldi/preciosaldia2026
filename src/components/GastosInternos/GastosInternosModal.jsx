@@ -891,7 +891,7 @@ export default function GastosInternosModal({
                                                 -{formattedAmount()}
                                             </span>
 
-                                            {!isVoided && !g.cajaCerrada && canDeleteGasto && (
+                                            {!isVoided && !g.cajaCerrada && !g.isPayroll && canDeleteGasto && (
                                                 <button
                                                     onClick={() => setGastoToVoid(g)}
                                                     className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-full transition-colors"

@@ -162,6 +162,8 @@ export const SEED_LOCALSTORAGE_SNIPPET = `
 
     // Overlays que bloquean la vista la primera vez.
     localStorage.setItem('pda_terms_accepted', 'true');
+    // Novedades ya vistas: la ventana «¡Ya tienes lo nuevo!» taparía la prueba.
+    localStorage.setItem('pda_last_seen_version', '9999.0.0');
     localStorage.setItem('pda_onboarding_done', 'true');
 
     // Checkout móvil explícito (aunque <1024px ya resuelve 'basic').

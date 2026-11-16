@@ -4,6 +4,7 @@ import localforage from 'localforage';
 import { showToast } from '../components/Toast';
 import { IDB_KEYS, LS_KEYS, PROTECTED_KEYS } from '../config/backupKeys';
 import { validateBackupJson, applyBackupToStorage, clearAppKeysForRestore } from '../utils/backupRestoreService';
+import { markBackupExported, backupFileName } from '../utils/backupReminder';
 
 /**
  * Hook that encapsulates JSON import/export and delete-all-data logic.
@@ -52,12 +53,14 @@ export function useDataImportExport({
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `backup_tasasaldia_completo_${new Date().toISOString().slice(0, 10)}.json`;
+            a.download = backupFileName();
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
 
+            // Fecha del último respaldo para el aviso «hace N días» (Ajustes › Sistema).
+            await markBackupExported().catch(() => {});
             setStatusMessage('Backup completo descargado.');
             setImportStatus('success');
             auditLog('SISTEMA', 'BACKUP_EXPORTADO', 'Backup completo exportado');

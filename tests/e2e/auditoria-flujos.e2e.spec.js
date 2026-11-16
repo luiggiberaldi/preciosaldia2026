@@ -466,7 +466,7 @@ test('F8 ajustes: secciones y flags', async ({ page }) => {
     for (let intento = 0; intento < 4 && !ajustesListos; intento++) {
         await page.locator('[data-tour="tab-ajustes"]').click();
         try {
-            await page.getByRole('button', { name: 'Negocio', exact: true }).first()
+            await page.getByRole('tab', { name: 'Negocio', exact: true }).first()
                 .waitFor({ state: 'visible', timeout: 20_000 });
             ajustesListos = true;
         } catch { /* chunk compilando o recarga: reintentar */ }
@@ -475,7 +475,7 @@ test('F8 ajustes: secciones y flags', async ({ page }) => {
 
     let secciones = 0;
     for (const seccion of ['Negocio', 'Ventas', 'Usuarios', 'Licencia', 'Sistema']) {
-        const boton = page.getByRole('button', { name: seccion, exact: true }).first();
+        const boton = page.getByRole('tab', { name: seccion, exact: true }).first();
         if (await boton.count() === 0) continue;
         await boton.click();
         await page.waitForTimeout(500);
@@ -483,9 +483,9 @@ test('F8 ajustes: secciones y flags', async ({ page }) => {
         await auditOverflow(page, 'F8 ajustes: secciones y flags', seccion);
     }
 
-    await page.getByRole('button', { name: 'Ventas', exact: true }).first().click();
+    await page.getByRole('tab', { name: 'Ventas', exact: true }).first().click();
     await page.waitForTimeout(500);
-    for (const flag of ['Fiados y cobranzas en el reporte', 'Cesta viva', 'Reparar cartera desde el ledger']) {
+    for (const flag of ['Fiados y cobranzas en el reporte', 'Cesta viva', 'Recalcular deudas desde el historial']) {
         const visible = await page.getByText(flag, { exact: true }).count();
         record('F8 ajustes: secciones y flags', visible > 0 ? 'ok' : 'finding',
             `flag «${flag}» ${visible > 0 ? 'presente' : 'AUSENTE'} en Configuración → Ventas`);

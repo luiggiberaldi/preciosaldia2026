@@ -33,6 +33,8 @@ const FP_PREFIX_V2 = 'PDA-V2-';
 const FP_HASH_LENGTH = 32; // 32 hex chars = 128 bits de entropía aleatoria.
 // IDs válidos: legacy `PDA-<8..64 hex>` y actual `PDA-V2-<8..64 hex>`.
 const FP_VALID_ID_RE = /^PDA(?:-V2)?-[0-9A-F]{8,64}$/;
+// ID asignado por un aviso remoto: mismo formato que generateRandomDeviceId.
+const ASSIGNED_ID_RE = /^PDA-V2-[0-9A-F]{32}$/;
 
 /** Genera `bytes` bytes aleatorios en hex mayúsculas. */
 function _randomHex(bytes) {
@@ -165,9 +167,17 @@ export const DEVICE_ID_MIGRATED_EVENT = 'pda_device_id_migrated';
  * Tras el cambio se emite `DEVICE_ID_MIGRATED_EVENT` para que la app renueve su
  * estado (deviceId, licencia) sin reiniciar.
  *
- * @returns {{deviceId: string, previousDeviceId: string|null}}
+ * Opciones (aviso remoto de cambio de ID, ver identityMigrationOrder.js):
+ *   - `newDeviceId`: adopta este ID en vez de generar uno. Debe tener formato
+ *     `PDA-V2-<32 hex>`; si no, no se cambia nada.
+ *   - `expectedCurrentId`: solo cambia si el ID guardado es exactamente este.
+ *     Evita cambiar una estación que ya no tiene el ID al que iba el aviso.
+ *
+ * @param {{newDeviceId?: string, expectedCurrentId?: string}} [options]
+ * @returns {{deviceId: string|null, previousDeviceId: string|null, skipped?: string}}
  */
-export function migrateDeviceIdentity() {
+export function migrateDeviceIdentity(options = {}) {
+    const { newDeviceId, expectedCurrentId } = options || {};
     const previousDeviceId = (() => {
         try {
             return localStorage.getItem(DEVICE_ID_KEY);
@@ -176,7 +186,17 @@ export function migrateDeviceIdentity() {
         }
     })();
 
-    const deviceId = generateRandomDeviceId();
+    if (newDeviceId !== undefined && !ASSIGNED_ID_RE.test(String(newDeviceId))) {
+        return { deviceId: previousDeviceId, previousDeviceId: null, skipped: 'INVALID_NEW_ID' };
+    }
+    if (expectedCurrentId !== undefined && previousDeviceId !== expectedCurrentId) {
+        return { deviceId: previousDeviceId, previousDeviceId: null, skipped: 'CURRENT_ID_MISMATCH' };
+    }
+    if (newDeviceId !== undefined && newDeviceId === previousDeviceId) {
+        return { deviceId: previousDeviceId, previousDeviceId: null, skipped: 'ALREADY_MIGRATED' };
+    }
+
+    const deviceId = newDeviceId !== undefined ? String(newDeviceId) : generateRandomDeviceId();
     try {
         if (previousDeviceId) {
             localStorage.setItem(PREVIOUS_DEVICE_ID_KEY, previousDeviceId);

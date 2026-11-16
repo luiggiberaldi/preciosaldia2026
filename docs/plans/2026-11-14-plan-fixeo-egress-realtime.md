@@ -2,7 +2,7 @@
 
 Fecha: 14-11-2026 · Rama: `feat/inicio-estilo-farmacia` (abrir rama propia `fix/egress-realtime` antes de F1)
 Proyecto Supabase: `sodgzkablshladvbtnes`
-Antecedentes: [REPORTE-CAUSA-RAIZ-EGRESS-Y-SOLUCION.md](../../REPORTE-CAUSA-RAIZ-EGRESS-Y-SOLUCION.md) (egress de PostgREST, oct-2026) y
+Antecedentes: [REPORTE-CAUSA-RAIZ-EGRESS-Y-SOLUCION.md](../reports/REPORTE-CAUSA-RAIZ-EGRESS-Y-SOLUCION.md) (egress de PostgREST, oct-2026) y
 [2026-10-15-plan-optimizacion-egress.md](2026-10-15-plan-optimizacion-egress.md). Ese trabajo atacó PostgREST; **este plan ataca Realtime**, que hoy es el 88 % del egress en los días pico.
 
 **Documento ejecutable.** Cada fase es un commit aparte, se prueba sola y se puede revertir sin tocar las demás.

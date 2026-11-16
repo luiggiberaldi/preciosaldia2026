@@ -55,7 +55,7 @@ export function describeCloudError(err) {
             code: '42501',
             title: 'Permisos insuficientes en la nube (RLS)',
             detail: 'Supabase bloqueó la operación: tu sesión de dispositivo no tiene permitido guardar o leer respaldos en cloud_backups.',
-            hint: 'Usa "Exportar Backup" (archivo) como respaldo inmediato y contacta soporte para habilitar el acceso directo a la nube de este equipo.',
+            hint: 'Usa "Exportar respaldo" (archivo) como respaldo inmediato y contacta soporte para habilitar el acceso directo a la nube de este equipo.',
             technical,
         };
     }

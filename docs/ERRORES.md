@@ -67,7 +67,7 @@ ERR-004 a ERR-006 se reconstruyeron desde informes ya existentes; el detalle com
 - **Dónde:** `src/utils/checkoutProcessor.js`, `src/utils/voidSaleProcessor.js`
 - **Síntoma:** vender 1 caja de 12 descontaba 1 unidad del stock en vez de 12 (y una unidad suelta podía descontar 0).
 - **Causa:** la conversión bulto ↔ unidades estaba invertida; el stock siempre se guarda en unidades.
-- **Solución:** ver el plan [2026-10-21-fix-deduccion-stock-bultos-unidades](plans/2026-10-21-fix-deduccion-stock-bultos-unidades.md) y el informe `REPORTE-FIX-STOCK-BULTOS-2026-10-21.md` (raíz).
+- **Solución:** ver el plan [2026-10-21-fix-deduccion-stock-bultos-unidades](plans/2026-10-21-fix-deduccion-stock-bultos-unidades.md) y el informe [REPORTE-FIX-STOCK-BULTOS-2026-10-21](reports/REPORTE-FIX-STOCK-BULTOS-2026-10-21.md).
 - **Cómo comprobarlo:** vender un bulto y revisar que el stock baja en unidades.
 
 ## ERR-005 — Señales del Supervisor rechazadas por reloj del cliente
@@ -87,7 +87,7 @@ ERR-004 a ERR-006 se reconstruyeron desde informes ya existentes; el detalle com
 - **Dónde:** consultas a `public.sync_documents` (Supabase PostgREST)
 - **Síntoma:** ~318 MB de salida de datos en un día, cuando lo normal era 50–70 MB.
 - **Causa:** el 92,7 % venía de las respuestas JSON de esa tabla.
-- **Solución:** ver `REPORTE-CAUSA-RAIZ-EGRESS-Y-SOLUCION.md` (raíz).
+- **Solución:** ver [REPORTE-CAUSA-RAIZ-EGRESS-Y-SOLUCION](reports/REPORTE-CAUSA-RAIZ-EGRESS-Y-SOLUCION.md).
 - **Cómo comprobarlo:** revisar el egress diario en la consola de Supabase.
 
 ## ERR-007 — Un producto sin precio se agregaba a la cesta a $0.00

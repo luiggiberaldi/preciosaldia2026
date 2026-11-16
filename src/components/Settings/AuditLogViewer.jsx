@@ -16,7 +16,7 @@ const CAT_CONFIG = {
     INVENTARIO: { label: 'Inventario',    icon: Package,       color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
     CLIENTE:    { label: 'Clientes',      icon: Users,         color: 'text-sky-500',     bg: 'bg-sky-50 dark:bg-sky-900/20' },
     PROVEEDOR:  { label: 'Proveedores',   icon: Users,         color: 'text-brand-dark dark:text-brand',  bg: 'bg-brand-light dark:bg-brand-dark/20' },
-    CONFIG:     { label: 'Configuracion', icon: Settings,      color: 'text-amber-500',   bg: 'bg-amber-50 dark:bg-amber-900/20' },
+    CONFIG:     { label: 'Configuración', icon: Settings,      color: 'text-amber-500',   bg: 'bg-amber-50 dark:bg-amber-900/20' },
     USUARIO:    { label: 'Usuarios',      icon: Shield,        color: 'text-brand',  bg: 'bg-brand-light dark:bg-surface-800/20' },
     SISTEMA:    { label: 'Sistema',       icon: Database,      color: 'text-red-500',     bg: 'bg-red-50 dark:bg-red-900/20' },
 };
@@ -288,7 +288,7 @@ export default function AuditLogViewer({ triggerHaptic }) {
                     </p>
                     <div className="grid grid-cols-2 gap-2">
                         <div>
-                            <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Desde</label>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Desde</label>
                             <input
                                 type="date"
                                 value={pdfFrom}
@@ -298,7 +298,7 @@ export default function AuditLogViewer({ triggerHaptic }) {
                             />
                         </div>
                         <div>
-                            <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Hasta</label>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Hasta</label>
                             <input
                                 type="date"
                                 value={pdfTo}
@@ -375,9 +375,9 @@ export default function AuditLogViewer({ triggerHaptic }) {
                                         <span className={`text-[8px] font-black uppercase tracking-wider ${conf.color} ${conf.bg} px-1.5 py-0.5 rounded`}>
                                             {entry.action}
                                         </span>
-                                        <span className="text-[9px] text-slate-400 font-bold">{entry.userName || 'Sistema'}</span>
-                                        <span className="text-[9px] text-slate-300 dark:text-slate-600">|</span>
-                                        <span className="text-[9px] text-slate-400 flex items-center gap-0.5">
+                                        <span className="text-[10px] text-slate-400 font-bold">{entry.userName || 'Sistema'}</span>
+                                        <span className="text-[10px] text-slate-300 dark:text-slate-600">|</span>
+                                        <span className="text-[10px] text-slate-400 flex items-center gap-0.5">
                                             <Clock size={8} /> {formatTs(entry.ts)}
                                         </span>
                                     </div>
@@ -407,14 +407,14 @@ export default function AuditLogViewer({ triggerHaptic }) {
                         </div>
                         <h3 className="text-lg font-black text-slate-800 dark:text-white mb-2">Borrar Log</h3>
                         <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
-                            Se eliminaran todos los registros de auditoria. Esta accion no se puede deshacer.
+                            Se eliminarán todos los registros de auditoría. Esta acción no se puede deshacer.
                         </p>
                         <div className="flex gap-3">
                             <button onClick={() => setShowClearConfirm(false)} className="flex-1 py-3 text-sm font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 rounded-xl active:scale-95 transition-all">
                                 Cancelar
                             </button>
                             <button onClick={handleClear} className="flex-1 py-3 text-sm font-bold text-white bg-red-500 rounded-xl hover:bg-red-600 active:scale-95 transition-all">
-                                Si, borrar
+                                Sí, borrar
                             </button>
                         </div>
                     </div>

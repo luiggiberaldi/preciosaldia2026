@@ -47,8 +47,8 @@ const STEPS = [
         icon: Users,
         color: 'text-amber-500',
         bg: 'bg-amber-100 dark:bg-amber-900/30',
-        title: 'Clientes',
-        headline: 'Gestiona tus clientes',
+        title: 'Gestión',
+        headline: 'Clientes, proveedores y nómina',
         descriptionPremium: 'Registra a tus clientes frecuentes, lleva control de fiados y pagos parciales. Todo offline y seguro.',
         descriptionFree: 'Con PreciosAlDía Premium puedes gestionar tu cartera de clientes y control de deudas.',
         tipPremium: '💡 Toca un cliente para ver su historial completo de fiados.',
@@ -143,7 +143,7 @@ export default function OnboardingOverlay({ isPremium = false }) {
 
                             {/* Feature pills */}
                             <div className="flex flex-wrap justify-center gap-2 mb-2 animate-fade-in" style={{ animationDelay: '180ms' }}>
-                                {['Inventario', 'Punto de Venta', 'Clientes', 'Reportes'].map(label => (
+                                {['Inventario', 'Punto de Venta', 'Gestión', 'Reportes'].map(label => (
                                     <span key={label} className="badge">
                                         {label}
                                     </span>

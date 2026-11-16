@@ -718,4 +718,4 @@ bash scripts/purge-history.sh   # Purgar binarios/secretos del git history
 
 ---
 
-*Documento mantenido por el equipo de auditoría. Última revisión: 2026-08-10. Para detalles de los fixes aplicados, ver `CHANGES.md`; para el estado operativo del Supervisor, ver `M5-PRODUCTION-CANARY.md` y `M5-VERCEL-PREVIEW.md`; para el reporte completo, ver `ISSUES.md`.*
+*Documento mantenido por el equipo de auditoría. Última revisión: 2026-08-10. Para detalles de los fixes aplicados, ver `CHANGES.md`; para el estado operativo del Supervisor, ver `docs/reports/M5-PRODUCTION-CANARY.md` y `M5-VERCEL-PREVIEW.md`; para el reporte completo, ver `ISSUES.md`.*

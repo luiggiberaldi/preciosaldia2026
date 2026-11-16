@@ -282,7 +282,7 @@ Basta seleccionar un cliente con `casheaLevel` para que **toda** venta a ese cli
 
 POS no hace esto: `casheaActive` arranca en `false` y solo el operador lo enciende.
 
-> Esto interactúa con [`PLAN-FIXEO-CASHEA.md`](../../PLAN-FIXEO-CASHEA.md): mientras la anulación no revierta `casheaDeuda` (Fase 5 de ese plan), cada auto-activación errónea deja una cuenta por cobrar irreversible.
+> Esto interactúa con [`PLAN-FIXEO-CASHEA.md`](../plans/PLAN-FIXEO-CASHEA.md): mientras la anulación no revierta `casheaDeuda` (Fase 5 de ese plan), cada auto-activación errónea deja una cuenta por cobrar irreversible.
 
 ## M-2 — POS no tiene ninguna de las tres guardas del modo básico
 
@@ -430,7 +430,7 @@ Verificado y sin objeciones:
 
 ## Fuera de alcance de esta auditoría
 
-- El módulo Cashea end-to-end: ya cubierto en [`AUDITORIA-CASHEA.md`](AUDITORIA-CASHEA.md) y con plan ejecutable en [`PLAN-FIXEO-CASHEA.md`](../../PLAN-FIXEO-CASHEA.md). Los hallazgos de aquí que tocan Cashea (A-1, A-3, M-1) son **adicionales** a ese plan, no duplicados; A-3 y el `sumR` de la Fase 4 de aquel plan viven en las mismas líneas y conviene coordinarlos.
+- El módulo Cashea end-to-end: ya cubierto en [`AUDITORIA-CASHEA.md`](AUDITORIA-CASHEA.md) y con plan ejecutable en [`PLAN-FIXEO-CASHEA.md`](../plans/PLAN-FIXEO-CASHEA.md). Los hallazgos de aquí que tocan Cashea (A-1, A-3, M-1) son **adicionales** a ese plan, no duplicados; A-3 y el `sumR` de la Fase 4 de aquel plan viven en las mismas líneas y conviene coordinarlos.
 - Impresión de recibos y `ReceiptModal`.
 - Sincronización multi-dispositivo (M-3 se describe como carrera local entre pestañas).
 - Responsividad de los modales.

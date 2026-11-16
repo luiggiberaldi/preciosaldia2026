@@ -176,7 +176,7 @@ export default function DevicesManager({ triggerHaptic, currentDeviceId }) {
                                                     {dev.client_name || 'Terminal Sin Nombre'}
                                                 </p>
                                                 {isThisDevice && (
-                                                    <span className="text-[9px] font-black uppercase tracking-wider bg-brand text-white px-1.5 py-0.2 rounded-full">
+                                                    <span className="text-[10px] font-black uppercase tracking-wider bg-brand text-white px-1.5 py-0.5 rounded-full">
                                                         Este Equipo
                                                     </span>
                                                 )}

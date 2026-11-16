@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import pkg from '../package.json' with { type: 'json' };
 import { RELEASE_NOTES } from '../src/data/releaseNotes.js';
-import { compareVersions, notasPendientes, formatearFecha } from '../src/utils/releaseNotes.js';
+import { compareVersions, notasPendientes, formatearFecha, versionDesdeNovedades, VERSION_ANTES_DE_NOVEDADES } from '../src/utils/releaseNotes.js';
 
 describe('notas de versión', () => {
   it('la versión actual de package.json tiene su nota (agrégala en src/data/releaseNotes.js)', () => {
@@ -42,6 +42,17 @@ describe('utilidades', () => {
     expect(notasPendientes(notas, '2.0.5', '2.0.6').map((n) => n.version)).toEqual(['2.0.6']);
     expect(notasPendientes(notas, '2.0.7')).toEqual([]);
     expect(notasPendientes(null, '2.0.5')).toEqual([]);
+  });
+
+  it('una caja en uso que viene de 2.0.5 (sin versión vista) ve las novedades nuevas', () => {
+    expect(versionDesdeNovedades(null, true)).toBe(VERSION_ANTES_DE_NOVEDADES);
+    expect(notasPendientes(RELEASE_NOTES, versionDesdeNovedades(null, true), '2.0.6').map((n) => n.version)).toEqual(['2.0.6']);
+  });
+
+  it('una instalación nueva no ve novedades y una versión vista guardada manda', () => {
+    expect(versionDesdeNovedades(null, false)).toBeNull();
+    expect(versionDesdeNovedades('2.0.6', true)).toBe('2.0.6');
+    expect(notasPendientes(RELEASE_NOTES, versionDesdeNovedades('2.0.6', true), '2.0.6')).toEqual([]);
   });
 
   it('formatea la fecha en español', () => {

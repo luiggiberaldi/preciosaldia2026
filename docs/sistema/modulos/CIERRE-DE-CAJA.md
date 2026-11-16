@@ -17,6 +17,7 @@ La caja es como una **gaveta con un cuaderno**: abrir es escribir arriba «empie
 - **No se reinicia a medianoche.** Sigue abierta hasta que exista un cierre manual.
 - `isShiftCashMovement` decide qué movimientos cuentan: ignora anuladas, tipos que no son de caja y egresos con `afectaCaja: false`.
 - Tipos que cuentan: ventas (contado, fiada, Cashea), cobros de deuda, pagos a proveedores, gastos internos, apertura, avance de efectivo y aporte a caja.
+- **Nómina (CASO-005):** los adelantos y pagos al personal son gastos internos con `category: 'nomina'` e `isPayroll: true`, y siempre llevan `afectaCaja: true`. El método decide si baja la gaveta: el efectivo sí, el pago móvil no (el cierre resta cada método por separado). En el PDF del cierre salen en la línea «Nómina» de los gastos. Se anulan solo desde Gestión › Nómina, nunca desde la lista de gastos. Un gasto en efectivo, de nómina o no, exige la caja abierta (`services/gastosInternosService.js`).
 
 ## Efectivo esperado
 

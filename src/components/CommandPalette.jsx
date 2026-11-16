@@ -11,7 +11,7 @@ export default function CommandPalette({ isOpen, onClose, onToggle, navigateTo, 
     const commands = [
         { id: 'nav-sales', tab: 'ventas', title: 'Ir a Ventas', icon: Package },
         { id: 'nav-inventory', tab: 'catalogo', title: 'Ir a Inventario', icon: Package },
-        { id: 'nav-customers', tab: 'clientes', title: 'Ir a Clientes', icon: Users },
+        { id: 'nav-customers', tab: 'clientes', title: 'Ir a Gestión (clientes, proveedores, nómina)', icon: Users },
         { id: 'nav-reports', tab: 'reportes', title: 'Ir a Reportes', icon: FileText },
         { id: 'nav-dashboard', tab: 'inicio', title: 'Ir a Inicio', icon: Package },
         { id: 'nav-settings', tab: 'ajustes', title: 'Ir a Ajustes', icon: Settings },

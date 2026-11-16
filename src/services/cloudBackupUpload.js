@@ -23,7 +23,14 @@ export async function uploadCompressedBackupToCloud(deviceId, backupData) {
 
     const registration = await ensureDeviceSessionRegistered(deviceId);
     if (!registration.ok) {
-        return { ok: false, error: registration.error?.message || registration.error || 'No se pudo registrar el dispositivo' };
+        // Sin identidad en la nube la escritura directa la rechaza RLS. Antes la
+        // caja se rendía aquí y una licencia de pago se quedaba sin respaldo para
+        // siempre, en silencio. El relay de la Estación valida la licencia del
+        // lado del servidor, así que se intenta por ahí.
+        const relay = await relayUploadBackup(deviceId, backupData);
+        if (relay.ok) return { ok: true, destination: 'relay' };
+        const reason = registration.error?.message || registration.error || 'No se pudo registrar el dispositivo';
+        return { ok: false, error: `${reason} (relay: ${relay.error?.message || relay.error || 'no disponible'})` };
     }
 
     const row = buildCloudBackupsRow({ deviceId, backupData });

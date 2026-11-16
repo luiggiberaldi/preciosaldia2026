@@ -94,11 +94,18 @@ export const BACKUP_ELIGIBLE_TYPES = Object.freeze(['permanent', 'monthly']);
  */
 export const PRODUCT_PRICES = Object.freeze({
     bodega: Object.freeze({ permanent: 100, monthly: 10 }),
+    // Farmacia: otra versión del sistema (repo preciosaldia-farmacia), con su
+    // propia nube de datos; sus licencias se emiten desde la misma Estación.
+    farmacia: Object.freeze({ permanent: 300, monthly: 20 }),
     // Pro está pausado; 0 evita inventar ingresos en el dashboard.
     pro: Object.freeze({ permanent: 0, monthly: 0 }),
 });
 
-/** Producto comercial por defecto (el POS es siempre 'bodega'). */
+/**
+ * Producto comercial por defecto cuando una licencia no lo indica (compatibilidad
+ * con las cajas de bodega ya instaladas). La caja de farmacia declara 'farmacia'
+ * en su propia configuración; no depende de este valor.
+ */
 export const DEFAULT_PRODUCT_ID = 'bodega';
 
 // ── Predicados de tipo ───────────────────────────────────────────────────────
@@ -146,6 +153,21 @@ export function graceDaysFor(type) {
  */
 export function graceMillisFor(type) {
     return graceDaysFor(type) * DAY_MS;
+}
+
+/**
+ * Gracia de la mensualidad: la configurada en Ajustes si es un entero válido
+ * (0..30), si no la fija de este módulo. Así una caja sin conexión, o con un
+ * dato raro en caché, nunca queda con una gracia absurda.
+ *
+ * @param {number|null|undefined} graceDays
+ * @returns {number}
+ */
+function monthlyGraceMillis(graceDays) {
+    if (Number.isInteger(graceDays) && graceDays >= 0 && graceDays <= 30) {
+        return graceDays * DAY_MS;
+    }
+    return graceMillisFor('monthly');
 }
 
 /**
@@ -211,12 +233,14 @@ function closed(status, reason, expiresAtMs) {
  *   3. tipo desconocido → sin acceso (fail-closed).
  *   4. demo: exige vencimiento y se corta EN SECO al llegar.
  *   5. mensual: exige vencimiento (LIC-10: sin fecha no es premium para
- *      siempre) y vive 5 días de gracia.
+ *      siempre) y vive MONTHLY_GRACE_DAYS días de gracia, o los que pase
+ *      `graceDays` (Ajustes de la Estación, entero 0..30; fuera de rango se
+ *      ignora y se usa el valor fijo).
  *   6. permanente: vive para siempre salvo que traiga vencimiento, que se
  *      respeta sin gracia.
  *
  * @param {{type?: string|null, isActive?: boolean, expiresAt?: string|number|null,
- *          now?: number}} license
+ *          now?: number, graceDays?: number|null}} license
  * @returns {LicenseState}
  */
 export function resolveLicenseState(license) {
@@ -253,7 +277,7 @@ export function resolveLicenseState(license) {
     // 5: mensual. Requiere vencimiento y suma la gracia.
     if (type === 'monthly') {
         if (!hasExpiry) return closed('expired', 'missing_expiry', expiresAtMs);
-        const graceEnd = expiresAtMs + graceMillisFor(type);
+        const graceEnd = expiresAtMs + monthlyGraceMillis(license?.graceDays);
         if (now >= graceEnd) return closed('expired', 'expired', expiresAtMs);
         if (now >= expiresAtMs) {
             return {

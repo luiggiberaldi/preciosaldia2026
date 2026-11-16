@@ -228,7 +228,7 @@ La propina se acumula a nivel tienda. No se registra qué usuario/turno la recib
 
 > ⚠️ **`computeExpectedCash` no existe en `preciosaldia`.** El arqueo hace la resta a mano en `CierreCajaWizard.jsx:89-90`. Como la propina se implementa poniendo el vuelto en 0, **el arqueo funciona igual sin tocarlo** — pero conviene saberlo.
 
-> 🔴 **Dependencia dura:** esta funcionalidad edita exactamente las mismas líneas que corrige [`PLAN-FIXEO-CHECKOUT.md`](../../PLAN-FIXEO-CHECKOUT.md) (el bloque `defaultUsdChange` del hook y el bloque `changeUsdGiven` del POS). **Ese plan tiene que ejecutarse primero.** Si se hace al revés, la propina hereda el doble conteo de vuelto y el arreglo posterior pisa el injerto.
+> 🔴 **Dependencia dura:** esta funcionalidad edita exactamente las mismas líneas que corrige [`PLAN-FIXEO-CHECKOUT.md`](../plans/PLAN-FIXEO-CHECKOUT.md) (el bloque `defaultUsdChange` del hook y el bloque `changeUsdGiven` del POS). **Ese plan tiene que ejecutarse primero.** Si se hace al revés, la propina hereda el doble conteo de vuelto y el arreglo posterior pisa el injerto.
 
 ---
 
@@ -247,4 +247,4 @@ La propina se acumula a nivel tienda. No se registra qué usuario/turno la recib
 | T-9 | Bucket con la forma estándar `{ total, currency, label, isTip }`. |
 | T-10 | Fuera de alcance (se registra `userId` en el sale, que ya alcanza para rastrear). |
 
-**Plan ejecutable:** [`PLAN-VUELTO-DONADO.md`](../../PLAN-VUELTO-DONADO.md)
+**Plan ejecutable:** [`PLAN-VUELTO-DONADO.md`](../plans/PLAN-VUELTO-DONADO.md)
