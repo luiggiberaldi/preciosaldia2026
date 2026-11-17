@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Store, Plus, Trash2, Pencil, Search, LayoutGrid, List, Percent, CheckSquare, Boxes, TrendingUp, DollarSign, PieChart, ChevronDown, ChevronUp, AlertTriangle, X, Wrench } from 'lucide-react';
+import { Store, Plus, Trash2, Pencil, Search, Percent, CheckSquare, Boxes, TrendingUp, DollarSign, PieChart, ChevronDown, ChevronUp, AlertTriangle, X, Wrench } from 'lucide-react';
 import { CATEGORY_COLORS } from '../../config/categories';
 import { useProductContext } from '../../context/ProductContext';
 import { formatBs, formatCop } from '../../utils/calculatorUtils';
@@ -9,7 +9,6 @@ const ProductsToolbar = ({
     categories,
     activeCategory,
     searchTerm,
-    viewMode,
     selectedIds,
     lowStockCount,
     isCajero,
@@ -17,7 +16,6 @@ const ProductsToolbar = ({
     // Handlers
     handleSetSearchTerm,
     handleSetActiveCategory,
-    toggleViewMode,
     setSelectedIds,
     setIsModalOpen,
     setIsBulkPriceOpen,
@@ -272,16 +270,6 @@ const ProductsToolbar = ({
                             )}
                         </div>
                     )}
-
-                    {/* Toggle de Vista (Cuadrícula / Lista) */}
-                    <button
-                        type="button"
-                        onClick={toggleViewMode}
-                        className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:text-brand hover:border-brand-light transition-all active:scale-95 shadow-2xs"
-                        title={viewMode === 'grid' ? 'Cambiar a vista lista' : 'Cambiar a vista cuadrícula'}
-                    >
-                        {viewMode === 'grid' ? <List size={15} /> : <LayoutGrid size={15} />}
-                    </button>
 
                     {/* Botón Primario: + Nuevo Producto */}
                     {!isCajero && (

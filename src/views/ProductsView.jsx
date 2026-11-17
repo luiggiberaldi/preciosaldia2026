@@ -7,7 +7,7 @@ import { storageService } from '../utils/storageService';
 import { persistCatalogLocked } from '../utils/catalogLock';
 import { withLock } from '../utils/withLock';
 import { showToast } from '../components/Toast';
-import { Package, Plus, Trash2, X, Store, Tag, Pencil, Banknote, Search, ChevronLeft, ChevronRight, AlertTriangle, Box, LayoutGrid, List, Minus, ArrowUpDown, Clock, Percent, Printer, CheckSquare } from 'lucide-react';
+import { Package, Plus, Trash2, X, Store, Tag, Pencil, Banknote, Search, ChevronLeft, ChevronRight, AlertTriangle, Box, Clock, Percent, Printer, CheckSquare } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { ProductShareModal } from '../components/ProductShareModal';
 import { useAuthStore } from '../hooks/store/useAuthStore';
@@ -25,17 +25,15 @@ import CategoryManagerModal from '../components/Products/CategoryManagerModal';
 import BulkPriceAdjustModal from '../components/Products/BulkPriceAdjustModal';
 import StockBatchModal from '../components/Products/StockBatchModal';
 import { useProductContext } from '../context/ProductContext';
-import SmartImage from '../components/SmartImage';
 import EmptyState from '../components/EmptyState';
 import Skeleton from '../components/Skeleton';
 import SwipeableItem from '../components/SwipeableItem';
 import { useInventoryVelocity } from '../hooks/useInventoryVelocity';
 import { useProductFiltering } from '../hooks/useProductFiltering';
-import { marginOverPricePercent } from '../utils/productCostFactor';
 import { useProductForm } from '../hooks/useProductForm';
 import { useProductSorting } from '../hooks/useProductSorting';
 import { buildProductPayload, derivePricingFromEdit, roundDerivedPrice, formatPriceUsdInput } from '../utils/productProcessor';
-import { isGranelProduct, isLowStockProduct, formatStockDisplay, getGranelUnitMode } from '../utils/granel'; // GRANEL-001 / GRANEL-DUAL
+import { isLowStockProduct, getGranelUnitMode } from '../utils/granel'; // GRANEL-001 / GRANEL-DUAL
 import { uploadProductImage, migrateCatalogImagesOnce } from '../utils/imageUpload';
 // useAuthStore removed - single-user app
 import { useAudit } from '../hooks/useAudit';
@@ -64,8 +62,8 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
 
     // Envolver adjustStock para incluir registro de movimiento + haptic
     const adjustStock = async (productId, delta) => {
-        baseAdjustStock(productId, delta);
         triggerHaptic && triggerHaptic();
+        await baseAdjustStock(productId, delta);
 
         // Registro silencioso del ajuste de inventario
         try {
@@ -112,25 +110,19 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         }
     }, [currentPage]);
 
-    const [viewMode, setViewMode] = useState(() => localStorage.getItem('bodega_inventory_view') || 'grid');
-    const { sortField, sortDir, handleSort: baseSortHandler } = useProductSorting();
-    const handleSort = (field) => baseSortHandler(field, setCurrentPage);
+    const { sortField, sortDir } = useProductSorting();
     const [itemsPerPage, setItemsPerPage] = useState(() => {
-        const mode = localStorage.getItem('bodega_inventory_view') || 'grid';
-        if (mode === 'list') return 25;
         const w = window.innerWidth;
         return w >= 1536 ? 30 : w >= 1280 ? 24 : w >= 1024 ? 20 : w >= 768 ? 12 : w >= 640 ? 9 : 8;
     });
     useEffect(() => {
         const handleResize = () => {
-            if (viewMode === 'grid') {
-                const w = window.innerWidth;
-                setItemsPerPage(w >= 1536 ? 30 : w >= 1280 ? 24 : w >= 1024 ? 20 : w >= 768 ? 12 : w >= 640 ? 9 : 8);
-            }
+            const w = window.innerWidth;
+            setItemsPerPage(w >= 1536 ? 30 : w >= 1280 ? 24 : w >= 1024 ? 20 : w >= 768 ? 12 : w >= 640 ? 9 : 8);
         };
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
-    }, [viewMode]);
+    }, []);
 
     // ─── FASE 3 (Egress): migración única de imágenes base64 → Storage ───────
     // Las imágenes viejas viven como base64 dentro de bodega_products_v1 (el doc
@@ -162,15 +154,6 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         return () => { cancelled = true; clearTimeout(timer); };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
-
-    const toggleViewMode = () => {
-        const next = viewMode === 'grid' ? 'list' : 'grid';
-        setViewMode(next);
-        localStorage.setItem('bodega_inventory_view', next);
-        setCurrentPage(1);
-        setItemsPerPage(next === 'list' ? 25 : (() => { const w = window.innerWidth; return w >= 1536 ? 30 : w >= 1280 ? 24 : w >= 1024 ? 20 : w >= 768 ? 12 : w >= 640 ? 9 : 8; })());
-        triggerHaptic && triggerHaptic();
-    };
 
     // Selección múltiple para etiquetas
     const [selectedIds, setSelectedIds] = useState(new Set());
@@ -656,14 +639,12 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 categories={categories}
                 activeCategory={activeCategory}
                 searchTerm={searchTerm}
-                viewMode={viewMode}
                 selectedIds={selectedIds}
                 lowStockCount={lowStockCount}
                 isCajero={isCajero}
                 categoryScrollRef={categoryScrollRef}
                 handleSetSearchTerm={handleSetSearchTerm}
                 handleSetActiveCategory={handleSetActiveCategory}
-                toggleViewMode={toggleViewMode}
                 setSelectedIds={setSelectedIds}
                 setIsModalOpen={setIsModalOpen}
                 setIsBulkPriceOpen={setIsBulkPriceOpen}
@@ -782,7 +763,6 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                         </div>
                     )}
                     <div ref={productsScrollRef} className="flex-1 overflow-y-auto pb-28 sm:pb-32 scrollbar-hide">
-                        {viewMode === 'grid' ? (
                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
                             {paginatedProducts.map(p => (
                                 // v1.2.0: hover lift wrapper para ProductCard (design system hover state).
@@ -819,131 +799,6 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                                 </div>
                             ))}
                         </div>
-                        ) : (
-                        /* ── LIST VIEW ── */
-                        // v1.2.0: surface tokens + border-surface-300 (warm border) para la lista.
-                        <div className="bg-surface dark:bg-surface-900 rounded-2xl border border-surface-200 dark:border-surface-800 shadow-tone-sm overflow-hidden">
-                            {/* Table Header — desktop */}
-                            <div className="hidden sm:grid sm:grid-cols-[40px_1fr_100px_100px_70px_80px_110px] gap-2 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                                <div className="flex items-center justify-center">
-                                    <input type="checkbox" onChange={handleSelectAll} checked={selectedIds.size > 0 && selectedIds.size === paginatedProducts.length} className="w-4 h-4 rounded border-slate-300 text-brand focus:ring-brand cursor-pointer" />
-                                </div>
-                                <button onClick={() => handleSort('name')} className="flex items-center gap-1 hover:text-slate-600 dark:hover:text-slate-200 transition-colors text-left">
-                                    Producto {sortField === 'name' && <ArrowUpDown size={10} />}
-                                </button>
-                                <button onClick={() => handleSort('price')} className="flex items-center gap-1 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
-                                    Precio {sortField === 'price' && <ArrowUpDown size={10} />}
-                                </button>
-                                <span>{!isCajero && 'Costo'}</span>
-                                {!isCajero && <button onClick={() => handleSort('margin')} className="flex items-center gap-1 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
-                                    Margen {sortField === 'margin' && <ArrowUpDown size={10} />}
-                                </button>}
-                                <button onClick={() => handleSort('stock')} className="flex items-center gap-1 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
-                                    Stock {sortField === 'stock' && <ArrowUpDown size={10} />}
-                                </button>
-                                <span className="text-right">Acciones</span>
-                            </div>
-                            {/* Rows */}
-                            <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                                {paginatedProducts.map(p => {
-                                    const valBs = p.priceUsdt * effectiveRate;
-                                    const isLowStock = isLowStockProduct(p);
-                                    const effectiveCostUsd = p.costUsd || (p.costBs && effectiveRate > 0 ? p.costBs / effectiveRate : 0);
-                                    // Mismo criterio que el formulario y la ficha: margen sobre el precio de venta.
-                                    const margin = marginOverPricePercent(p.priceUsdt, effectiveCostUsd);
-                                    const catInfo = categories.find(c => c.id === p.category);
-                                    return (
-                                        <div key={p.id} className={`grid grid-cols-[auto_1fr_auto] sm:grid-cols-[40px_1fr_100px_100px_70px_80px_110px] gap-2 px-4 py-3 items-center hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors ${selectedIds.has(p.id) ? 'bg-brand/5 dark:bg-brand/10' : ''} ${isLowStock ? 'bg-amber-50/50 dark:bg-amber-900/5' : ''}`}>
-                                            {/* Checkbox */}
-                                            <div className="flex items-center justify-center px-1">
-                                                <input type="checkbox" checked={selectedIds.has(p.id)} onChange={() => handleToggleSelect(p.id)} className="w-5 h-5 sm:w-4 sm:h-4 rounded border-slate-300 text-brand focus:ring-brand cursor-pointer focus:ring-offset-0" />
-                                            </div>
-                                            
-                                            {/* Product Info (always visible) */}
-                                            <div className="flex items-center gap-3 min-w-0">
-                                                <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 overflow-hidden">
-                                                    <SmartImage
-                                                        src={p.image}
-                                                        product={p}
-                                                        alt={p.name}
-                                                        fallbackIcon={<Tag size={16} className="text-slate-300 dark:text-slate-600" />}
-                                                    />
-                                                </div>
-                                                <div className="min-w-0">
-                                                    <p className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">{p.name}</p>
-                                                    <div className="flex items-center gap-2 mt-0.5">
-                                                        {catInfo && catInfo.id !== 'todos' && (
-                                                            <span className="text-[9px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">{catInfo.label}</span>
-                                                        )}
-                                                        {isLowStock && <span className="text-[9px] font-bold text-amber-500 flex items-center gap-0.5"><AlertTriangle size={9} /> Bajo</span>}
-                                                        {/* Mobile: show price inline */}
-                                                        <span className="sm:hidden text-[11px] font-black text-emerald-600 dark:text-emerald-400">{copEnabled && copPrimary && tasaCop > 0 ? `${getCop(p, tasaCop).toLocaleString('es-CO')} COP` : `$${(getUsd(p, tasaCop) || 0).toFixed(2)}`}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* Mobile: compact actions */}
-                                            {/* v1.2.0: aria-label + aria-hidden en icon-only buttons (a11y). */}
-                                            <div className="flex items-center gap-1.5 sm:hidden">
-                                                <button onClick={() => handlePrintSingle(p)} aria-label={`Imprimir etiqueta de ${p.name}`} className="p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-surface-300 hover:text-brand transition-colors"><Printer size={14} aria-hidden="true" /></button>
-                                                {!isCajero && (
-                                                <div className="flex items-center bg-surface-50 dark:bg-surface-800 rounded-lg">
-                                                    <button onClick={() => adjustStock(p.id, -1)} aria-label={`Restar 1 unidad de ${p.name}`} className="p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-surface-400 hover:text-red-500 transition-colors"><Minus size={14} aria-hidden="true" /></button>
-                                                    <span className={`text-xs font-black min-w-[28px] text-center ${isLowStock ? 'text-amber-500' : 'text-surface-700 dark:text-surface-200'}`}>{formatStockDisplay(p.stock ?? 0, isGranelProduct(p))}</span>
-                                                    <button onClick={() => adjustStock(p.id, 1)} aria-label={`Sumar 1 unidad de ${p.name}`} className="p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-surface-400 hover:text-emerald-500 transition-colors"><Plus size={14} aria-hidden="true" /></button>
-                                                </div>
-                                                )}
-                                                {isCajero && <span className={`text-xs font-black ${isLowStock ? 'text-amber-500' : 'text-surface-700 dark:text-surface-200'}`}>{formatStockDisplay(p.stock ?? 0, isGranelProduct(p))}</span>}
-                                                {!isCajero && <button onClick={() => handleEdit(p)} aria-label={`Editar ${p.name}`} className="p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-surface-300 hover:text-amber-500 transition-colors"><Pencil size={14} aria-hidden="true" /></button>}
-                                            </div>
-
-                                            {/* Desktop columns */}
-                                            <div className="hidden sm:block">
-                                                {copEnabled && tasaCop > 0 ? (
-                                                    copPrimary ? (
-                                                        <>
-                                                            <p className="text-sm font-black text-amber-600 dark:text-amber-400">{getCop(p, tasaCop).toLocaleString('es-CO')} COP</p>
-                                                            <p className="text-[10px] text-slate-400 font-medium">USD {getUsd(p, tasaCop).toFixed(2)}</p>
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <p className="text-sm font-black text-emerald-600 dark:text-emerald-400">${getUsd(p, tasaCop).toFixed(2)}</p>
-                                                            <p className="text-[10px] text-slate-400 font-medium">{getCop(p, tasaCop).toLocaleString('es-CO')} COP</p>
-                                                        </>
-                                                    )
-                                                ) : (
-                                                    <>
-                                                        <p className="text-sm font-black text-emerald-600 dark:text-emerald-400">${(p.priceUsdt || 0).toFixed(2)}</p>
-                                                        <p className="text-[10px] text-slate-400 font-medium">{formatBs(valBs)} Bs</p>
-                                                    </>
-                                                )}
-                                            </div>
-                                            <div className="hidden sm:block">
-                                                {!isCajero ? <p className="text-xs font-bold text-slate-500 dark:text-slate-400">{p.costUsd ? (copEnabled && copPrimary && tasaCop > 0 ? `${Math.round(p.costUsd * tasaCop).toLocaleString('es-CO')} COP` : `$${p.costUsd.toFixed(2)}`) : '-'}</p> : <span className="text-[10px] text-slate-300">-</span>}
-                                            </div>
-                                            <div className="hidden sm:block">
-                                                {!isCajero ? (margin !== null ? (
-                                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-lg ${margin >= 0 ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400' : 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400'}`}>
-                                                        {margin >= 0 ? '+' : ''}{margin.toFixed(0)}%
-                                                    </span>
-                                                ) : <span className="text-[10px] text-slate-300">-</span>) : <span className="text-[10px] text-slate-300">-</span>}
-                                            </div>
-                                            <div className="hidden sm:flex items-center gap-1">
-                                                {!isCajero && <button onClick={() => adjustStock(p.id, -1)} aria-label={`Restar 1 unidad de ${p.name}`} className="w-9 h-9 rounded-lg bg-surface-50 dark:bg-surface-800 flex items-center justify-center text-surface-400 hover:text-red-500 transition-colors active:scale-90"><Minus size={14} aria-hidden="true" /></button>}
-                                                <span className={`text-sm font-black min-w-[32px] text-center ${isLowStock ? 'text-amber-500' : 'text-surface-700 dark:text-surface-200'}`}>{formatStockDisplay(p.stock ?? 0, isGranelProduct(p))}</span>
-                                                {!isCajero && <button onClick={() => adjustStock(p.id, 1)} aria-label={`Sumar 1 unidad de ${p.name}`} className="w-9 h-9 rounded-lg bg-surface-50 dark:bg-surface-800 flex items-center justify-center text-surface-400 hover:text-emerald-500 transition-colors active:scale-90"><Plus size={14} aria-hidden="true" /></button>}
-                                            </div>
-                                            <div className="hidden sm:flex items-center justify-end gap-1">
-                                                <button onClick={() => handlePrintSingle(p)} aria-label={`Imprimir etiqueta de ${p.name}`} className="p-2 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-surface-300 hover:text-brand hover:bg-brand/10 transition-all" title="Imprimir Etiqueta"><Printer size={14} aria-hidden="true" /></button>
-                                                {!isCajero && <button onClick={() => handleEdit(p)} aria-label={`Editar ${p.name}`} className="p-2 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-surface-300 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all"><Pencil size={14} aria-hidden="true" /></button>}
-                                                {!isCajero && <button onClick={() => handleDelete(p.id)} aria-label={`Eliminar ${p.name}`} className="p-2 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-surface-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"><Trash2 size={14} aria-hidden="true" /></button>}
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                        )}
 
                         {/* Pagination */}
                         {totalPages > 1 && (

@@ -1,10 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Tag, Banknote, AlertTriangle, Box, Minus, Plus, Pencil, Trash2, Package, Layers, Clock, Printer, FileText } from 'lucide-react';
 import { CATEGORY_COLORS, CATEGORY_ICONS, UNITS } from '../../config/categories';
 import { formatUsd, formatBs, formatCop, smartCashRounding, getCop, getUsd } from '../../utils/calculatorUtils';
 import { showToast } from '../Toast';
 import SmartImage from '../SmartImage';
-import { isGranelProduct, isLowStockProduct, granelStockUnitLabel, parseStockInput, formatStockDisplay, formatLowStockAlert } from '../../utils/granel'; // GRANEL-001
+import { isGranelProduct, isLowStockProduct, granelStockUnitLabel, parseStockInput, formatStockDisplay, formatLowStockAlert, adjustStockValue } from '../../utils/granel'; // GRANEL-001
 import { marginOverPricePercent } from '../../utils/productCostFactor';
 
 export default function ProductCard({
@@ -44,6 +44,45 @@ export default function ProductCard({
         }
         setStockDraft('');
     };
+
+    // Los toques de − / + se acumulan como cambio pendiente; solo «Confirmar» guarda,
+    // en un solo ajuste con la diferencia (en la nube: UN movimiento AJUSTE).
+    const [pendingDelta, setPendingDelta] = useState(0);
+    const [confirming, setConfirming] = useState(false);
+    const currentStock = Number(p.stock ?? 0) || 0;
+    const tapStock = (step) => {
+        setPendingDelta((prev) => {
+            const allowNeg = localStorage.getItem('allow_negative_stock') === 'true';
+            const next = adjustStockValue(prev, step, isGranel);
+            // Sin stock negativo no se baja de 0 (mismo tope que al guardar).
+            if (!allowNeg && adjustStockValue(currentStock, next, isGranel) < 0) return prev;
+            return next;
+        });
+    };
+    const cancelPending = () => setPendingDelta(0);
+    const confirmPending = async () => {
+        if (!pendingDelta || confirming) return;
+        const delta = pendingDelta;
+        setConfirming(true);
+        try {
+            await onAdjustStock(p.id, delta);
+            setPendingDelta(0);
+        } finally {
+            setConfirming(false);
+        }
+    };
+    // Salir de la pantalla con un cambio sin confirmar: se descarta y se avisa.
+    const pendingRef = useRef(0);
+    pendingRef.current = pendingDelta;
+    useEffect(() => () => {
+        if (pendingRef.current) showToast(`Se descartó el cambio de stock sin confirmar de ${p.name || 'un producto'}`, 'warning');
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => {
+        if (!pendingDelta) return undefined;
+        const warn = (e) => { e.preventDefault(); e.returnValue = ''; };
+        window.addEventListener('beforeunload', warn);
+        return () => window.removeEventListener('beforeunload', warn);
+    }, [pendingDelta]);
 
     const effectiveUsd = getUsd(p, tasaCop);
     const valBs = effectiveUsd * effectiveRate;
@@ -323,7 +362,7 @@ ${showSecondary ? `[PRECIO SECUNDARIO]
                 <div className="mt-auto pt-2 border-t border-slate-100 dark:border-slate-800">
                     <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 rounded-xl p-1">
                         {!readOnly && (
-                        <button onClick={() => onAdjustStock(p.id, -1)} className="w-10 h-10 rounded-lg bg-white dark:bg-slate-700 flex items-center justify-center text-slate-500 hover:text-red-500 shadow-sm active:scale-95 transition-all">
+                        <button onClick={() => tapStock(-1)} disabled={confirming} aria-label={`Restar 1 a ${p.name}`} className="w-10 h-10 rounded-lg bg-white dark:bg-slate-700 flex items-center justify-center text-slate-500 hover:text-red-500 shadow-sm active:scale-95 transition-all">
                             <Minus size={18} strokeWidth={2.5} />
                         </button>
                         )}
@@ -363,11 +402,28 @@ ${showSecondary ? `[PRECIO SECUNDARIO]
                             )}
                         </div>
                         {!readOnly && (
-                        <button onClick={() => onAdjustStock(p.id, 1)} className="w-10 h-10 rounded-lg bg-white dark:bg-slate-700 flex items-center justify-center text-slate-500 hover:text-emerald-500 shadow-sm active:scale-95 transition-all">
+                        <button onClick={() => tapStock(1)} disabled={confirming} aria-label={`Sumar 1 a ${p.name}`} className="w-10 h-10 rounded-lg bg-white dark:bg-slate-700 flex items-center justify-center text-slate-500 hover:text-emerald-500 shadow-sm active:scale-95 transition-all">
                             <Plus size={18} strokeWidth={2.5} />
                         </button>
                         )}
                     </div>
+
+                    {!readOnly && pendingDelta !== 0 && (
+                        <div data-testid="stock-pending" className="mt-1.5 rounded-xl border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-900/20 p-1.5">
+                            <p className="text-center text-xs font-black text-amber-700 dark:text-amber-300">
+                                {formatStockDisplay(currentStock, isGranel)} → {formatStockDisplay(adjustStockValue(currentStock, pendingDelta, isGranel), isGranel)}{' '}
+                                ({pendingDelta > 0 ? '+' : ''}{formatStockDisplay(pendingDelta, isGranel)})
+                            </p>
+                            <div className="mt-1 flex gap-1">
+                                <button type="button" onClick={cancelPending} disabled={confirming} className="flex-1 py-1.5 rounded-lg text-[11px] font-bold bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-200 active:scale-95 transition-all">
+                                    Cancelar
+                                </button>
+                                <button type="button" onClick={confirmPending} disabled={confirming} className="flex-1 py-1.5 rounded-lg text-[11px] font-bold bg-brand text-white active:scale-95 transition-all disabled:opacity-60">
+                                    {confirming ? 'Guardando…' : 'Confirmar'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Days Remaining Badge */}
                     {daysRemaining !== null && daysRemaining !== undefined && (
