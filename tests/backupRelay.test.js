@@ -3,15 +3,25 @@
  *
  * Cubre:
  *  - relayUploadBackup / relayFetchBackup: feliz, error HTTP, red caída.
+ *  - Credencial propia del equipo (x-device-credential); el secreto común ya no se envía.
+ *  - Sin credencial no se llama a la red; un 401 borra la credencial vieja.
+ *  - claimDeviceCredential: canje de código y guardado local.
+ *  - getEstacionApiUrl ignora valores que no son URL (incidente 2026-11: secreto en la variable).
  *  - isRlsBlockedError: 42501 y variantes de mensaje; no confunde 401/403.
  *  - describeCloudError(42501).hint menciona el relay como acción.
  */
 
 import { describe, it, expect, beforeEach, afterEach, beforeAll, vi } from 'vitest';
-import { relayUploadBackup, relayFetchBackup, getEstacionApiUrl } from '../src/utils/backupRelay';
+import { relayUploadBackup, relayFetchBackup, getEstacionApiUrl, claimDeviceCredential, ESTACION_PROD_URL } from '../src/utils/backupRelay';
+import { DEVICE_CREDENTIAL_STORAGE_KEY, readDeviceCredential } from '../src/utils/estacionCredential';
 import { describeCloudError, isRlsBlockedError } from '../src/utils/cloudError';
 
 const BASE = 'https://estacion.example';
+const CRED = 'credencial-de-prueba-del-equipo-0123456789';
+
+beforeEach(() => {
+    localStorage.setItem(DEVICE_CREDENTIAL_STORAGE_KEY, CRED);
+});
 
 // Fijar la URL base ANTES de importar el cliente (env se lee por llamada,
 // pero el valor por defecto apunta a producción).
@@ -37,7 +47,21 @@ describe('getEstacionApiUrl — guardarraíl de entorno (E2E-AUDIT H-infra)', ()
     it('SIN env en un build de producción apunta a producción', () => {
         delete ENV[URL_ENV_KEY];
         ENV.PROD = true;
-        expect(getEstacionApiUrl()).toBe('https://estacion-2026.vercel.app');
+        expect(getEstacionApiUrl()).toBe(ESTACION_PROD_URL);
+        expect(ESTACION_PROD_URL).toBe('https://estacion-2026-eta.vercel.app');
+    });
+
+    it('un valor que no es URL (p. ej. un secreto pegado por error) se ignora', () => {
+        ENV[URL_ENV_KEY] = 'a'.repeat(64);
+        ENV.PROD = true;
+        expect(getEstacionApiUrl()).toBe(ESTACION_PROD_URL);
+        ENV.PROD = false;
+        expect(getEstacionApiUrl()).toBe('');
+    });
+
+    it('quita la barra final de la URL configurada', () => {
+        ENV[URL_ENV_KEY] = 'https://staging.example/';
+        expect(getEstacionApiUrl()).toBe('https://staging.example');
     });
 
     it('SIN env fuera de producción devuelve "" y el relay se salta (nunca toca producción)', () => {
@@ -88,9 +112,10 @@ describe('relayUploadBackup', () => {
             `${BASE}/api/backup/relay`,
             expect.objectContaining({
                 method: 'POST',
-                headers: expect.objectContaining({ 'x-backup-secret': expect.any(String) }),
+                headers: expect.objectContaining({ 'x-device-credential': CRED }),
             })
         );
+        expect(fetch.mock.calls[0][1].headers).not.toHaveProperty('x-backup-secret');
         const body = JSON.parse(fetch.mock.calls[0][1].body);
         expect(body.deviceId).toBe('PDA-TEST');
         expect(body.backup_data.compressed).toBe(true);
@@ -113,6 +138,65 @@ describe('relayUploadBackup', () => {
         expect(res.ok).toBe(false);
         expect(res.error).toBeInstanceOf(TypeError);
     });
+
+    it('sin credencial NO llama a la red y avisa que falta vincular', async () => {
+        localStorage.removeItem(DEVICE_CREDENTIAL_STORAGE_KEY);
+        const res = await relayUploadBackup('PDA-TEST', {});
+        expect(res).toMatchObject({ ok: false, skipped: true, needsLink: true });
+        expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('401 de la Estación borra la credencial vieja y pide vincular', async () => {
+        fetch.mockResolvedValue({ ok: false, status: 401, json: async () => ({ error: 'Credencial inválida' }) });
+        const res = await relayUploadBackup('PDA-TEST', {});
+        expect(res).toMatchObject({ ok: false, needsLink: true });
+        expect(readDeviceCredential()).toBe('');
+    });
+
+    it('403 (licencia) NO borra la credencial', async () => {
+        fetch.mockResolvedValue({ ok: false, status: 403, json: async () => ({ error: 'sin licencia' }) });
+        await relayUploadBackup('PDA-TEST', {});
+        expect(readDeviceCredential()).toBe(CRED);
+    });
+});
+
+describe('claimDeviceCredential', () => {
+    beforeEach(() => {
+        localStorage.removeItem(DEVICE_CREDENTIAL_STORAGE_KEY);
+        vi.stubGlobal('fetch', vi.fn());
+    });
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('canje correcto: normaliza el código, llama al endpoint y guarda la credencial', async () => {
+        fetch.mockResolvedValue({ ok: true, json: async () => ({ ok: true, deviceId: 'PDA-TEST', credential: CRED }) });
+        const res = await claimDeviceCredential('PDA-TEST', ' abcd-efgh ');
+        expect(res).toEqual({ ok: true });
+        expect(fetch).toHaveBeenCalledWith(`${BASE}/api/backup/device-credential/claim`, expect.objectContaining({ method: 'POST' }));
+        expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ deviceId: 'PDA-TEST', code: 'ABCDEFGH' });
+        expect(readDeviceCredential()).toBe(CRED);
+    });
+
+    it('código con largo incorrecto: no llama a la red', async () => {
+        const res = await claimDeviceCredential('PDA-TEST', 'ABC');
+        expect(res.ok).toBe(false);
+        expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('código rechazado: muestra el error de la Estación y no guarda nada', async () => {
+        fetch.mockResolvedValue({ ok: false, status: 401, json: async () => ({ ok: false, error: 'Código inválido o vencido' }) });
+        const res = await claimDeviceCredential('PDA-TEST', 'ABCDEFGH');
+        expect(res).toEqual({ ok: false, error: 'Código inválido o vencido' });
+        expect(readDeviceCredential()).toBe('');
+    });
+
+    it('sin conexión: mensaje claro', async () => {
+        fetch.mockRejectedValue(new TypeError('Failed to fetch'));
+        const res = await claimDeviceCredential('PDA-TEST', 'ABCDEFGH');
+        expect(res.ok).toBe(false);
+        expect(res.error).toMatch(/Sin conexión/);
+    });
 });
 
 describe('relayFetchBackup', () => {
@@ -134,8 +218,9 @@ describe('relayFetchBackup', () => {
         expect(res.updatedAt).toBe('2026-09-09T00:00:00Z');
         expect(fetch).toHaveBeenCalledWith(
             `${BASE}/api/backup/relay?deviceId=PDA-TEST`,
-            expect.objectContaining({ headers: expect.objectContaining({ 'x-backup-secret': expect.any(String) }) })
+            expect.objectContaining({ headers: expect.objectContaining({ 'x-device-credential': CRED }) })
         );
+        expect(fetch.mock.calls[0][1].headers).not.toHaveProperty('x-backup-secret');
     });
 
     it('404 lógico del relay → backupData null (nube vacía)', async () => {

@@ -6,6 +6,7 @@ import {
 import { SectionCard } from '../../SettingsShared';
 import { showToast } from '../../Toast';
 import PairingManager from '../PairingManager';
+import EstacionBackupLink from '../EstacionBackupLink';
 import SystemHealthPanel from '../SystemHealthPanel';
 import ConfirmModal from '../../ConfirmModal';
 import QRCode from 'qrcode';
@@ -246,6 +247,9 @@ export default function SettingsTabSistema({
                     </div>
                     <ChevronRight size={16} className="text-slate-300 shrink-0" />
                 </button>
+
+                {/* Llave propia de este equipo para la vía de emergencia de respaldos (F3). */}
+                {isLicensedCloud && <EstacionBackupLink deviceId={deviceId} />}
 
                 {lastError && (
                     <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 rounded-xl space-y-1.5" role="alert">

@@ -15,22 +15,9 @@ import { getEstacionApiUrl } from './backupRelay';
 
 const UUID_V4_LIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-/** Clave local donde el POS guarda su credencial por dispositivo (entregada al emparejar). */
-export const DEVICE_CREDENTIAL_STORAGE_KEY = 'estacion_device_upload_credential';
-
-/** Lee la credencial del dispositivo desde almacenamiento local. '' si no existe. */
-export function readDeviceCredential() {
-    try {
-        return globalThis.localStorage?.getItem(DEVICE_CREDENTIAL_STORAGE_KEY) || '';
-    } catch {
-        return '';
-    }
-}
-
-/** Guarda la credencial entregada por el admin (solo en este equipo). */
-export function saveDeviceCredential(credential) {
-    globalThis.localStorage?.setItem(DEVICE_CREDENTIAL_STORAGE_KEY, String(credential || ''));
-}
+// La credencial del equipo vive en estacionCredential.js (se re-exporta por compatibilidad).
+import { readDeviceCredential } from './estacionCredential';
+export { DEVICE_CREDENTIAL_STORAGE_KEY, readDeviceCredential, saveDeviceCredential } from './estacionCredential';
 
 /** Nuevo UUID para una operación de respaldo. */
 export function newBackupOperationId() {

@@ -5,6 +5,15 @@ Aprendizajes reutilizables van a `inteligencia.md`.
 
 ---
 
+## 2026-11-17 — Respaldo de emergencia (relay) con llave propia por equipo
+- Plan de fixeo F3 de la Estación Maestra (hallazgo A1 de la auditoría 2026-11-16): el relay aceptaba el secreto común `VITE_ESTACION_BACKUP_SECRET`, que iba en el JS público; con él se podía leer o pisar el respaldo de cualquier caja.
+- `src/utils/backupRelay.js`: envía la credencial propia del equipo (`x-device-credential`) y ya no lee ni envía el secreto. Sin credencial no llama a la red. Un 401 borra la credencial vieja. Nuevo `claimDeviceCredential()`.
+- `src/utils/estacionCredential.js` (nuevo): guarda la credencial en este equipo; `backupStorageUpload.js` la re-exporta.
+- Ajustes → Sistema → Nube: bloque «Respaldo de emergencia» (`EstacionBackupLink.jsx`) para escribir el código que da la Estación.
+- `getEstacionApiUrl`: ignora valores que no son URL (en Vercel la variable tenía el secreto y el relay daba 404 desde siempre) y el default de producción pasa a `https://estacion-2026-eta.vercel.app`.
+- Pruebas: `tests/backupRelay.test.js` ampliado; suite completa 2493 pasan. Build OK.
+- Prueba de punta a punta contra staging: canje de código, subida y lectura con la llave, y 6 ataques rechazados (12/12).
+
 ## 2026-11-15 — Licencias: aviso remoto de cambio de ID para separar un ID compartido (P-020)
 
 - Nuevo buzón `identity_migration_orders` (migración `20261115_identity_migration_orders.sql`, **aplicada**): tabla cerrada, solo service_role crea avisos; la caja solo ve y completa avisos de su propia sesión (`auth.uid()`).
