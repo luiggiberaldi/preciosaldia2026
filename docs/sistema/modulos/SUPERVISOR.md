@@ -29,7 +29,7 @@ Si la caja parece desconectada, el cambio queda «EN COLA» en el celular (`supe
 
 Una orden rechazada por la nube **no deja fila** en `supervisor_commands` (la transacción se deshace). Desde el 2026-11-19 el celular la anota con `report_supervisor_command_failure` en `supervisor_command_failures` (`supervisorCommandFailureReport.js`): un renglón por error distinto, con contador, primer y último intento, versión del monitor, el último payload y el **motivo exacto** que calcula el servidor (`explain_supervisor_inventory_batch_payload`, p. ej. «línea 1: campo no permitido: productName»). La vista `supervisor_command_problems` une tres casos: rechazadas por la nube, fallidas al aplicarse en la caja y vencidas sin que la caja las tomara.
 
-Para revisarlo: `node scripts/supervisor-failures-report.mjs --hours 24` (o `--device PDA-V2-…`). Hay alarma diaria en GitHub (`.github/workflows/supervisor-failures-alarm.yml`). Migración: `supabase/migrations/20261119_supervisor_command_failures.sql`.
+Es una herramienta **interna** (equipo y Claude), sin pantalla para el usuario. Para revisarla: `node scripts/supervisor-failures-report.mjs --hours 24` (o `--device PDA-V2-…`). Hay alarma diaria en GitHub (`.github/workflows/supervisor-failures-alarm.yml`). Migración: `supabase/migrations/20261119_supervisor_command_failures.sql`.
 
 ## Interruptores (se apagan sin publicar código)
 

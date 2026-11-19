@@ -518,4 +518,5 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 - `scripts/supervisor-failures-report.mjs` (+ `supervisorFailuresCore.mjs`): informe de solo lectura, con `--hours`, `--device`, `--check` y `--redact`.
 - `.github/workflows/supervisor-failures-alarm.yml`: alarma diaria 11:15 UTC; necesita el secreto `SUPABASE_ACCESS_TOKEN`, que **aún no está** en GitHub (la alarma de egress falla por lo mismo desde el 16-nov).
 **Verificación:** la explicación coincide con la regla real de producción en 22/22 casos (PGlite con el validador copiado de producción). Migración completa en PGlite: agrupa repeticiones, explica el motivo, recorta, sin sesión no anota, tope de 200, vista con los tres casos, idempotente. Pruebas: `supervisorCommandFailureReport.test.js` 9/9 y `supervisorCommands.test.js` ajustado (cuenta solo los `create`).
-**Pendiente:** aplicar la migración en producción (visto bueno del dueño) **antes** de publicar la app; la pantalla en la Estación Maestra queda para cuando se guarde el trabajo de diseño responsive que está a medias ahí.
+**Pendiente:** aplicar la migración en producción (visto bueno del dueño) **antes** de publicar la app.
+**Decisión del dueño:** es una herramienta interna para el equipo y para Claude, **sin pantalla** en la app ni en la Estación. Se lee con el informe por consola y la alarma de GitHub.

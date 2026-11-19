@@ -15,12 +15,12 @@
 --   3. report_supervisor_command_failure(...): el monitor lo llama al recibir un
 --      rechazo. Nunca falla hacia el cliente. Límite de 200 errores distintos
 --      por actor y día; payload recortado a 16 KB; limpieza de lo de +30 días.
---   4. supervisor_command_problems: vista para la Estación/informe que une los
+--   4. supervisor_command_problems: vista para el informe interno que une los
 --      rechazos con las órdenes que la caja marcó como fallidas y las que
 --      vencieron sin que la caja las tomara.
 --
 -- Seguridad: la tabla y la vista no se exponen a anon ni a authenticated; solo
--- la RPC (SECURITY DEFINER) escribe. La lectura es del service_role (Estación)
+-- la RPC (SECURITY DEFINER) escribe. Herramienta interna, sin pantalla: la lectura es del service_role
 -- y de la API de administración (informe).
 -- No toca create_supervisor_command ni ninguna regla de validación existente.
 -- Idempotente: se puede correr dos veces.
@@ -278,7 +278,7 @@ $$;
 REVOKE ALL ON FUNCTION public.report_supervisor_command_failure(text, text, text, text, text, text, jsonb, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.report_supervisor_command_failure(text, text, text, text, text, text, jsonb, text) TO authenticated;
 
--- 4 ── Vista de problemas (Estación e informe) ───────────────────────────────
+-- 4 ── Vista de problemas (informe interno) ──────────────────────────────────
 CREATE OR REPLACE VIEW public.supervisor_command_problems
 WITH (security_invoker = true) AS
 SELECT
