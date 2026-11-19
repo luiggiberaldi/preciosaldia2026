@@ -494,3 +494,17 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 **Cambios:** nuevo [docs/plans/2026-11-15-plan-definitivo-precios-al-dia-nube.md](docs/plans/2026-11-15-plan-definitivo-precios-al-dia-nube.md). Los planes de multicaja del 13-11 (nube) y del 14-11 (red local) quedan marcados como reemplazados. En `PENDIENTES.md`, P-013 pasa a Descartado y se agrega P-021. Solo documentación; no cambia código.
 **Decisiones del dueño:** D1 nube; D2 seguir recibiendo arreglos de Precios al Día. D3–D9 quedan propuestas y por confirmar.
 **Verificación:** `bun run docs:check` sin enlaces rotos; solo avisa de ERR-012, que falta en la tabla de `ERRORES.md` y no es de este cambio.
+
+## 2026-11-19 — fix(supervisor): la cola local se atascaba con un ajuste de stock que el servidor rechazaba siempre
+
+**Caso:** Bodega mani (PC principal `PDA-V2-F5D31FEF…`, supervisor `PDA-V2-4B7081BC…`). El supervisor reportó cambios de stock que «no llegan» a la PC.
+**Diagnóstico (base de producción, solo lectura):** los 67 comandos que sí entraron a `supervisor_commands` hoy están `applied` y el stock publicado por la PC cuadra con cada ajuste. Pero en 24 h hubo 263 llamadas a `create_supervisor_command` con error 400 («Payload de ajuste por lote inválido»), **una cada 30 s** desde las 11:45 UTC: el barrido automático de la cola local del supervisor.
+**Causa:** cuando la caja parece desconectada, `OwnerMonitorView` guardaba el ajuste en la cola agregando `productName` a cada línea. `is_valid_supervisor_inventory_batch_payload` solo admite `productId, inputUnit, quantityInput, expectedStock, lineId, baseRevision, unitsPerPackage`, así que la RPC lo rechaza siempre. Como `flushSupervisorCommandQueue` se detiene en el primer fallo, todo lo que estaba detrás en la cola también quedó «EN COLA» para siempre.
+**Cambio:** la cola ya no guarda `productName` (el nombre viaja en `label`) y `sanitizeQueuedPayload` limpia las líneas al encolar **y al cargar la cola guardada**, así que la entrada atascada del supervisor se repara sola al abrir la versión nueva. Si un ajuste viejo llega tarde y el stock ya cambió, la PC lo rechaza («El stock cambió antes de aplicar»): no duplica stock.
+**Pendiente aparte:** también quedaron 49 comandos `pending` del 9-nov sin tomar (ya vencidos), y la copia `precios al dia cloud` tiene el mismo bug.
+**Verificación:** `tests/supervisorCommandQueue.test.js` (2 pruebas nuevas con la entrada real atascada) + banner y avisos de cola: 26/26. ESLint sin errores. No publicado todavía.
+
+## 2026-11-19 — Versión 2.0.7
+
+**Qué:** `package.json` y `package-lock.json` pasan de 2.0.6 a 2.0.7 y se agrega su nota en `src/data/releaseNotes.js` (aviso de novedades para el dueño): inventario sin duplicados, confirmación del − / + del stock, la cola del monitor que ya no se atasca y el monitor más liviano (egress Realtime).
+**Verificación:** `tests/releaseNotes.test.js` y suites de la cola del supervisor; build de producción.

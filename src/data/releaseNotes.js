@@ -13,6 +13,16 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: '2.0.7',
+    fecha: '2026-11-19',
+    mejoras: [
+      { icono: 'paquete', titulo: 'Inventario sin duplicados', texto: 'Te avisa si un producto ya existe y puedes unir los repetidos en uno solo.' },
+      { icono: 'escudo', titulo: 'Stock con confirmación', texto: 'El − y + del stock te pide confirmar antes de guardar, para evitar toques sin querer.' },
+      { icono: 'rayo', titulo: 'Cambios del monitor que sí llegan', texto: 'Los ajustes de stock guardados sin conexión ya no se quedan trancados y llegan a la caja.' },
+      { icono: 'grafico', titulo: 'Monitor más liviano', texto: 'El monitor gasta menos datos y se actualiza al volver a abrirlo.' },
+    ],
+  },
+  {
     version: '2.0.6',
     fecha: '2026-11-15',
     mejoras: [
