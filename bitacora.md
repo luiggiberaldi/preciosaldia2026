@@ -503,3 +503,8 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 **Cambio:** la cola ya no guarda `productName` (el nombre viaja en `label`) y `sanitizeQueuedPayload` limpia las líneas al encolar **y al cargar la cola guardada**, así que la entrada atascada del supervisor se repara sola al abrir la versión nueva. Si un ajuste viejo llega tarde y el stock ya cambió, la PC lo rechaza («El stock cambió antes de aplicar»): no duplica stock.
 **Pendiente aparte:** también quedaron 49 comandos `pending` del 9-nov sin tomar (ya vencidos), y la copia `precios al dia cloud` tiene el mismo bug.
 **Verificación:** `tests/supervisorCommandQueue.test.js` (2 pruebas nuevas con la entrada real atascada) + banner y avisos de cola: 26/26. ESLint sin errores. No publicado todavía.
+
+## 2026-11-19 — Versión 2.0.7
+
+**Qué:** `package.json` y `package-lock.json` pasan de 2.0.6 a 2.0.7 y se agrega su nota en `src/data/releaseNotes.js` (aviso de novedades para el dueño): inventario sin duplicados, confirmación del − / + del stock, la cola del monitor que ya no se atasca y el monitor más liviano (egress Realtime).
+**Verificación:** `tests/releaseNotes.test.js` y suites de la cola del supervisor; build de producción.
