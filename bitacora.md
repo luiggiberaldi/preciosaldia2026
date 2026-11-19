@@ -508,3 +508,20 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 
 **Qué:** `package.json` y `package-lock.json` pasan de 2.0.6 a 2.0.7 y se agrega su nota en `src/data/releaseNotes.js` (aviso de novedades para el dueño): inventario sin duplicados, confirmación del − / + del stock, la cola del monitor que ya no se atasca y el monitor más liviano (egress Realtime).
 **Verificación:** `tests/releaseNotes.test.js` y suites de la cola del supervisor; build de producción.
+
+## 2026-11-19 — feat(supervisor): caja negra de órdenes que no llegan a la caja
+
+**Por qué:** en el caso Bodega mani hubo 263 rechazos en 24 h sin rastro en la base: una orden rechazada por `create_supervisor_command` no deja fila, el error solo decía «Payload … inválido» y el aviso en el celular se mostraba una sola vez. Encontrarlo exigió leer los logs técnicos de Supabase.
+**Cambios:**
+- Migración `supabase/migrations/20261119_supervisor_command_failures.sql`: `explain_supervisor_inventory_batch_payload` (misma regla que el validador, pero dice el motivo), tabla `supervisor_command_failures` (un renglón por error distinto con contador), RPC `report_supervisor_command_failure` (nunca falla hacia el cliente; tope de 200 errores distintos por actor y día; payload recortado a 16 KB; borra lo de +30 días) y vista `supervisor_command_problems` (rechazadas por la nube + fallidas en la caja + vencidas sin tomar). Tabla y vista cerradas a `anon` y `authenticated`. No toca `create_supervisor_command` ni el validador.
+- `src/services/supervisorCommandFailureReport.js` y `sendSupervisorCommand`: anotan rechazos ciertos, órdenes inválidas y monitor no autorizado; nunca la red. Un mismo error, como mucho cada 5 min por sesión (el contador es aproximado a propósito).
+- `scripts/supervisor-failures-report.mjs` (+ `supervisorFailuresCore.mjs`): informe de solo lectura, con `--hours`, `--device`, `--check` y `--redact`.
+- `.github/workflows/supervisor-failures-alarm.yml`: alarma diaria 11:15 UTC; necesita el secreto `SUPABASE_ACCESS_TOKEN`, que **aún no está** en GitHub (la alarma de egress falla por lo mismo desde el 16-nov).
+**Verificación:** la explicación coincide con la regla real de producción en 22/22 casos (PGlite con el validador copiado de producción). Migración completa en PGlite: agrupa repeticiones, explica el motivo, recorta, sin sesión no anota, tope de 200, vista con los tres casos, idempotente. Pruebas: `supervisorCommandFailureReport.test.js` 9/9 y `supervisorCommands.test.js` ajustado (cuenta solo los `create`).
+**Pendiente:** aplicar la migración en producción (visto bueno del dueño) **antes** de publicar la app.
+**Decisión del dueño:** es una herramienta interna para el equipo y para Claude, **sin pantalla** en la app ni en la Estación. Se lee con el informe por consola y la alarma de GitHub.
+
+## 2026-11-19 — Caja negra del supervisor: migración aplicada en producción
+
+**Qué:** con el visto bueno del dueño se aplicó `supabase/migrations/20261119_supervisor_command_failures.sql` en `sodgzkablshladvbtnes` (Management API, una sola transacción). Antes no existía ninguno de los objetos.
+**Verificación:** tabla y vista creadas, RLS activa; `anon` y `authenticated` no leen la tabla ni la vista; `authenticated` solo ejecuta `report_supervisor_command_failure`; `explain_…` cerrada al público. La vista ya muestra 65 problemas de 30 días: 8 fallidas en caja y 57 vencidas sin tomar (56 de Bodega mani, del 30-oct al 9-nov). `scripts/supervisor-failures-report.mjs` corre contra producción; se ajustó para no mostrar una confirmación vacía (`{}`) como motivo y para no cerrarse a la fuerza en Windows.

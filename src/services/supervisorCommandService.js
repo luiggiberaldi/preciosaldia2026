@@ -11,6 +11,7 @@ import {
 } from '../config/supervisorPolicy';
 import { ensureSupervisorSession } from './supervisorAuth';
 import { readPairingRow } from './supervisorPairingState';
+import { reportSupervisorCommandFailure } from './supervisorCommandFailureReport';
 import {
     getCommandMaxTtlMs,
     SUPERVISOR_COMMAND_TYPES,
@@ -426,7 +427,13 @@ export async function sendSupervisorCommand({
     ].find((monitor) => monitor.deviceId && monitor.authId && monitor.authId === actorId);
 
     if (pairingError || !authorizedMonitor) {
-        return { ok: false, status: 'unauthorized', error: 'El monitor no tiene un vínculo autorizado' };
+        const unauthorized = { ok: false, status: 'unauthorized', error: 'El monitor no tiene un vínculo autorizado' };
+        // Solo se anota si el vínculo se leyó bien y no autoriza (un error de
+        // lectura puede ser la red, y eso no es un fallo de la orden).
+        if (!pairingError) {
+            void reportSupervisorCommandFailure({ client, targetDeviceId, type, payload, ...unauthorized });
+        }
+        return unauthorized;
     }
 
     const command = buildSupervisorCommand({
@@ -444,6 +451,16 @@ export async function sendSupervisorCommand({
         monitorDeviceId: authorizedMonitor.deviceId,
     });
     if (!validation.valid) {
+        void reportSupervisorCommandFailure({
+            client,
+            targetDeviceId,
+            monitorDeviceId: authorizedMonitor.deviceId,
+            type,
+            status: 'invalid',
+            error: validation.error,
+            commandId: command.commandId,
+            payload: command.payload,
+        });
         return { ok: false, status: 'invalid', error: validation.error };
     }
 
@@ -486,6 +503,20 @@ export async function sendSupervisorCommand({
         // El vocabulario lo fija tests/supervisorCommands.test.js: 'rejected'
         // jamás puede venir de un fallo de transporte.
         const certain = !isRetryableCreateError(createError);
+        if (certain) {
+            // Caja negra: el rechazo no deja fila en supervisor_commands; se anota
+            // aparte con el motivo exacto que calcula el servidor.
+            void reportSupervisorCommandFailure({
+                client,
+                targetDeviceId,
+                monitorDeviceId: authorizedMonitor.deviceId,
+                type,
+                status: 'rejected',
+                error: createError.message || 'No se pudo crear la orden',
+                commandId: command.commandId,
+                payload: command.payload,
+            });
+        }
         return {
             ok: false,
             status: certain ? 'rejected' : 'failed',

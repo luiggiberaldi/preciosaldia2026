@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { resetSupervisorFailureReportThrottle } from '../src/services/supervisorCommandFailureReport';
 import {
   AppliedCommandGuard,
   buildInventoryBatchV2Payload,
@@ -804,6 +805,7 @@ describe("Supervisor command contract", () => {
 });
 
 describe("sendSupervisorCommand — reintentos de transporte del create (Fase 1)", () => {
+  beforeEach(() => resetSupervisorFailureReportThrottle());
   const sessionOk = async () => ({
     session: { user: { id: "auth-1" } },
     error: null,
@@ -924,8 +926,32 @@ describe("sendSupervisorCommand — reintentos de transporte del create (Fase 1)
       // conclusión — el badge del producto se resuelve en segundos.
       expect(result).toMatchObject({ ok: false, status: "rejected" });
       expect(result.error).toBe(error.message);
-      expect(calls).toHaveLength(1);
+      expect(calls.filter(([name]) => name === "create_supervisor_command")).toHaveLength(1);
+      // Caja negra: el rechazo cierto se anota con el motivo y el payload.
+      const report = calls.find(([name]) => name === "report_supervisor_command_failure");
+      expect(report?.[1]).toMatchObject({
+        p_target_device_id: "primary-1",
+        p_monitor_device_id: "monitor-1",
+        p_command_type: "supervisor.rate.set",
+        p_stage: "rechazada_por_nube",
+        p_error_message: error.message,
+        p_command_id: "command-retry-1",
+        p_payload: { rateMode: "bcv" },
+      });
     }
+  });
+
+  it("un fallo de transporte agotado NO se anota en la caja negra", async () => {
+    const calls = [];
+    const client = {
+      rpc(name, args) {
+        calls.push([name, args]);
+        return Promise.resolve(transportError());
+      },
+    };
+    const result = await send(client);
+    expect(result.status).toBe("failed");
+    expect(calls.some(([name]) => name === "report_supervisor_command_failure")).toBe(false);
   });
 
   it("reintenta una respuesta perdida tras crear sin duplicar el comando", async () => {
