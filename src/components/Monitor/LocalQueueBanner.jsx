@@ -9,6 +9,7 @@ import ConfirmModal from '../ConfirmModal';
 
 export default function LocalQueueBanner({
     queueCount = 0,
+    blockedEntry = null,
     pendingCount = 0,
     isOnline = true,
     uploading = false,
@@ -42,7 +43,12 @@ export default function LocalQueueBanner({
                                 {pendingCount} {pendingCount === 1 ? 'esperando' : 'esperando'} a la caja.
                             </p>
                         )}
-                        {!isOnline && queueCount > 0 && (
+                        {blockedEntry && (
+                            <p data-testid="queue-blocked" className="mt-1 text-[11px] font-bold leading-snug text-rose-600 dark:text-rose-400">
+                                «{blockedEntry.label}» fue rechazado y detiene la cola: {blockedEntry.lastError || 'la caja no lo acepta'}. Ya no se reintenta solo: vuelve a SUBIR o DESCÁRTALO.
+                            </p>
+                        )}
+                        {!isOnline && queueCount > 0 && !blockedEntry && (
                             <p className="mt-0.5 text-[11px] font-bold text-slate-400">Se subirán solos cuando vuelva la conexión.</p>
                         )}
                     </div>

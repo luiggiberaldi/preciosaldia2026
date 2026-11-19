@@ -7,7 +7,9 @@ import {
     enqueueSupervisorCommand,
     flushSupervisorCommandQueue,
     flushSupervisorCommandQueueWrite,
+    getBlockedQueueEntry,
     getQueuedSupervisorCommands,
+    isBlockingRejection,
     isConnectivityError,
     productIdsOf,
     queuedProductIds,
@@ -212,5 +214,70 @@ describe('Bodega mani 2026-11-19: el ajuste en cola no debe llevar campos que el
         const entry = enqueueSupervisorCommand(staleEntry);
         expect(Object.keys(entry.payload.lines[0]).sort()).toEqual(['expectedStock', 'inputUnit', 'productId', 'quantityInput']);
         expect(entry.productIds).toEqual(['p1']);
+    });
+});
+
+describe('Rechazo cierto: la cola deja de insistir (Bodega mani, 457 rechazos en un día)', () => {
+    const rejected = { ok: false, status: 'rejected', error: 'Payload de ajuste por lote inválido' };
+
+    it('solo bloquean los rechazos ciertos, nunca la red, la sesión ni un interruptor', () => {
+        expect(isBlockingRejection(rejected)).toBe(true);
+        expect(isBlockingRejection({ status: 'invalid', error: 'No hay caja objetivo' })).toBe(true);
+        expect(isBlockingRejection({ status: 'unauthorized', error: 'El monitor no tiene un vínculo autorizado' })).toBe(true);
+        expect(isBlockingRejection({ status: 'failed', error: 'Failed to fetch' })).toBe(false);
+        expect(isBlockingRejection({ status: 'rejected', error: 'Failed to fetch' })).toBe(false);
+        expect(isBlockingRejection({ status: 'unauthenticated', error: 'No hay sesión segura' })).toBe(false);
+        expect(isBlockingRejection({ status: 'disabled', error: 'apagado' })).toBe(false);
+        expect(isBlockingRejection({ error: 'sin estado' })).toBe(false);
+    });
+
+    it('el barrido automático bloquea la entrada y luego ya no la reenvía', async () => {
+        enqueueSupervisorCommand({ type: 'supervisor.product.update', payload: { productId: 'p1' }, label: 'Editar A' });
+        enqueueSupervisorCommand({ type: 'supervisor.product.update', payload: { productId: 'p2' }, label: 'Editar B' });
+        const send = vi.fn(async () => rejected);
+
+        const first = await flushSupervisorCommandQueue({ send, auto: true, now: () => '2026-11-19T12:00:00.000Z' });
+        expect(send).toHaveBeenCalledTimes(1);
+        expect(first.blocked?.label).toBe('Editar A');
+        expect(getBlockedQueueEntry()).toMatchObject({ label: 'Editar A', blockedAt: '2026-11-19T12:00:00.000Z', lastError: rejected.error });
+
+        const second = await flushSupervisorCommandQueue({ send, auto: true });
+        expect(send).toHaveBeenCalledTimes(1);
+        expect(second).toMatchObject({ sent: 0, failed: 0 });
+        expect(second.blocked?.label).toBe('Editar A');
+        expect(countQueuedSupervisorCommands()).toBe(2);
+    });
+
+    it('un fallo de red NO bloquea: el barrido sigue reintentando', async () => {
+        enqueueSupervisorCommand({ type: 'supervisor.product.update', payload: { productId: 'p1' } });
+        const send = vi.fn(async () => ({ ok: false, status: 'failed', error: 'Failed to fetch' }));
+        await flushSupervisorCommandQueue({ send, auto: true });
+        await flushSupervisorCommandQueue({ send, auto: true });
+        expect(send).toHaveBeenCalledTimes(2);
+        expect(getBlockedQueueEntry()).toBeNull();
+    });
+
+    it('SUBIR AL SISTEMA (manual) reintenta; si pasa, se desbloquea y sigue lo de detrás', async () => {
+        enqueueSupervisorCommand({ type: 'supervisor.product.update', payload: { productId: 'p1' }, label: 'Editar A' });
+        enqueueSupervisorCommand({ type: 'supervisor.product.update', payload: { productId: 'p2' }, label: 'Editar B' });
+        await flushSupervisorCommandQueue({ send: async () => rejected, auto: true });
+        expect(getBlockedQueueEntry()).not.toBeNull();
+
+        const send = vi.fn(async () => ({ ok: true, commandId: 'c' }));
+        const summary = await flushSupervisorCommandQueue({ send });
+        expect(send).toHaveBeenCalledTimes(2);
+        expect(summary).toMatchObject({ sent: 2, failed: 0, blocked: null });
+        expect(countQueuedSupervisorCommands()).toBe(0);
+    });
+
+    it('el bloqueo sobrevive a recargar la app (se guarda con la entrada)', async () => {
+        const storage = makeStorage();
+        resetSupervisorCommandQueue({ storage });
+        enqueueSupervisorCommand({ type: 'supervisor.product.update', payload: { productId: 'p1' }, label: 'Editar A' });
+        await flushSupervisorCommandQueue({ send: async () => rejected, auto: true });
+        await flushSupervisorCommandQueueWrite();
+
+        resetSupervisorCommandQueue({ storage, clearStorage: false });
+        expect(getBlockedQueueEntry()?.label).toBe('Editar A');
     });
 });
