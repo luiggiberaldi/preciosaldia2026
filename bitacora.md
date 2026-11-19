@@ -525,3 +525,9 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 
 **Qué:** con el visto bueno del dueño se aplicó `supabase/migrations/20261119_supervisor_command_failures.sql` en `sodgzkablshladvbtnes` (Management API, una sola transacción). Antes no existía ninguno de los objetos.
 **Verificación:** tabla y vista creadas, RLS activa; `anon` y `authenticated` no leen la tabla ni la vista; `authenticated` solo ejecuta `report_supervisor_command_failure`; `explain_…` cerrada al público. La vista ya muestra 65 problemas de 30 días: 8 fallidas en caja y 57 vencidas sin tomar (56 de Bodega mani, del 30-oct al 9-nov). `scripts/supervisor-failures-report.mjs` corre contra producción; se ajustó para no mostrar una confirmación vacía (`{}`) como motivo y para no cerrarse a la fuerza en Windows.
+
+## 2026-11-19 — fix(egress): la alarma diaria ya no salta por los tramos cerrados de ventas
+
+**Contexto:** con el secreto `SUPABASE_ACCESS_TOKEN` ya guardado en GitHub (lo cargó el dueño), las dos alarmas corrieron a mano en verde. La de egress abrió el issue #5 por «un POST de 400 KB (límite 150 KB)», que es el tamaño normal de un tramo cerrado de ventas (se reescribe una vez al cambiar de día). El resto del 18-nov estaba sano: 24,7 MB subidos y 76 conexiones de Realtime.
+**Cambio:** `maxPostBytes` pasa de 150 KB a 450 KB (POST suelto) y se agrega `largePosts`: más de 10 POST de > 150 KB en un día (opción `--max-large-posts`). Así se sigue vigilando la reescritura frecuente de documentos pesados, que era el propósito del límite de 150 KB.
+**Verificación:** `egressReportCore.test.js` 10/10: el 18-nov real ya no avisa; 11 POST pesados en un día sí; un POST de 600 KB sí; el incidente del 13-nov (450 POST de 420 KB) sigue disparando la alarma, ahora como `largePosts`. Corrida real `--check --redact`: código 0.
