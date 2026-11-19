@@ -23,7 +23,7 @@ El **PIN** y los **pagos a proveedores** no viajan por este canal.
 
 ## Cola local del celular
 
-Si la caja parece desconectada, el cambio queda «EN COLA» en el celular (`supervisorCommandQueue.js`) y se reintenta cada 30 s. La cola **se detiene en el primer fallo** para no saltarse órdenes; por eso una entrada que la nube rechace siempre bloquea todo lo de detrás (caso Bodega mani, 2026-11-19: la cola agregaba `productName`, un campo que la nube no admite). Desde 2.0.7 la cola guarda y repara solo los campos del contrato.
+Si la caja parece desconectada, el cambio queda «EN COLA» en el celular (`supervisorCommandQueue.js`) y se reintenta cada 30 s. La cola **se detiene en el primer fallo** para no saltarse órdenes; por eso una entrada que la nube rechace siempre bloquea todo lo de detrás (caso Bodega mani, 2026-11-19: la cola agregaba `productName`, un campo que la nube no admite). Desde 2.0.7 la cola guarda y repara solo los campos del contrato. Desde 2.0.8, si la nube rechaza una entrada de forma cierta (`rejected`, `invalid`, `unauthorized`), la entrada queda **bloqueada** (`blockedAt`): el barrido de 30 s deja de reenviarla y el aviso de la cola dice cuál es y por qué. Solo «SUBIR AL SISTEMA» la reintenta, y «DESCARTAR» la quita. Los fallos de red nunca bloquean.
 
 ## Caja negra: por qué falló una orden
 

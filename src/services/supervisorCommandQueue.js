@@ -121,6 +121,7 @@ function normalizeEntry(input = {}) {
         createdAt: input.createdAt || new Date().toISOString(),
         attempts: Number(input.attempts) || 0,
         lastError: input.lastError ?? null,
+        blockedAt: input.blockedAt ?? null,
     };
 }
 
@@ -202,13 +203,40 @@ export function isConnectivityError(message) {
 }
 
 /**
- * Reenvía la cola EN ORDEN. `send(entry)` debe resolver `{ ok, commandId?,
- * ackPromise?, error? }`. En el primer fallo se detiene: lo que sigue espera a
- * que lo anterior se resuelva (nunca saltar órdenes).
+ * Rechazos CIERTOS: la nube (o el propio monitor) dijo «no» y repetir el mismo
+ * envío dará el mismo «no». Caso Bodega mani (2026-11-19): la versión vieja
+ * reintentó una orden inválida cada 30 s todo el día (457 rechazos) y todo lo
+ * de detrás quedó esperando. Los fallos de red, de sesión o un interruptor
+ * apagado NO entran aquí: esos sí se arreglan solos.
  */
-export async function flushSupervisorCommandQueue({ send } = {}) {
+export const QUEUE_BLOCKING_STATUSES = Object.freeze(['rejected', 'invalid', 'unauthorized']);
+
+export function isBlockingRejection(outcome) {
+    return QUEUE_BLOCKING_STATUSES.includes(outcome?.status) && !isConnectivityError(outcome?.error);
+}
+
+/** Primera entrada de la cola si quedó bloqueada por un rechazo cierto. */
+export function getBlockedQueueEntry() {
+    const first = ensureHydrated()[0];
+    return first?.blockedAt ? first : null;
+}
+
+/**
+ * Reenvía la cola EN ORDEN. `send(entry)` debe resolver `{ ok, status?,
+ * commandId?, ackPromise?, error? }`. En el primer fallo se detiene: lo que
+ * sigue espera a que lo anterior se resuelva (nunca saltar órdenes).
+ *
+ * Si el fallo es un rechazo cierto, la entrada queda BLOQUEADA (`blockedAt`) y
+ * el barrido automático (`auto: true`) deja de reintentarla: solo «SUBIR AL
+ * SISTEMA» (intento manual) o «DESCARTAR» la destraban.
+ */
+export async function flushSupervisorCommandQueue({ send, auto = false, now = () => new Date().toISOString() } = {}) {
     const entries = getQueuedSupervisorCommands();
     const results = [];
+    if (auto && entries[0]?.blockedAt) {
+        return { sent: 0, failed: 0, blocked: entries[0], results };
+    }
+    let blocked = null;
     for (const entry of entries) {
         let outcome;
         try {
@@ -221,17 +249,25 @@ export async function flushSupervisorCommandQueue({ send } = {}) {
             results.push({ entry, result: outcome });
             continue;
         }
+        const blocking = isBlockingRejection(outcome);
         memoryQueue = ensureHydrated().map(item => (item.id === entry.id
-            ? { ...item, attempts: item.attempts + 1, lastError: outcome?.error || 'sin confirmación' }
+            ? {
+                ...item,
+                attempts: item.attempts + 1,
+                lastError: outcome?.error || 'sin confirmación',
+                blockedAt: blocking ? (item.blockedAt || now()) : null,
+            }
             : item));
         persist();
         notify();
-        results.push({ entry, result: outcome, failed: true });
+        if (blocking) blocked = memoryQueue.find(item => item.id === entry.id) || null;
+        results.push({ entry, result: outcome, failed: true, blocked: blocking });
         break;
     }
     return {
         sent: results.filter(item => !item.failed).length,
         failed: results.filter(item => item.failed).length,
+        blocked,
         results,
     };
 }
@@ -317,6 +353,8 @@ export default {
     queuedProductIds,
     discardQueuedSupervisorCommand,
     discardAllQueuedSupervisorCommands,
+    getBlockedQueueEntry,
+    isBlockingRejection,
     subscribeSupervisorCommandQueue,
     resetSupervisorCommandQueue,
     flushSupervisorCommandQueue,

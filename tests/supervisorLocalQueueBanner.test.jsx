@@ -54,6 +54,21 @@ describe('LocalQueueBanner (cola local con mando)', () => {
         expect(container.textContent).toContain('Se subirán solos cuando vuelva la conexión');
     });
 
+    it('cambio bloqueado por rechazo: dice cuál, por qué y que ya no se reintenta solo', async () => {
+        await render({
+            queueCount: 2,
+            isOnline: false,
+            blockedEntry: { label: 'Ajuste de stock', lastError: 'Payload de ajuste por lote inválido', blockedAt: '2026-11-19T12:00:00.000Z' },
+            onUpload: vi.fn(),
+            onDiscard: vi.fn(),
+        });
+        const notice = container.querySelector('[data-testid="queue-blocked"]');
+        expect(notice.textContent).toContain('Ajuste de stock');
+        expect(notice.textContent).toContain('Payload de ajuste por lote inválido');
+        expect(notice.textContent).toContain('Ya no se reintenta solo');
+        expect(container.textContent).not.toContain('Se subirán solos');
+    });
+
     it('SUBIR AL SISTEMA llama a onUpload (el padre decide cómo enviar)', async () => {
         const onUpload = vi.fn();
         await render({ queueCount: 2, onUpload, onDiscard: vi.fn() });

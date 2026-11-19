@@ -278,6 +278,9 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
         }
         setQueueUploading(true);
         const summary = await flushSupervisorCommandQueue({
+            // El barrido automático no insiste con una orden que la nube ya
+            // rechazó de forma cierta; el botón SUBIR AL SISTEMA sí reintenta.
+            auto: !manual,
             send: async (entry) => {
                 const result = await sendSupervisorCommand({
                     type: entry.type,
@@ -317,6 +320,9 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
             showToast?.(`${summary.sent} ${summary.sent === 1 ? 'cambio subido' : 'cambios subidos'} a la caja`, 'success');
         }
         const firstFailure = (summary?.results || []).find(item => item?.failed);
+        if (!firstFailure && summary?.blocked && manual) {
+            showToast?.(`"${summary.blocked.label}" sigue bloqueado: ${summary.blocked.lastError || 'la caja lo rechazó'}`, 'error');
+        }
         if (firstFailure) {
             // Fase 2: el error del servidor NUNCA se traga — el texto crudo llega
             // a la UI y al log estructurado, con el cambio que falló.
@@ -2414,6 +2420,7 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
             {/* Propuestas 5 y 6: cola local con mando y arrepentimiento */}
             <LocalQueueBanner
                 queueCount={queueEntries.length}
+                blockedEntry={queueEntries[0]?.blockedAt ? queueEntries[0] : null}
                 pendingCount={Number(supervisorControl?.counts?.pending || 0)}
                 isOnline={remoteActionsAvailable}
                 uploading={queueUploading}

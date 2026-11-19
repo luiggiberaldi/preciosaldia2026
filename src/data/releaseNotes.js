@@ -13,6 +13,13 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: '2.0.8',
+    fecha: '2026-11-19',
+    mejoras: [
+      { icono: 'escudo', titulo: 'Cambios rechazados a la vista', texto: 'Si la caja rechaza un cambio guardado en el monitor, te dice cuál y por qué, en vez de reintentarlo sin parar.' },
+    ],
+  },
+  {
     version: '2.0.7',
     fecha: '2026-11-19',
     mejoras: [
