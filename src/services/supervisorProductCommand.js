@@ -1,3 +1,5 @@
+import { findOtherProductWithCode } from '../utils/barcodeAssign';
+
 const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
 // ── Publicación del catálogo tras un comando de producto ────────────────────
@@ -315,6 +317,17 @@ export function applySupervisorProductCommand(currentProducts, payload = {}, opt
 
     if (typeof nextProduct.name !== 'string' || nextProduct.name.trim() === '') {
         throw new Error('El nombre del producto es obligatorio');
+    }
+
+    // Un código de barras no puede repetirse entre productos (mismo control que la caja). Solo se
+    // valida si el código es nuevo o cambió, para no bloquear productos que ya lo comparten por datos viejos.
+    const nextCode = typeof nextProduct.barcode === 'string' || typeof nextProduct.barcode === 'number'
+        ? String(nextProduct.barcode).trim()
+        : '';
+    const savedCode = existingIndex === -1 ? '' : String(products[existingIndex].barcode ?? '').trim();
+    if (nextCode && nextCode !== savedCode) {
+        const owner = findOtherProductWithCode(products, nextCode, nextProduct.id);
+        if (owner) throw new Error(`El código ${nextCode} ya pertenece a «${owner.name}»`);
     }
 
     const nextProducts = existingIndex === -1

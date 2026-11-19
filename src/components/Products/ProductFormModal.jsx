@@ -9,6 +9,7 @@ export default function ProductFormModal({
     isOpen,
     onClose,
     isEditing,
+    editingId = null,
 
     image, setImage,
     name, setName,
@@ -180,6 +181,7 @@ export default function ProductFormModal({
     };
 
     const commonProps = {
+        editingId,
         image, setImage,
         name, setName,
         barcode, setBarcode,

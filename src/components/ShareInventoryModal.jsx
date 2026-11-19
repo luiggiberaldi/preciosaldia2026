@@ -172,6 +172,7 @@ export default function ShareInventoryModal({ isOpen, onClose }) {
                 }
             }
             localStorage.setItem(BACKUP_IMPORTED_FLAG, 'true');
+            localStorage.setItem('pda_check_dups_after_import', 'true');
             setTimeout(() => window.location.reload(), 300);
         } catch (err) {
             setError('Error al restaurar: ' + err.message);

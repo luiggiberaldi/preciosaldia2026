@@ -31,6 +31,18 @@ import SwipeableItem from '../components/SwipeableItem';
 import { useInventoryVelocity } from '../hooks/useInventoryVelocity';
 import { useProductFiltering } from '../hooks/useProductFiltering';
 import { useProductForm } from '../hooks/useProductForm';
+import { findOtherProductWithCode, findProductByCode, DUPLICATE_CODE_FILTER } from '../utils/barcodeAssign';
+import { findSimilarNameProduct, shouldCheckName } from '../utils/similarName';
+import DuplicateNameConfirm from '../components/Products/DuplicateNameConfirm';
+import DuplicateMergeModal from '../components/Products/DuplicateMergeModal';
+import {
+    CHECK_DUPS_AFTER_IMPORT_KEY,
+    buildMergedProduct,
+    findDuplicateGroups,
+    loadIgnoredDupSignatures,
+    saveIgnoredDupSignatures,
+} from '../utils/duplicateMerge';
+import { isLikelyBarcode, normalizeBarcode } from '../utils/barcodeNormalizer';
 import { useProductSorting } from '../hooks/useProductSorting';
 import { buildProductPayload, derivePricingFromEdit, roundDerivedPrice, formatPriceUsdInput } from '../utils/productProcessor';
 import { isLowStockProduct, getGranelUnitMode } from '../utils/granel'; // GRANEL-001 / GRANEL-DUAL
@@ -83,10 +95,67 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         } catch (e) { /* silencioso */ }
     }
 
+    // ─── FASE 4: LIMPIEZA Y FUSIÓN DE DUPLICADOS ───────────────
+    const [isDuplicateMergeOpen, setIsDuplicateMergeOpen] = useState(false);
+    const [ignoredDupSignatures, setIgnoredDupSignatures] = useState(() => loadIgnoredDupSignatures());
+    const [postImportDupsDismissed, setPostImportDupsDismissed] = useState(() => {
+        try { return localStorage.getItem(CHECK_DUPS_AFTER_IMPORT_KEY) !== 'true'; } catch { return true; }
+    });
+    const dupSummary = useMemo(
+        () => (isCajero ? { groups: [], barcodeGroups: [], nameGroups: [], ignoredGroups: [] } : findDuplicateGroups(products, { ignoredSignatures: ignoredDupSignatures })),
+        [products, ignoredDupSignatures, isCajero],
+    );
+    const dismissPostImportDups = () => {
+        setPostImportDupsDismissed(true);
+        try { localStorage.removeItem(CHECK_DUPS_AFTER_IMPORT_KEY); } catch { /* sin almacenamiento */ }
+    };
+    const handleIgnoreDupGroup = (signature) => {
+        const next = [...new Set([...ignoredDupSignatures, signature])];
+        setIgnoredDupSignatures(next);
+        saveIgnoredDupSignatures(next);
+        showToast('Grupo marcado como artículos distintos', 'info');
+    };
+    const handleRestoreIgnoredDups = () => {
+        setIgnoredDupSignatures([]);
+        saveIgnoredDupSignatures([]);
+    };
+    const handleMergeDuplicateGroup = async (keepId, absorbedIds, { sumStock = true } = {}) => {
+        const keep = products.find((p) => String(p.id) === String(keepId));
+        if (!keep) return;
+        const removeSet = new Set(absorbedIds.map(String));
+        const absorbed = products.filter((p) => removeSet.has(String(p.id)));
+        if (absorbed.length === 0) return;
+
+        const built = buildMergedProduct(keep, absorbed, { sumStock });
+        if (!built) return;
+        const updatedProducts = products
+            .filter((p) => !removeSet.has(String(p.id)))
+            .map((p) => (String(p.id) === String(keepId) ? built.merged : p));
+
+        const persistedProducts = await persistCatalogLocked({
+            local: updatedProducts,
+            base: products,
+            storage: storageService,
+        }).catch((err) => {
+            console.error('[ProductsView] No se pudo fusionar duplicados:', err);
+            return updatedProducts;
+        });
+
+        setProducts(persistedProducts);
+        triggerHaptic && triggerHaptic();
+        auditLog(
+            'INVENTARIO',
+            'DUPLICADOS_FUSIONADOS',
+            `Fusionados ${absorbed.length} duplicado(s) en "${keep.name}" (stock: ${keep.stock ?? 0} → ${built.merged.stock ?? 0})`,
+        );
+        showToast(`Fusionado en «${keep.name}» (${absorbed.length} eliminado${absorbed.length > 1 ? 's' : ''})`, 'success');
+    };
+
     // Modal UI States
     const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [highPriceConfirm, setHighPriceConfirm] = useState(null); // { price, pendingData }
+    const [nameDupConfirm, setNameDupConfirm] = useState(null); // { owner, pendingData }
 
     const [isShareOpen, setIsShareOpen] = useState(false);
     const [isBulkPriceOpen, setIsBulkPriceOpen] = useState(false);
@@ -413,6 +482,20 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
             return showToast('Nombre y precio requeridos', 'warning');
         }
 
+        // Dos productos con el mismo código: al escanear, la caja agregaría el primero que encuentre.
+        // Solo se revisa un código nuevo o cambiado: un repetido heredado de datos viejos no
+        // debe impedir editar el precio o el stock del producto.
+        const savedBarcode = editingId ? String(products.find(p => p.id === editingId)?.barcode ?? '').trim() : '';
+        const typedBarcode = String(barcode ?? '').trim();
+        const owner = typedBarcode && typedBarcode !== savedBarcode
+            ? findOtherProductWithCode(products, typedBarcode, editingId)
+            : null;
+        if (owner) {
+            setIsFormShaking(true);
+            setTimeout(() => setIsFormShaking(false), 500);
+            return showToast(`El código ${typedBarcode} ya pertenece a «${owner.name}»`, 'warning');
+        }
+
         const productData = buildProductPayload({
             name, barcode, priceUsd, priceBs, pricingMode, priceBsUsdRef, priceCop, costUsd, costBs, costFactor, stock, stockInLotes,
             packagingType, unitsPerPackage, granelUnit, sellByUnit, unitPriceUsd, unitPriceCop,
@@ -421,6 +504,25 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
             lowStockAlertCanonical: true
         }, effectiveRate);
 
+        // Nombre parecido a otro artículo: se avisa (no se bloquea) antes de crear el segundo.
+        // Al editar solo se revisa si el nombre cambió.
+        const nameFields = [];
+        const savedProduct = editingId ? products.find(p => p.id === editingId) : null;
+        const nameCandidate = { ...productData, name };
+        const nameOwner = shouldCheckName(nameCandidate, savedProduct, nameFields)
+            ? findSimilarNameProduct(products, nameCandidate, { exceptId: editingId, ignoreIds: [], fields: nameFields })
+            : null;
+        if (nameOwner) {
+            setNameDupConfirm({ owner: nameOwner, pendingData: productData });
+            return;
+        }
+
+        _confirmPriceThenCommit(productData);
+    };
+
+    // Tras el aviso de nombre parecido (o sin él): advertencia de precio alto y guardado.
+    const _confirmPriceThenCommit = (productData) => {
+        setNameDupConfirm(null);
         // Advertencia si el precio parece inusualmente alto
         const parsedPrice = parseFloat(priceUsd) || 0;
         if (parsedPrice > 500 && !highPriceConfirm) {
@@ -572,6 +674,27 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         }
     };
 
+    // Escanear primero: un código en la búsqueda (Enter) abre el producto que lo tiene o, si no
+    // existe, abre un producto nuevo con el código ya cargado. Devuelve true si lo trató como código.
+    const handleScanCode = (raw) => {
+        const text = String(raw || '').trim();
+        if (!text || !isLikelyBarcode(text)) return false;
+        const code = normalizeBarcode(text, products);
+        const found = findProductByCode(products, code, text);
+        // Un número corto («500») es una búsqueda, no un código: solo se actúa sobre códigos de
+        // 8+ dígitos (EAN/UPC) o sobre uno que ya pertenece a un producto.
+        if (!found && !/^\d{8,24}$/.test(code)) return false;
+        if (found) {
+            handleEdit(found);
+        } else {
+            resetForm();
+            setBarcode(code);
+            setIsModalOpen(true);
+        }
+        handleSetSearchTerm('');
+        return true;
+    };
+
     const handleClose = () => {
         resetForm();
         setPriceCop('');
@@ -644,6 +767,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 isCajero={isCajero}
                 categoryScrollRef={categoryScrollRef}
                 handleSetSearchTerm={handleSetSearchTerm}
+                onScanCode={handleScanCode}
                 handleSetActiveCategory={handleSetActiveCategory}
                 setSelectedIds={setSelectedIds}
                 setIsModalOpen={setIsModalOpen}
@@ -651,6 +775,8 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 setIsDeleteAllModalOpen={setIsDeleteAllModalOpen}
                 setIsCategoryManagerOpen={setIsCategoryManagerOpen}
                 setIsStockBatchOpen={setIsStockBatchOpen}
+                duplicateGroupCount={dupSummary.groups.length}
+                onOpenDuplicateMerge={() => { dismissPostImportDups(); setIsDuplicateMergeOpen(true); }}
                 triggerHaptic={triggerHaptic}
                 onSelectAllToast={() => showToast('Todo el inventario seleccionado', 'success')}
             />
@@ -751,6 +877,52 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 </div>
             ) : (
                 <>
+                    {/* Banner post-importación: duplicados detectados tras restaurar respaldo o compartir inventario */}
+                    {!isCajero && !postImportDupsDismissed && dupSummary.groups.length > 0 && (
+                        <div data-testid="post-import-dups-banner" className="flex flex-wrap items-center justify-between gap-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 px-3 py-2.5 rounded-xl mb-3 shrink-0">
+                            <span className="text-xs font-bold text-amber-800 dark:text-amber-300">
+                                Se detectaron {dupSummary.groups.length} posible(s) grupo(s) de artículos duplicados tras importar.
+                            </span>
+                            <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                    type="button"
+                                    onClick={() => { dismissPostImportDups(); setIsDuplicateMergeOpen(true); }}
+                                    className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-black transition-colors"
+                                >
+                                    Revisar y fusionar
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={dismissPostImportDups}
+                                    className="px-2.5 py-1.5 text-xs font-bold text-amber-700 dark:text-amber-400 hover:underline"
+                                >
+                                    Más tarde
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                    {/* Banner: revisión de códigos repetidos */}
+                    {activeCategory === DUPLICATE_CODE_FILTER && (
+                        <div className="flex flex-wrap items-center justify-between gap-2 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800/30 px-3 py-2 rounded-xl mb-3 shrink-0">
+                            <span className="text-xs font-bold text-rose-600 dark:text-rose-400">
+                                Estos artículos comparten código de barras (van agrupados). Cámbiale el código al que esté mal o fusiónalos.
+                            </span>
+                            <div className="flex items-center gap-2 shrink-0">
+                                {!isCajero && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsDuplicateMergeOpen(true)}
+                                        className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-black transition-colors"
+                                    >
+                                        Fusionar duplicados
+                                    </button>
+                                )}
+                                <button onClick={() => handleSetActiveCategory('todos')} className="px-3 py-2 min-h-[40px] flex items-center text-xs font-bold text-rose-500 hover:text-rose-700 transition-colors gap-1 shrink-0">
+                                    × Ver todos
+                                </button>
+                            </div>
+                        </div>
+                    )}
                     {/* Bajo stock banner */}
                     {activeCategory === 'bajo-stock' && (
                         // v1.2.0: reveal-on-scroll + border-surface-300 (warm border).
@@ -821,7 +993,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
 
             {/* ─── Modal Añadir / Editar ───────────────────────── */}
             <ProductFormModal
-                isOpen={isModalOpen} onClose={handleClose} isEditing={!!editingId}
+                isOpen={isModalOpen} onClose={handleClose} isEditing={!!editingId} editingId={editingId}
                 image={image} setImage={setImage}
                 name={name} setName={setName}
                 barcode={barcode} setBarcode={setBarcode}
@@ -870,6 +1042,26 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 copEnabled={copEnabled}
                 tasaCop={tasaCop}
                 copPrimary={copPrimary}
+            />
+
+            {/* Aviso: nombre parecido a otro artículo */}
+            <DuplicateNameConfirm
+                owner={nameDupConfirm?.owner}
+                onCancel={() => setNameDupConfirm(null)}
+                onViewExisting={() => { const owner = nameDupConfirm.owner; setNameDupConfirm(null); handleEdit(owner); }}
+                onConfirm={() => _confirmPriceThenCommit(nameDupConfirm.pendingData)}
+            />
+
+            {/* Fase 4: Limpiador y fusión de duplicados */}
+            <DuplicateMergeModal
+                isOpen={isDuplicateMergeOpen}
+                onClose={() => setIsDuplicateMergeOpen(false)}
+                products={products}
+                onMergeGroup={handleMergeDuplicateGroup}
+                onEditProduct={(p) => { setIsDuplicateMergeOpen(false); handleEdit(p); }}
+                ignoredSignatures={ignoredDupSignatures}
+                onIgnoreGroup={handleIgnoreDupGroup}
+                onRestoreIgnored={handleRestoreIgnoredDups}
             />
 
             {/* Confirmación precio alto */}

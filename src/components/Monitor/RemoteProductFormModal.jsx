@@ -6,6 +6,7 @@ import { buildProductPayload, derivePricingFromEdit, roundDerivedPrice, formatPr
 import { prepareProductFormState } from '../../hooks/useProductForm';
 import { getGranelUnitMode } from '../../utils/granel';
 import { showToast } from '../Toast';
+import { findOtherProductWithCode } from '../../utils/barcodeAssign';
 import { Save } from 'lucide-react';
 import { SUPERVISOR_REMOTE_PRODUCTS_ENABLED } from '../../config/supervisorPolicy';
 import { sendSupervisorCommand } from '../../services/supervisorCommandService';
@@ -14,7 +15,7 @@ import { reportSupervisorCommandOutcome } from '../../services/supervisorCommand
 import { buildProductRevision, extractEditableProductPatch } from '../../services/supervisorContracts';
 
 export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId, productToEdit = null, remoteAvailable = true, onOptimisticEcho = null }) {
-    const { categories, effectiveRate: bcvRate, copEnabled, copPrimary, tasaCop } = useProductContext();
+    const { products = [], categories, effectiveRate: bcvRate, copEnabled, copPrimary, tasaCop } = useProductContext();
 
     // Form fields
     const [name, setName] = useState('');
@@ -286,6 +287,18 @@ export default function RemoteProductFormModal({ isOpen, onClose, targetDeviceId
 
         if (!targetDeviceId) {
             showToast('No hay conexión con la caja registradora', 'error');
+            return;
+        }
+
+        // Mismo control que la caja: un código de barras no puede repetirse entre productos.
+        // Solo se valida si el código es nuevo o cambió (no estorba al editar un producto ya cargado).
+        const typedBarcode = String(barcode ?? '').trim();
+        const savedBarcode = productToEdit ? String(productToEdit.barcode ?? '').trim() : '';
+        const owner = typedBarcode && typedBarcode !== savedBarcode
+            ? findOtherProductWithCode(products, typedBarcode, productToEdit?.id ?? null)
+            : null;
+        if (owner) {
+            showToast(`El código ${typedBarcode} ya pertenece a «${owner.name}»`, 'warning');
             return;
         }
 

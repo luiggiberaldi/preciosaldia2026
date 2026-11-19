@@ -35,7 +35,7 @@ export default function BulkPriceAdjustModal({
     // Selección de ámbito: si hay seleccionados, sugerir 'selected', sino categoría activa o 'todos'
     const initialCategory = useMemo(() => {
         if (selectedIds && selectedIds.size > 0) return 'selected';
-        if (activeCategory && activeCategory !== 'todos' && activeCategory !== 'bajo-stock') return activeCategory;
+        if (activeCategory && activeCategory !== 'todos' && activeCategory !== 'bajo-stock' && activeCategory !== 'codigo-repetido') return activeCategory;
         return 'todos';
     }, [selectedIds, activeCategory]);
 

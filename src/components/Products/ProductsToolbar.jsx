@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Store, Plus, Trash2, Pencil, Search, Percent, CheckSquare, Boxes, TrendingUp, DollarSign, PieChart, ChevronDown, ChevronUp, AlertTriangle, X, Wrench } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { DUPLICATE_CODE_FILTER, findDuplicateCodeIndex } from '../../utils/barcodeAssign';
+import { Store, Plus, Trash2, Pencil, Search, Percent, CheckSquare, Boxes, TrendingUp, DollarSign, PieChart, ChevronDown, ChevronUp, AlertTriangle, X, Wrench, GitMerge } from 'lucide-react';
 import { CATEGORY_COLORS } from '../../config/categories';
 import { useProductContext } from '../../context/ProductContext';
 import { formatBs, formatCop } from '../../utils/calculatorUtils';
@@ -15,6 +16,7 @@ const ProductsToolbar = ({
     categoryScrollRef,
     // Handlers
     handleSetSearchTerm,
+    onScanCode,
     handleSetActiveCategory,
     setSelectedIds,
     setIsModalOpen,
@@ -22,6 +24,8 @@ const ProductsToolbar = ({
     setIsDeleteAllModalOpen,
     setIsCategoryManagerOpen,
     setIsStockBatchOpen,
+    duplicateGroupCount = 0,
+    onOpenDuplicateMerge,
     triggerHaptic,
     onSelectAllToast,
 }) => {
@@ -111,6 +115,8 @@ const ProductsToolbar = ({
 
     const isAllSelected = products.length > 0 && selectedIds && selectedIds.size === products.length;
     const isLowStockActive = activeCategory === 'bajo-stock';
+    const isDupActive = activeCategory === DUPLICATE_CODE_FILTER;
+    const duplicateCodeCount = useMemo(() => findDuplicateCodeIndex(products).size, [products]);
 
     return (
         <div className="shrink-0 mb-3 space-y-2.5">
@@ -151,6 +157,44 @@ const ProductsToolbar = ({
                             <TrendingUp size={12} strokeWidth={2.5} />
                             <span>Valoración: ${totalRetailUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             {showFinancials ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                        </button>
+                    )}
+
+                    {/* Chip de códigos repetidos (Toggle): artículos que comparten código de barras */}
+                    {duplicateCodeCount > 0 && !isCajero && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                handleSetActiveCategory(isDupActive ? 'todos' : DUPLICATE_CODE_FILTER);
+                                triggerHaptic && triggerHaptic();
+                            }}
+                            className={`text-[11px] font-bold px-2.5 py-1 rounded-xl flex items-center gap-1.5 cursor-pointer transition-all shadow-2xs active:scale-95 border ${
+                                isDupActive
+                                    ? 'bg-rose-500 text-white border-rose-600 shadow-sm font-black'
+                                    : 'bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 border-rose-200/70 dark:border-rose-800/40 hover:bg-rose-100 dark:hover:bg-rose-900/40'
+                            }`}
+                            title={isDupActive ? 'Quitar filtro de códigos repetidos' : 'Ver los artículos que comparten código de barras'}
+                        >
+                            <AlertTriangle size={12} className={isDupActive ? 'text-white shrink-0' : 'text-rose-500 shrink-0'} />
+                            <span>{duplicateCodeCount} con código repetido</span>
+                            {isDupActive && <X size={11} className="ml-0.5 opacity-80" />}
+                        </button>
+                    )}
+
+                    {/* Chip de fusión de duplicados (nombres repetidos o acceso directo al limpiador) */}
+                    {duplicateGroupCount > 0 && !isCajero && onOpenDuplicateMerge && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                onOpenDuplicateMerge();
+                                triggerHaptic && triggerHaptic();
+                            }}
+                            data-testid="dup-merge-chip"
+                            className="text-[11px] font-bold px-2.5 py-1 rounded-xl flex items-center gap-1.5 cursor-pointer transition-all shadow-2xs active:scale-95 border bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border-amber-200/80 dark:border-amber-800/40 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+                            title="Revisar y fusionar artículos duplicados"
+                        >
+                            <GitMerge size={12} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                            <span>Fusionar duplicados ({duplicateGroupCount})</span>
                         </button>
                     )}
 
@@ -245,6 +289,34 @@ const ProductsToolbar = ({
                                             <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">Subir o bajar precios en % o dólares ($)</p>
                                         </div>
                                     </button>
+
+                                    {/* Limpiar y fusionar duplicados */}
+                                    {onOpenDuplicateMerge && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setShowToolsMenu(false);
+                                                triggerHaptic && triggerHaptic();
+                                                onOpenDuplicateMerge();
+                                            }}
+                                            className="w-full flex items-start gap-2.5 p-2 rounded-xl text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer group"
+                                        >
+                                            <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
+                                                <GitMerge size={16} strokeWidth={2.2} />
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center justify-between gap-1">
+                                                    <p className="text-xs font-bold text-slate-800 dark:text-white">Limpiar Duplicados</p>
+                                                    {duplicateGroupCount > 0 && (
+                                                        <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300">
+                                                            {duplicateGroupCount}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">Fusionar artículos con igual código o nombre</p>
+                                            </div>
+                                        </button>
+                                    )}
 
                                     <div className="h-px bg-slate-100 dark:bg-slate-800 my-1 mx-1" />
 
@@ -351,6 +423,7 @@ const ProductsToolbar = ({
                             placeholder="Buscar producto..."
                             value={searchTerm}
                             onChange={(e) => handleSetSearchTerm(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter' && onScanCode?.(searchTerm)) e.preventDefault(); }}
                             className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl py-2 pl-9 pr-7 text-xs text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand transition-all shadow-2xs placeholder:text-slate-400"
                         />
                         {searchTerm && (

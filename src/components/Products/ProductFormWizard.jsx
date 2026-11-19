@@ -4,6 +4,8 @@ import { useProductContext } from '../../context/ProductContext';
 import CustomSelect from '../CustomSelect';
 import { showToast } from '../Toast';
 import ProductCostFactorControl from './ProductCostFactorControl';
+import BarcodeDuplicateHint from './BarcodeDuplicateHint';
+import SimilarNameHint from './SimilarNameHint';
 import { loadTaxConfig } from '../../config/taxConfig';
 import {
     granelUnitLabel,
@@ -24,6 +26,7 @@ const PACKAGING_TYPES = [
 
 export default function ProductFormWizard({
     wizardStep,
+    editingId = null,
     image, setImage,
     name, setName,
     barcode, setBarcode,
@@ -243,6 +246,7 @@ export default function ProductFormWizard({
                         {name && name.trim().length >= 3 && (
                             <CheckCircle size={18} className="absolute right-3 top-[38px] text-emerald-500 transition-all duration-300" />
                         )}
+                        <SimilarNameHint name={name} exceptId={editingId} />
                     </div>
 
                     {/* Barcode */}
@@ -253,6 +257,7 @@ export default function ProductFormWizard({
                                 className="w-full bg-slate-50 dark:bg-slate-800 p-3.5 pl-10 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 text-sm" />
                             <Barcode size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                         </div>
+                        <BarcodeDuplicateHint barcode={barcode} exceptId={editingId} />
                     </div>
 
                     {/* Category */}

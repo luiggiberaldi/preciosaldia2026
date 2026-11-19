@@ -2,19 +2,27 @@ import { useMemo, useDeferredValue } from 'react';
 import { isLowStockProduct } from '../utils/granel';
 import { matchesSearch as matchesSearchFields } from '../utils/searchMatch';
 import { marginOverPricePercent } from '../utils/productCostFactor';
+import { DUPLICATE_CODE_FILTER, findDuplicateCodeIndex } from '../utils/barcodeAssign';
 
 export function useProductFiltering(products, searchTerm, activeCategory, sortField, sortDir, effectiveRate) {
     const deferredSearchTerm = useDeferredValue(searchTerm);
 
     const filteredProducts = useMemo(() => {
+        // Revisión de códigos repetidos: solo los artículos que comparten código, agrupados.
+        const dupIndex = activeCategory === DUPLICATE_CODE_FILTER ? findDuplicateCodeIndex(products) : null;
         let result = products.filter(p => {
             const matchesSearch = matchesSearchFields([p.name, p.barcode], deferredSearchTerm);
+            if (dupIndex) return matchesSearch && dupIndex.has(String(p.id));
             if (activeCategory === 'bajo-stock') {
                 return matchesSearch && isLowStockProduct(p);
             }
             const matchesCategory = activeCategory === 'todos' || p.category === activeCategory;
             return matchesSearch && matchesCategory;
         });
+
+        if (dupIndex && !sortField) {
+            result = [...result].sort((a, b) => dupIndex.get(String(a.id)).localeCompare(dupIndex.get(String(b.id))));
+        }
 
         // Apply sort if active
         if (sortField) {

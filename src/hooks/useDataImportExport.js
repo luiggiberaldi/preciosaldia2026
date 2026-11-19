@@ -103,6 +103,7 @@ export function useDataImportExport({
                 setImportStatus('success');
                 setStatusMessage('Restauracion completa. Sincronizando con la nube...');
                 localStorage.setItem('pda_backup_imported_flag', 'true');
+                localStorage.setItem('pda_check_dups_after_import', 'true');
                 const idbKeyList = json.data?.idb ? Object.keys(json.data.idb).join(', ') : 'legacy';
                 auditLog('SISTEMA', 'BACKUP_IMPORTADO', `Backup restaurado (${json.source || 'archivo'}) — ${idbKeyList}`);
                 triggerHaptic?.();
