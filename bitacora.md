@@ -520,3 +520,8 @@ mostraba $0 aunque la caja había confirmado las 8 compras: invitaba a cargarlas
 **Verificación:** la explicación coincide con la regla real de producción en 22/22 casos (PGlite con el validador copiado de producción). Migración completa en PGlite: agrupa repeticiones, explica el motivo, recorta, sin sesión no anota, tope de 200, vista con los tres casos, idempotente. Pruebas: `supervisorCommandFailureReport.test.js` 9/9 y `supervisorCommands.test.js` ajustado (cuenta solo los `create`).
 **Pendiente:** aplicar la migración en producción (visto bueno del dueño) **antes** de publicar la app.
 **Decisión del dueño:** es una herramienta interna para el equipo y para Claude, **sin pantalla** en la app ni en la Estación. Se lee con el informe por consola y la alarma de GitHub.
+
+## 2026-11-19 — Caja negra del supervisor: migración aplicada en producción
+
+**Qué:** con el visto bueno del dueño se aplicó `supabase/migrations/20261119_supervisor_command_failures.sql` en `sodgzkablshladvbtnes` (Management API, una sola transacción). Antes no existía ninguno de los objetos.
+**Verificación:** tabla y vista creadas, RLS activa; `anon` y `authenticated` no leen la tabla ni la vista; `authenticated` solo ejecuta `report_supervisor_command_failure`; `explain_…` cerrada al público. La vista ya muestra 65 problemas de 30 días: 8 fallidas en caja y 57 vencidas sin tomar (56 de Bodega mani, del 30-oct al 9-nov). `scripts/supervisor-failures-report.mjs` corre contra producción; se ajustó para no mostrar una confirmación vacía (`{}`) como motivo y para no cerrarse a la fuerza en Windows.

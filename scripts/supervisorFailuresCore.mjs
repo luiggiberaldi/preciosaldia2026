@@ -68,6 +68,9 @@ export function evaluateProblems(groups = [], thresholds = DEFAULT_FAILURE_THRES
     return alerts;
 }
 
+// Una confirmación vacía de la caja ({} o null) no es un motivo.
+const hasDetail = (detail) => Boolean(detail) && !['{}', 'null', '[]'].includes(String(detail).trim());
+
 const shortId = (id) => (id ? `${String(id).slice(0, 14)}…` : '—');
 
 export function renderProblemsReport(groups = [], { hours = 24, redact = false, alerts = [] } = {}) {
@@ -86,7 +89,7 @@ export function renderProblemsReport(groups = [], { hours = 24, redact = false, 
         lines.push(`- **Dónde:** ${who}`);
         lines.push(`- **Orden:** ${g.command_type || '—'}`);
         lines.push(`- **Error:** ${g.error_message}`);
-        if (g.error_detail) lines.push(`- **Motivo exacto:** ${g.error_detail}`);
+        if (hasDetail(g.error_detail)) lines.push(`- **Motivo exacto:** ${g.error_detail}`);
         lines.push(`- **Veces:** ${g.occurrences}${g.orders > 1 ? ` (en ${g.orders} órdenes)` : ''} · primera ${g.first_seen_at} · última ${g.last_seen_at}`);
         if (g.app_version) lines.push(`- **Versión del monitor:** ${g.app_version}`);
         if (!redact && g.command_id) lines.push(`- **Última orden:** ${g.command_id}`);

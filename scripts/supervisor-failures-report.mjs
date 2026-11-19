@@ -71,7 +71,8 @@ async function main() {
     return args.check && alerts.length ? 1 : 0;
 }
 
-main().then((code) => process.exit(code)).catch((error) => {
+// exitCode (no process.exit): cerrar a la fuerza con la salida en un tubo rompe Node en Windows.
+main().then((code) => { process.exitCode = code; }).catch((error) => {
     console.error(error?.message || error);
-    process.exit(2);
+    process.exitCode = 2;
 });

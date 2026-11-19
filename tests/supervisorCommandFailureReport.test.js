@@ -115,6 +115,11 @@ describe('informe de la caja negra (scripts/supervisorFailuresCore.mjs)', async 
         expect(report).toContain('**Motivo exacto:** línea 1: campo no permitido: productName');
     });
 
+    it('una confirmación vacía de la caja ({}) no se muestra como motivo', () => {
+        const report = core.renderProblemsReport(core.summarizeProblems([{ kind: 'fallida_en_caja', target_device_id: 'X', command_type: 't', error_message: 'El producto cambió', error_detail: '{}', occurrences: 1, first_seen_at: 'a', last_seen_at: 'b' }]));
+        expect(report).not.toContain('Motivo exacto');
+    });
+
     it('--redact no deja ids de equipos ni nombres de negocio', () => {
         const groups = core.summarizeProblems(rows);
         const report = core.renderProblemsReport(groups, { redact: true, alerts: core.evaluateProblems(groups, undefined, { redact: true }) });
