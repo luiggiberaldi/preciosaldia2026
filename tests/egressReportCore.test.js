@@ -47,7 +47,9 @@ describe('egressReportCore (F0/F6 del plan de egress Realtime)', () => {
         };
         const kinds = evaluateThresholds({ days: [incident], topDocs: [{ doc_id: 'abasto_audit_log_v1', bytes: 600_000 }] })
             .map((v) => v.kind).sort();
-        expect(kinds).toEqual(['dailyUpload', 'maxDoc', 'maxPost', 'realtimeConnections']);
+        // Desde el ajuste del 2026-11-19 el incidente (450 POST de 420 KB) lo atrapa
+        // «muchas reescrituras pesadas» (largePosts) en vez del POST suelto (> 450 KB).
+        expect(kinds).toEqual(['dailyUpload', 'largePosts', 'maxDoc', 'realtimeConnections']);
         expect(evaluateThresholds({ days: [healthy], topDocs: [{ doc_id: 'x', bytes: 50_000 }] })).toEqual([]);
     });
 
@@ -79,5 +81,34 @@ describe('egressReportCore (F0/F6 del plan de egress Realtime)', () => {
         const redacted = renderReport({ ...input, redact: true });
         expect(redacted).not.toContain('PDA-V2');
         expect(redacted).toContain('bodega_sales_v1:2026-11#16');
+    });
+});
+
+describe('falsa alarma del 2026-11-18 (issue #5): tramos cerrados de ventas de 400 KB', () => {
+    // Día real: 651 POST, 24.7 MB, el más grande 400 KB, 6 POST > 150 KB.
+    const rows = [
+        { rango: 'a', n: 226, bytes: 2_100_000, max_b: 19_000 },
+        { rango: 'b', n: 345, bytes: 14_500_000, max_b: 69_000 },
+        { rango: 'c', n: 74, bytes: 6_300_000, max_b: 149_000 },
+        { rango: 'd', n: 3, bytes: 605_000, max_b: 290_000 },
+        { rango: 'e', n: 3, bytes: 1_200_000, max_b: 400_000 },
+    ];
+
+    it('el día real ya no dispara la alarma', () => {
+        const day = { day: '2026-11-18', uploads: summarizeUploads(rows), realtimeConnections: 76 };
+        expect(evaluateThresholds({ days: [day] })).toEqual([]);
+    });
+
+    it('muchas reescrituras pesadas en un día sí avisan', () => {
+        const heavy = [...rows.slice(0, 3), { rango: 'd', n: 11, bytes: 2_500_000, max_b: 280_000 }];
+        const day = { day: '2026-11-20', uploads: summarizeUploads(heavy), realtimeConnections: 76 };
+        const violations = evaluateThresholds({ days: [day] });
+        expect(violations).toEqual([expect.objectContaining({ kind: 'largePosts', value: 11, limit: 10 })]);
+        expect(renderReport({ days: [day], violations })).toContain('11 POST de más de 150 KB (límite 10 por día)');
+    });
+
+    it('un POST suelto de más de 450 KB sigue avisando', () => {
+        const day = { day: '2026-11-20', uploads: summarizeUploads([{ rango: 'f', n: 1, bytes: 600_000, max_b: 600_000 }]), realtimeConnections: 1 };
+        expect(evaluateThresholds({ days: [day] }).map(v => v.kind)).toEqual(['maxPost']);
     });
 });

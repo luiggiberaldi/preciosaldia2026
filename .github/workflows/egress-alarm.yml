@@ -8,6 +8,10 @@
 #
 # El repo es PÚBLICO: el reporte va con --redact (sin identificadores de equipos).
 #
+# Límites (scripts/egressReportCore.mjs): POST suelto > 450 KB, más de 10 POST
+# de > 150 KB en un día, subida diaria > 40 MB, doc vivo > 450 KB y más de 150
+# conexiones de Realtime al día.
+#
 # Requisito: secreto del repo SUPABASE_ACCESS_TOKEN (Settings → Secrets and
 # variables → Actions). Sin él, el job falla en rojo a propósito.
 #

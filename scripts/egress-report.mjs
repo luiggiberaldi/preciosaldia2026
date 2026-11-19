@@ -8,7 +8,7 @@
 //   node scripts/egress-report.mjs --check               # sale con código 1 si se pasa algún límite
 //   node scripts/egress-report.mjs --out reporte.md      # además guarda el Markdown
 //   node scripts/egress-report.mjs --redact             # sin ids de equipos (issues públicos)
-//   --max-post 150000 --max-doc 450000 --daily-upload 40000000 --max-connections 150
+//   --max-post 450000 --max-large-posts 10 --max-doc 450000 --daily-upload 40000000 --max-connections 150
 //
 // Token: SUPABASE_ACCESS_TOKEN del `.env` de la raíz si existe (en local la
 // variable de entorno del sistema puede ser un token viejo); si no, del entorno
@@ -59,6 +59,7 @@ function parseArgs(argv) {
         else if (key === '--days') { args.days = Number(value); i += 1; }
         else if (key === '--out') { args.out = value; i += 1; }
         else if (key === '--max-post') { args.maxPostBytes = Number(value); i += 1; }
+        else if (key === '--max-large-posts') { args.maxLargePostsPerDay = Number(value); i += 1; }
         else if (key === '--max-doc') { args.maxDocBytes = Number(value); i += 1; }
         else if (key === '--daily-upload') { args.dailyUploadBytes = Number(value); i += 1; }
         else if (key === '--max-connections') { args.realtimeConnections = Number(value); i += 1; }

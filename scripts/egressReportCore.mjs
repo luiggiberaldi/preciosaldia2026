@@ -13,7 +13,14 @@ export const SIZE_RANGES = Object.freeze([
 // Límites de la alarma diaria (F6). Se pueden pisar por CLI.
 export const DEFAULT_THRESHOLDS = Object.freeze({
     dailyUploadBytes: 40_000_000,
-    maxPostBytes: 150_000,
+    // Un POST suelto: por encima del tramo cerrado de ventas (400 KB, se
+    // reescribe una vez al cambiar de día). Con 150 KB la alarma saltaba a
+    // diario por ese caso normal (falsa alarma del 2026-11-18, issue #5).
+    maxPostBytes: 450_000,
+    // Reescrituras pesadas frecuentes: más de N POST de > 150 KB en un día.
+    // El 2026-11-18 hubo 6 (los tramos cerrados del día).
+    largePostBytes: 150_000,
+    maxLargePostsPerDay: 10,
     // Por encima del tramo cerrado de ventas (400 KB, casi nunca se reescribe)
     // y por debajo del límite de ~1 MB de Realtime. Las reescrituras frecuentes
     // las vigila maxPostBytes.
@@ -89,6 +96,17 @@ export function sumConnections(rows = []) {
     return (rows || []).reduce((acc, row) => acc + (Number(row?.n) || 0), 0);
 }
 
+/** POST por encima de `bytes`, contando los rangos que empiezan en ese tamaño o más. */
+export function countPostsAbove(byRange = {}, bytes = 150_000) {
+    let floor = 0;
+    let total = 0;
+    for (const range of SIZE_RANGES) {
+        if (floor >= bytes) total += Number(byRange?.[range.id]?.n) || 0;
+        floor = range.max;
+    }
+    return total;
+}
+
 /**
  * Evalúa los límites de la alarma. `days` es la lista de resúmenes diarios
  * ({ day, uploads, realtimeConnections }); `topDocs` es el top actual por tamaño.
@@ -104,6 +122,10 @@ export function evaluateThresholds({ days = [], topDocs = [] } = {}, thresholds 
         }
         if (uploads.maxPost > limits.maxPostBytes) {
             violations.push({ kind: 'maxPost', day: day.day, value: uploads.maxPost, limit: limits.maxPostBytes });
+        }
+        const largePosts = countPostsAbove(uploads.byRange, limits.largePostBytes);
+        if (largePosts > limits.maxLargePostsPerDay) {
+            violations.push({ kind: 'largePosts', day: day.day, value: largePosts, limit: limits.maxLargePostsPerDay, size: limits.largePostBytes });
         }
         if ((day?.realtimeConnections || 0) > limits.realtimeConnections) {
             violations.push({ kind: 'realtimeConnections', day: day.day, value: day.realtimeConnections, limit: limits.realtimeConnections });
@@ -128,6 +150,7 @@ export function formatBytes(bytes) {
 const VIOLATION_TEXT = {
     dailyUpload: (v) => `${v.day}: subida a sync_documents ${formatBytes(v.value)} (límite ${formatBytes(v.limit)})`,
     maxPost: (v) => `${v.day}: un POST a sync_documents pesó ${formatBytes(v.value)} (límite ${formatBytes(v.limit)})`,
+    largePosts: (v) => `${v.day}: ${v.value} POST de más de ${formatBytes(v.size)} (límite ${v.limit} por día)`,
     realtimeConnections: (v) => `${v.day}: ${v.value} conexiones de Realtime (límite ${v.limit})`,
     maxDoc: (v, redact) => `doc ${v.docId}${redact ? '' : ` (${String(v.deviceId || '').slice(0, 14)}…)`} pesa ${formatBytes(v.value)} (límite ${formatBytes(v.limit)})`,
 };
