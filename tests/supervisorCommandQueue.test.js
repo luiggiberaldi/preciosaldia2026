@@ -174,3 +174,43 @@ describe('sendOrQueueSupervisorCommand: guardar en vez de perder', () => {
         expect(isConnectivityError('El producto ya no existe')).toBe(false);
     });
 });
+
+describe('Bodega mani 2026-11-19: el ajuste en cola no debe llevar campos que el servidor rechaza', () => {
+    const staleEntry = {
+        id: 'q-old-1',
+        kind: 'stock',
+        type: 'supervisor.inventory.batch.adjust',
+        payload: {
+            batchVersion: 2,
+            direction: 'ingreso',
+            reason: 'Ajuste de stock',
+            reasonCategory: 'ajuste',
+            lines: [{ productId: 'p1', inputUnit: 'unidades', quantityInput: 84, expectedStock: -12, productName: 'MALTA POLAR 1,5 LT' }],
+        },
+        label: 'el ajuste de stock de "MALTA POLAR 1,5 LT"',
+        productIds: ['p1'],
+        attempts: 240,
+        lastError: 'Payload de ajuste por lote inválido',
+    };
+
+    it('una cola vieja guardada con productName se repara al cargarla y sube limpia', async () => {
+        const storage = makeStorage();
+        storage.setItem(SUPERVISOR_COMMAND_QUEUE_KEY, JSON.stringify([staleEntry]));
+        resetSupervisorCommandQueue({ storage, clearStorage: false });
+
+        const sent = [];
+        const summary = await flushSupervisorCommandQueue({
+            send: async (entry) => { sent.push(entry.payload); return { ok: true, commandId: 'c1' }; },
+        });
+
+        expect(summary.sent).toBe(1);
+        expect(sent[0].lines[0]).toEqual({ productId: 'p1', inputUnit: 'unidades', quantityInput: 84, expectedStock: -12 });
+        expect(sent[0].reasonCategory).toBe('ajuste');
+    });
+
+    it('al encolar, las líneas del lote quedan solo con los campos del contrato v2', () => {
+        const entry = enqueueSupervisorCommand(staleEntry);
+        expect(Object.keys(entry.payload.lines[0]).sort()).toEqual(['expectedStock', 'inputUnit', 'productId', 'quantityInput']);
+        expect(entry.productIds).toEqual(['p1']);
+    });
+});

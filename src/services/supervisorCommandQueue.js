@@ -46,7 +46,11 @@ function loadFromStorage() {
     try {
         const raw = storage?.getItem(SUPERVISOR_COMMAND_QUEUE_KEY);
         const parsed = raw ? JSON.parse(raw) : null;
-        memoryQueue = Array.isArray(parsed) ? parsed.filter(entry => entry && entry.id && entry.type) : [];
+        memoryQueue = Array.isArray(parsed)
+            ? parsed
+                .filter(entry => entry && entry.id && entry.type)
+                .map(entry => ({ ...entry, payload: sanitizeQueuedPayload(entry.type, entry.payload) }))
+            : [];
     } catch {
         memoryQueue = [];
     }
@@ -82,13 +86,33 @@ export function productIdsOf(type, payload = {}) {
     }
 }
 
+// Campos que el servidor acepta en cada línea de un ajuste por lote v2
+// (is_valid_supervisor_inventory_batch_payload). Cualquier otro hace que la RPC
+// responda «Payload de ajuste por lote inválido» en cada reintento y, como la
+// cola se detiene en el primer fallo, bloquea todo lo que viene detrás.
+const BATCH_V2_LINE_KEYS = Object.freeze([
+    'productId', 'inputUnit', 'quantityInput', 'expectedStock', 'lineId', 'baseRevision', 'unitsPerPackage',
+]);
+
+/** Deja el payload solo con lo que el servidor admite (repara colas viejas). */
+export function sanitizeQueuedPayload(type, payload) {
+    if (!isPlainObject(payload)) return {};
+    if (type !== 'supervisor.inventory.batch.adjust' || !Array.isArray(payload.lines)) return payload;
+    return {
+        ...payload,
+        lines: payload.lines.map(line => (isPlainObject(line)
+            ? Object.fromEntries(Object.entries(line).filter(([key]) => BATCH_V2_LINE_KEYS.includes(key)))
+            : line)),
+    };
+}
+
 function normalizeEntry(input = {}) {
     const type = String(input.type || '');
     return {
         id: String(input.id || `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`),
         kind: String(input.kind || 'generic'),
         type,
-        payload: isPlainObject(input.payload) ? input.payload : {},
+        payload: sanitizeQueuedPayload(type, input.payload),
         label: String(input.label || 'cambio pendiente'),
         targetDeviceId: input.targetDeviceId ?? null,
         productIds: Array.isArray(input.productIds) && input.productIds.length

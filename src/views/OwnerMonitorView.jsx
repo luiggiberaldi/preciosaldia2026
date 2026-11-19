@@ -395,10 +395,10 @@ export default function OwnerMonitorView({ theme, toggleTheme, triggerHaptic, ra
             enqueueSupervisorCommand({
                 kind: 'stock',
                 type: 'supervisor.inventory.batch.adjust',
-                payload: {
-                    ...queuedPayload,
-                    lines: queuedPayload.lines.map(line => ({ ...line, productName: product.name })),
-                },
+                // Solo los campos del contrato v2: el servidor rechaza cualquier
+                // otro (p. ej. productName) y la cola quedaba atascada para siempre.
+                // El nombre ya viaja en `label`.
+                payload: queuedPayload,
                 label: `el ajuste de stock de "${product.name}"`,
                 targetDeviceId: pairedDeviceId,
             });
