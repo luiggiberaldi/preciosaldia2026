@@ -21,6 +21,16 @@ El **PIN** y los **pagos a proveedores** no viajan por este canal.
 
 `validateSupervisorCommand` rechaza: tipo no permitido, id inválido, caja o celular no autorizados y ventana de tiempo inválida. La ventana de tiempo se calcula con el **reloj del servidor**, no con el del equipo ([ERR-005](../../ERRORES.md)). Cada orden termina en un estado final (por ejemplo `applied`) y deja constancia.
 
+## Cola local del celular
+
+Si la caja parece desconectada, el cambio queda «EN COLA» en el celular (`supervisorCommandQueue.js`) y se reintenta cada 30 s. La cola **se detiene en el primer fallo** para no saltarse órdenes; por eso una entrada que la nube rechace siempre bloquea todo lo de detrás (caso Bodega mani, 2026-11-19: la cola agregaba `productName`, un campo que la nube no admite). Desde 2.0.7 la cola guarda y repara solo los campos del contrato.
+
+## Caja negra: por qué falló una orden
+
+Una orden rechazada por la nube **no deja fila** en `supervisor_commands` (la transacción se deshace). Desde el 2026-11-19 el celular la anota con `report_supervisor_command_failure` en `supervisor_command_failures` (`supervisorCommandFailureReport.js`): un renglón por error distinto, con contador, primer y último intento, versión del monitor, el último payload y el **motivo exacto** que calcula el servidor (`explain_supervisor_inventory_batch_payload`, p. ej. «línea 1: campo no permitido: productName»). La vista `supervisor_command_problems` une tres casos: rechazadas por la nube, fallidas al aplicarse en la caja y vencidas sin que la caja las tomara.
+
+Para revisarlo: `node scripts/supervisor-failures-report.mjs --hours 24` (o `--device PDA-V2-…`). Hay alarma diaria en GitHub (`.github/workflows/supervisor-failures-alarm.yml`). Migración: `supabase/migrations/20261119_supervisor_command_failures.sql`.
+
 ## Interruptores (se apagan sin publicar código)
 
 En `src/config/supervisorPolicy.js`, variables `VITE_SUPERVISOR_REMOTE_*_ENABLED`. Por defecto **encendidas**: mutaciones, productos, ingresos, tasa, egresos y proveedores. Por defecto **apagadas**: ventas remotas (`..._SALES_ENABLED`) y TTL extendido (`..._EXTENDED_TTL_ENABLED`) hasta su despliegue.

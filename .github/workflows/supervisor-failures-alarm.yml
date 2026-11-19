@@ -1,0 +1,70 @@
+# Alarma diaria de la caja negra del supervisor (2026-11-19, caso Bodega mani).
+#
+# Corre todos los días a las 11:15 UTC (7:15 en Venezuela). Lee las últimas 24 h
+# de supervisor_command_problems con scripts/supervisor-failures-report.mjs
+# --check y:
+#   - si no hay alertas, no hace nada;
+#   - si un rechazo se repite ≥ 3 veces o hay ≥ 5 órdenes vencidas sin tomar en
+#     una caja, abre un issue con la etiqueta `supervisor-alarm` (GitHub manda el
+#     correo) o comenta el que ya esté abierto.
+#
+# El repo es PÚBLICO: el reporte va con --redact (sin ids de equipos ni nombres
+# de negocio). El detalle completo se ve en local con el mismo script sin --redact.
+#
+# Requisito: el mismo secreto SUPABASE_ACCESS_TOKEN de la alarma de egress.
+
+name: Alarma de la caja negra del supervisor
+
+on:
+  schedule:
+    - cron: '15 11 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  failures:
+    name: Revisar órdenes fallidas de ayer
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Leer la caja negra
+        id: report
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set +e
+          node scripts/supervisor-failures-report.mjs --hours 24 --check --redact --out supervisor-failures.md
+          code=$?
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          # 0 = todo bien, 1 = hay alertas (se avisa abajo), 2 = no se pudo leer.
+          if [ "$code" -ge 2 ]; then exit "$code"; fi
+          exit 0
+
+      - name: Abrir o comentar el issue de la alarma
+        if: steps.report.outputs.code == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create supervisor-alarm --color D93F0B --description "Órdenes del supervisor que no llegan a la caja" 2>/dev/null || true
+          {
+            echo "La caja negra del supervisor encontró órdenes que no llegaron a la caja. Detalle completo en local:"
+            echo
+            echo '`node scripts/supervisor-failures-report.mjs --hours 24`'
+            echo
+            cat supervisor-failures.md
+          } > issue-body.md
+          open_issue=$(gh issue list --label supervisor-alarm --state open --json number --jq '.[0].number')
+          if [ -n "$open_issue" ]; then
+            gh issue comment "$open_issue" --body-file issue-body.md
+          else
+            gh issue create --title "Órdenes del supervisor con problemas: $(date -u -d 'yesterday' +%F)" --label supervisor-alarm --body-file issue-body.md
+          fi
